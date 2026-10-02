@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<!--
+Copyright (C) 2026 etali (https://github.com/etali)
+SPDX-License-Identifier: AGPL-3.0-only
+See LICENSE in the project root.
+-->
+
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>绿幕批量抠图</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>绿幕批量抠图</h1>
+  <p class="sub">本地处理，图片不会上传到任何服务器。导出 PNG（含透明通道）。</p>
+</header>
+
+<main>
+  <section id="drop" class="drop" tabindex="0" role="button"
+           aria-label="选择或拖入图片">
+    <p class="drop-main">把图片拖到这里，或<button type="button" id="pickBtn" class="link">点击选择</button></p>
+    <p class="drop-hint">支持 PNG / JPG / WebP，可一次选多张</p>
+    <input type="file" id="fileInput" accept="image/*" multiple hidden>
+  </section>
+
+  <section class="panel" id="panel" hidden>
+    <div class="panel-row">
+      <div class="field">
+        <label for="keyMethod">判定方式</label>
+        <select id="keyMethod">
+          <option value="auto" selected>自动（按幕布色饱和度选）</option>
+          <option value="chroma">色度键（绿幕 / 蓝幕）</option>
+          <option value="distance">颜色距离（白 / 灰 / 纯色底）</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="keyMode">幕布颜色</label>
+        <select id="keyMode">
+          <option value="auto" selected>自动识别</option>
+          <option value="manual">手动指定</option>
+        </select>
+      </div>
+      <div class="field" id="keyColorField" hidden>
+        <label for="keyColor">颜色值</label>
+        <div class="color-row">
+          <input type="color" id="keyColor" value="#00ff00">
+          <button type="button" id="eyedropper" class="btn-mini" title="在预览图上点击取色">吸管</button>
+        </div>
+      </div>
+      <div class="field chroma-only" id="modeField">
+        <label for="mode">色度键模式</label>
+        <select id="mode">
+          <option value="balanced" selected>均衡（背景明暗不均也扣得干净）</option>
+          <option value="soft">柔边（发丝、半透明边缘更自然）</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="panel-row sliders">
+      <div class="field chroma-only">
+        <label for="threshold">阈值 <output id="thresholdOut">0.28</output></label>
+        <input type="range" id="threshold" min="0.02" max="1" step="0.01" value="0.28">
+        <span class="tip">调大保留更多，调小扣得更狠</span>
+      </div>
+      <div class="field distance-only">
+        <label for="distTolerance">颜色容差 <output id="distToleranceOut">40</output></label>
+        <input type="range" id="distTolerance" min="0" max="160" step="1" value="40">
+        <span class="tip">与幕布色差多少色阶以内算背景</span>
+      </div>
+      <div class="field">
+        <label for="softness">边缘过渡 <output id="softnessOut">0.22</output></label>
+        <input type="range" id="softness" min="0" max="0.8" step="0.01" value="0.22">
+        <span class="tip">越大边缘越柔</span>
+      </div>
+      <div class="field chroma-only">
+        <label for="despill">去绿边 <output id="despillOut">0.9</output></label>
+        <input type="range" id="despill" min="0" max="1" step="0.05" value="0.9">
+        <span class="tip">削掉前景吃到的绿色反光</span>
+      </div>
+      <div class="field chroma-only">
+        <label for="darkFloor">暗部保护 <output id="darkFloorOut">12</output></label>
+        <input type="range" id="darkFloor" min="0" max="60" step="1" value="12">
+        <span class="tip">防止深色前景被误扣</span>
+      </div>
+      <div class="field chroma-only">
+        <label for="hueTolerance">色相容差 <output id="hueToleranceOut">0.55</output></label>
+        <input type="range" id="hueTolerance" min="0.1" max="1" step="0.05" value="0.55">
+        <span class="tip">调小可保住偏绿的前景</span>
+      </div>
+      <div class="field">
+        <label for="shrink">收缩 <output id="shrinkOut">0</output> px</label>
+        <input type="range" id="shrink" min="0" max="6" step="1" value="0">
+        <span class="tip">啃掉一圈残留亮边</span>
+      </div>
+      <div class="field">
+        <label for="feather">羽化 <output id="featherOut">0</output> px</label>
+        <input type="range" id="feather" min="0" max="8" step="1" value="0">
+        <span class="tip">柔化蒙版边界</span>
+      </div>
+    </div>
+
+    <div class="panel-row">
+      <div class="field">
+        <label for="regionMode">抠除范围</label>
+        <select id="regionMode">
+          <option value="all" selected>全图（同色一律扣掉）</option>
+          <option value="border">只扣连到画面边缘的</option>
+          <option value="seeds">只扣点选的区域</option>
+        </select>
+      </div>
+      <div class="field inline" id="seedField" hidden>
+        <button type="button" id="seedBtn" class="btn-mini">点选背景</button>
+        <button type="button" id="seedClearBtn" class="btn-mini">清除点选</button>
+        <span class="tip" id="seedTip">在预览图上点背景区域，可点多处</span>
+      </div>
+    </div>
+
+    <div class="panel-row">
+      <label class="check"><input type="checkbox" id="trim"> 自动裁掉透明边</label>
+      <div class="field inline" id="trimPadField" hidden>
+        <label for="trimPadding">留边 <output id="trimPaddingOut">0</output> px</label>
+        <input type="range" id="trimPadding" min="0" max="64" step="1" value="0">
+      </div>
+      <label class="check"><input type="checkbox" id="checker" checked> 棋盘底（仅预览）</label>
+      <button type="button" id="resetBtn" class="btn-mini">恢复默认</button>
+    </div>
+
+    <div class="panel-row actions">
+      <button type="button" id="zipBtn" class="btn primary">打包下载 ZIP</button>
+      <button type="button" id="allBtn" class="btn">逐张下载</button>
+      <button type="button" id="addBtn" class="btn">继续添加</button>
+      <button type="button" id="clearBtn" class="btn danger">清空</button>
+      <span id="status" class="status" role="status" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <section id="grid" class="grid" aria-label="处理结果"></section>
+</main>
+
+<div id="lightbox" class="lightbox" hidden>
+  <div class="lightbox-inner">
+    <div class="lb-stage" id="lbStage">
+      <canvas id="lbCanvas"></canvas>
+      <div class="crop-overlay" id="cropOverlay" hidden>
+        <div class="crop-rect" id="cropRect" hidden></div>
+      </div>
+    </div>
+    <div class="lightbox-bar">
+      <span id="lbName"></span>
+      <span class="lb-hint" id="cropHint" hidden>在图上拖出要保留的范围</span>
+      <button type="button" id="lbToggle" class="btn-mini">看原图</button>
+      <button type="button" id="lbCropBtn" class="btn-mini">裁切</button>
+      <button type="button" id="cropApply" class="btn-mini" hidden>应用裁切</button>
+      <button type="button" id="cropReset" class="btn-mini" hidden>取消裁切</button>
+      <button type="button" id="cropCancel" class="btn-mini" hidden>退出</button>
+      <button type="button" id="lbClose" class="btn-mini">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script src="chroma.js"></script>
+<script src="zip.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

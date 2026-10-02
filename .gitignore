@@ -1,0 +1,40 @@
+# ===== macOS =====
+.DS_Store
+
+# ===== Godot 4 =====
+# 编辑器导入缓存 / 元数据，打开工程时自动重新生成
+.godot/
+# 素材及其 .import 导入设置随 Git 管理；生成的导入缓存只保存在 .godot/。
+
+# ===== 打包产物 =====
+# 由 打包发布.command 生成：牛马牌.app、web/、zip、外置 cards.json 副本
+# 保留Godot导入隔离标记；其余构建产物、源码和编译缓存全部忽略。
+/build/*
+!/build/.gdignore
+
+# Android 发布签名不进 Git，也不放在可清理的 build/ 或 .godot/ 中。
+/.android-signing/
+*.keystore
+*.jks
+
+# ===== 遗留工具缓存 =====
+# 早期网页方案残留的 Vite 依赖缓存，与本工程无关
+.vite/
+
+# ===== 临时文件 =====
+*.tmp
+*.bak
+refactor.md
+# Python 工具运行时留下的字节码缓存
+__pycache__/
+/ref_image
+/sounds
+/test_image
+*.swp
+# 临时目录不参与 Godot 导入，保留隔离标记供新检出使用。
+/tmp
+!/tmp/.gdignore
+# Godot 资源扫描排除；保留 .gdignore，搜索结果本体仍是临时文件。
+/reports/*
+/reports
+!/reports/.gdignore

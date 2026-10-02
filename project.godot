@@ -1,0 +1,69 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="牛马牌"
+run/main_scene="res://scenes/main.tscn"
+; 关闭引擎启动 Logo，加载完成后直接进入游戏。
+boot_splash/show_image=false
+; macOS 原生窗口在场景脚本运行前就会创建；透明清屏可避免启动瞬间闪出黑色矩形。
+boot_splash/bg_color=Color(0, 0, 0, 0)
+; 应用图标由桌宠原图透明补方后生成，1024×1024，独立于美术包且由 Git 管理。
+; assets/art/app_icon.png 保持原始比例，仅用于桌宠/界面角色。
+config/icon="res://assets/app_icon.png"
+config/features=PackedStringArray("4.7")
+
+; 这里**没有** use_custom_user_dir / custom_user_dir_name，是有意的。
+;
+; 录像不走 user://（见 engine/tape.gd 的 PATH_DIR 那一段）：它存在
+; ~/.niumapai_record 底下，user:// 落在哪儿影响不到它。
+; 而 use_custom_user_dir 只换得掉 user:// 最后那一层目录名，
+; 换不掉上面那几层 —— 开着它顶多把 …/Godot/app_userdata/牛马牌/
+; 变成 …/Application Support/牛马牌/，还在 Application Support 底下,
+; 而那正是用户点名要挪走的地方。
+;
+; user:// 剩下的用户是玩家偏好（engine/palette.gd 的 palette.json、
+; engine/ai_search.gd 的 ai_search.json）。那两份没人要求挪，
+; 挪了还会让老玩家的配色和搜索参数一次性回默认
+
+[configuration]
+
+config_version=5
+
+[display]
+
+; 抽屉收起态使用每像素透明窗口，只显示游戏图标拉手。
+window/per_pixel_transparency/allowed=true
+; macOS 必须在窗口创建时就采用最终窗口属性；若等 main.gd 再设置，会先闪一下黑框。
+window/size/transparent.macos=true
+window/size/borderless.macos=true
+window/size/resizable.macos=false
+window/size/always_on_top.macos=true
+window/size/mode.mobile=3
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/size/window_width_override=1600
+window/size/window_height_override=900
+window/stretch/mode="canvas_items"
+window/handheld/orientation=0
+
+[rendering]
+
+; 透明窗口首帧也使用透明清屏，避免启动阶段透出默认黑底。
+environment/defaults/default_clear_color=Color(0, 0, 0, 0)
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
+
+[input_devices]
+
+pointing/emulate_mouse_from_touch=true
+pointing/emulate_touch_from_mouse=false

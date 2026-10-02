@@ -1,0 +1,7 @@
+{
+  "defaults": {
+    "window_fraction": 0.85,
+    "perspective_angle": 55,
+    "icon_scale": 1.25
+  }
+}

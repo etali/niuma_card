@@ -1,0 +1,62 @@
+# Copyright (C) 2026 etali (https://github.com/etali)
+# SPDX-License-Identifier: AGPL-3.0-only
+# See LICENSE in the project root.
+
+extends SceneTree
+
+const Duel = preload("res://tools/ai_duel.gd")
+
+## 同一实验分片合并，检查输入身份和完整种子对；区间在全部种子对上重新计算。
+## godot --headless -s tools/ai_duel_merge.gd -- OUTPUT.json INPUT1.json INPUT2.json ...
+func _initialize() -> void:
+	var args := OS.get_cmdline_user_args()
+	if args.size() < 2:
+		printerr("用法：ai_duel_merge.gd -- 输出JSON 输入JSON...")
+		quit(2)
+		return
+	var merged := {}
+	var games: Array = []
+	var seen := {}
+	for i in range(1, args.size()):
+		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(args[i]))
+		if not parsed is Dictionary:
+			printerr("输入报告不可读：", args[i])
+			quit(2)
+			return
+		var report: Dictionary = parsed
+		if merged.is_empty():
+			merged = report.duplicate(true)
+		else:
+			for key in ["a", "b", "protocol", "table_hash", "cards_sha256", "ai_config_sha256", "engine_source_hash", "max_rounds", "godot"]:
+				if StateCodec.canon(merged[key]) != StateCodec.canon(report[key]):
+					printerr("不能合并不同实验：", key)
+					quit(2)
+					return
+		for game in report["games"]:
+			var key := "%d/%s" % [int(game["seed"]), str(game["swap"])]
+			if seen.has(key):
+				printerr("重复对局：", key)
+				quit(2)
+				return
+			seen[key] = true
+			games.append(game)
+	games.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return int(a["seed"]) < int(b["seed"]) if a["seed"] != b["seed"] else not bool(a["swap"]))
+	var summary := Duel.summarize(games)
+	if int(summary["completed_seed_pairs"]) * 2 != games.size():
+		printerr("输入包含不完整种子对")
+		quit(2)
+		return
+	merged["games"] = games
+	merged["summary"] = summary
+	merged["seed_start"] = int(games[0]["seed"])
+	merged["seed_pairs"] = int(summary["completed_seed_pairs"])
+	merged["games_count"] = games.size()
+	merged.erase("elapsed_ms")
+	merged["source_reports"] = Array(args).slice(1)
+	merged["timing_note"] = "分片并行执行，整局耗时包含CPU争用；不能作为独立决策时延"
+	if not Duel._save_report(args[0], merged):
+		quit(3)
+		return
+	Duel._print_summary(summary)
+	quit()

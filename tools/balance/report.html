@@ -1,0 +1,36 @@
+<!doctype html>
+<!--
+Copyright (C) 2026 etali (https://github.com/etali)
+SPDX-License-Identifier: AGPL-3.0-only
+See LICENSE in the project root.
+-->
+
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>牛马牌 · 手动调参工作台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='3' width='24' height='26' rx='3' fill='%232454b8'/%3E%3Cpath d='M10 23V15M16 23V9M22 23V12' stroke='white' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="report.css"><script src="report.js" defer></script></head>
+<body><main>
+<header><div><h1>牛马牌 · 手动调参</h1><p>改一份卡表，跑一批对局，再结合自己的试玩感受决定。</p></div><span class="local">仅本机运行 · 不改默认卡表</span></header>
+<div id="message" role="status" aria-live="polite">正在连接本地模拟器… 如果直接打开了此文件，请双击项目根目录「启动手动调参.command」。</div>
+<section class="reference"><h2 id="definitions-title">先看懂这 11 个数</h2><p class="muted">它们是观测值，不是综合分；未观测到与零值分开显示。</p><div id="definitions"></div></section>
+<section class="editor"><h2>编辑卡牌配置</h2>
+<div class="controls"><label class="grow">以这份配置为起点<select id="source"></select></label><label>导入完整卡表<input id="import" type="file" accept=".json,application/json"></label></div>
+<p class="muted">旧实验的 candidates/*.json 也可导入，只读取卡牌参数，不带入旧 Q 分数。</p>
+<div class="controls"><label class="grow">新版本名称<input id="name" maxlength="100" aria-describedby="name-error" placeholder="例如：降低黑公关价格"><small id="name-error" class="error" aria-live="polite" hidden></small></label><button id="export" aria-describedby="export-hint">导出 cards.json…</button></div>
+<p id="export-hint" class="muted">导出的文件可直接替换项目 data/cards.json；包含当前编辑的参数。</p>
+<p class="muted">创建新版本需要未使用的新名称和修改后的卡牌参数，先改哪一项都可以。只改名称或只改参数时不会启动模拟；名称、参数都未变化时复用当前配置，只新增模拟记录。</p><p id="dirty" class="muted"></p>
+<div class="config-notes"><label>试玩备注<textarea id="notes" rows="3" maxlength="10000" aria-describedby="notes-name notes-status" placeholder="记录这份配置的试玩感受：哪里爽、哪里拖、下一次想改什么…"></textarea></label><p id="notes-name" class="muted">请选择配置查看备注。</p><div class="controls notes-actions"><button id="save-notes" disabled>保存备注</button><p id="notes-status" class="muted" role="status" aria-live="polite">备注按配置保存，与评估记录无关。</p></div></div>
+<div class="play-controls"><button id="play" class="primary" aria-describedby="play-reason" disabled>保存并以当前配置启动游戏</button><p id="play-reason" class="muted" role="status" aria-live="polite">请选择配置，或保存修改后的新配置再试玩。</p><p id="play-result" class="muted" role="status" aria-live="polite" hidden></p></div>
+<div id="game-fields" class="controls"></div>
+<div class="controls"><label class="grow">查找卡牌<input id="card-search" type="search" placeholder="输入中文卡名"></label><label>卡牌类型<select id="kind"><option value="">全部卡牌</option><option value="product">生产卡</option><option value="attack">攻击卡</option><option value="buff">增益卡</option><option value="legend">传说卡</option></select></label></div>
+<div class="table-scroll edit-scroll"><table class="edit-table"><colgroup><col class="c-name"><col class="c-number"><col class="c-number"><col class="c-number"><col class="c-number"><col class="c-number"><col class="c-number"><col class="c-last"></colgroup><thead><tr><th>卡牌 / 效果</th><th>购买价格</th><th>出售价格</th><th>权重</th><th>配方</th><th>产出</th><th>攻击</th><th>市场单格概率</th></tr></thead><tbody id="card-rows"></tbody></table></div>
+<p class="muted">出售价格可填非负整数，0 表示不可出售；显示“自动”的出售价格留空时沿用游戏计算规则。其他数值为正整数。资源类型、升级路线、胜利条件等固定；不可购卡不会因改数值进入市场。</p></section>
+<section id="runner"><h2>运行真实模拟</h2><p>双方使用相同 AI；每个种子交换开局先手各跑一局。可连续提交多个模拟，每项独立计时，并在对应评估记录中停止。</p>
+<div class="runner-row"><div class="sim-grid"><label>种子对数<input id="pairs" type="number" min="1" max="500" step="1" value="5"></label><label>每局回合上限<input id="max-rounds" type="number" min="1" max="500" step="1" value="40"></label><label>起始种子<input id="seed" type="number" min="1" max="2147483147" step="1" value="1001"></label><label>双方 AI 强度<select id="strength"><option value="1">1.0 · 完整强度</option><option value="0.5">0.5 · 中等预算</option><option value="0">0.0 · 低预算试跑</option></select></label></div><div><p id="budget"></p><div class="controls"><button id="save-config" aria-describedby="save-reason" disabled>仅保存配置</button><button id="run" class="primary" aria-describedby="run-reason" disabled>保存并运行当前配置</button></div><p id="save-reason" class="muted" role="status" aria-live="polite">仅保存配置和备注，不启动模拟或游戏。</p><p id="run-reason" class="run-feedback" role="status" aria-live="polite">正在连接本地模拟器…</p></div></div>
+<details><summary>实际 AI 参数（可调整）</summary><div id="ai-fields" class="sim-grid"></div></details><p class="muted">进度、实时耗时和阶段性指标显示在下方对应的评估记录中。</p></section>
+<section><div class="controls"><h2 class="grow">评估记录</h2><label>按指标排序<select id="sort"><option value="created">最新优先</option></select></label><label>方向<select id="direction"><option value="desc">从高到低</option><option value="asc">从低到高</option></select></label></div><p class="muted">每次运行各占一条，包含进度、实时耗时、模拟条件和 <span id="metrics-range">Q1–Q11</span>。</p><div class="table-scroll"><table class="runs-table"><thead id="run-head"></thead><tbody id="run-rows"></tbody></table></div></section>
+<section id="comparison"><div class="controls"><h2 class="grow">两份配置，一眼看差异</h2><button id="swap">交换 A / B</button><button id="export-diff">下载差异记录</button></div>
+<div class="compare-selectors"><div class="side-a"><label>配置 A<select id="compare-a"></select></label><label>使用哪次模拟<select id="run-a"></select></label><p id="note-a"></p></div><div class="side-b"><label>配置 B<select id="compare-b"></select></label><label>使用哪次模拟<select id="run-b"></select></label><p id="note-b"></p></div></div>
+<p id="compare-notice" class="notice"></p><div class="table-scroll"><table class="metric-table"><colgroup><col class="metric-name"><col class="metric-val"><col class="metric-val"><col class="metric-delta"></colgroup><thead><tr><th>指标</th><th>A</th><th>B</th><th>B − A</th></tr></thead><tbody id="metric-diff"></tbody></table></div><div id="metric-chart"></div><div id="win-distributions" hidden></div>
+<h3>卡牌参数差异</h3><p id="diff-summary"></p><div class="table-scroll"><table class="diff-table"><thead><tr><th>卡牌</th><th>参数</th><th>A</th><th>B</th><th>B − A</th></tr></thead><tbody id="card-diff"></tbody></table></div></section>
+<footer>数据保存在项目 reports/manual_balance；退出启动终端会停止本地服务。</footer></main></body></html>

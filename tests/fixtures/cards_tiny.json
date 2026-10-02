@@ -1,0 +1,20 @@
+{
+  "_comment": "测试用小配置（3 张卡）",
+  "cash": {
+    "name": "测试现金", "kind": "unit", "tier": 0,
+    "price": -1, "weight": 0, "res": "cash",
+    "flavor": "fixture"
+  },
+  "user": {
+    "name": "测试用户", "kind": "unit", "tier": 0,
+    "price": -1, "weight": 0, "res": "user",
+    "flavor": "fixture"
+  },
+  "testprod": {
+    "name": "测试产品", "kind": "product", "tier": 1,
+    "price": 1, "weight": 10,
+    "recipe_res": "user", "recipe_n": 1,
+    "output_res": "cash", "output_n": 1,
+    "flavor": "fixture"
+  }
+}

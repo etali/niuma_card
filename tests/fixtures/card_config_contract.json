@@ -1,0 +1,655 @@
+[
+  {
+    "name": "baseline",
+    "changes": [],
+    "ok": true
+  },
+  {
+    "name": "pawn_zero",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "pawn"
+        ],
+        "value": 0
+      }
+    ],
+    "ok": true
+  },
+  {
+    "name": "editable_number",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "output_n"
+        ],
+        "value": 7
+      }
+    ],
+    "ok": true
+  },
+  {
+    "name": "named",
+    "changes": [
+      {
+        "path": [
+          "_name"
+        ],
+        "value": "测试卡表"
+      }
+    ],
+    "ok": true
+  },
+  {
+    "name": "old_notes",
+    "changes": [
+      {
+        "path": [
+          "_upgrade",
+          "_note"
+        ],
+        "value": "旧说明"
+      }
+    ],
+    "ok": true
+  },
+  {
+    "name": "invalid_price_0",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "price"
+        ],
+        "value": 0
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "invalid_price_-1",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "price"
+        ],
+        "value": -1
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "invalid_price_0.5",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "price"
+        ],
+        "value": 0.5
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "invalid_price_True",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "price"
+        ],
+        "value": true
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "invalid_price_'4'",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "price"
+        ],
+        "value": "4"
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "invalid_price_None",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "price"
+        ],
+        "value": null
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "invalid_price_{}",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "price"
+        ],
+        "value": {}
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "invalid_price_[]",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "price"
+        ],
+        "value": []
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "invalid_price_2147483648",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "price"
+        ],
+        "value": 2147483648
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "invalid_price_1e+30",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "price"
+        ],
+        "value": 1e+30
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "initial_win",
+    "changes": [
+      {
+        "path": [
+          "_game",
+          "start_cash"
+        ],
+        "value": 100
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "extra_upgrade",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "upgrade_from"
+        ],
+        "value": "ditui"
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "extra_rule",
+    "changes": [
+      {
+        "path": [
+          "_game",
+          "new_rule"
+        ],
+        "value": 1
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "missing_section",
+    "changes": [
+      {
+        "path": [
+          "_game"
+        ],
+        "remove": true
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "missing_fixed_field",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "kind"
+        ],
+        "remove": true
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "missing_pawn",
+    "changes": [
+      {
+        "path": [
+          "dujiaoshou",
+          "pawn"
+        ],
+        "remove": true
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "resource_pawn",
+    "changes": [
+      {
+        "path": [
+          "cash",
+          "pawn"
+        ],
+        "value": 3
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "nonmarket_weight",
+    "changes": [
+      {
+        "path": [
+          "dujiaoshou",
+          "weight"
+        ],
+        "value": 1
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "fixed_bool_is_not_one",
+    "changes": [
+      {
+        "path": [
+          "_game",
+          "attack_cost_per_card"
+        ],
+        "value": true
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "route_bool_is_not_one",
+    "changes": [
+      {
+        "path": [
+          "_upgrade",
+          "routes",
+          0,
+          "per"
+        ],
+        "value": true
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "invalid_name",
+    "changes": [
+      {
+        "path": [
+          "_name"
+        ],
+        "value": 7
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "extra_top_level",
+    "changes": [
+      {
+        "path": [
+          "_unknown"
+        ],
+        "value": {}
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "start_cash_limit_99",
+    "changes": [
+      {
+        "path": [
+          "_game",
+          "start_cash"
+        ],
+        "value": 99
+      }
+    ],
+    "ok": true
+  },
+  {
+    "name": "start_cash_limit_100",
+    "changes": [
+      {
+        "path": [
+          "_game",
+          "start_cash"
+        ],
+        "value": 100
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "start_cash_limit_2147483647",
+    "changes": [
+      {
+        "path": [
+          "_game",
+          "start_cash"
+        ],
+        "value": 2147483647
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "start_user_limit_200",
+    "changes": [
+      {
+        "path": [
+          "_game",
+          "start_user"
+        ],
+        "value": 200
+      }
+    ],
+    "ok": true
+  },
+  {
+    "name": "start_user_limit_201",
+    "changes": [
+      {
+        "path": [
+          "_game",
+          "start_user"
+        ],
+        "value": 201
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "start_user_limit_2147483647",
+    "changes": [
+      {
+        "path": [
+          "_game",
+          "start_user"
+        ],
+        "value": 2147483647
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "recipe_n_limit_200",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "recipe_n"
+        ],
+        "value": 200
+      }
+    ],
+    "ok": true
+  },
+  {
+    "name": "recipe_n_limit_201",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "recipe_n"
+        ],
+        "value": 201
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "recipe_n_limit_2147483647",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "recipe_n"
+        ],
+        "value": 2147483647
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "output_n_limit_200",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "output_n"
+        ],
+        "value": 200
+      }
+    ],
+    "ok": true
+  },
+  {
+    "name": "output_n_limit_201",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "output_n"
+        ],
+        "value": 201
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "output_n_limit_2147483647",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "output_n"
+        ],
+        "value": 2147483647
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "attack_n_limit_200",
+    "changes": [
+      {
+        "path": [
+          "butie",
+          "attack_n"
+        ],
+        "value": 200
+      }
+    ],
+    "ok": true
+  },
+  {
+    "name": "attack_n_limit_201",
+    "changes": [
+      {
+        "path": [
+          "butie",
+          "attack_n"
+        ],
+        "value": 201
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "attack_n_limit_2147483647",
+    "changes": [
+      {
+        "path": [
+          "butie",
+          "attack_n"
+        ],
+        "value": 2147483647
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "price_limit_1000",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "price"
+        ],
+        "value": 1000
+      }
+    ],
+    "ok": true
+  },
+  {
+    "name": "price_limit_1001",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "price"
+        ],
+        "value": 1001
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "price_limit_2147483647",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "price"
+        ],
+        "value": 2147483647
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "weight_limit_1000000",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "weight"
+        ],
+        "value": 1000000
+      }
+    ],
+    "ok": true
+  },
+  {
+    "name": "weight_limit_1000001",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "weight"
+        ],
+        "value": 1000001
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "weight_limit_2147483647",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "weight"
+        ],
+        "value": 2147483647
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "pawn_limit_1000",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "pawn"
+        ],
+        "value": 1000
+      }
+    ],
+    "ok": true
+  },
+  {
+    "name": "pawn_limit_1001",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "pawn"
+        ],
+        "value": 1001
+      }
+    ],
+    "ok": false
+  },
+  {
+    "name": "pawn_limit_2147483647",
+    "changes": [
+      {
+        "path": [
+          "yunketang",
+          "pawn"
+        ],
+        "value": 2147483647
+      }
+    ],
+    "ok": false
+  }
+]

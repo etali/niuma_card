@@ -1,0 +1,175 @@
+/*
+ * Copyright (C) 2026 etali (https://github.com/etali)
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * See LICENSE in the project root.
+ */
+
+:root {
+  --bg: #16181d;
+  --panel: #1e2128;
+  --line: #2e323c;
+  --text: #e6e8ec;
+  --muted: #9aa0ac;
+  --accent: #4ea3ff;
+  --danger: #ff6b6b;
+}
+
+* { box-sizing: border-box; }
+
+/* 下面多处用了 display:flex，会盖掉浏览器默认的 [hidden]{display:none}，这里统一兜住 */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.topbar { padding: 20px 24px 12px; }
+.topbar h1 { margin: 0; font-size: 20px; font-weight: 600; }
+.sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+
+main { padding: 0 24px 40px; }
+
+/* ---- 拖放区 ---- */
+.drop {
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+  padding: 36px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.drop:hover, .drop:focus-visible { border-color: var(--accent); outline: none; }
+.drop.over { border-color: var(--accent); background: rgba(78, 163, 255, .08); }
+.drop-main { margin: 0; font-size: 15px; }
+.drop-hint { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.drop.compact { padding: 14px; }
+
+.link {
+  background: none; border: none; padding: 0;
+  color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline;
+}
+
+/* ---- 参数面板 ---- */
+.panel {
+  margin-top: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+}
+.panel-row {
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;
+  padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line);
+}
+.panel-row:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: none; }
+.sliders .field { width: 190px; }
+
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field.inline { flex-direction: row; align-items: center; gap: 8px; }
+.field label { font-size: 12px; color: var(--muted); }
+.field output { color: var(--text); font-variant-numeric: tabular-nums; }
+.tip { font-size: 11px; color: #71767f; }
+
+select, input[type=range] { width: 100%; }
+select {
+  background: #14161a; color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+}
+input[type=range] { accent-color: var(--accent); }
+input[type=color] {
+  width: 44px; height: 30px; padding: 0;
+  background: none; border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+}
+.color-row { display: flex; gap: 8px; align-items: center; }
+
+.check { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent); }
+
+/* ---- 按钮 ---- */
+.btn, .btn-mini {
+  background: #262a32; color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px;
+  cursor: pointer; font: inherit;
+}
+.btn { padding: 8px 14px; }
+.btn-mini { padding: 4px 10px; font-size: 12px; }
+.btn:hover, .btn-mini:hover { background: #2f343d; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #08121d; font-weight: 600; }
+.btn.primary:hover { background: #6bb3ff; }
+.btn.danger { color: var(--danger); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.actions { gap: 10px; }
+.status { color: var(--muted); font-size: 13px; }
+
+/* ---- 结果网格 ---- */
+.grid {
+  margin-top: 18px;
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px;
+  overflow: hidden; display: flex; flex-direction: column;
+}
+.card-canvas {
+  position: relative; aspect-ratio: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: zoom-in; padding: 8px;
+}
+/* 棋盘底，方便看透明区域 */
+.card-canvas.checker {
+  background-image:
+    linear-gradient(45deg, #2a2d34 25%, transparent 25%, transparent 75%, #2a2d34 75%),
+    linear-gradient(45deg, #2a2d34 25%, transparent 25%, transparent 75%, #2a2d34 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+  background-color: #202329;
+}
+.card-canvas.picking { cursor: crosshair; }
+.card-canvas canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
+.card-info { padding: 8px 10px; border-top: 1px solid var(--line); font-size: 12px; }
+.card-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.card-actions { display: flex; gap: 6px; padding: 0 10px 10px; }
+.card.busy .card-canvas { opacity: .45; }
+
+/* ---- 放大预览 ---- */
+.lightbox {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(0, 0, 0, .82);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.lightbox-inner { display: flex; flex-direction: column; gap: 10px; max-height: 100%; }
+.lb-stage { position: relative; display: flex; }
+#lbCanvas {
+  max-width: 88vw; max-height: 80vh; object-fit: contain;
+  background-image:
+    linear-gradient(45deg, #333 25%, transparent 25%, transparent 75%, #333 75%),
+    linear-gradient(45deg, #333 25%, transparent 25%, transparent 75%, #333 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 10px 10px;
+  background-color: #222;
+}
+.lightbox-bar { display: flex; gap: 10px; align-items: center; justify-content: center; font-size: 13px; flex-wrap: wrap; }
+.lb-hint { color: var(--muted); }
+
+/* ---- 裁切 ---- */
+/* 盖在 canvas 上接拖拽。进裁切模式时 app.js 会把两者的显示尺寸钉成一样，
+   否则 object-fit:contain 留出的空白会让拖出来的框和画面错位。 */
+.crop-overlay {
+  position: absolute; inset: 0;
+  cursor: crosshair; touch-action: none;
+  background: rgba(0, 0, 0, .35);
+}
+.crop-rect {
+  position: absolute;
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .45);
+  background: transparent;
+  pointer-events: none;
+}

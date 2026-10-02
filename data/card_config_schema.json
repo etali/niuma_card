@@ -1,0 +1,65 @@
+{
+  "max_integer": 2147483647,
+  "ignored_metadata": [
+    "_name"
+  ],
+  "fixed_text_paths": [
+    "_comment",
+    "_game._note",
+    "_upgrade._note"
+  ],
+  "editable": {
+    "_game": {
+      "start_cash": {
+        "min": 1,
+        "max": 99
+      },
+      "start_user": {
+        "min": 1,
+        "max": 200
+      }
+    },
+    "cards": {
+      "recipe_n": {
+        "min": 1,
+        "max": 200
+      },
+      "output_n": {
+        "min": 1,
+        "max": 200
+      },
+      "attack_n": {
+        "min": 1,
+        "max": 200
+      },
+      "price": {
+        "min": 1,
+        "positive_default": true,
+        "max": 1000
+      },
+      "weight": {
+        "min": 1,
+        "positive_default": true,
+        "max": 1000000
+      },
+      "pawn": {
+        "min": 0,
+        "optional": true,
+        "max": 1000
+      }
+    }
+  },
+  "less_than": [
+    {
+      "left": [
+        "_game",
+        "start_cash"
+      ],
+      "right": [
+        "_game",
+        "win_cash"
+      ],
+      "message": "初始现金必须低于现金胜利线"
+    }
+  ]
+}
