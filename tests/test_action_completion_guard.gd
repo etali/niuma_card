@@ -16,6 +16,8 @@ func _run() -> void:
 	CardDB.ensure_loaded()
 	_check_engine_preview()
 	await _check_button()
+	await _check_inactive_piles()
+	await _check_corrected_pile()
 	await _check_network()
 	finish()
 
@@ -190,3 +192,68 @@ func _check_network() -> void:
 	for client in clients:
 		client.close()
 	net_stop()
+
+## 未成立的牌摞不阻止后面的有效组合，也不阻止完成行动。
+func _check_inactive_piles() -> void:
+	for with_valid in [false, true]:
+		var main := GuardMain.new()
+		main.force_drawer_layout = true
+		root.add_child(main)
+		_booted = main
+		main.drawer_window.set_process(false)
+		main.drawer_window.animations_enabled = false
+		main.drawer_window.pin()
+		main.state = _bare()
+		main.state.add_card(main.my_seat, CardDB.unit_id(CardDB.RES_CASH))
+		var invalid := _pile(main.state, main.my_seat, "shuabuting")
+		invalid["uids"].pop_back()
+		var valid := _pile(main.state, main.my_seat, "yunketang") if with_valid else {}
+		main._rebuild_pipe()
+		main._respawn_all()
+		main._actor = main.my_seat
+		main.phase = main.PHASE_ACTION
+		main.board.input_locked = false
+		main.btn_pass.disabled = false
+		_build_group(main, invalid)
+		if with_valid:
+			_build_group(main, valid)
+		await main._on_action_done()
+		check(main.handed_to_foe and main._actor == main.foe_seat, "存在无效编组仍可完成行动（含有效组=%s）" % with_valid)
+		check(main.state.combos.size() == (1 if with_valid else 0), "跳过无效编组并继续注册后续有效组")
+		check(not main.state.find_card(main.my_seat, invalid["uids"][0])["locked"], "无效编组保持闲置，不锁牌")
+		check(main.tape.steps.any(func(e): return e["intent"]["op"] == Intent.OP_ACTION_DONE), "无效编组不阻止记录完成行动")
+		main.queue_free()
+		await process_frame
+
+func _check_corrected_pile() -> void:
+	for complete_recipe in [false, true]:
+		var main := GuardMain.new()
+		main.force_drawer_layout = true
+		root.add_child(main)
+		_booted = main
+		main.drawer_window.set_process(false)
+		main.drawer_window.animations_enabled = false
+		main.drawer_window.pin()
+		main.state = _bare()
+		var pile := _pile(main.state, main.my_seat, "chunwan")
+		main._rebuild_pipe()
+		main._respawn_all()
+		main._actor = main.my_seat
+		main.phase = main.PHASE_ACTION
+		main.board.input_locked = false
+		main.btn_pass.disabled = false
+		_build_group(main, pile)
+		await main._on_action_done()
+		check(not main.handed_to_foe and (CardDB.res_label(CardDB.RES_CASH) + "会归零") in main.lbl_msg.text, "危险组合阻止完成行动并准确提示现金归零")
+		if complete_recipe:
+			# 保留配方，增加余款后不再耗尽资源。
+			main.state.add_card(main.my_seat, CardDB.unit_id(CardDB.RES_CASH))
+		else:
+			# 从原摞取出一张材料，配方不成立，因此不会发生消费。
+			main.board._detach_from_group(main.entities[pile["uids"][-1]])
+		await main._on_action_done()
+		check(main.handed_to_foe, "修正原牌摞后重新计算，允许完成行动（配方完整=%s）" % complete_recipe)
+		check(main.state.combos.size() == (1 if complete_recipe else 0), "仅修正后成立的组合生效")
+		check(main.lbl_msg.text == "已完成行动", "修正成功后替换旧错误提示")
+		main.queue_free()
+		await process_frame

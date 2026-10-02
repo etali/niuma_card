@@ -1820,6 +1820,7 @@ func _finish_player_action() -> void:
 		_action_failed(completed)
 		_end_client_action(session)
 		return
+	_show_message("已完成行动", Palette.semantic("success"))
 	_end_client_action(session, false)
 	if state.action_first() == foe_seat:
 		# 玩家是后手：双方都已行动 → 收市场、整理、进入攻击阶段
@@ -1888,6 +1889,13 @@ func _register_player_combos() -> bool:
 		var already := state.combos.any(func(combo): return combo["owner"] == my_seat and combo["uids"] == uids)
 		if already:
 			registered += 1
+			continue
+		# 不完整或不符合配方的牌摞只是闲置牌，不阻止结束行动。
+		# 在提交前按引擎规则筛掉；实际提交失败仍须中止，避免吞掉网络错误。
+		var cards: Array = []
+		for uid in uids:
+			cards.append(state.find_card(my_seat, uid))
+		if not ComboRules.evaluate(cards)["valid"]:
 			continue
 		var r: Dictionary = await pipe.submit(Intent.create_combo(my_seat, uids), my_seat)
 		if not _session_current(session):
