@@ -25,6 +25,8 @@ func _initialize() -> void:
 	await _t3_new_combo_dings(main, board)
 	await _t4_pickup_ding_deferred(main, board)
 
+	await _t5_upgrade_target_dings(main, board)
+
 	finish()
 
 # ---------- 1. 收拢摞原地拎起放下不挪位 ----------
@@ -250,3 +252,61 @@ func _t4_pickup_ding_deferred(main: Node, board: Board) -> void:
 	check(dings[0] == 0, "拖回去不响（实际 %d）" % dings[0])
 	board.group_completed.disconnect(cb)
 	park(board, members)
+
+# 合法升级组的产物变化也要报凑满；使用录像中的八张 T1。
+func _t5_upgrade_target_dings(main: Node, board: Board) -> void:
+	var ids := ["yunketang", "pinshaoshao", "baoyue", "yunketang", "shuabuting", "yunketang", "shuabuting", "chunwan"]
+	for sizes in [[4, 2, 2], [4, 4]]:
+		var members: Array = []
+		for i in ids.size():
+			members.append(main._spawn_entity({"uid": 9600 + i, "def_id": ids[i]}, Vector3(-6, 0.05, 2), true))
+		isolate(board, members)
+		for c in members:
+			board._detach_from_group(c)
+		var offset := 0
+		var piles: Array = []
+		for size in sizes:
+			var g := board.make_group(members.slice(offset, offset + size))
+			board.groups.append(g)
+			board._layout_group(g, Vector3(-6 + piles.size() * 3, 0.05, 2))
+			piles.append(g)
+			offset += size
+		await settle()
+		var dings := [0]
+		var cb := func(): dings[0] += 1
+		board.group_completed.connect(cb)
+		for i in range(1, piles.size()):
+			var pick: CardEntity = piles[i]["cards"][0]
+			board._on_card_clicked(pick)
+			pick.global_position = members[0].global_position + Vector3(0.2, Board.DRAG_HEIGHT, 0)
+			board._end_drag()
+			await settle()
+			check(dings[0] == i, "%s 第 %d 次合并只响一次（实际 %d）" % [sizes, i, dings[0]])
+		var final_group: Dictionary = board.group_of(members[0])
+		check(final_group["upgrade_target"] == "shangshi", "%s 八张 T1 合成上市敲钟" % [sizes])
+		dings[0] = 0
+		board.refresh_group(final_group)
+		board.toggle_compact(members[0])
+		await settle()
+		board._on_card_clicked(members[0])
+		members[0].global_position = Vector3(-2, Board.DRAG_HEIGHT, 4)
+		board._end_drag()
+		await settle()
+		check(dings[0] == 0, "刷新、收拢、整摞移动不重复响")
+		board.toggle_compact(members[0])
+		await settle()
+		# 拿走后两张时源组暂时变成国民应用；原样放回不应响。
+		board._on_card_clicked(members[6])
+		check(dings[0] == 0, "拎起时的升级目标变化延迟到落手")
+		members[6].global_position = members[0].global_position + Vector3(0.2, Board.DRAG_HEIGHT, 0)
+		board._end_drag()
+		await settle()
+		check(dings[0] == 0, "八张拆出两张再放回不重复响")
+		board._on_card_clicked(members[6])
+		members[6].global_position = Vector3(-6, Board.DRAG_HEIGHT, 1)
+		board._end_drag()
+		await settle()
+		check(dings[0] == 1, "八张拆成六张与两张，留下的升级目标改变只补响一次")
+		check(board.group_of(members[0])["upgrade_target"] == "guomin", "六张剩余组合升级为国民应用")
+		board.group_completed.disconnect(cb)
+		park(board, members)

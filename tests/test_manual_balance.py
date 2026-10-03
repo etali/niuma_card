@@ -93,6 +93,24 @@ class ManualBalanceTest(unittest.TestCase):
         with self.assertRaises(ValueError):mb.validate_options(o,schema)
         self.assertEqual(mb.digest(self.base),mb.digest(copy.deepcopy(self.base)))
 
+    def test_simulation_budget_has_only_numeric_safety_limits(self):
+        options=copy.deepcopy(mb.DEFAULT_OPTIONS)
+        options.update(pairs=5001,max_rounds=10000,seed_start=2147483648)
+        self.assertEqual(mb.validate_options(options,[]),options)
+        for key in ('pairs','max_rounds','seed_start'):
+            for value in (0,-1,1.5,float('inf'),float('nan'),True,'1000',mb.MAX_SAFE_INTEGER+1):
+                changed={**options,key:value}
+                with self.subTest(key=key,value=value),self.assertRaises(ValueError):
+                    mb.validate_options(changed,[])
+        options.update(pairs=1,seed_start=mb.MAX_SAFE_INTEGER)
+        self.assertEqual(mb.validate_options(options,[]),options)
+        with self.assertRaisesRegex(ValueError,'最后一个种子'):
+            mb.validate_options({**options,'pairs':2},[])
+        options.update(pairs=mb.MAX_SAFE_INTEGER//2,seed_start=1)
+        self.assertEqual(mb.validate_options(options,[]),options)
+        with self.assertRaisesRegex(ValueError,'总局数'):
+            mb.validate_options({**options,'pairs':options['pairs']+1},[])
+
     def test_new_requests_use_ai_and_reject_legacy_model_names(self):
         self.assertEqual(mb.DEFAULT_OPTIONS['model'],'ai')
         self.assertEqual(mb.validate_options(copy.deepcopy(mb.DEFAULT_OPTIONS),[])['model'],'ai')
@@ -927,7 +945,7 @@ class ApiIntegrationTest(unittest.TestCase):
         type(self).data=latest
         options=copy.deepcopy(mb.DEFAULT_OPTIONS)
         editable={s['key'] for s in latest['ai']['schema']}
-        options.update(pairs=400,max_rounds=400,seed_start=5001,strength=1.0,
+        options.update(pairs=5001,max_rounds=1000,seed_start=5001,strength=1.0,
                        ai_parameters={k:v for k,v in latest['ai']['parameters'].items() if k in editable})
         try:
             response=self.post('api/run',{'config_id':config['id'],'options':options})

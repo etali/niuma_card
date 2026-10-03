@@ -162,7 +162,7 @@ const metricDefinitions = [
 
 async function workbench({notes = {}, withRuns = false, activeRun = false, activeRuns = [], notesGate, configGate, runGate,
   playGate, playError, profileGate, runMetrics = {}, runVersions = {}, definitions = metricDefinitions, realTimers = false,
-  savePicker = false, exportPath, stopGates = {}, stopFailures = {}, stopStatuses = {}, pollGates = [], fieldLimits = {}} = {}) {
+  savePicker = false, exportPath, stopGates = {}, stopFailures = {}, stopStatuses = {}, pollGates = [], fieldLimits = {}, ai = {model:'test-model', schema:[], parameters:{}}} = {}) {
   const document = new Element('document');
   document.ownerDocument = document;
   document.scrollEvents = [];
@@ -200,7 +200,7 @@ async function workbench({notes = {}, withRuns = false, activeRun = false, activ
         label:'出售价格', min:0, optional:card !== 'legend'})),
     ],
     definitions,
-    ai:{model:'test-model', schema:[], parameters:{}},
+    ai,
   };
   for (const field of data.fields) Object.assign(field, fieldLimits[field.card+'.'+field.field] || {});
   for (const [index, id] of [...(activeRun ? ['active-run'] : []), ...activeRuns].entries()) {
@@ -490,7 +490,7 @@ test('各行可并行停止，重复点击受保护，其他任务与新增任�
   const ui = await workbench({withRuns:true, activeRuns:['first', 'second'],
     stopGates:{first:first.promise, second:second.promise},
     runMetrics:{first:metrics, second:metrics, 'default-old':metrics}});
-  const details = id => ui.row(id).querySelector('details');
+  const details = id => ui.row(id).querySelector('.run-win-distribution');
   for (const id of ['first', 'default-old']) {
     details(id).open = true;
     await details(id).dispatch('toggle');
@@ -724,7 +724,7 @@ test('编辑器按服务端字段上限限制输入并阻止超限保存', async
 test('模拟参数非法值即时置灰，修正后恢复且不要求修改配置名称', async () => {
   const ui = await workbench();
   for (const [id, invalid, valid] of [
-    ['pairs', '0', '5'], ['pairs', '', '5'], ['max-rounds', '501', '40'],
+    ['pairs', '0', '5'], ['pairs', '', '5'], ['max-rounds', '0', '40'],
     ['max-rounds', '1.5', '40'], ['seed', '0', '1001'],
   ]) {
     const input = ui.$(id);
@@ -1234,7 +1234,7 @@ test('Q10 使用报告分类上限的独立种数轴，并展示完整分布及�
   assert.match(a.querySelector('[data-win-method="legend_cashout:server-legend"]').textContent, /报告中的传说变现达标00\.0%/);
   assert.match(a.querySelector('[data-win-method="legend_cashout:mixed"]').textContent, /多种传说共同变现达标/);
   assert.match(b.querySelector('[data-win-method="cash_depletion"]').textContent, /对手现金清零250\.0%/);
-  assert.match(ui.$('run-rows').querySelector('button[data-run="default-new"]').closest('tr').querySelector('details').textContent, /查看获胜分布.*已归类 10 局/);
+  assert.match(ui.$('run-rows').querySelector('button[data-run="default-new"]').closest('tr').querySelector('.run-win-distribution').textContent, /查看获胜分布.*已归类 10 局/);
   await ui.$('export-diff').click();
   const [exported] = await ui.exported();
   assert.equal(exported.metric_difference.Q10, 1);
@@ -1282,7 +1282,7 @@ test('切换模拟记录同步刷新 Q10 分布；进行中的记录仅展示后
     'active-run':observedMetrics(40, 25, first),
   }});
   const active = ui.$('run-rows').querySelector('button[data-run="active-run"]').closest('tr');
-  assert.match(active.querySelector('details').textContent, /已归类 2 局/);
+  assert.match(active.querySelector('.run-win-distribution').textContent, /已归类 2 局/);
   assert.match(active.children[1].textContent, /2\/10局/);
   assert.match(active.children[11].textContent, /^2\.0种/);
   for (const side of ['a', 'b']) {
@@ -1418,7 +1418,7 @@ test('真实定时刷新保持各记录分布开关，更新进度及分布，�
   }});
   t.after(() => ui.dispose());
   const row = id => ui.$('run-rows').querySelector(`button[data-run="${id}"]`).closest('tr');
-  const details = id => row(id).querySelector('details');
+  const details = id => row(id).querySelector('.run-win-distribution');
   const states = () => ['active-run', 'default-new', 'default-old', 'alternate-run'].map(id => details(id).open);
   const selectionBefore = [ui.$('run-a').value, ui.$('run-b').value];
   const messageBefore = ui.$('message').textContent;
@@ -1473,7 +1473,7 @@ test('停止模拟的即时重绘和状态轮询均保留当前及历史记录�
     runMetrics:{'active-run':metrics, 'default-old':metrics, 'default-new':metrics}});
   t.after(() => ui.dispose());
   const row = id => ui.$('run-rows').querySelector(`button[data-run="${id}"]`).closest('tr');
-  const details = id => row(id).querySelector('details');
+  const details = id => row(id).querySelector('.run-win-distribution');
   for (const id of ['active-run', 'default-old']) {
     details(id).open = true;
     await details(id).dispatch('toggle');
@@ -1491,4 +1491,102 @@ test('停止模拟的即时重绘和状态轮询均保留当前及历史记录�
   assert.equal(ui.pollCount(), 1);
   for (const element of ui.$('run-rows').querySelectorAll('details')) await element.dispatch('toggle');
   assert.equal(ui.document.scrollEvents.length, 2, '停止后恢复展开不应重复滚动');
+});
+
+
+test('Q6 展示获得卡牌张数、占比及旧记录缺失，获得卡牌与获胜分布独立保持展开并导出', async () => {
+  const fresh = observedMetrics(40, 25, victoryMetric([1, 1, 0]));
+  fresh.Q6.acquisitions = {observed_games:2, missing_games:0, total:4, distribution:[
+    {id:'yunketang',label:'云课堂',count:3,percentage:75},
+    {id:'butie',label:'补贴大战',count:1,percentage:25},
+    {id:'jiaolv',label:'焦虑贩卖机',count:0,percentage:0},
+  ]};
+  const ui = await workbench({withRuns:true, runMetrics:{'default-new':fresh,
+    'default-old':observedMetrics(40,25,victoryMetric([1,1,0]))}});
+  const row = id => ui.$('run-rows').querySelector(`button[data-run="${id}"]`).closest('tr');
+  const acquisition = () => row('default-new').querySelector('.run-acquisition-distribution');
+  assert.match(acquisition().textContent, /共获得 4 张（不含现金牌和用户牌）/);
+  assert.match(acquisition().querySelector('[data-acquisition-card="yunketang"]').textContent, /云课堂375.0%/);
+  assert.match(row('default-old').querySelector('.run-acquisition-distribution').textContent, /未观测/);
+  acquisition().open = true;
+  await acquisition().dispatch('toggle');
+  ui.$('direction').value = 'asc';
+  await ui.$('direction').dispatch('change');
+  assert.equal(acquisition().open,true);
+  assert.equal(row('default-new').querySelector('.run-win-distribution').open,false);
+  assert.match(ui.$('acquisition-distributions').textContent, /云课堂375.0%/);
+  await ui.$('export-diff').click();
+  const [exported] = await ui.exported();
+  assert.equal(exported.run_a.result.metrics.Q6.acquisitions.total,4);
+});
+
+
+test('模拟次数和回合可超过500，种子可超过32位；仍检查正整数及组合精度', async () => {
+  const ui = await workbench();
+  for (const [id,value] of [['pairs','5001'],['max-rounds','10000'],['seed','2147483648']]) {
+    ui.$(id).value=value;
+    await ui.$(id).dispatch('input');
+  }
+  ui.ready();
+  assert.match(ui.$('budget').textContent,/10002 局.*10000 回合.*2147483648–2147488648/);
+  ui.$('pairs').value='1';
+  ui.$('seed').value=String(Number.MAX_SAFE_INTEGER);
+  await ui.$('seed').dispatch('input');
+  ui.ready();
+  ui.$('pairs').value='2';
+  await ui.$('pairs').dispatch('input');
+  await ui.blocked(/最后一个种子/);
+  ui.$('seed').value='1';
+  ui.$('pairs').value='4503599627370496';
+  await ui.$('pairs').dispatch('input');
+  await ui.blocked(/总局数/);
+  ui.$('pairs').value='9007199254740992';
+  await ui.$('pairs').dispatch('input');
+  await ui.blocked(/正整数/);
+  ui.$('pairs').value='5001';
+  ui.$('seed').value='2147483648';
+  await ui.$('pairs').dispatch('input');
+  ui.ready();
+  await ui.run();
+  assert.equal(ui.posts().find(x=>x.url==='api/run').body.options.pairs,5001);
+});
+
+test('AI小数权重正常启动；范围、步长和整数参数分别校验，每个数值输入都有可见说明', async () => {
+  const schema=[
+    {key:'upgrade_weight',label:'升级潜力权重',kind:'float',min:0,max:2,step:0.01,hint:'升级价值权重'},
+    {key:'protection_bonus',label:'入组保护加成',kind:'float',min:0,max:1,step:0.01,hint:'保护价值'},
+    {key:'sales',label:'战略典当候选数',kind:'int',min:0,max:8,step:1,hint:'零关闭'},
+  ];
+  const ui=await workbench({ai:{model:'test-model',schema,parameters:{upgrade_weight:0.65,protection_bonus:0.15,sales:0}},
+    fieldLimits:{'_game.start_cash':{min:1,max:99},'alpha.price':{min:1,max:1000},'alpha.pawn':{min:0,max:1000}}});
+  ui.ready();
+  const weight=ui.document.querySelector('input[data-ai="upgrade_weight"]');
+  assert.match(ui.$('range-ai-upgrade_weight').textContent,/0–2.*可填小数.*步长 0.01/);
+  assert.match(ui.$('range-ai-sales').textContent,/0–8.*整数.*步长 1/);
+  assert.match(ui.$('range-alpha-price').textContent,/1–1000/);
+  assert.match(ui.$('range-alpha-pawn').textContent,/0–1000.*留空自动计算.*0 表示不可出售/);
+  for(const input of ui.document.querySelectorAll('input[type=number]')){
+    const id=input.getAttribute('aria-describedby');
+    assert.ok(id,`数值输入缺少范围说明：${input.id||input.dataset.ai||input.dataset.field}`);
+    assert.match(ui.$(id).textContent,/范围.*步长/);
+  }
+  for(const value of ['0','0.65','1.27','2']){
+    weight.value=value;await weight.dispatch('input');ui.ready();
+  }
+  for(const value of ['-0.01','2.01','0.655','']){
+    weight.value=value;await weight.dispatch('input');
+    await ui.blocked(/升级潜力权重.*0–2.*可填小数.*0.01/);
+    assert.doesNotMatch(ui.$('run-reason').textContent,/正整数/);
+  }
+  weight.value='0.65';await weight.dispatch('input');ui.ready();
+  const sales=ui.document.querySelector('input[data-ai="sales"]');
+  sales.value='1.5';await sales.dispatch('input');
+  await ui.blocked(/战略典当候选数.*整数/);
+  sales.value='0';await sales.dispatch('input');ui.ready();
+  ui.$('pairs').value='0.5';await ui.$('pairs').dispatch('input');
+  await ui.blocked(/种子对数.*正整数/);
+  ui.$('pairs').value='501';await ui.$('pairs').dispatch('input');ui.ready();
+  await ui.run();
+  assert.deepEqual(ui.posts().find(x=>x.url==='api/run').body.options.ai_parameters,
+    {upgrade_weight:0.65,protection_bonus:0.15,sales:0});
 });

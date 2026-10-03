@@ -43,6 +43,7 @@ var last_drag_compact := false
 ## 组对象重建了但结果没变，不该再响一次风铃；反过来两张同名 T2 从散卡并起来
 ## 是实打实的新凑满，必须响——make_group 按最终牌面预评估会把这一声吞掉
 var _drag_hand_valid := false
+var _drag_hand_upgrade := ""
 var _drag_start_origin := Vector3.INF
 var _drag_start_anchor := Vector3.INF
 ## 拎牌时留在桌上的那半截（整摞被拎走时组已销毁，这里是 null），
@@ -51,6 +52,7 @@ var _drag_start_anchor := Vector3.INF
 ## 否则「从一组凑满的牌里按住几张再松手」会凭空再响一声（前后结果并没有变）
 var _drag_src_group = null
 var _drag_src_valid := false
+var _drag_src_upgrade := ""
 ## 拎牌那一刻先不报「凑满」：从组里抽走一张有可能让剩下的牌反而凑满
 ## （比如升级组里多塞了一张用户卡，把它抽掉剩下的就成立了）。
 ## 这一声压到落手时由 _commit_pickup_ding 统一结算——按下就响、放回原处又没变，
@@ -380,9 +382,11 @@ func _on_card_clicked(card: CardEntity) -> void:
 	_drag_start_anchor = Vector3.INF
 	_drag_src_group = null
 	_drag_src_valid = false
+	_drag_src_upgrade = ""
 	# 默认「手上这摞本身没凑满过」：散卡、以及从组里拆出来的半截都算这一类
 	# （半截本身不是一个独立的组，它自己凑成配方是实打实的新凑满，该响）
 	_drag_hand_valid = false
+	_drag_hand_upgrade = ""
 	if g:
 		if g["cards"].size() > 1:
 			# 记录被点的队首/卡心；若玩家拖远后又回到原处，松手应恢复快照，
@@ -408,6 +412,7 @@ func _on_card_clicked(card: CardEntity) -> void:
 			# 整摞被拎走：手上这摞本来就是这个组，凑满基线跟着牌一起走，
 			# 落桌重建时照原样还回去（挪个位置不该重复报凑满）
 			_drag_hand_valid = bool(g.get("was_valid", false))
+			_drag_hand_upgrade = g.get("upgrade_target", "")
 			# 牌的集合没变，只是整摞挪到手上：进度数字跟着牌一起走
 			_remove_group(g, true)
 		else:
@@ -415,6 +420,7 @@ func _on_card_clicked(card: CardEntity) -> void:
 			# 要么用它判断「抽走这几张是不是让剩下的反而凑满了」
 			_drag_src_group = g
 			_drag_src_valid = bool(g.get("was_valid", false))
+			_drag_src_upgrade = g.get("upgrade_target", "")
 			g["cards"] = remain
 			if remain.size() < 2:
 				g["compact"] = false   # 剩一张不成摞，见 _detach_from_group
@@ -765,10 +771,12 @@ func _restore_press() -> void:
 	_drag_start_origin = Vector3.INF
 	_drag_start_anchor = Vector3.INF
 	_drag_hand_valid = false
+	_drag_hand_upgrade = ""
 	# 源组的凑满基线跟着还原，且不结算那一声：这次点击前后组合结果没变
 	# （_commit_pickup_ding 只在真落手的路径上调，这里直接清掉记录）
 	_drag_src_group = null
 	_drag_src_valid = false
+	_drag_src_upgrade = ""
 	clear_hover_group()
 	_hide_desc()
 	var g: Variant = snap["group"]
@@ -1083,6 +1091,7 @@ func cancel_drag() -> void:
 	_drag_start_origin = Vector3.INF
 	_drag_start_anchor = Vector3.INF
 	_drag_hand_valid = false
+	_drag_hand_upgrade = ""
 	clear_hover_group()
 	# 牌被原样放回桌面：源组此刻的凑满状态就是最终状态，该响的补上
 	_commit_pickup_ding()
@@ -1186,7 +1195,7 @@ func _end_drag() -> void:
 				# 若先按新牌数扣层高，再套8层显示上限，整组会被排到桌面以下。
 				_stop_move(loose)
 				var target_origin := loose.global_position
-				var mg := make_group([loose] + _drag_cards.duplicate(), _drag_compact, _drag_hand_valid)
+				var mg := make_group([loose] + _drag_cards.duplicate(), _drag_compact, _drag_hand_valid, _drag_hand_upgrade)
 				groups.append(mg)
 				var mg_completed: bool = _layout_group(mg, target_origin)  # 内部已刷新配方标签
 				_commit_pickup_ding()
@@ -1194,7 +1203,7 @@ func _end_drag() -> void:
 			else:
 				# 子组合落桌：自成新组，保持堆叠。基线同上——整摞挪个位置不重复报叮，
 				# 从一组里拆出来的半截自己凑成了配方则要报
-				var ng := make_group(_drag_cards.duplicate(), _drag_compact, _drag_hand_valid)
+				var ng := make_group(_drag_cards.duplicate(), _drag_compact, _drag_hand_valid, _drag_hand_upgrade)
 				groups.append(ng)
 				var ng_origin := _drag_drop_origin(ng) if _drag_compact else Vector3.INF
 				_layout_group(ng, ng_origin)
@@ -1222,6 +1231,7 @@ func _end_drag() -> void:
 	_drag_start_origin = Vector3.INF
 	_drag_start_anchor = Vector3.INF
 	_drag_hand_valid = false
+	_drag_hand_upgrade = ""
 
 ## 最近的散卡（不在任何组里的单卡）
 func _nearest_loose_card(pos: Vector3, exclude: Array) -> CardEntity:
@@ -1897,6 +1907,7 @@ func refresh_group(g, top_pos := Vector3.INF) -> bool:  # 返回: 这次更新�
 		# 在下面那条 is_valid=false 的路上就已经灭了，症状因此只在同名组上看得见
 		_set_group_highlight(g, false)
 		g["was_valid"] = false
+		g["upgrade_target"] = ""
 		# 这两条提前返回都不会走到 _update_group_progress，D 位得在这里自己退回 0/N
 		for c in g["cards"]:
 			reset_recipe_progress(c)
@@ -1911,6 +1922,7 @@ func refresh_group(g, top_pos := Vector3.INF) -> bool:  # 返回: 这次更新�
 	if not has_core:
 		_set_group_highlight(g, false)
 		g["was_valid"] = false
+		g["upgrade_target"] = ""
 		for c in g["cards"]:
 			reset_recipe_progress(c)
 		return false
@@ -1922,12 +1934,16 @@ func refresh_group(g, top_pos := Vector3.INF) -> bool:  # 返回: 这次更新�
 	# 配方凑满：整条牌列金色高亮；首次凑满时发信号（音效提示）
 	var is_valid: bool = eval["valid"]
 	_set_group_highlight(g, is_valid, Color(1.55, 1.3, 0.45))
-	var just_completed: bool = is_valid and not g.get("was_valid", false)
+	var upgrade_target := _upgrade_target(eval)
+	# 4/6/8 张都合法，但产物改变也是一次新的合组，不能只比较 valid。
+	var just_completed: bool = is_valid and (not g.get("was_valid", false) \
+		or (not upgrade_target.is_empty() and upgrade_target != g.get("upgrade_target", "")))
 	# _pickup_quiet：拎牌途中的凑满不当场报，压到落手时结算（见 _commit_pickup_ding）
 	if just_completed and not _pickup_quiet:
 		group_completed.emit()
 		group_formed.emit(g["cards"].duplicate())
 	g["was_valid"] = is_valid
+	g["upgrade_target"] = upgrade_target
 
 	# 进度只写进卡面 D 位墨团。组上方既不悬浮大字（和牌面重复、挡后排牌列），
 	# 也不挂填充进度条（见 _update_group_progress）
@@ -1948,6 +1964,9 @@ func _mouse_table_point() -> Vector3:
 	if t < 0:
 		return Vector3.INF
 	return origin + normal * t
+
+func _upgrade_target(eval: Dictionary) -> String:
+	return str(eval.get("output_card", "")) if eval.get("valid", false) and eval.get("type", "") == "upgrade" else ""
 
 ## 一组卡（Array[CardEntity]）当前是否凑满配方。少于两张一律不成立
 func _cards_valid(group_cards: Array) -> bool:
@@ -1972,20 +1991,23 @@ func _is_drag_src(g) -> bool:
 func _restore_src_baseline(g) -> void:
 	if _is_drag_src(g):
 		g["was_valid"] = _drag_src_valid
+		g["upgrade_target"] = _drag_src_upgrade
 
 ## 结算拎牌时被压住的那一声：抽走几张让留在桌上的半截反而凑满了，
 ## 且落手后它确实还是凑满的（牌没放回去），这才补报一次
 func _commit_pickup_ding() -> void:
 	var g: Variant = _drag_src_group
 	_drag_src_group = null
-	if g == null or _drag_src_valid:
+	if g == null:
 		return
 	var alive := false
 	for gg in groups:
 		if is_same(gg, g):
 			alive = true
 			break
-	if alive and bool(g.get("was_valid", false)):
+	var changed_upgrade: bool = not str(g.get("upgrade_target", "")).is_empty() \
+		and g.get("upgrade_target", "") != _drag_src_upgrade
+	if alive and bool(g.get("was_valid", false)) and (not _drag_src_valid or changed_upgrade):
 		group_completed.emit()
 		group_formed.emit(g["cards"].duplicate())
 
@@ -1993,7 +2015,7 @@ func _commit_pickup_ding() -> void:
 ## 整体挪动/退回一组已经凑满的牌时，不会因为组对象重建而重复报"凑满"。
 ## 拖拽落手那几条路径要显式传 _drag_hand_valid（手上这摞拎起来时是否已凑满）：
 ## 按最终牌面预评估会把「两张同名 T2 从散卡并成升级组」这种真凑满也一并吞掉
-func make_group(group_cards: Array, compact := false, was_valid: Variant = null) -> Dictionary:
+func make_group(group_cards: Array, compact := false, was_valid: Variant = null, upgrade_target: Variant = null) -> Dictionary:
 	# compact = 收拢态（双击切换，见 toggle_compact）。默认摊开：
 	# 只有「整摞收拢态被拎起来又落回桌面」才传 true（见 _end_drag），
 	# 这样双击的效果能撑过一次拖拽，直到玩家再双击一下
@@ -2005,6 +2027,13 @@ func make_group(group_cards: Array, compact := false, was_valid: Variant = null)
 		g["was_valid"] = bool(was_valid)
 	else:
 		g["was_valid"] = _cards_valid(g["cards"])
+	if upgrade_target != null:
+		g["upgrade_target"] = str(upgrade_target)
+	else:
+		var data: Array = []
+		for c in g["cards"]:
+			data.append({"uid": c.uid, "def_id": c.def_id})
+		g["upgrade_target"] = _upgrade_target(ComboRules.evaluate(data)) if g["was_valid"] else ""
 	return g
 
 # ---------- 双击收拢/摊开 ----------

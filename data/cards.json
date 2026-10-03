@@ -3,7 +3,7 @@
   "_game": {
     "_note": "全局规则数值：market_size=每回合公共区卡位数；start_cash/start_user=开局资源；win_cash=资金胜利线；res_labels=资源的计量名（卡名取自各资源卡自己的 name）；buff_mult=各 buff_type 的倍率（键必须是 CardDB.KNOWN_BUFF_TYPES 里的值，缺一项就等于那张 Buff 不生效，所以 ComboRules 和卡面记号都从这里取，不各写一份 2）；attack_cost_per_card=点掉一张单位卡要几点攻击（组内组外同价，掩体由防御 Buff 提供；抬它等于全线削弱攻击射程，攻击量上限的判据会跟着放宽，见 test_simulator 那条一回合斩护栏）；pawn_rate=典当折价的除数（标价÷它、T2 递归也÷它；这个数原先在 CardDB.pawn_value 里写两遍、balance.md 和 README.md 里各抄了一份「÷2」，是纯经济旋钮，抬它等于全线削弱典当这条救命通道）；pawn_user=一张用户卡当掉给几块（现金卡不可当，恒为 0，那不是旋钮而是规则）。注意这两个只管**公式**：三张传说卡不走公式，价钱写在各自的 pawn 字段上",
     "market_size": 8,
-    "start_cash": 15,
+    "start_cash": 12,
     "start_user": 8,
     "win_cash": 100,
     "attack_cost_per_card": 1,

@@ -13,6 +13,10 @@ var _progress := ""
 var _completed := 0
 var _games: Array = []
 var _card_ids: Array = []
+var _scoring: RefCounted
+var _metrics: Dictionary = {}
+# JSON / JavaScript 可精确表示的整数边界，不是模拟预算限制。
+const MAX_SAFE_INTEGER := 9007199254740991
 
 func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -60,16 +64,20 @@ func _initialize() -> void:
 			return
 	for id in CardDB.all_cards():
 		if CardDB.get_def(str(id)).get("kind") != CardDB.KIND_UNIT: _card_ids.append(id)
+	_scoring = Scoring.new(_card_ids,Victory.categories())
 	var started := Time.get_ticks_usec()
 	for pair in int(_options["pairs"]):
 		for first in [GameState.PLAYER,GameState.AI]:
 			var seed_i := int(_options["seed_start"]) + pair
-			_games.append(_run_one(seed_i,first))
+			var game := _run_one(seed_i,first)
+			_games.append(game)
+			_scoring.add_game(game)
+			_metrics = _scoring.snapshot()
 			_completed += 1
 			_progress_update(seed_i,0)
 			print("[进度] %d/%d 局" % [_completed,int(_options["pairs"])*2])
 	var result := {"schema":"manual-balance-eval-v1","status":"complete",
-		"metrics":Scoring.summarize(_games,_card_ids,Victory.categories()),"games":_games,
+		"metrics":_metrics,"games":_games,
 		"meta":{"options":_options,"cards_sha256":FileAccess.get_sha256(cards_path),
 		"ai_sha256":FileAccess.get_sha256("res://data/ai.json"),"ai_parameters":_cfg.resolved_parameters(),
 		"metric_version":"manual-eleven-v4","elapsed_seconds":(Time.get_ticks_usec()-started)/1000000.0}}
@@ -82,11 +90,13 @@ static func validate_options(o: Dictionary) -> Array:
 	var errors: Array = []
 	for key in ["pairs","max_rounds","seed_start"]:
 		var v: Variant = o.get(key)
-		if not (v is int or v is float) or not is_finite(float(v)) or float(v) != floorf(float(v)) or float(v) < 1:
-			errors.append("要求正整数："+key)
+		if not (v is int or v is float) or not is_finite(float(v)) or float(v) != floorf(float(v)) or float(v) < 1 or float(v) > MAX_SAFE_INTEGER:
+			errors.append("要求可精确表示的正整数："+key)
 	if not errors.is_empty(): return errors
-	if int(o["pairs"]) > 500 or int(o["max_rounds"]) > 500 or int(o["seed_start"])+int(o["pairs"]) > 2147483647:
-		errors.append("模拟预算越界")
+	if int(o["pairs"]) > MAX_SAFE_INTEGER / 2:
+		errors.append("总局数超过精确整数范围")
+	if int(o["pairs"]) - 1 > MAX_SAFE_INTEGER - int(o["seed_start"]):
+		errors.append("最后一个种子超过精确整数范围")
 	var strength: Variant = o.get("strength")
 	if not (strength is int or strength is float) or not is_finite(float(strength)) or float(strength)<0 or float(strength)>1:
 		errors.append("AI强度须在0到1之间")
@@ -97,13 +107,14 @@ static func validate_options(o: Dictionary) -> Array:
 func _run_one(seed_i: int, first: String) -> Dictionary:
 	var g := {"seed":seed_i,"first":first,"winner":"","end_round":null,"observed_rounds":0,"observed_seat_rounds":0,
 		"feedback":{},"attacked":{},"used":{},"upgrade_occurred":false,"upgrade_produced":false,"upgraded_uids":{},
-		"pawned_seats":[],"combos_before":[],"max_cash":0,"max_users":0,"legend_uids":{},"winning_pawn_legends":[]}
+		"acquisitions":{},"pawned_seats":[],"combos_before":[],"max_cash":0,"max_users":0,"legend_uids":{},"winning_pawn_legends":[]}
 	var before_action := func(s: GameState,_who: String) -> void:
 		g["observed_rounds"] = s.round_num
 		g["observed_seat_rounds"] += 1
 		g["legend_uids"] = Victory.legend_uids(s,_who)
 	var on_intent := func(s: GameState,intent: Dictionary,result: Dictionary) -> void:
 		_observe_resources(g,s)
+		_observe_acquisitions(g,s)
 		_observe_pawn(g,s,intent,result)
 		if intent["op"] == Intent.OP_BUY:
 			# 覆盖率口径：买入、生产/攻击编组有效使用、升级材料/产物任一出现即记使用。
@@ -113,6 +124,7 @@ func _run_one(seed_i: int, first: String) -> Dictionary:
 			g["winning_pawn_legends"] = Victory.sold_legends(intent,g["legend_uids"])
 	var on_settle := func(event: String,s: GameState,d: Dictionary) -> void:
 		_observe_resources(g,s)
+		_observe_acquisitions(g,s)
 		if event == "production": _observe_upgrade_production(g,s,d)
 		if event == "attack":
 			g["attacked"][str(d["owner"])] = true
@@ -135,6 +147,7 @@ func _run_one(seed_i: int, first: String) -> Dictionary:
 	var final := MatchSimulator.run_rounds(int(_options["max_rounds"]),seed_i,
 		func(s: GameState) -> void:
 			_observe_resources(g,s)
+			_observe_acquisitions(g,s)
 			_progress_update(seed_i,s.round_num),
 		func(s: GameState) -> void:
 			_begin_settle_observation(g,s)
@@ -148,16 +161,32 @@ func _run_one(seed_i: int, first: String) -> Dictionary:
 				g["combos_before"].append({"owner":combo["owner"],"type":combo["eval"].get("type"),"cards":ids,"uids":combo["uids"].duplicate()}),
 		Callable(),{GameState.PLAYER:_cfg,GameState.AI:_cfg},first,hooks)
 	_observe_resources(g,final)
+	_observe_acquisitions(g,final)
 	var feedback_count := 0
 	for who in g["feedback"]: feedback_count += g["feedback"][who].size()
 	return {"seed":seed_i,"first":first,"winner":final.winner,
 		"end_round":final.round_num if final.winner!="" else null,
 		"observed_rounds":g["observed_rounds"],"observed_seat_rounds":g["observed_seat_rounds"],"feedback_rounds":feedback_count,
 		"bilateral_attack":g["attacked"].has(GameState.PLAYER) and g["attacked"].has(GameState.AI),
-		"used_cards":g["used"].keys(),"upgrade_occurred":g["upgrade_occurred"],
+		"acquisitions":g["acquisitions"].duplicate(),"used_cards":g["used"].keys(),"upgrade_occurred":g["upgrade_occurred"],
 		"upgrade_produced":g["upgrade_produced"],"pawned_seats":g["pawned_seats"].duplicate(),
 		"max_cash":g["max_cash"],"max_users":g["max_users"],
 		"victory_method":Victory.classify(final,g["winning_pawn_legends"])}
+
+## 每次真实状态变化后按新 UID 采集获得事件，覆盖购买、升级及其他实际发牌来源。
+## 资源卡、旧牌的重复使用/出售和 AI 搜索副本均不计；消耗升级材料不回减历史获得量。
+static func _observe_acquisitions(g: Dictionary,s: GameState) -> void:
+	var previous_uid := int(g.get("acquisition_next_uid",0))
+	g["acquisition_next_uid"] = s.peek_uid()
+	if not g.has("acquisitions"): g["acquisitions"] = {}
+	if previous_uid == int(g["acquisition_next_uid"]): return
+	for who in [GameState.PLAYER,GameState.AI]:
+		for card in s.players[who]["cards"]:
+			if int(card["uid"]) < previous_uid: continue
+			var id := str(card["def_id"])
+			var definition := CardDB.get_def(id)
+			if definition.is_empty() or definition.get("kind") == CardDB.KIND_UNIT: continue
+			g["acquisitions"][id] = int(g["acquisitions"].get(id,0)) + 1
 
 ## UID 单调发号；在结算前及每组结算后推进水位，只记录本次成功升级新生的实体。
 ## 不按卡面类型猜来源：同名的买入/初始卡，以及别的升级产物，不能替它记成功生产。
@@ -216,7 +245,7 @@ static func _feedback(g: Dictionary,who: String,round_num: int) -> void:
 
 func _progress_update(seed_i: int,round_num: int) -> void:
 	_write(_progress,{"schema":"manual-progress-v1","completed":_completed,"total":int(_options["pairs"])*2,
-		"seed":seed_i,"round":round_num,"metrics":Scoring.summarize(_games,_card_ids,Victory.categories()) if not _games.is_empty() else {}})
+		"seed":seed_i,"round":round_num,"metrics":_metrics})
 
 static func _json(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path): return {}

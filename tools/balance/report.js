@@ -35,7 +35,17 @@ function winDistribution(m){
  const rows=Array.isArray(m.distribution)?m.distribution:[];
  return `<p class="muted">${esc(countText(m,'Q10'))}</p>${finite(m.value)?'':'<p class="muted">未观测：没有已归类胜局。</p>'}<table class="win-distribution-table"><thead><tr><th>获胜方式</th><th>局数</th><th>占已归类胜局</th></tr></thead><tbody>${rows.map(x=>`<tr data-win-method="${esc(x.id)}"><td>${esc(x.label)}</td><td>${finite(x.count)?x.count:'未记录'}</td><td>${finite(x.percentage)?number(x.percentage)+'%':'未观测'}</td></tr>`).join('')}</tbody></table>`;
 }
-function runMetricText(m,q,runId){const hint=metricCompatibilityHint(m,q);return metricText(compatibleMetric(m,q))+(hint?`<small>${hint}</small>`:'')+(q==='Q10'&&m?`<details class="run-win-distribution" data-run-id="${esc(runId)}"${expandedRunDistributions.has(runId)?' open':''}><summary>查看获胜分布</summary>${winDistribution(m)}</details>`:'')}
+function acquisitionDistribution(m){
+ const p=m?.acquisitions;
+ if(!p||!p.observed_games)return '<p class="muted">未观测：该记录没有获得卡牌统计，请重新评估。</p>';
+ const rows=Array.isArray(p.distribution)?p.distribution.slice().sort((a,b)=>b.count-a.count):[];
+ return `<p class="muted">已观测 ${esc(p.observed_games)} 局 · 未采集 ${esc(p.missing_games)} 局 · 共获得 ${esc(p.total)} 张（不含现金牌和用户牌）</p>${p.total?'':'<p class="muted">已观测，但尚未获得非资源卡。</p>'}<table class="win-distribution-table"><thead><tr><th>卡牌</th><th>获得张数</th><th>占获得卡牌总数</th></tr></thead><tbody>${rows.map(x=>`<tr data-acquisition-card="${esc(x.id)}"><td>${esc(x.label)}</td><td>${finite(x.count)?x.count:'未记录'}</td><td>${finite(x.percentage)?number(x.percentage)+'%':'未观测'}</td></tr>`).join('')}</tbody></table>`;
+}
+function runMetricText(m,q,runId){
+ const hint=metricCompatibilityHint(m,q),key=q==='Q6'?runId+':Q6':runId;
+ const detail=q==='Q6'?['acquisition','获得卡牌',acquisitionDistribution]:q==='Q10'?['win','获胜',winDistribution]:null;
+ return metricText(compatibleMetric(m,q))+(hint?`<small>${hint}</small>`:'')+(detail&&m?`<details class="run-distribution run-${detail[0]}-distribution" data-run-id="${esc(key)}"${expandedRunDistributions.has(key)?' open':''}><summary>查看${detail[1]}分布</summary>${detail[2](m)}</details>`:'');
+}
 function metricDelta(a,b,q){const x=metric(a,q)?.value,y=metric(b,q)?.value;return finite(x)&&finite(y)?y-x:null}
 function metricUnit(q,a,b){return data.definitions.find(x=>x[0]===q)?.[3]||metric(a,q)?.unit||metric(b,q)?.unit||(q==='Q2'?'回合':'%')}
 function comparable(a,b){return !!(hasRunResult(a)&&hasRunResult(b)&&a.engine_fingerprint===b.engine_fingerprint&&a.result.meta.metric_version===b.result.meta.metric_version&&equal({...a.options,ai_parameters:a.result.meta.ai_parameters},{...b.options,ai_parameters:b.result.meta.ai_parameters}))}
@@ -69,11 +79,20 @@ function syncDraftFields(){
  return invalid;
 }
 function simulationBlockReason(){
- for(const input of document.querySelectorAll('.sim-grid input[type=number]')){
-  if(input.checkValidity()&&Number.isFinite(input.valueAsNumber))continue;
-  const label=({'pairs':'种子对数','max-rounds':'每局回合上限','seed':'起始种子'})[input.id]||data.ai.schema.find(s=>s.key===input.dataset.ai)?.label||'AI 参数';
-  return `${label}必须为 ${input.getAttribute('min')}–${input.getAttribute('max')} 范围内的有效数值，步长为 ${input.getAttribute('step')}。`;
+ for(const id of ['pairs','max-rounds','seed']){
+  const input=$(id);
+  if(input.checkValidity()&&Number.isSafeInteger(input.valueAsNumber)&&input.valueAsNumber>=1)continue;
+  const label=({'pairs':'种子对数','max-rounds':'每局回合上限','seed':'起始种子'})[id];
+  return `${label}必须为可精确表示的正整数。`;
  }
+ for(const input of $('ai-fields').querySelectorAll('input[data-ai]')){
+  const spec=data.ai.schema.find(s=>s.key===input.dataset.ai);
+  if(input.value!==''&&input.checkValidity()&&Number.isFinite(input.valueAsNumber)&&(spec.kind!=='int'||Number.isSafeInteger(input.valueAsNumber)))continue;
+  return `${spec.label}必须符合：${numericRange(spec.min,spec.max,spec.step,spec.kind)}。`;
+ }
+ const o=options();
+ if(o.pairs>Math.floor(Number.MAX_SAFE_INTEGER/2))return '总局数超过精确整数范围。';
+ if(o.pairs-1>Number.MAX_SAFE_INTEGER-o.seed_start)return '最后一个种子超过精确整数范围。';
  return '';
 }
 function renderDirty(){
@@ -100,7 +119,13 @@ function renderDirty(){
  $('play-reason').classList.toggle('error',!!cardReason);
  renderNotesState(cardReason);
 }
-function fieldInput(card,field){const f=data.fields.find(x=>x.card===card&&x.field===field);if(!f)return '<span class="muted">—</span>';const v=draft[card][field],changed=v!==config(sourceId).cards[card][field];return `<input type="number" min="${f.min??1}" max="${f.max??2147483647}" step="1" value="${v??''}" ${f.optional?'placeholder="自动"':'required'} data-card="${esc(card)}" data-field="${field}" aria-label="${esc(f.name+' '+f.label)}" class="${changed?'changed':''}">`}
+function numericRange(min,max,step,kind){return `范围 ${min}–${max}（含边界）；${kind==='int'?'整数':'可填小数'}，步长 ${step}`}
+function fieldInput(card,field){
+ const f=data.fields.find(x=>x.card===card&&x.field===field);if(!f)return '<span class="muted">—</span>';
+ const v=draft[card][field],changed=v!==config(sourceId).cards[card][field],hintId=`range-${card}-${field}`;
+ const extra=(f.optional?'；留空自动计算':'')+(field==='pawn'?'；0 表示不可出售':'')+(card==='_game'&&field==='start_cash'&&finite(draft._game.win_cash)?`；须低于胜利线 ${draft._game.win_cash}`:'');
+ return `<input type="number" min="${f.min??1}" max="${f.max??2147483647}" step="1" value="${v??''}" ${f.optional?'placeholder="自动"':'required'} data-card="${esc(card)}" data-field="${field}" aria-label="${esc(f.name+' '+f.label)}" aria-describedby="${esc(hintId)}" class="${changed?'changed':''}"><small class="input-range" id="${esc(hintId)}">${esc(numericRange(f.min??1,f.max??2147483647,1,'int')+extra)}</small>`;
+}
 function renderEditor(){
  $('game-fields').innerHTML=data.fields.filter(f=>f.card==='_game').map(f=>`<label>${esc(f.label)}${fieldInput(f.card,f.field)}</label>`).join('');renderCards();
 }
@@ -162,8 +187,8 @@ async function saveCurrentConfig(){
  finally{savingNotes=false;renderDirty()}
 }
 function options(){return {pairs:Number($('pairs').value),max_rounds:Number($('max-rounds').value),seed_start:Number($('seed').value),model:data.ai.model,strength:Number($('strength').value),ai_parameters:clone(aiValues)}}
-function renderBudget(){const o=options();$('budget').textContent=`${o.pairs*2} 局 · 每局最多 ${o.max_rounds} 回合 · 种子 ${o.seed_start}–${o.seed_start+o.pairs-1} · 每项模拟独立运行，可并行提交`;}
-function renderAI(){ $('ai-fields').innerHTML=data.ai.schema.map(s=>`<label>${esc(s.label)}<input type="number" data-ai="${esc(s.key)}" min="${s.min}" max="${s.max}" step="${s.step}" value="${aiValues[s.key]}"><small>${esc(s.hint)}</small></label>`).join('')}
+function renderBudget(){const o=options();$('budget').textContent=`${o.pairs*2} 局 · 每局最多 ${o.max_rounds} 回合 · 种子 ${o.seed_start}–${o.seed_start+(o.pairs-1)} · 每项模拟独立运行，可并行提交`;}
+function renderAI(){ $('ai-fields').innerHTML=data.ai.schema.map(s=>`<label>${esc(s.label)}<input type="number" required data-ai="${esc(s.key)}" min="${s.min}" max="${s.max}" step="${s.step}" value="${aiValues[s.key]}" aria-describedby="range-ai-${esc(s.key)}"><small class="input-range" id="range-ai-${esc(s.key)}">${esc(numericRange(s.min,s.max,s.step,s.kind))}</small><small>${esc(s.hint)}</small></label>`).join('')}
 async function loadProfile(strength){loadingProfile=true;renderDirty();try{const p=await api('api/profile',{strength});data.token=p.token||data.token;aiValues=p.parameters;renderAI();renderBudget()}finally{loadingProfile=false;renderDirty()}}
 function elapsedSeconds(r){const end=r.finished||Date.now()/1000;return Math.max(0,end-r.created)}
 function formatElapsed(seconds){const s=Math.floor(seconds);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),rest=s%60;return h?`${h}小时${String(m).padStart(2,'0')}分${String(rest).padStart(2,'0')}秒`:m?`${m}分${String(rest).padStart(2,'0')}秒`:`${rest}秒`}
@@ -175,12 +200,12 @@ function stopControl(r){
 }
 function renderRuns(){
  // Native toggle events are deferred; capture the visible state before replacing rows.
- for(const details of $('run-rows').querySelectorAll('.run-win-distribution')){
+ for(const details of $('run-rows').querySelectorAll('.run-distribution')){
   if(details.open)expandedRunDistributions.add(details.dataset.runId);else expandedRunDistributions.delete(details.dataset.runId);
  }
  let xs=runs.slice();const q=$('sort').value,dir=$('direction').value==='asc'?1:-1;xs.sort((a,b)=>{const x=q==='created'?a.created:metric(a,q)?.value,y=q==='created'?b.created:metric(b,q)?.value;if(!finite(x)||!finite(y))return finite(x)?-1:finite(y)?1:0;return (x-y)*dir});
  $('run-rows').innerHTML=xs.map(r=>{const pg=runProgress(r),m=r.status==='complete'?r.result?.metrics:pg.p.metrics;return `<tr data-run-id="${esc(r.id)}"><td><strong>${esc(r.name)}</strong><small>${new Date(r.created*1000).toLocaleString('zh-CN')}</small><small>${r.options.pairs*2}局 / AI ${r.options.strength} / ${r.options.max_rounds}回合</small></td><td><span class="badge">${stopRequests.has(r.id)?'正在停止':status[r.status]||esc(r.status)}</span><small>耗时 ${formatElapsed(elapsedSeconds(r))}</small><progress max="${pg.p.total||1}" value="${pg.p.completed||0}"></progress><small>${pg.text}</small>${stopControl(r)}</td>${Q.map(q=>`<td>${runMetricText(m?.[q],q,r.id)}</td>`).join('')}<td><div class="actions-small"><button data-run="${r.id}" data-side="a">放入 A</button><button data-run="${r.id}" data-side="b">放入 B</button></div></td></tr>`}).join('')||`<tr><td colspan="${Q.length+3}">还没有模拟记录。修改或保留当前卡表，点击“保存并运行当前配置”。</td></tr>`;
- for(const details of $('run-rows').querySelectorAll('.run-win-distribution'))details.ontoggle=()=>{
+ for(const details of $('run-rows').querySelectorAll('.run-distribution'))details.ontoggle=()=>{
   if(!details.isConnected)return;
   const wasOpen=expandedRunDistributions.has(details.dataset.runId);
   if(details.open)expandedRunDistributions.add(details.dataset.runId);else expandedRunDistributions.delete(details.dataset.runId);
@@ -214,6 +239,7 @@ function renderComparison(){const ca=config($('compare-a').value),cb=config($('c
  for(const [side,c] of [['a',ca],['b',cb]])$('note-'+side).textContent=`试玩备注：${c.notes?.text||'暂无备注'}`;
  $('metric-diff').innerHTML=Q.map(q=>{const x=metric(a,q),y=metric(b,q),d=metricDelta(a,b,q),unit=metricUnit(q,a,b);return `<tr><td><strong>${q} ${esc(labelQ(q))}</strong></td><td>${metricText(x)}<small>${esc(countText(x,q)||metricCompatibilityHint(a?.result?.metrics?.[q],q))}</small></td><td>${metricText(y)}<small>${esc(countText(y,q)||metricCompatibilityHint(b?.result?.metrics?.[q],q))}</small></td><td class="delta">${finite(d)?signed(d)+' '+esc(unit==='%'?'个百分点':unit):'未观测'}</td></tr>`}).join('');
  $('win-distributions').hidden=!Q.includes('Q10');$('win-distributions').innerHTML=Q.includes('Q10')?`<h3>获胜方式分布</h3><p class="muted">每个已归类胜局按导致胜利的最终事件计入一种方式；未结束局和未归类胜局不进入占比。Q10为这些占比的熵取指数：1表示单一方式，方式越多、分布越均匀，数值越高。它衡量终局机制，不能代替打法或乐趣评价。</p><div class="win-distribution-grid">${[['a',a],['b',b]].map(([side,r])=>`<div class="side-${side}" data-win-distribution="${side}"><h4>${side.toUpperCase()} 的获胜方式</h4>${winDistribution(metric(r,'Q10'))}</div>`).join('')}</div>`:'';
+ $('acquisition-distributions').hidden=!Q.includes('Q6');$('acquisition-distributions').innerHTML=Q.includes('Q6')?`<h3>获得卡牌分布</h3><p class="muted">统计双方实际获得的非资源卡张数，包括购买和升级产物；同名牌多次获得累计，不计现金牌和用户牌。占比以获得总张数为分母，与 Q6 的卡种覆盖率不同。</p><div class="win-distribution-grid">${[['a',a],['b',b]].map(([side,r])=>`<div class="side-${side}" data-acquisition-distribution="${side}"><h4>${side.toUpperCase()} 的获得卡牌分布</h4>${acquisitionDistribution(metric(r,'Q6'))}</div>`).join('')}</div>`:'';
  $('metric-chart').innerHTML=chart(a,b);const ds=differences(ca.cards,cb.cards);$('diff-summary').textContent=`共 ${ds.length} 个参数不同，涉及 ${new Set(ds.filter(d=>d.card!=='_game').map(d=>d.card)).size} 张卡。只显示变动项。`;$('card-diff').innerHTML=ds.map(d=>`<tr><td>${esc(d.name)}</td><td>${esc(d.label)}</td><td>${d.a??'自动'}</td><td class="changed">${d.b??'自动'}</td><td class="delta">${finite(d.a)&&finite(d.b)?signed(d.b-d.a):'—'}</td></tr>`).join('')||'<tr><td colspan="5">两份卡牌参数相同。</td></tr>';
 }
 async function saveJsonAs(name,obj){

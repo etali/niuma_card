@@ -34,13 +34,14 @@ DEFINITIONS = [
     ['Q3','未结束比例','达到回合上限仍未结束局数 ÷ 已模拟局数。0%表示本批次全部结束，是正常值。','%'],
     ['Q4','有效反馈比例','有正产出、成功升级、成功攻击或典当直接获胜的座位回合 ÷ 实际发生的座位行动回合数。同人同回合只计一次；不是玩家爽感评分。','%'],
     ['Q5','双方攻击比例','双方都曾成功攻击的对局数 ÷ 已模拟局数。仅单方攻击不算双方互动。','%'],
-    ['Q6','卡牌使用覆盖','买入、有效编组使用或升级产物中出现的不同非资源卡种数 ÷ 全部非资源卡种数。买入即计覆盖，不代表有用或平衡；局数越多通常越高。','%'],
+    ['Q6','卡牌使用覆盖','买入、有效编组使用或升级产物中出现的不同非资源卡种数 ÷ 全部非资源卡种数。买入即计覆盖，不代表有用或平衡；局数越多通常越高。可展开获得卡牌的张数与占比，包含购买和升级产物，排除现金牌和用户牌。','%'],
     ['Q7','升级后成功生产','至少一方用本局升级生成的卡牌成功生产过正产出的对局数 ÷ 已模拟局数。同局只计一次；仅合成、出售升级产物或生产被打断不计。旧口径记录须重新评估。','%'],
     ['Q8','局均最大现金数','每局任意一方曾持有的最高现金数之和 ÷ 有峰值记录的局数。包含开局及未结束局已观测到的峰值，不把双方现金相加。','现金'],
     ['Q9','局均最大用户数','每局任意一方曾持有的最高用户数之和 ÷ 有峰值记录的局数。包含开局及未结束局已观测到的峰值，不把双方用户相加。','用户'],
     ['Q10','获胜方式多样性','按已归类胜局的获胜方式分布计算有效方式数：1表示只有一种，上限为配置支持的分类数；它衡量终局机制分布，不等于打法或乐趣多样性，也不是越高越好。','种'],
     ['Q11','典当后获胜比例','最终获胜方曾成功典当过的对局数 ÷ 已模拟局数。普通卡、用户及传说的典当均计，不要求典当直接致胜；双方都典当且有胜者也只计一局。未结束局计入分母，不计入分子。','%'],
 ]
+MAX_SAFE_INTEGER = 9007199254740991  # 与浏览器 Number / JSON 的精确整数范围一致。
 DEFAULT_OPTIONS = {'pairs':5,'max_rounds':40,'seed_start':1001,'model':'ai','strength':1.0,'ai_parameters':{}}
 PLAY_START_TIMEOUT = 20.0
 
@@ -170,9 +171,13 @@ def validate_cards(cards, base):
 def validate_options(o, schema):
     if not isinstance(o,dict) or set(o) != set(DEFAULT_OPTIONS):
         raise ValueError('模拟参数字段不完整或含不支持字段')
-    for key,hi in [('pairs',500),('max_rounds',500),('seed_start',2147483147)]:
-        if not numeric(o[key]) or o[key] != int(o[key]) or not 1 <= o[key] <= hi:
-            raise ValueError({'pairs':'种子对数','max_rounds':'回合上限','seed_start':'起始种子'}[key]+'超出范围')
+    for key in ('pairs','max_rounds','seed_start'):
+        if not numeric(o[key]) or o[key] != int(o[key]) or not 1 <= o[key] <= MAX_SAFE_INTEGER:
+            raise ValueError({'pairs':'种子对数','max_rounds':'回合上限','seed_start':'起始种子'}[key]+'必须为可精确表示的正整数')
+    if o['pairs'] > MAX_SAFE_INTEGER // 2:
+        raise ValueError('总局数超过精确整数范围')
+    if o['pairs'] - 1 > MAX_SAFE_INTEGER - o['seed_start']:
+        raise ValueError('最后一个种子超过精确整数范围')
     if o['model'] != 'ai' or not numeric(o['strength']) or not 0 <= o['strength'] <= 1:
         raise ValueError('AI实现或强度无效')
     if not isinstance(o['ai_parameters'],dict): raise ValueError('AI参数必须为对象')

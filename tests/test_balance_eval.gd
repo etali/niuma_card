@@ -78,6 +78,7 @@ func _initialize() -> void:
 		"Q8只计有效非负整数，已观测的零仍纳入分母")
 	check(partial["Q9"]["value"] == 5.0 and partial["Q9"]["denominator"] == 2,
 		"Q9独立计有效局数，缺失与非法值不污染均值")
+	_test_acquisition_distribution()
 	_test_victory_diversity()
 	_test_victory_classification()
 	_test_upgrade_and_pawn_metrics()
@@ -329,7 +330,7 @@ func _test_report_output() -> void:
 	for game in collected:
 		valid = valid and game.get("max_cash",-1) >= CardDB.game_rules()["start_cash"] \
 			and game.get("max_users",-1) >= CardDB.game_rules()["start_user"]
-		valid = valid and game.get("victory_method") is Dictionary
+		valid = valid and game.get("victory_method") is Dictionary and game.get("acquisitions") is Dictionary
 		valid = valid and game.get("upgrade_produced") is bool and Scoring.valid_pawned_seats(game.get("pawned_seats"))
 		cash_sum += int(game.get("max_cash",0))
 		users_sum += int(game.get("max_users",0))
@@ -338,6 +339,19 @@ func _test_report_output() -> void:
 	check(metrics.get("Q8",{}).get("numerator") == cash_sum and metrics.get("Q8",{}).get("denominator") == 2 \
 		and metrics.get("Q9",{}).get("numerator") == users_sum and metrics.get("Q9",{}).get("denominator") == 2,
 		"真实Q8/Q9从逐局峰值汇总并包含未结束局")
+	var acquisition_total := 0
+	var acquired_ids := {}
+	for game in collected:
+		for id in game.get("acquisitions",{}):
+			check(CardDB.get_def(str(id)).get("kind") != CardDB.KIND_UNIT, "真实获得卡牌字段没有资源卡")
+			acquisition_total += int(game["acquisitions"][id])
+			acquired_ids[id] = true
+	var acquisition_metric: Dictionary = metrics.get("Q6",{}).get("acquisitions",{})
+	check(acquisition_total > 0 and acquisition_metric.get("total") == acquisition_total \
+		and acquisition_metric.get("observed_games") == 2,
+		"真实发牌观测有非零记录且Q6分布由逐局张数汇总")
+	for row in acquisition_metric.get("distribution",[]):
+		if int(row["count"]) > 0: check(acquired_ids.has(row["id"]), "分布正数只来自实际获得卡牌")
 	check(metrics.has("Q10") and metrics["Q10"]["category_count"] == Victory.categories().size(),
 		"真实报告包含Q10及当前卡表支持的获胜分类")
 	var classified := 0
@@ -435,3 +449,48 @@ func _test_victory_classification() -> void:
 	var plain := _victory_state(limit,2)
 	plain.check_victory()
 	check(Victory.classify(plain).get("id") == "cash_threshold", "此前曾经典当传说不自动归因于此次现金达标")
+
+func _test_acquisition_distribution() -> void:
+	var s := _victory_state(40,40,10,10)
+	var g := {}
+	EvalReport._observe_acquisitions(g,s)
+	check(g["acquisitions"].is_empty(), "开局现金与用户均不计获得")
+	var materials: Array = []
+	for who in [GameState.PLAYER,GameState.PLAYER,GameState.AI]:
+		s.market = ["yunketang"]
+		var result := IntentApply.new(s).apply(Intent.buy(who,0),who)
+		check(result.get("ok",false), "获得指标通过真实购买发牌")
+		if who == GameState.PLAYER: materials.append(result["new_uid"])
+		EvalReport._observe_acquisitions(g,s)
+	var snapshot := StateCodec.state_hash(s)
+	EvalReport._observe_acquisitions(g,s)
+	check(snapshot == StateCodec.state_hash(s) and g["acquisitions"] == {"yunketang":3},
+		"双方同名牌按张累计，重复观察不重计且不改变局面")
+	check(not IntentApply.new(s).apply(Intent.buy(GameState.PLAYER,99),GameState.PLAYER).get("ok",false),
+		"失败购买没有实际发牌")
+	EvalReport._observe_acquisitions(g,s)
+	check(s.create_combo(GameState.PLAYER,materials).get("ok",false), "获得指标真实创建升级组合")
+	Settle.produce(s,func(_event:String,state:GameState,_detail:Dictionary)->void:
+		EvalReport._observe_acquisitions(g,state))
+	Settle.finalize(s)
+	EvalReport._observe_acquisitions(g,s)
+	check(g["acquisitions"] == {"yunketang":3,"jiaolv":1},
+		"升级产物计获得且材料消耗不扣历史次数，失败购买未计数")
+	for card in s.players[GameState.PLAYER]["cards"].duplicate():
+		if card["def_id"] == "jiaolv":
+			check(s.pawn(GameState.PLAYER,[card["uid"]]).get("ok",false), "实际出售升级产物")
+	EvalReport._observe_acquisitions(g,s)
+	check(g["acquisitions"] == {"yunketang":3,"jiaolv":1}, "出售和产生现金不改变非资源牌获得量")
+	g = {"acquisitions":{"yunketang":2,"butie":1}}
+	var dist := Scoring.acquisition_distribution([g,{"acquisitions":{}},{},
+		{"acquisitions":{"butie":-1}},{"acquisitions":{"cash":99,"user":40,"yunketang":1}}],
+		["yunketang","butie","jiaolv","cash","user"])
+	check(dist["observed_games"] == 3 and dist["missing_games"] == 2 and dist["total"] == 4,
+		"获得卡牌分母只计实际非资源卡张数；旧局不补零，未获得的观测局保留")
+	var rows: Array = dist["distribution"]
+	check(rows.size() == 3 and rows[0]["count"] == 3 and rows[0]["percentage"] == 75.0,
+		"获得卡牌分布按张数计算占比，排除现金和用户")
+	check(rows[2]["count"] == 0 and rows[2]["percentage"] == 0.0, "未获得卡仍保留零值行")
+	var empty := Scoring.acquisition_distribution([{"acquisitions":{}}],["yunketang"])
+	check(empty["observed_games"] == 1 and empty["total"] == 0 and empty["distribution"][0]["percentage"] == null,
+		"零获得不伪造百分比，区别旧记录未采集")
