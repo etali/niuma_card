@@ -14,6 +14,8 @@ const USER_PATH := "user://ai_search.json"
 var model := "ai"
 var strength := 0.0
 var parameters: Dictionary = {}
+## 仅本次运行使用，不保存到配置或录像。
+var cancelled_check: Callable = Callable()
 
 static func search_defaults() -> Dictionary:
 	return AIConfig.read_section("search")

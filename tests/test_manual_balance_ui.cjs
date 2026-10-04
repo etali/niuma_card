@@ -1635,7 +1635,7 @@ test('整体强度以滑钮映射全部AI参数，修改滑钮清除逐项覆盖
 test('三处强度滑钮拖动时同步应用全部可调参数，保留表单且不请求映射接口',async()=>{
  const aiConfig=JSON.parse(readFileSync(path.join(__dirname,'../data/ai.json'),'utf8')).search.ai;
  const keys=Object.keys(aiConfig).filter(key=>Array.isArray(aiConfig[key])||typeof aiConfig[key]==='number');
- assert.equal(keys.length,37);
+ assert.equal(keys.length,38);
  const schema=keys.map(key=>({key,label:key,kind:'int',min:0,max:10000000,step:1,hint:''}));
  // Deliberately distinct snapshots prove the UI applies server results, rather than its own interpolation.
  const strength_profiles=Object.fromEntries(Array.from({length:101},(_,step)=>[(step/100).toFixed(2),
@@ -1792,7 +1792,7 @@ test('AI 对战位于页面最下，双方完整呈现全部可调参数并保�
  const aiConfig=JSON.parse(readFileSync(path.join(__dirname,'../data/ai.json'),'utf8')).search.ai;
  const keys=Object.keys(aiConfig).filter(key=>Array.isArray(aiConfig[key])||typeof aiConfig[key]==='number');
  const anchor=(key,index)=>Array.isArray(aiConfig[key])?aiConfig[key][index][1]:aiConfig[key];
- assert.equal(keys.length,37,'全部能力、预算与评估参数都应包含');
+ assert.equal(keys.length,38,'全部能力、预算与评估参数都应包含');
  const schema=keys.map((key,index)=>({key,label:key,group:index%2?'计算预算':'设计能力',
   kind:['upgrade_weight','attack_discount','protection_bonus','spent_attack_discount'].includes(key)?'float':'int',min:0,max:10000000,step:['upgrade_weight','attack_discount','protection_bonus','spent_attack_discount'].includes(key)?.01:1,hint:'测试参数'}));
  const parameters=Object.fromEntries(keys.map(key=>[key,anchor(key,1)]));

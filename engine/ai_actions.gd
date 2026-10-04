@@ -5,6 +5,8 @@
 class_name AIActions
 extends RefCounted
 
+const Cancellation = preload("res://engine/ai_cancellation.gd")
+
 const Env = preload("res://engine/ai_environment.gd")
 const Eval = preload("res://engine/ai_evaluation.gd")
 const Capabilities = preload("res://engine/ai_capabilities.gd")
@@ -513,7 +515,7 @@ static func spend(profile: Dictionary) -> bool:
 	return true
 
 static func exhausted(profile: Dictionary) -> bool:
-	return remaining_work(profile) == 0
+	return Cancellation.requested(profile) or remaining_work(profile) == 0
 
 ## 无计数器表示调用方未设额度；阶段额度只缩小可用工作，不增加总额。
 static func remaining_work(profile: Dictionary) -> int:

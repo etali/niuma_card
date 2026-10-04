@@ -18,6 +18,8 @@ func _initialize() -> void:
 			check(p[key] == 0,"强度%s保持基线%s关闭" % [strength,key])
 	check(AISearch.from_tier(" AI:ENHANCED ").get_knob("financing_mode")==2,"命名配置忽略大小写和两端空格")
 	var cfg := AISearch.from_preset("enhanced")
+	# 此用例验证完整节点规格；墙钟截止另由test_ai_time_budget验证。
+	cfg.apply_override("think_time_ms",300000)
 	var p := cfg.resolved_parameters()
 	check(p.financing_mode == 2 and p.reply_mode == 1,"增强是同一实现的参数集合")
 	var s := state()

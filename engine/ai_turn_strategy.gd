@@ -6,9 +6,9 @@ class_name AITurnStrategy
 extends "res://engine/ai_strategy.gd"
 
 
-# 同一强度轴的数值终点。所有参数按0/0.5/1插值，再按schema量化为合法取值。
+# 同一强度轴的数值终点。所有参数按相邻锚点插值，再按schema量化为合法取值。
 const STRENGTH_TARGETS := {
-	"future_reply_limit": 2,
+	"future_reply_limit": 128,
 	"rollout_step_budget": 512,
 	"reply_generation_budget": 2048,
 	"financing_choices": 8,
@@ -29,11 +29,11 @@ const STRENGTH_TARGETS := {
 	"build_beam": 12,
 	"plans": 16,
 	"replies": 16,
-	"finalists": 4,
+	"finalists": 8,
 	"future_rounds": 2,
 	"samples": 3,
 	"generation_budget": 30000,
-	"node_budget": 400000,
+	"node_budget": 2000000,
 	"target_trials": 36
 }
 
@@ -48,6 +48,7 @@ func profile_version() -> String:
 
 func parameter_schema() -> Array:
 	return [
+		_int("think_time_ms", "单次思考上限（毫秒）", "计算预算", 1, 9007199254740991, 5000, 5000, "默认5000毫秒；超时采用已完成的最佳评估或合法备用方案。所有强度共用同一时限，可独立调整"),
 		_int("financing_mode", "典当动作覆盖", "设计能力：动作空间", 0, 2, 0, 0, "0单张典当；1任意用户数量；2多种牌联合融资。可独立于强度滑块调整"),
 		_int("resale_mode", "购入再典当", "设计能力：动作空间", 0, 1, 0, 0, "0只购买并保留；1补充买入再出售的市场阻断/周转路线"),
 		_int("resale_budget", "交易周转展开额度", "计算预算：新增能力", 1, 20000, 512, 512, "交易序列的局部展开额度；同时受总额度限制"),
@@ -65,7 +66,7 @@ func parameter_schema() -> Array:
 		_int("allocation_budget", "单核心材料分配额度", "计算预算：新增能力", 1, 4096, 64, 64, "按卡种分组枚举的局部额度，同时受总展开额度限制"),
 		_int("reply_generation_budget", "单根回应生成额度", "计算预算：对抗搜索", 1, 10000000, 256, 1024, "每个根方案使用相同局部额度；未完成的回应不作为安全结论"),
 		_int("rollout_step_budget", "前推每步生成额度", "计算预算：前推", 1, 10000000, 128, 512, "未来每次行动生成的独立额度；只有完成共同比较层才更新选择"),
-		_int("future_reply_limit", "前推不利回应数", "计算预算：前推", 1, 16, 1, 1, "从当前回合最不利的已完成回应中选择前推起点，在市场采样前固定"),
+		_int("future_reply_limit", "前推不利回应数", "计算预算：前推", 1, 128, 1, 1, "按当前风险排序，精确去重后保留独立回应；市场采样前固定。有限回应池不是全部合法动作"),
 		_int("rollout_buy_beam", "前推购买宽度", "计算预算：前推", 1, 64, 3, 3, "默认3；对手当前回合回应仍使用回应数决定宽度"),
 		_int("rollout_build_beam", "前推编组宽度", "计算预算：前推", 1, 32, 2, 2, "默认2"),
 		_int("rollout_plans", "前推方案数", "计算预算：前推", 1, 64, 2, 2, "默认2"),
@@ -74,7 +75,7 @@ func parameter_schema() -> Array:
 		_int("plans", "根方案数", "候选生成", 1, 64, 6, 16, "进入真实攻防与结算比较的候选数"),
 		_int("replies", "对手回应数", "对抗搜索", 1, 16, 2, 5, "当前为先手时保留的对手回应数"),
 		_int("sales", "战略典当候选数", "候选生成", 0, 8, 1, 2, "基础搜索的单卡变现名额；0关闭常规单卡候选，联合融资、战术补查和确定冲线另行控制"),
-		_int("finalists", "深化方案数", "前推", 1, 16, 2, 4, "从当前回合排名靠前的方案中选择多少个前推"),
+		_int("finalists", "深化方案数", "前推", 1, 16, 2, 4, "共同前推的候选数，保留当前冠军、较低阶段代表与不同持牌路线"),
 		_int("samples", "市场样本数", "前推", 1, 16, 1, 3, "每个深化方案的共享市场样本数"),
 		_int("future_rounds", "未来回合数", "前推", 0, 6, 0, 2, "0只比较当前回合；正数继续按低预算策略前推"),
 		_int("target_trials", "选靶试算额度", "对抗搜索", 0, 128, 12, 36, "整个攻击阶段共享的试算次数；0使用规则派生的目标排序"),
@@ -111,7 +112,11 @@ func _float(key: String, label: String, group: String, lower: float, upper: floa
 		"strength_interpolation":"linear","hint":hint}
 
 func _strength_points(key: String, weak: int, standard: int) -> Array:
-	return [[0.0,weak],[0.5,standard],[1.0,STRENGTH_TARGETS.get(key,standard)]]
+	var points: Array = [[0.0,weak],[0.5,standard]]
+	var intermediate := {"future_reply_limit":2,"finalists":4,"node_budget":215000}
+	if intermediate.has(key): points.append([0.75,intermediate[key]])
+	points.append([1.0,STRENGTH_TARGETS.get(key,standard)])
+	return points
 
 # 延迟装载计算模块，避免注册元数据时形成 AISearch -> 策略 -> AISearch 的加载环。
 func choose_plan(state: GameState, who: String, config) -> Dictionary:

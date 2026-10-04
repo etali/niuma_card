@@ -26,7 +26,7 @@ extends RefCounted
 ## 那要求 `choose_plan` 变成 coroutine，而它下面压着 `MatchSimulator.run_rounds`、
 ## `tools/` 的一串同步调用方和几十个单测 —— `engine/ai_agent.gd` 的类注释
 ## 把这个坑写在「为什么是步进器而不是 coroutine」那一段里，是同一个坑。
-## 搬线程只动场景层这一侧：引擎层的同步接口一个字没变，无头路径压根不经过这里。
+## 无头路径不经过这里；搜索的停止检查仅在场景提供令牌时启用。
 ##
 ## ---
 ##
@@ -36,13 +36,9 @@ extends RefCounted
 ## 算完之前每帧让出去，主线程照常 _process / _input。
 
 
-## 线程活着但迟迟不给结果时，等到这个数就放弃等待、回主线程自己算一遍。
-##
-## 30 秒不是「够不够算完」的估计（满档最慢实测 7.4 秒），是「卡死了没」的判据：
-## 真算完了这个值多大都无所谓，只有线程挂了才会撞上它。
-## 撞上之后**不杀线程** —— Thread 没有安全的中止，杀了可能停在半路的
-## 内存分配上。让它自己跑完，结果扔掉
-const TIMEOUT_SEC := 30.0
+const Cancellation = preload("res://engine/ai_cancellation.gd")
+
+var _control: RefCounted = null
 
 ## 那个工作线程。**只有一格** —— 同一时刻只跑一份任务，
 ## 第二个调用方在 `run()` 开头的闸门那儿等着（不是覆盖它）。
@@ -100,12 +96,14 @@ func run(job: Callable, tree: SceneTree, cancelled: Callable = Callable()) -> Va
 	# 各自只 join 自己起的那一条，谁也不碰别人的
 	var box: Array = []
 	var th := Thread.new()
+	var control = Cancellation.new() if job.get_argument_count() > 0 else null
+	_control = control
 	_box = box
 	_thread = th
 	# 线程体只做两件事：算，然后把结果塞进信箱。**信箱的写入必须是最后一步** ——
 	# 主线程靠 `box.is_empty()` 判完成，先写信箱再算的话它会读到半成品
 	var body := func() -> void:
-		var r: Variant = job.call()
+		var r: Variant = job.call(control.is_cancelled) if control != null else job.call()
 		box.append(r)
 	var err := th.start(body)
 	if err != OK:
@@ -115,21 +113,17 @@ func run(job: Callable, tree: SceneTree, cancelled: Callable = Callable()) -> Va
 		_release(th)
 		return job.call()
 
-	var waited := 0.0
+	var discarded := false
 	while box.is_empty():
-		# 让出一帧。这一行就是「双工」本身：主线程回到消息循环，
-		# 光标、拖拽、面板照常响应，而搜索在另一个核上继续
 		await tree.process_frame
-		waited += tree.root.get_process_delta_time() if tree.root != null else 0.016
-		if waited > TIMEOUT_SEC:
-			push_error("AIThink：等了 %.0f 秒没结果，退回主线程算一遍" % waited)
-			# 线程还在跑，wait_to_finish 会阻塞到它结束 —— 但这条路本身
-			# 就是「已经不正常了」，宁可卡一下也不要泄漏一个 Thread
-			_release(th)
-			return job.call()
+		if cancelled.is_valid() and cancelled.call():
+			discarded = true
+			if control != null: control.request()
+	if cancelled.is_valid() and cancelled.call(): discarded = true
+	if control != null and control.is_cancelled(): discarded = true
 
 	_release(th)
-	return box[0]
+	return {} if discarded else box[0]
 
 
 ## 收掉自己起的那条线程，并且**只在 `_thread` 还指着它时**才清那一格。
@@ -145,6 +139,7 @@ func _release(th: Thread) -> void:
 		th.wait_to_finish()
 	if _thread == th:
 		_thread = null
+		_control = null
 
 
 ## 有没有一个线程正在跑。给「换局 / 改档位要不要等一等」用
@@ -152,12 +147,13 @@ func busy() -> bool:
 	return _thread != null and _thread.is_alive()
 
 
-## 收干净。**只等，不杀** —— 理由同 TIMEOUT_SEC 那段。
+## 请求协作停止后收干净。Thread 没有安全的强制中止；通用任务仍须等待自然完成。
 ## 退出前必须调，否则 Godot 报 Thread must be disposed。
 ##
 ## 幂等：`_release` 里那道 `is_started()` 判断兜住了「已经被收过」，
 ## 所以 `_exit_tree` 和 `run()` 谁先谁后都不会重复 join
 func flush() -> void:
 	if _thread != null:
+		if _control != null: _control.request()
 		_release(_thread)
 	_box = []

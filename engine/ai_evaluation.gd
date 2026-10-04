@@ -5,6 +5,8 @@
 class_name AIEvaluator
 extends RefCounted
 
+const Cancellation = preload("res://engine/ai_cancellation.gd")
+
 const Context = preload("res://engine/ai_context.gd")
 const Allocation = preload("res://engine/ai_resource_allocation.gd")
 
@@ -58,11 +60,11 @@ static func _features(summary: Dictionary, opposing: Dictionary, p: Dictionary, 
 	var potential := maxf(float(p["engine_horizon"])*engine,float(p["upgrade_weight"])*upgrade)
 	var threat := Allocation.value(opposing,
 		[1.0/maxf(cash,1.0),unit_value/maxf(users,1.0)],false,
-		context.allocation_values,context.allocation_stats)
+		context.allocation_values,context.allocation_stats,Cancellation.checker(p))
 	var total := assets + potential - float(p["risk_weight"])*(risk+threat)
 	var value := {"asset": assets, "engine": engine, "option": upgrade, "risk": risk,
 		"cash": cash, "users": users, "total": total}
-	context.feature_values[key] = value
+	if not Cancellation.requested(p): context.feature_values[key] = value
 	return value
 
 ## 用户的影子价格来自手中用户驻场引擎的单位收益；无用用户只有典当底价。
@@ -122,7 +124,7 @@ static func _capacity(summary: Dictionary, p: Dictionary, context: Context = nul
 	if context == null: context = _context(p)
 	var discount := float(p["attack_discount"])
 	return Allocation.value(summary,[discount,discount],true,
-		context.allocation_values,context.allocation_stats)
+		context.allocation_values,context.allocation_stats,Cancellation.checker(p))
 
 
 static func _parameters(p: Dictionary) -> Dictionary:

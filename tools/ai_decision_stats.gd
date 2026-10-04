@@ -10,7 +10,7 @@ const SUMS := ["elapsed_ms", "expanded_nodes", "evaluated_roots", "future_comple
 static func add(total: Dictionary, diagnostics: Dictionary) -> void:
 	total["decisions"] = int(total.get("decisions",0))+1
 	for key in SUMS: total[key] = float(total.get(key,0))+float(diagnostics.get(key,0))
-	for key in ["selected_evaluation_complete", "budget_exhausted", "future_incomplete"]:
+	for key in ["selected_evaluation_complete", "budget_exhausted", "future_incomplete", "time_limit_reached", "fallback_used"]:
 		total[key] = int(total.get(key,0))+int(bool(diagnostics.get(key,false)))
 	total["max_elapsed_ms"] = maxf(float(total.get("max_elapsed_ms",0)),float(diagnostics.get("elapsed_ms",0)))
 

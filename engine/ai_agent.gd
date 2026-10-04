@@ -88,7 +88,8 @@ func plan_job() -> Callable:
 	cfg.model = current.model
 	cfg.strength = current.strength
 	cfg.parameters = current.resolved_parameters()
-	return func() -> Variant:
+	return func(cancelled_check: Callable = Callable()) -> Variant:
+		cfg.cancelled_check = cancelled_check
 		var plan := AIPlan.choose_plan(st, seat, cfg)
 		plan["configuration"] = {"model":cfg.model,"strength":cfg.strength,"parameters":cfg.parameters.duplicate(true)}
 		return plan

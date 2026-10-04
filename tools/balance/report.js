@@ -364,7 +364,7 @@ function duelThinking(stats){
   if(!finite(n))return `<small>${side} 思考诊断：未记录</small>`;
   if(n<=0)return `<small>${side} 思考诊断：尚无决策</small>`;
   const rate=key=>finite(x[key])?duelRate(x[key]/n):'未记录';
-  return `<small>${side} 平均思考 ${number(x.elapsed_ms/n/1000)} 秒 · 平均有效前推 ${number(x.future_depth/n)} 回合 · 当前评价完成 ${rate('selected_evaluation_complete')} · 未来推演中断率 ${rate('future_incomplete')} · 总额度耗尽率 ${rate('budget_exhausted')}</small>`;
+  return `<small>${side} 平均思考 ${number(x.elapsed_ms/n/1000)} 秒 · 平均有效前推 ${number(x.future_depth/n)} 回合 · 当前评价完成 ${rate('selected_evaluation_complete')} · 未来推演中断率 ${rate('future_incomplete')} · 思考超时率 ${rate('time_limit_reached')} · 备用方案率 ${rate('fallback_used')} · 总额度耗尽率 ${rate('budget_exhausted')}</small>`;
  }).join('');
 }
 function renderDuels(){

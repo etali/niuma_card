@@ -75,7 +75,7 @@ func _test_strength_and_types() -> void:
 	var valid := true
 	var low_half_exact := true
 	for spec in schema:
-		mapped = mapped and spec.get("strength_points",[]).size() == 3 and spec.get("strength_interpolation") == "linear"
+		mapped = mapped and spec.get("strength_points",[]).size() >= 3 and spec.get("strength_interpolation") == "linear"
 	for i in range(101):
 		var strength := i/100.0
 		var current := AISearch.from_strength(strength).resolved_parameters()
@@ -86,9 +86,13 @@ func _test_strength_and_types() -> void:
 			if strength <= 0.5:
 				var old_value := lerpf(float(baseline.weak[key]),float(baseline.standard[key]),strength*2)
 				low_half_exact = low_half_exact and current[key] == Strategy.validate_value(spec,old_value)
-	check(mapped,"全部参数通过三锚点线性映射，能力没有独立配置开关表")
+	check(mapped,"全部参数通过相邻锚点线性映射，能力没有独立配置开关表")
 	check(valid,"0到1的101个采样强度全部参数类型、步长与边界合法")
 	check(low_half_exact,"整个低半轴按0与0.5锚点逐项插值")
+	var intermediate := AISearch.from_strength(0.75).resolved_parameters()
+	var smooth := AISearch.from_strength(0.875).resolved_parameters()
+	check(intermediate.future_reply_limit==2 and intermediate.finalists==4 and intermediate.node_budget==215000, "高段中间锚点由通用映射解析，保持原0.75数值")
+	check(smooth.future_reply_limit==65 and smooth.finalists==6 and smooth.node_budget==1107500, "0.75至1按相邻锚点平滑线性插值并量化")
 	for pair in [[0.624,0],[0.625,1],[0.874,1],[0.875,2]]:
 		check(AISearch.from_strength(pair[0]).get_knob("financing_mode") == pair[1],"典当覆盖在%s按连续插值合法取整为%s" % pair)
 	check(AISearch.from_strength(0.749).get_knob("attack_mode") == 0 and AISearch.from_strength(0.75).get_knob("attack_mode") == 1,

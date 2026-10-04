@@ -4,8 +4,11 @@
 
 extends RefCounted
 
+const Cancellation = preload("res://engine/ai_cancellation.gd")
+
 ## 保有牌的可行资源分配。每个核心可不用；用户、现金席位与每张Buff只分配一次。
 ## 现金席位来自已有牌，付款余额则遵守先攻击、再免现金生产、最后付费生产的顺序。
+var _cancelled_check: Callable = Callable()
 var _rows: Array = []
 var _memo := {}
 var _production := true
@@ -16,7 +19,8 @@ var _cash_caps: Array[int] = []
 var _user_caps: Array[int] = []
 
 static func value(summary: Dictionary, attack_weights: Array, production: bool,
-		cache: Dictionary, stats: Dictionary) -> float:
+		cache: Dictionary, stats: Dictionary, cancelled_check: Callable = Callable()) -> float:
+	if Cancellation.probe_requested(cancelled_check): return 0.0
 	stats["calls"] = int(stats.get("calls",0)) + 1
 	var key := var_to_bytes([summary["cash"],summary["users"],StateCodec.canon(summary["inventory"]),
 		attack_weights,production])
@@ -24,6 +28,7 @@ static func value(summary: Dictionary, attack_weights: Array, production: bool,
 		stats["hits"] = int(stats.get("hits",0)) + 1
 		return float(cache[key])
 	var solver = new()
+	solver._cancelled_check = cancelled_check
 	solver._production = production
 	solver._attack_weights = attack_weights
 	solver._pawn_user = float(CardDB.pawn_user())
@@ -45,6 +50,7 @@ static func value(summary: Dictionary, attack_weights: Array, production: bool,
 	var mults: Dictionary = summary["mults"]
 	var result: float = solver._best(0,int(summary["cash"]),int(summary["cash"]),int(summary["users"]),
 		int(mults["output_x2"]),int(mults["attack_x2"]),int(mults["user_fill"]),0,0)
+	if Cancellation.probe_requested(cancelled_check): return 0.0
 	cache[key] = result
 	stats["states"] = int(stats.get("states",0)) + solver._memo.size()
 	stats["max_states"] = maxi(int(stats.get("max_states",0)),solver._memo.size())
@@ -56,7 +62,7 @@ static func _stage(d: Dictionary) -> int:
 
 func _best(index: int, slots: int, wallet: int, users: int, outputs: int, attacks: int,
 		fills: int, cash_remainder: int, user_remainder: int) -> float:
-	if index >= _rows.size(): return 0.0
+	if Cancellation.probe_requested(_cancelled_check) or index >= _rows.size(): return 0.0
 	# 超出剩余配方总需求的资源等价，避免大现金/用户库存把DP撑大。
 	slots = mini(slots,_cash_caps[index])
 	wallet = mini(wallet,_cash_caps[index]+1)

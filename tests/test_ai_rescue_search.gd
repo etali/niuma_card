@@ -158,6 +158,8 @@ func _test_scope_and_interrupt() -> void:
 
 func _test_real_market_denial() -> void:
 	var cfg := AISearch.from_model("ai",1.0)
+	# 此用例验证完整节点规格；墙钟截止另由test_ai_time_budget验证。
+	cfg.apply_override("think_time_ms",300000)
 	for key in fixture.parameters: cfg.apply_override(key,fixture.parameters[key])
 	cfg.apply_override("future_rounds",0)
 	var s := _position()

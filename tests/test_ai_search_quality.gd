@@ -176,7 +176,7 @@ func _test_future_response_identity() -> void:
 	var p := _profile()
 	candidate.responses=[s,same,different]
 	var responses := Plan._future_responses(candidate,p)
-	check(responses.size()==1 and responses[0]==s,"只合并选定前两回应的完全相同状态，不补入第三种较后回应")
+	check(responses.size()==2 and responses[0]==s and responses[1]==different,"精确去重后分配独立回应名额，重复项不吞掉较后回应")
 	var changed_rng := Env.copy(s)
 	changed_rng.next_float()
 	candidate.responses=[s,changed_rng]
@@ -214,7 +214,8 @@ func _test_common_layers() -> void:
 	check(result.complete_layers==6 and result.depth==2 and result.samples==3,"诊断只记录实际完成的共同深度/样本层")
 	check(result.best==second,"每层所有候选都完成后才采用较优未来方案")
 	for layer in result.trace:
-		check(layer.candidates==2 and layer.values==[-1.0,1.0],"终局样本保持共同标度与完整候选覆盖")
+		check(layer.candidates==2 and layer.values[1]==1.0 and layer.value_kinds[1]=="exact"
+			and ((layer.value_kinds[0]=="exact" and layer.values[0]==-1.0) or (layer.value_kinds[0]=="upper_bound" and layer.values[0]==null and layer.upper_bounds[0]>=-1.0 and layer.upper_bounds[0]<1.0)),"终局冠军保持精确共同标度，败者只提交精确分或严格不利上界")
 	p=_profile();p._work=[0];p.future_rounds=2;p.samples=3
 	var interrupted := Plan._deepen(_small(),"ai",[_candidate(won),_candidate(_small())],p)
 	check(interrupted.incomplete and interrupted.complete_layers==0 and not interrupted.has("best"),"只完成首候选不能覆盖此前完整决策")
