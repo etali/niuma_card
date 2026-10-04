@@ -39,6 +39,7 @@ const profileFields=side=>side==='q'?'ai-fields':'duel-'+side+'-fields';
 const profileSlider=side=>side==='q'?'strength':'duel-'+side+'-strength';
 const profileValues=side=>side==='q'?aiValues:duelValues[side];
 const expandedRunDistributions=new Set();
+const expandedDuelRecordings=new Set();
 const stopRequests=new Set(),stopErrors=new Map();
 const isActiveRun=r=>['queued','running','stopping'].includes(r.status);
 const hasRunResult=r=>r?.status==='complete'&&!!r.result?.metrics;
@@ -396,12 +397,25 @@ function duelThinking(stats){
   return `<small>${side} 平均计算量 ${number(x.compute_used/n)} · 完成阶段 ${number(x.completed_search_stages/n)} · 平均思考 ${number(x.elapsed_ms/n/1000)} 秒 · 平均有效前推 ${number(x.future_depth/n)} 回合 · 当前评价完成 ${rate('selected_evaluation_complete')} · 未来推演中断率 ${rate('future_incomplete')} · 总计算额度耗尽率 ${rate('compute_exhausted')} · 备用方案率 ${rate('fallback_used')} · 预算导致停止率 ${rate('budget_exhausted')}</small>`;
  }).join('');
 }
+function duelRecordings(run){
+ const items=run.recordings||run.result?.recordings||[];
+ if(!items.length)return `<small>${isActiveRun(run)?'录像将在每回合结束后自动保存。':'此记录没有保存逐局录像。'}</small>`;
+ return `<details class="duel-recordings" data-run-id="${esc(run.id)}"${expandedDuelRecordings.has(run.id)?' open':''}><summary>逐局录像（${items.length} 局）</summary>${items.map((item,i)=>`<a href="api/recording/${encodeURIComponent(run.id)}/${encodeURIComponent(item.file)}" download="${esc(item.file)}">第 ${i+1} 局 · 种子 ${esc(item.seed)} · A${item.swap?'后手':'先手'} · ${item.status==='complete'?(item.winner?'已结束':'达到回合上限'):'部分录像'} · ${item.steps} 步</a>`).join('')}</details>`;
+}
 function renderDuels(){
+ // toggle事件可能晚于刷新，替换节点前先读取当前展开状态。
+ for(const details of $('duel-rows').querySelectorAll('.duel-recordings')){
+  if(details.open)expandedDuelRecordings.add(details.dataset.runId);else expandedDuelRecordings.delete(details.dataset.runId);
+ }
  $('duel-rows').innerHTML=runs.filter(r=>r.kind==='ai-duel').map(r=>{
   const p=runProgress(r),s=r.result?.summary||r.progress?.summary||{},decided=(s.a_wins||0)+(s.b_wins||0),total=s.completed_games||0,ci=s.a_score_pair_bootstrap_95;
   const seats=['player','ai'].map((seat,i)=>{const x=s.by_a_seat?.[seat]||{};return `A ${i?'后手':'先手'}：${x.A||0} 胜 / ${x.B||0} 负 / ${x.draw||0} 未结束`}).join('<br>');
-  return `<tr><td><strong>${esc(r.name)}</strong><small>${new Date(r.created*1000).toLocaleString('zh-CN')}</small><small>A ${esc(duelLabel(r.options.a,r.strength_scale))}</small><small>B ${esc(duelLabel(r.options.b,r.strength_scale))}</small><small>种子 ${r.options.seed_start} 起 · ${r.options.max_rounds} 回合上限</small></td><td>${esc(status[r.status]||r.status)}<small>${p.text} · 耗时 ${formatElapsed(elapsedSeconds(r))}</small><progress max="${p.p.total||1}" value="${p.p.completed||0}"></progress>${stopControl(r)}${r.error?`<small class="error">${esc(r.error)}</small>`:''}<button data-duel-export="${esc(r.id)}">导出记录与实际参数</button></td><td>A ${s.a_wins||0} 胜 / B ${s.b_wins||0} 胜 / 未结束 ${s.draws||0}<small>A 胜率 ${duelRate(s.a_decisive_win_rate)}（${s.a_wins||0}/${decided}） · B 胜率 ${duelRate(decided?(s.b_wins||0)/decided:null)}</small><small>未结束率 ${duelRate(s.draw_rate)}（${s.draws||0}/${total}）</small><small>A 得分率 ${duelRate(s.a_score_rate)} · B 得分率 ${duelRate(finite(s.a_score_rate)?1-s.a_score_rate:null)}</small><small>A 得分率 95% 区间：${ci?.length===2?duelRate(ci[0])+'–'+duelRate(ci[1]):'未计算（完成至少两对种子后提供）'}</small><small>平均模拟回合 ${number(s.mean_rounds)}（含未结束局）</small>${duelThinking(s.decisions||r.progress?.decisions)}</td><td>${seats}</td></tr>`;
+  return `<tr><td><strong>${esc(r.name)}</strong><small>${new Date(r.created*1000).toLocaleString('zh-CN')}</small><small>A ${esc(duelLabel(r.options.a,r.strength_scale))}</small><small>B ${esc(duelLabel(r.options.b,r.strength_scale))}</small><small>种子 ${r.options.seed_start} 起 · ${r.options.max_rounds} 回合上限</small></td><td>${esc(status[r.status]||r.status)}<small>${p.text} · 耗时 ${formatElapsed(elapsedSeconds(r))}</small><progress max="${p.p.total||1}" value="${p.p.completed||0}"></progress>${stopControl(r)}${r.error?`<small class="error">${esc(r.error)}</small>`:''}<button data-duel-export="${esc(r.id)}">导出记录与实际参数</button>${duelRecordings(r)}</td><td>A ${s.a_wins||0} 胜 / B ${s.b_wins||0} 胜 / 未结束 ${s.draws||0}<small>A 胜率 ${duelRate(s.a_decisive_win_rate)}（${s.a_wins||0}/${decided}） · B 胜率 ${duelRate(decided?(s.b_wins||0)/decided:null)}</small><small>未结束率 ${duelRate(s.draw_rate)}（${s.draws||0}/${total}）</small><small>A 得分率 ${duelRate(s.a_score_rate)} · B 得分率 ${duelRate(finite(s.a_score_rate)?1-s.a_score_rate:null)}</small><small>A 得分率 95% 区间：${ci?.length===2?duelRate(ci[0])+'–'+duelRate(ci[1]):'未计算（完成至少两对种子后提供）'}</small><small>平均模拟回合 ${number(s.mean_rounds)}（含未结束局）</small>${duelThinking(s.decisions||r.progress?.decisions)}</td><td>${seats}</td></tr>`;
  }).join('')||'<tr><td colspan="4">还没有 AI 对战记录。</td></tr>';
+ for(const details of $('duel-rows').querySelectorAll('.duel-recordings'))details.ontoggle=()=>{
+  if(!details.isConnected)return;
+  if(details.open)expandedDuelRecordings.add(details.dataset.runId);else expandedDuelRecordings.delete(details.dataset.runId);
+ };
 }
 async function startDuel(){
  if(submitting||savingNotes||launching)return;

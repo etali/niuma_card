@@ -20,7 +20,7 @@ import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 from project_paths import relative_path, display_path, redact_paths, sanitize_file
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -447,9 +447,19 @@ class Workbench:
         folder = self.store/'runs'/rid
         obj = read_json(folder/'run.json')
         if isinstance(obj.get('error'),str): obj['error'] = redact_paths(obj['error'],ROOT)
-        for key,file in [('result','result.json'),('progress','progress.json')]:
+        for key,file in [('result','result.json'),('progress','progress.json'),('recordings','recordings.json')]:
             if (folder/file).exists(): obj[key] = read_json(folder/file)
         return obj
+
+    def recording(self,rid,filename):
+        run = self.run(rid)
+        if run.get('kind') != 'ai-duel' or not any(item.get('file') == filename for item in run.get('recordings',[])):
+            raise ValueError('录像不存在')
+        folder = (self.store/'runs'/rid/'recordings').resolve()
+        target = (folder/filename).resolve()
+        if target.parent != folder or target.suffix != '.json' or not target.is_file():
+            raise ValueError('录像路径无效')
+        return target.read_bytes()
 
     def start_duel(self,body):
         raw = body.get('options')
@@ -623,6 +633,10 @@ class Handler(BaseHTTPRequestHandler):
                             'configs':app.configs(),**app.run_overview()})
             elif path=='/api/runs': self.reply(app.run_overview())
             elif path=='/api/health': self.reply({'app':'manual-balance-v1','project':project_id(),'source_version':self.server.source_version,'pid':os.getpid()})
+            elif path.startswith('/api/recording/'):
+                parts = path.removeprefix('/api/recording/').split('/')
+                if len(parts) != 2: raise ValueError('录像路径无效')
+                self.reply(app.recording(parts[0],unquote(parts[1])))
             elif path.startswith('/api/run/'): self.reply(app.run(path.removeprefix('/api/run/')))
             elif path.startswith('/assets/art/icon/'):
                 name = Path(path).name

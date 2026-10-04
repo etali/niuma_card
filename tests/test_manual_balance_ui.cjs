@@ -1931,3 +1931,24 @@ test('三处计算使用比例只读显示、跟随强度，两个预算可独�
  const options=ui.posts().find(r=>r.url==='api/duel').body.options;
  assert.equal(options.a.ai_parameters.search_fraction,1);assert.equal(options.b.ai_parameters.search_fraction,1);
 });
+
+
+test('逐局录像展开和收起状态跨模拟刷新保留，旧节点的延迟事件不干扰新节点',async()=>{
+ const ui=await workbench();await ui.$('duel-run').click();
+ const recordings=[{file:'first.json',seed:1001,swap:false,status:'complete',steps:12}];
+ ui.updateRun('run-1',{status:'running',recordings});await ui.tick();
+ const details=()=>ui.$('duel-rows').querySelector('.duel-recordings[data-run-id="run-1"]');
+ assert.equal(details().open,false);
+ const old=details();old.open=true; // 模拟浏览器toggle事件尚未派发时刷新。
+ recordings.push({file:'second.json',seed:1001,swap:true,status:'recording',steps:4});
+ ui.updateRun('run-1',{recordings});await ui.tick();
+ assert.equal(details().open,true);
+ assert.equal(details().querySelectorAll('a').length,2,'保持展开同时刷新新录像');
+ old.open=false;await old.dispatch('toggle');await ui.tick();
+ assert.equal(details().open,true,'已移除节点的延迟toggle不能覆盖当前状态');
+ details().open=false;await ui.tick();
+ assert.equal(details().open,false,'手动收起也必须在刷新后保留');
+ details().open=true;await details().dispatch('toggle');
+ ui.updateRun('run-1',{status:'complete'});await ui.tick();
+ assert.equal(details().open,true,'模拟完成后仍保持展开');
+});

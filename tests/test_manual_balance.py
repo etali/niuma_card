@@ -822,6 +822,20 @@ class ApiIntegrationTest(unittest.TestCase):
         actual=result['result']['a']['parameters']
         self.assertEqual(actual['engine_horizon'],2.31)
         self.assertEqual(actual['financing_mode'],1)
+        self.assertEqual(len(result['recordings']),2)
+        self.assertEqual([item['swap'] for item in result['recordings']],[False,True])
+        for item in result['recordings']:
+            self.assertEqual(item['status'],'complete')
+            url=self.url+'api/recording/'+run['id']+'/'+urllib.parse.quote(item['file'])
+            tape=json.load(urllib.request.urlopen(url))
+            self.assertEqual(tape['meta']['seed'],'207')
+            self.assertEqual(tape['meta']['ai_seats'][item['a_seat']]['parameters']['engine_horizon'],2.31)
+            self.assertTrue(tape['meta']['ai_decisions'])
+            self.assertTrue(tape['steps'])
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(self.url+'api/recording/'+run['id']+'/cards.json')
+        self.assertEqual(error.exception.code,400);error.exception.close()
+
         self.assertEqual(set(side['ai_parameters']),{s['key'] for s in self.data['ai']['schema']})
 
     def test_version_requires_name_and_parameters_to_change_together(self):
