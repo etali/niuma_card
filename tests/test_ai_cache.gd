@@ -8,9 +8,9 @@ const Context = preload("res://engine/ai_context.gd")
 const Evaluator = preload("res://engine/ai_evaluation.gd")
 const FIXTURE := "res://tests/fixtures/ai_features_frozen.json"
 
-## 非升级特征由优化前评估器冻结；池化规则变更仅更新 option/total/score，
-## 以 ai_features_pooled_reference.py 的独立计数向量穷举生成，不能用被测实现重录。
-## Float64 字节判据覆盖逐牌加法、相同比率次序、DP 和资源/攻击参数变化。
+## 夹具保留旧库存与规则组合；资产/升级/资源特征仍与独立参考逐位核对。
+## 产能和总分已修复贪心分配及重复计值，不冻结旧错误策略；这里核验有无缓存
+## 与复用对方特征的逐位等价，真实收益正确性见 test_ai_evaluation_quality。
 var _fixture: Dictionary
 
 func _initialize() -> void:
@@ -19,6 +19,7 @@ func _initialize() -> void:
 	_fixture = JSON.parse_string(FileAccess.get_file_as_string(FIXTURE))
 	_install_fixture()
 	_test_frozen_features()
+	_test_feature_cache()
 	_install_fixture()
 	_test_context_queries()
 	_test_rule_changes()
@@ -69,12 +70,15 @@ func _test_frozen_features() -> void:
 		for who in [GameState.PLAYER, GameState.AI]:
 			var label := "%s/%s" % [sample["name"], who]
 			var expected: Dictionary = sample["expected_bits"][who]
-			check(_observed(state, who, parameters) == expected,
-				"%s 无上下文的全部特征/评分与冻结评估器逐位一致" % label)
-			check(_observed(state, who, cached) == expected,
-				"%s 复用上下文的全部特征/评分与冻结评估器逐位一致" % label)
+			var observed := _observed(state, who, parameters)
+			var unchanged := true
+			for key in ["asset","option","risk","cash","users","standalone_user_price"]:
+				unchanged = unchanged and observed[key] == expected[key]
+			check(unchanged,"%s 资产/升级/资源特征与独立参考逐位一致" % label)
+			check(_observed(state, who, cached) == observed,
+				"%s 复用上下文与无缓存的全部特征/评分逐位一致" % label)
 			var opposing := Evaluator.features(state, GameState.opponent(who), cached)
-			check(_bits(Evaluator.score(state, who, cached, opposing)) == expected["score"],
+			check(_bits(Evaluator.score(state, who, cached, opposing)) == observed["score"],
 				"%s 复用对方特征与完整评分逐位一致" % label)
 		check(StateCodec.canon(StateCodec.snapshot(state)) == before,
 			"%s 评估不改变状态、UID 或随机流" % sample["name"])
@@ -86,6 +90,72 @@ func _test_frozen_features() -> void:
 	check(Evaluator.score(terminal, GameState.PLAYER, {}, {"total": -999.0}) == 1000000.0
 		and Evaluator.score(terminal, GameState.AI, {}, {"total": 999.0}) == -1000000.0,
 		"缓存对方特征不绕过终局判断，终局无需再访问双方手牌")
+
+func _test_feature_cache() -> void:
+	_install_fixture()
+	var sample: Dictionary = _fixture["cases"][1]
+	var state := _state(sample)
+	var p: Dictionary = sample["parameters"].duplicate()
+	var context := Context.new()
+	p["_context"] = context
+	var expected := Evaluator.features(state,GameState.PLAYER,sample["parameters"])
+	var returned := Evaluator.features(state,GameState.PLAYER,p)
+	returned["total"] = -99999.0
+	returned["engine"] = -99999.0
+	check(Evaluator.features(state,GameState.PLAYER,p) == expected and context.feature_hits == 1,
+		"调用方修改返回字典不会污染特征缓存")
+	var hits := context.feature_hits
+	for who in state.players:
+		for card in state.players[who]["cards"]:
+			card["uid"] += 1000
+			card["locked"] = not card.get("locked",false)
+	check(Evaluator.features(state,GameState.PLAYER,p) == expected and context.feature_hits == hits+1,
+		"特征缓存忽略不参与保有能力估计的UID和编组锁定")
+	for id in ["cash","user","attack"]:
+		var changed := AIEnvironment.copy(state)
+		changed.add_card(GameState.AI,id)
+		hits = context.feature_hits
+		check(Evaluator.features(changed,GameState.PLAYER,p) == Evaluator.features(changed,GameState.PLAYER,sample["parameters"])
+			and context.feature_hits == hits,"对方新增%s时重新估计风险，不误用原特征" % id)
+	for field in ["engine_horizon","upgrade_weight","risk_weight","attack_discount"]:
+		var precise: Dictionary = p.duplicate()
+		precise[field] = float(precise[field])+0.000000000001
+		var independent := precise.duplicate()
+		independent.erase("_context")
+		hits = context.feature_hits
+		Evaluator.features(state,GameState.PLAYER,precise)
+		var missed := context.feature_hits == hits
+		check(missed and _observed(state,GameState.PLAYER,precise) == _observed(state,GameState.PLAYER,independent),
+			"%s低于十位小数的变化仍与独立评估逐位一致" % field)
+	# 直接使用攻击产能，防止其他生产路线遮住攻击折扣缓存串值。
+	var attack := _state({"cards":{"player":["cash","user","user","attack"],"ai":["cash","user"]}})
+	var base: Dictionary = sample["parameters"].duplicate()
+	base["_context"] = Context.new()
+	var before := Evaluator.capacity(attack,GameState.PLAYER,base)
+	var close := base.duplicate()
+	close["attack_discount"] = float(close["attack_discount"])+0.000000000001
+	var independent := close.duplicate()
+	independent.erase("_context")
+	check(_bits(Evaluator.capacity(attack,GameState.PLAYER,close)) == _bits(Evaluator.capacity(attack,GameState.PLAYER,independent))
+		and _bits(before) != _bits(Evaluator.capacity(attack,GameState.PLAYER,close)),
+		"资源DP缓存同样保留攻击折扣完整精度")
+	var override := {"total":17.0}
+	var expected_score := clampf((float(expected["total"])-17.0)/float(CardDB.game_rules()["win_cash"]),-100.0,100.0)
+	check(_bits(Evaluator.score(state,GameState.PLAYER,p,override)) == _bits(expected_score),
+		"缓存仍尊重调用方提供的对方特征")
+	var reordered := AIEnvironment.copy(state)
+	reordered.players[GameState.PLAYER]["cards"].reverse()
+	check(_observed(reordered,GameState.PLAYER,p) == _observed(reordered,GameState.PLAYER,sample["parameters"]),
+		"交换持牌顺序后按新的逐牌求和顺序估值")
+	for case in _fixture["cases"]:
+		if case["name"] != "float_order": continue
+		var ordered := _state(case)
+		var ordered_p: Dictionary = case["parameters"].duplicate()
+		ordered_p["_context"] = Context.new()
+		Evaluator.features(ordered,GameState.PLAYER,ordered_p)
+		ordered.players[GameState.PLAYER]["cards"].reverse()
+		check(_observed(ordered,GameState.PLAYER,ordered_p) == _observed(ordered,GameState.PLAYER,case["parameters"]),
+			"巨大和微小典当值混合时缓存也不改变浮点求和顺序")
 
 func _test_context_queries() -> void:
 	var context := Context.new()

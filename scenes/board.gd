@@ -1685,7 +1685,7 @@ func _layout_group(g, origin := Vector3.INF) -> bool:  # 返回: 这次重排是
 	if base == Vector3.INF:
 		base = _group_origin(g)
 	if not explicit_origin:
-		base.y = 0.05   # 贴桌静止高度（桌面碰撞顶 0 + 牌碰撞半高）
+		base.y = 0.05   # 冻结牌组的贴桌摆放高度，给卡身与桌面留出间隙
 	# 成员减少或恢复旧布局后，反推起点可能低于桌面。显式起点可保留
 	# 其它牌上的支撑高度，但不能让冻结的整摞停在桌布下面。
 	base.y = maxf(base.y, 0.05)

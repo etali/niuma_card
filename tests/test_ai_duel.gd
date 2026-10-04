@@ -5,6 +5,8 @@
 extends "res://tests/harness.gd"
 
 const Duel := preload("res://tools/ai_duel.gd")
+const Decisions := preload("res://tools/ai_decision_stats.gd")
+const Merge := preload("res://tools/ai_duel_merge.gd")
 
 func _initialize() -> void:
 	print("=== AI 成对对打统计 ===")
@@ -37,6 +39,29 @@ func _initialize() -> void:
 		and not Duel._valid_label("v2:0")
 		and not Duel._valid_label("v3:0") and not Duel._valid_label("ai:2")
 		and not Duel._valid_label("ai:garbage"), "对比模型和强度必须明确且合法")
+	var incremental := {}
+	var shard_a := {}
+	var shard_b := {}
+	var first := {"elapsed_ms":12.0,"future_depth":2,"selected_evaluation_complete":true,
+		"generation_nodes":10,"current_nodes":20,"future_nodes":30,"expanded_nodes":60}
+	var second := {"elapsed_ms":4.0,"future_depth":0,"selected_evaluation_complete":false,
+		"generation_nodes":4,"current_nodes":2,"future_nodes":0,"expanded_nodes":6}
+	Decisions.add(incremental,first)
+	Decisions.add(incremental,second)
+	Decisions.add(shard_a,first)
+	Decisions.add(shard_b,second)
+	Decisions.merge(shard_a,shard_b)
+	check(shard_a == incremental and incremental["decisions"] == 2
+		and incremental["elapsed_ms"] == 16 and incremental["max_elapsed_ms"] == 12
+		and incremental["selected_evaluation_complete"] == 1,
+		"逐决策增量统计与分片合并一致，未完成决策不会消失在分母里")
+	check(incremental.generation_nodes == 14 and incremental.current_nodes == 22
+		and incremental.future_nodes == 30 and incremental.expanded_nodes == 66,
+		"候选、当前回应、未来推演各阶段工作分别累计并守恒")
+	var html := {"schema":"manual-ai-duel-v1","ai_sha256":"abc","options":{"max_rounds":80}}
+	var normalized := Merge.normalize(html)
+	check(normalized["ai_config_sha256"] == "abc" and normalized["max_rounds"] == 80
+		and not html.has("ai_config_sha256"), "HTML报告沿用对打合并与配对区间，规范化不改写原记录")
 	finish()
 
 func _game(seed_i: int, a_seat: String, winner: String) -> Dictionary:

@@ -42,7 +42,7 @@ DEFINITIONS = [
     ['Q11','典当后获胜比例','最终获胜方曾成功典当过的对局数 ÷ 已模拟局数。普通卡、用户及传说的典当均计，不要求典当直接致胜；双方都典当且有胜者也只计一局。未结束局计入分母，不计入分子。','%'],
 ]
 MAX_SAFE_INTEGER = 9007199254740991  # 与浏览器 Number / JSON 的精确整数范围一致。
-DEFAULT_OPTIONS = {'pairs':5,'max_rounds':40,'seed_start':1001,'model':'ai','strength':1.0,'ai_parameters':{}}
+DEFAULT_OPTIONS = {'pairs':5,'max_rounds':40,'seed_start':1001,'model':'ai','strength':0.5,'ai_parameters':{}}
 PLAY_START_TIMEOUT = 20.0
 
 
@@ -195,7 +195,7 @@ def validate_options(o, schema):
 
 def engine_fingerprint():
     files = sorted((ROOT/'engine').glob('*.gd')) + sorted(WEB.glob('*.gd')) + [
-        ROOT/'tools/eval_report.gd', ROOT/'data/ai.json', ROOT/'data/card_config_schema.json']
+        ROOT/'tools/eval_report.gd', ROOT/'tools/ai_duel_report.gd', ROOT/'tools/ai_duel.gd', ROOT/'tools/ai_decision_stats.gd', ROOT/'data/ai.json', ROOT/'data/card_config_schema.json']
     return digest({str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files})
 
 
@@ -219,7 +219,7 @@ class Workbench:
             with self.lock:
                 for path in sorted((self.store/'configs').glob('*.json')):
                     self._read_saved_config(path)
-            self.metadata = self.profile(1.0)
+            self.metadata = self.profile(DEFAULT_OPTIONS['strength'])
             self.schema = self.metadata['schema']
             for path in (self.store/'runs').glob('*/run.json'):
                 run = read_json(path)
@@ -440,18 +440,34 @@ class Workbench:
             if (folder/file).exists(): obj[key] = read_json(folder/file)
         return obj
 
-    def start(self,body):
+    def start_duel(self,body):
+        raw = body.get('options')
+        if not isinstance(raw,dict) or set(raw) != {'pairs','max_rounds','seed_start','a','b'}:
+            raise ValueError('AI对比参数字段不完整或含不支持字段')
+        options = {key:raw[key] for key in ('pairs','max_rounds','seed_start')}
+        for side in ('a','b'):
+            profile = raw[side]
+            if not isinstance(profile,dict) or set(profile) != {'strength','ai_parameters'}:
+                raise ValueError('AI对比配置须包含强度与全部可调参数：'+side)
+            checked = validate_options({**{key:options[key] for key in ('pairs','max_rounds','seed_start')},
+                'model':'ai','strength':profile['strength'],'ai_parameters':profile['ai_parameters']},self.schema)
+            # Freeze the submitted values, including manual edits. Never reapply a preset here.
+            options[side] = {'strength':checked['strength'],'model':'ai','ai_parameters':checked['ai_parameters']}
+        return self.start(body,duel_options=options)
+
+    def start(self,body,duel_options=None):
         config = self.config(body.get('config_id'))
         if not config: raise ValueError('配置不存在，请先保存')
         validate_cards(config['cards'],self.base)
-        options = validate_options(body.get('options'),self.schema)
+        options = duel_options if duel_options is not None else validate_options(body.get('options'),self.schema)
         with self.lock:
             if self.closing: raise ValueError('工作台正在关闭，不能启动新模拟')
             rid = time.strftime('%Y%m%d-%H%M%S')+'-'+secrets.token_hex(4)
             folder = self.store/'runs'/rid
             folder.mkdir(parents=True)
             run = {'id':rid,'config_id':config['id'],'name':config['name'],'status':'queued','created':time.time(),
-                   'cards':config['cards'],'options':options,'engine_fingerprint':engine_fingerprint()}
+                   'cards':config['cards'],'options':options,'strength_scale':'overall-v1','engine_fingerprint':engine_fingerprint()}
+            if duel_options is not None: run['kind'] = 'ai-duel'
             atomic_json(folder/'cards.json',config['cards'])
             atomic_json(folder/'request.json',{'schema':'manual-balance-request-v1','cards_path':relative_path(folder/'cards.json',ROOT),
                         'output_path':relative_path(folder/'result.json',ROOT),'progress_path':relative_path(folder/'progress.json',ROOT),'options':options})
@@ -479,7 +495,7 @@ class Workbench:
             with (folder/'godot.log').open('w',encoding='utf-8') as log:
                 with self.lock:
                     if job['cancel'].is_set(): return
-                    proc = subprocess.Popen([self.godot,'--headless','--path','.','--log-file',relative_path(folder/'engine.log',ROOT),'-s','tools/eval_report.gd','--',relative_path(folder/'request.json',ROOT)],
+                    proc = subprocess.Popen([self.godot,'--headless','--path','.','--log-file',relative_path(folder/'engine.log',ROOT),'-s',('tools/ai_duel_report.gd' if run.get('kind') == 'ai-duel' else 'tools/eval_report.gd'),'--',relative_path(folder/'request.json',ROOT)],
                                             cwd=str(ROOT),stdout=log,stderr=subprocess.STDOUT)
                     job['proc'] = proc
                     run['status']='running'
@@ -630,7 +646,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             else:
                 routes = {'/api/config':app.save,'/api/notes':app.notes,'/api/run':app.start,'/api/play':app.play,
-                          '/api/stop':app.stop,'/api/export':app.export}
+                          '/api/stop':app.stop,'/api/export':app.export,'/api/duel':app.start_duel}
                 action = routes.get(path)
                 if not action: self.reply({'error':'接口不存在'},404); return
                 self.reply(action(body))

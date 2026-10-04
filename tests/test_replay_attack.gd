@@ -61,6 +61,11 @@ func _run() -> void:
 		"一次后退恢复整摞攻击之前")
 	check(sources.all(func(uid): return int(session.state.find_card(GameState.PLAYER, uid).get("fired_round", -1)) == session.state.round_num),
 		"后退再播放仍可复原攻击来源")
+	check(session.seek_action(2).get("ok", false) and session.cursor == attack_start + hits
+			and session.state.resource_count(GameState.AI, CardDB.RES_CASH) == cash - hits,
+		"输入行动步2直达整摞攻击结束，不落到原始第2条意图的第一击")
+	check(session.seek_action(1).get("ok", false) and session.cursor == attack_start,
+		"输入行动步1完整恢复攻击前状态")
 
 	paused = false
 	root.size = Vector2i(1280, 900)
@@ -88,13 +93,14 @@ func _run() -> void:
 	var locked := true
 	var deadline := Time.get_ticks_msec() + 20000
 	while main._replay_busy and Time.get_ticks_msec() < deadline:
-		locked = locked and main.btn_pass.disabled and main._replay_previous_button.disabled
+		locked = locked and main.btn_pass.disabled and main._replay_previous_button.disabled \
+			and main._replay_jump_button.disabled and not main._replay_step_input.editable
 		for uid in targets:
 			if is_instance_valid(targets[uid]) and targets[uid]._visual_retired:
 				torn[uid] = true
 		await process_frame
 	check(not main._replay_busy, "一次点击自动播完整段攻击，无需第二次输入")
-	check(locked, "全部攻击动画结束前前后步进按钮一直锁定")
+	check(locked, "全部攻击动画结束前前后步进与跳转控件一直锁定")
 	check(torn.size() == hits, "每张受击卡实际进入正式撕牌动画")
 	check(sound.hits.size() == hits, "每次攻击都实际发出撕牌声音")
 	for i in sound.hits.size():

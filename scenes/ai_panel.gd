@@ -7,15 +7,13 @@ extends Control
 
 ## 右上角「AI 强度」面板，贴在配色面板下方。
 ## 结构照着 scenes/palette_panel.gd：折叠标题栏、mouse_filter = STOP、
-## _syncing 护栏、「改了就广播、按保存才落盘」，四样都同款。
+## _syncing 护栏。AI 参数仅保留在本次运行中，修改立即广播，下次启动恢复默认。
 ##
-## 面板改的是 engine/ai_search.gd 里的**玩家偏好**，不是卡表。
-## 搜索参数不进 table_hash（见 ai_search.gd 文件头那条硬约束），
-## 所以**对局中途**拖滑块不破坏联网握手，也不改存档 ——
-## 下一个行动阶段就用上新档位（scenes/main.gd 的 _drive_ai_action
-## 每回合重新读一次 AISearch.prefs()，读的就是这里改的东西）。
+## 面板修改 engine/ai_search.gd 中本次运行的设置，不改变卡表或规则指纹。
+## 对局中途调整不影响联网握手；下一次新搜索和选靶读取最新参数，
+## 已开始的搜索和已生成的行动计划保留原有快照。
 ##
-## 出厂默认是**满档 1.0**（`AISearch.pref_strength()` 那段说明）。
+## 出厂默认强度0.5，1.0启用当前最大能力与计算预算。
 ## 模型选择与强度独立；模型和逐项控件都由参数元数据提供。
 ## 详见 `ai.md` §「默认档与局内调档」
 
@@ -26,12 +24,11 @@ var above: Control
 
 const GAP := 8               # 与上面那块面板的间距
 const LIST_W := 268          # 与配色面板同宽，两块看着是一叠
-const KNOBS_H := 280         # 参数再多也只滚动列表，保存 / 还原按钮始终可见
+const KNOBS_H := 280         # 参数再多也只滚动列表，还原按钮始终可见
 
 var _body: VBoxContainer     # 折叠时隐藏的部分
 var _toggle: Button
 var _status: Label
-var _live: Label             # 刚才那次真花了多久（ThinkClock，**实测**），收起态可见
 var _slider: HSlider
 var _slider_val: Label       # 收起时也看得见的档位读数
 var _rows: Array = []        # [{key, kind, node}]，改强度之后要整体回填
@@ -76,7 +73,6 @@ func _build() -> void:
 	root.add_theme_constant_override("separation", 6)
 	pc.add_child(root)
 	root.add_child(_build_header())
-	root.add_child(_build_live_row())   # 收起态也看得见
 
 	_body = VBoxContainer.new()
 	_body.add_theme_constant_override("separation", 6)
@@ -88,6 +84,7 @@ func _build() -> void:
 	_body.add_child(_model_choice)
 	_body.add_child(_build_slider_row())
 	_body.add_child(_build_presets())
+	_body.add_child(_label("修改立即生效，仅本次运行\n下次启动恢复默认强度", 12, Color(0.72, 0.82, 0.62)))
 	_knobs_scroll = ScrollContainer.new()
 	_knobs_scroll.custom_minimum_size = Vector2(LIST_W, KNOBS_H)
 	_knobs_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -135,12 +132,13 @@ func _build_slider_row() -> VBoxContainer:
 	_slider.step = 0.01
 	_slider.value_changed.connect(_on_strength)
 	col.add_child(_slider)
+	col.add_child(_label("0 最弱 · 0.5 默认 · 1 最高", 12, Color(0.72,0.82,0.62)))
 	return col
 
 
 ## 刻度名称共用 0~1 轴；各模型分别解析自己的预算。
 const PRESET_LABELS := {
-	"min": "最弱", "low": "低", "mid": "中", "high": "高", "max": "最高",
+	"min": "最弱", "low": "低", "mid": "默认", "high": "高", "max": "最高",
 }
 
 ## 档位快捷键。取的是 AISearch.PRESETS 里那几个名字 ——
@@ -163,61 +161,6 @@ func _build_presets() -> VBoxContainer:
 	return col
 
 
-## 实时计时器行。放在 _body **外面**，收起态也看得见 ——
-## 「正在等 AI」是面板收起时最需要知道的信息
-func _build_live_row() -> Label:
-	_live = _label("", 11, Color(0.78, 0.74, 0.52))
-	_live.custom_minimum_size = Vector2(LIST_W, 0)
-	_live.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	return _live
-
-
-
-static func _ms_text(ms: int) -> String:
-	if ms <= 0:
-		return "瞬间"
-	if ms < 1000:
-		return "%d 毫秒" % ms
-	return "%.1f 秒" % (ms / 1000.0)
-
-
-## 实时计数器。**这一整块是 `_process` 唯一的理由** ——
-## 面板别的部分全是「改了才刷」（_sync_rows），只有这一行要每帧走字
-func _process(_dt: float) -> void:
-	if _live != null:
-		_live.text = _live_text()
-
-
-## 实时那一行念什么。三种局面各念一句：
-##   - 正在想 → 秒数每帧往上走，念的是「已经等了多久」
-##   - 想完过 → 最近一次的实测 + 趟数和平均（单次会抖，平均才看得出这一档的形状）
-##   - 从没想过 → 说明「开局之后这里会走字」，而不是留一行空白
-##     （空白看着像坏了；这一行开局就在面板上）
-##
-## 联网局念「对手」而不是「AI」：对面是个人。
-## 而且联网局量到的含网络往返（见 `main.gd::_await_foe_action`），
-## 所以那一支的说法是「用了」，不是「搜索用了」
-func _live_text() -> String:
-	if ThinkClock.running():
-		var who := "对手" if ThinkClock.source() == ThinkClock.SRC_FOE else "AI"
-		# 走字的那个数：整百毫秒对齐，免得末位每帧乱跳看不清
-		var ms := int(ThinkClock.elapsed_ms() / 100) * 100
-		return "⏱ %s思考中… %s" % [who, _ms_text(ms)]
-	var last := ThinkClock.last_ms()
-	if last < 0:
-		return "⏱ 实测计时器：对手一开始想就走字"
-	var who2 := "对手" if ThinkClock.last_source() == ThinkClock.SRC_FOE else "AI"
-	# 这一句写得短是为了**不换行**：LIST_W 是 268，最长形态
-	#（三个读数都是「N.N 秒」+ 四位趟数）实测 170 像素。
-	# 换行会改 Label 高度 → `minimum_size_changed` → `_relayout`，面板一帧一抖 ——
-	# 而这一行每帧都在重写，抖起来是持续的。
-	# 原先那句写全了（「上次AI搜索用了…（本局第 N 次，平均 …）」）实测 267，
-	# 差一像素就换行。往这句里加字之前拿 `Fonts.zh().get_string_size()` 量一遍
-	return "⏱ %s %s ｜ %d 次 均 %s" % [
-		who2, _ms_text(last), ThinkClock.count(), _ms_text(ThinkClock.avg_ms())]
-
-
-
 ## 切换模型时按该模型的元数据重建；不保留上个模型的控件或信号。
 func _rebuild_knobs(model: String) -> void:
 	_rows.clear()
@@ -227,13 +170,19 @@ func _rebuild_knobs(model: String) -> void:
 	_schema_model = model
 	_knobs_scroll.scroll_vertical = 0
 	_knobs_box.add_child(_label("逐项（改任一项 = 自定义）", 13, Color(0.72, 0.82, 0.62)))
-	var previous_group := ""
+	var grouped := {}
 	for spec in AISearch.editable_knobs(model):
 		var group := str(spec.get("group", ""))
-		if group != "" and group != previous_group:
-			_knobs_box.add_child(_label(group, 13, Color(0.85, 0.78, 0.55)))
-		previous_group = group
-		_knobs_box.add_child(_build_knob_row(spec))
+		if not grouped.has(group): grouped[group] = []
+		grouped[group].append(spec)
+	var groups := grouped.keys()
+	var group_order := groups.duplicate()
+	groups.sort_custom(func(a,b):
+		if a.begins_with("设计能力") != b.begins_with("设计能力"): return a.begins_with("设计能力")
+		return group_order.find(a) < group_order.find(b))
+	for group in groups:
+		if group != "": _knobs_box.add_child(_label(group,13,Color(0.85,0.78,0.55)))
+		for spec in grouped[group]: _knobs_box.add_child(_build_knob_row(spec))
 
 
 func _build_knob_row(k: Dictionary) -> HBoxContainer:
@@ -270,6 +219,7 @@ func _build_knob_row(k: Dictionary) -> HBoxContainer:
 			sb.rounded = kind == "int"
 			sb.custom_minimum_size = Vector2(86, 0)
 			sb.value_changed.connect(_on_knob_number.bind(key, kind))
+			sb.get_line_edit().text_changed.connect(_on_knob_text.bind(key, kind, sb))
 			node = sb
 	node.tooltip_text = str(k.get("hint", ""))
 	hb.add_child(node)
@@ -280,13 +230,6 @@ func _build_knob_row(k: Dictionary) -> HBoxContainer:
 func _build_footer() -> HBoxContainer:
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 6)
-
-	var save := Button.new()
-	save.text = "保存"
-	save.add_theme_font_override("font", Fonts.zh())
-	save.add_theme_font_size_override("font_size", 13)
-	save.pressed.connect(_on_save)
-	hb.add_child(save)
 
 	var reset := Button.new()
 	reset.text = "还原默认"
@@ -336,6 +279,27 @@ func _on_knob_number(v: float, key: String, kind: String) -> void:
 		return
 	AISearch.set_override(key, int(v) if kind == "int" else v)
 	_sync_rows()
+	_status.text = ""
+
+
+## 数字键入也立即生效；保留未完成的文本与光标，不把刚输入的首位夹取成最小值。
+## apply() 让 SpinBox 自己完成步长量化并更新内部显示缓存，随后还原正在编辑的文本。
+func _on_knob_text(text: String, key: String, kind: String, spinbox: SpinBox) -> void:
+	if _syncing or not text.is_valid_float():
+		return
+	var value := text.to_float()
+	if not is_finite(value) or value < spinbox.min_value or value > spinbox.max_value:
+		return
+	if kind == "int" and value != roundf(value):
+		return
+	var edit := spinbox.get_line_edit()
+	var caret := edit.caret_column
+	_syncing = true
+	spinbox.apply()
+	edit.text = text
+	edit.caret_column = caret
+	_syncing = false
+	AISearch.set_override(key, int(spinbox.value) if kind == "int" else spinbox.value)
 	_status.text = ""
 
 
@@ -421,10 +385,6 @@ func _on_toggle() -> void:
 	_body.visible = not _body.visible
 	_toggle.text = "收起" if _body.visible else "展开"
 	_relayout()
-
-
-func _on_save() -> void:
-	_status.text = "已保存" if AISearch.save() else "保存失败"
 
 
 func _on_reset() -> void:

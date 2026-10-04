@@ -9,7 +9,9 @@ extends Node3D
 ## 放大成桌上的锯齿；这里保留卡牌本身的厚度与受光，只重画桌面上的投影。
 ## 一张 PlaneMesh + 一个 MultiMesh，不创建碰撞或 Control，不参与鼠标拾取。
 ## 所有阴影共享一个 draw call，牌堆移动只更新实例数据，不重建节点或纹理。
-const CONTACT_Y := 0.032
+## 贴近桌面，低于薄卡自然落定后的底板；否则透明软影会直接把牌面蒙灰。
+## 托盘不写深度，阴影与托盘的先后由 render_priority 保证，不需抬高到牌面附近。
+const CONTACT_Y := 0.002
 const COLUMN_TOLERANCE := 0.16
 const NEIGHBOR_DISTANCE := 0.70
 const REST_Y := 0.05

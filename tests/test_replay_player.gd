@@ -7,6 +7,11 @@ extends "res://tests/harness.gd"
 const Replay = preload("res://engine/replay_session.gd")
 var _path := "user://replay-player-test.json"
 
+class PlainReplay:
+	extends "res://scenes/main.gd"
+	func _setup_drawer_window() -> void:
+		pass
+
 func _initialize() -> void:
 	call_deferred("_run")
 
@@ -47,6 +52,7 @@ func _run() -> void:
 			and session.applier.pools_snapshot() == expected["applier"].pools_snapshot(), "第%d步资源、组合、攻击点与原录像一致" % (step + 1))
 	var final_hash := StateCodec.state_hash(session.state)
 	check(not session.advance()["ok"] and StateCodec.state_hash(session.state) == final_hash, "播放完毕后继续点击不改变末态")
+	_check_seek_actions(session, source)
 	session.rewind()
 	check(session.cursor == 0, "重播回到快照起点")
 	# 损坏的单步不能污染上一个完整步骤。
@@ -80,6 +86,15 @@ func _run() -> void:
 	main.drawer_window.animations_enabled = false
 	main.drawer_window.pin()
 	await settle()
+	var default_size := root.size
+	_check_navigation_layout(main, "默认抽屉")
+	root.size = Vector2i(1280, 900)
+	main.drawer_presentation.relayout()
+	await settle()
+	_check_navigation_layout(main, "1280宽抽屉")
+	root.size = default_size
+	main.drawer_presentation.relayout()
+	await settle()
 	check(main.btn_pass.text == "录像下一步" and not main.btn_pass.disabled, "读入后主按钮为录像下一步")
 	check(not main.tape.recording() and not main._thinking and main.board.input_locked, "回放不录制、不运行AI，禁止改动牌桌")
 	var popup: PopupMenu = main.drawer_presentation._menu.get_popup()
@@ -88,6 +103,7 @@ func _run() -> void:
 	var bad_load: Dictionary = main._load_replay("user://replay-player-missing.json")
 	check(not bad_load["ok"] and main.state == same, "读取失败保持当前牌桌")
 	var action_total: int = main.replay_session.action_count()
+	await _check_seek_controls(main, source)
 	for action_index in action_total:
 		var group: Dictionary = main.replay_session.action_groups[action_index]
 		var last_raw: int = int(group["end"]) - 1
@@ -95,8 +111,19 @@ func _run() -> void:
 			await _click(main.btn_pass)
 		else:
 			main.btn_pass.pressed.emit()
+		if action_index == 0:
+			check(main._replay_busy and main._replay_jump_button.disabled and not main._replay_step_input.editable,
+				"动画播放期间跳转按钮和步数输入禁用")
+			var before_busy: int = main.replay_session.cursor
+			main._replay_step_input.text = str(action_total)
+			main._replay_jump_button.pressed.emit()
+			main._replay_step_input.text_submitted.emit(str(action_total))
+			check(main.replay_session.cursor == before_busy,
+				"播放正忙时即使触发跳转信号，也不接受过期跳步请求")
 		await _await_step(main)
 		check(main.replay_session.cursor == last_raw + 1 and StateCodec.state_hash(main.state) == source.steps[last_raw]["hash"], "真实按钮逐行动复现第%d个行动" % (action_index + 1))
+		check(main._replay_step_input.text == str(action_index + 1) and main._replay_step_input.editable
+				and not main._replay_jump_button.disabled, "动画完成后步数同步且跳转恢复可用")
 		check(main.entities.size() == main.state.players[main.my_seat]["cards"].size() + main.state.players[main.foe_seat]["cards"].size(), "每个行动后牌桌实体数量匹配录像状态")
 	check(main.btn_pass.disabled and main.btn_pass.text == "录像下一步" and "播放完毕" in main.lbl_msg.text, "末步明确提示播放完毕并禁用下一步")
 	check(main.game_over_panel == null, "录像终局不弹出真实对局重开流程")
@@ -135,9 +162,103 @@ func _run() -> void:
 				check(not child.drawer_window.is_pinned(), "通过读入录像按钮进入后不自动钉住")
 				child.queue_free()
 	await process_frame
+	await _check_plain_layout()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(_path))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://replay-player-bad.json"))
 	finish()
+
+func _check_navigation_layout(main: Node, label: String) -> void:
+	var bounds := Rect2(Vector2.ZERO, Vector2(root.size))
+	var controls: Array[Control] = [main.btn_resign, main._replay_previous_button, main.btn_pass,
+		main._replay_step_input, main._replay_jump_button, main._replay_step_range]
+	var inside := true
+	var separate := true
+	for i in controls.size():
+		var rect := controls[i].get_global_rect()
+		inside = inside and controls[i].is_visible_in_tree() and bounds.grow(1).encloses(rect)
+		for j in range(i + 1, controls.size()):
+			separate = separate and not rect.intersects(controls[j].get_global_rect())
+		if main.drawer_presentation:
+			inside = inside and main.drawer_presentation._footer.get_global_rect().grow(1).encloses(rect)
+		elif is_instance_valid(main.hud_status_panel):
+			separate = separate and not rect.intersects(main.hud_status_panel.get_global_rect())
+	check(inside, label + "退出、前后步进、跳转输入和范围提示完整可见且未出屏")
+	check(separate, label + "全部录像控件互不重叠，普通消息栏也未被覆盖")
+
+func _check_plain_layout() -> void:
+	root.size = Vector2i(1280, 900)
+	var plain := PlainReplay.new()
+	plain.replay_session = Replay.load_path(_path)["session"]
+	root.add_child(plain)
+	_booted = plain
+	await settle()
+	check(plain.drawer_presentation == null, "普通牌桌布局独立验证")
+	_check_navigation_layout(plain, "1280宽普通牌桌")
+	root.size = Vector2i(1100, 800)
+	await settle()
+	_check_navigation_layout(plain, "缩放后普通牌桌")
+	plain.queue_free()
+	await process_frame
+
+func _check_seek_actions(session: RefCounted, source: Tape) -> void:
+	var total: int = session.action_count()
+	for step in [total / 2, total, 0, 1]:
+		var result: Dictionary = session.seek_action(step)
+		var raw_step := 0 if int(step) == 0 else int(session.action_groups[int(step) - 1]["end"])
+		var expected := Tape.replay(source, raw_step)
+		check(result.get("ok", false) and session.action_cursor == int(step) and session.cursor == raw_step
+				and StateCodec.state_hash(session.state) == StateCodec.state_hash(expected["state"])
+				and session.applier.pools_snapshot() == expected["applier"].pools_snapshot(),
+			"按显示行动步跳至 %d，资源/组合/攻击点与顺序重放一致" % int(step))
+	var state: GameState = session.state
+	var current: int = session.action_cursor
+	var repeat: Dictionary = session.seek_action(current)
+	check(repeat.get("ok", false) and not repeat.get("changed", true) and session.state == state,
+		"重复跳当前步不重算也不替换当前局面")
+	for step in [-1, total + 1, 0.5, NAN, INF, "1", true]:
+		check(not session.seek_action(step).get("ok", false) and session.state == state
+				and session.action_cursor == current, "无效行动步不改变会话：%s" % str(step))
+	check(not session.seek(-1).get("ok", false) and not session.seek(source.size() + 1).get("ok", false)
+			and session.state == state, "原始步骤越界也不会静默夹取后改变局面")
+	var original_hash: String = session.record.steps[0]["hash"]
+	session.record.steps[0]["hash"] = "corrupt-seek"
+	check(not session.seek_action(total).get("ok", false) and session.state == state
+			and session.action_cursor == current and session.error == "", "跳转中途校验失败保留原完整步骤")
+	session.record.steps[0]["hash"] = original_hash
+
+func _check_seek_controls(main: Node, source: Tape) -> void:
+	var total: int = main.replay_session.action_count()
+	check(main._replay_step_range.text == "行动步（0～%d）" % total
+			and main._replay_step_input.text == "0", "输入显示当前步并明确标注 0～总行动步数")
+	for step in [total / 2, total, 0]:
+		main._replay_step_input.text = str(step)
+		if int(step) == total:
+			main._replay_step_input.text_submitted.emit(str(step))
+		else:
+			main._replay_jump_button.pressed.emit()
+		await settle()
+		var raw_step := 0 if int(step) == 0 else int(main.replay_session.action_groups[int(step) - 1]["end"])
+		var expected := Tape.replay(source, raw_step)
+		check(main.replay_session.action_cursor == int(step) and main.replay_session.cursor == raw_step
+				and StateCodec.state_hash(main.state) == StateCodec.state_hash(expected["state"])
+				and main.pipe.applier().pools_snapshot() == expected["applier"].pools_snapshot(),
+			"按钮/回车直接跳到 %d，牌桌资源与攻击点正确" % int(step))
+		check(main.entities.size() == main.state.players[main.my_seat]["cards"].size()
+				+ main.state.players[main.foe_seat]["cards"].size()
+				and main.phase == main.replay_session.phase and main._actor == main.replay_session.actor,
+			"跳转后可见卡牌、阶段与行动方一致")
+		check(main._replay_step_input.text == str(step) and ("行动 %d / %d" % [step, total]) in main.lbl_round.text,
+			"输入步数与标题显示采用同一行动计数")
+	var state: GameState = main.state
+	var entities: Dictionary = main.entities.duplicate()
+	for invalid in ["", "-1", "1.5", "abc", str(total + 1), "999999999999999999999999999999999999999"]:
+		main._replay_step_input.text = invalid
+		main._replay_jump_button.pressed.emit()
+		check(main.state == state and main.entities == entities and main.replay_session.action_cursor == 0,
+			"非法跳步输入保留原牌桌：%s" % invalid)
+	main._replay_step_input.text = "0"
+	main._replay_jump_button.pressed.emit()
+	check(main.state == state and main.entities == entities, "重复跳当前步不重建可见牌桌")
 
 func _record() -> Tape:
 	var state := GameState.new()

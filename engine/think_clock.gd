@@ -7,7 +7,7 @@ extends RefCounted
 
 ## 「对手想了多久」的秒表。**量的是墙钟，不是估的**。
 ##
-## 面板显示当前搜索的实时耗时、上次耗时及累计平均值。
+## 顶部“对手思考中”显示当前搜索的实时耗时，停止后收起读数。
 ## 不使用固定档位耗时表，避免把其他机器上的测量值当成本机结果。
 ##
 ## ---
@@ -19,10 +19,8 @@ extends RefCounted
 ## 也就是说「思考耗时」有两个来源，只有一个在工作线程上 ——
 ## 秒表必须待在两条路都够得着的地方。
 ##
-## 而这两条路都在 `scenes/main.gd` 里，读它的却是 `scenes/ai_panel.gd`：
-## 面板不连任何信号到主场景（见 main.gd 建面板那段注释）。
-## 静态状态是这两者之间唯一现成的通道 —— `AISearch` 的玩家偏好、
-## `Palette` 的配色走的都是这条路，同一个形状。
+## 两条计时路径与顶部显示都由 `scenes/main.gd` 驱动；
+## 统计接口保留完整耗时，供测试核对真实搜索边界。
 ##
 ## ---
 ##
@@ -30,12 +28,10 @@ extends RefCounted
 ##     ThinkClock.start(ThinkClock.SRC_AI)   # 开始想
 ##     …
 ##     ThinkClock.stop()                     # 想完了，这一趟计入统计
-## 面板每帧问 `running()` / `elapsed_ms()`（在跑）或 `last_ms()`（跑完了）。
+## 顶部实时读 `running()` / `elapsed_ms()`，不把上一趟耗时显示成当前耗时。
 
 
-## 谁在想。分开记是因为屏幕上要念不同的话：
-## 本地 AI 那一路念「AI」，联网局念「对手」——
-## 联网局里对面是个人，管他叫 AI 是错的
+## 记录计时来源：本地 AI 量搜索耗时；联网等待包含网络往返。
 const SRC_AI := "ai"
 const SRC_FOE := "foe"
 
@@ -45,7 +41,7 @@ static var _src := ""
 ## 这一趟的起点（`Time.get_ticks_msec()`）。只在 `_src` 非空时有意义
 static var _t0 := 0
 
-## 最近一趟的耗时和来源。跑完之后面板念的是这两个
+## 最近一趟的耗时和来源，仅保留统计，不作为当前计时显示。
 static var _last_ms := -1
 static var _last_src := ""
 
@@ -92,7 +88,7 @@ static func source() -> String:
 
 
 ## 这一趟到此刻走了多少毫秒。没在跑返回 0 ——
-## 面板那边靠 `running()` 分支，不靠这个数判有无
+## 顶部显示靠 `running()` 分支，不靠这个数判有无
 static func elapsed_ms() -> int:
 	if _src == "":
 		return 0
@@ -122,7 +118,7 @@ static func avg_ms() -> int:
 	return int(round(float(_total_ms) / float(_count)))
 
 
-## 清空。换局时调 —— 上一局的平均值挂在新一局的面板上是假话。
+## 清空。换局时调，避免上一局的统计进入新局。
 ##
 ## 也给单测用：静态状态跨测试文件不重置的话，
 ## 前一个文件跑出来的趟数会漏到后一个的判据里

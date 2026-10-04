@@ -83,7 +83,7 @@ static func run_rounds(max_rounds := ROUNDS_FROM_CONFIG, rng_seed := 0,
 				break
 			if observers.has("before_action"):
 				observers["before_action"].call(state, who)
-			action_phase(state, who, cfgs.get(who), observers.get("intent", Callable()))
+			action_phase(state, who, cfgs.get(who), observers.get("intent", Callable()), observers.get("decision", Callable()))
 		if not before_settle.is_null():
 			before_settle.call(state)
 		if state.winner == "":
@@ -166,7 +166,7 @@ static func _loop_rounds(state: GameState, left: int, cfgs: Dictionary) -> GameS
 ## cfg：搜索强度（`engine/ai_search.gd`）。不传 = 当前实现强度0。
 ## 预算由传入profile决定；不读取屏幕偏好文件，便于离线复现。
 static func action_phase(state: GameState, who: String, cfg: AISearch = null,
-		on_intent: Callable = Callable()) -> void:
+		on_intent: Callable = Callable(), on_decision: Callable = Callable()) -> void:
 	# 一个 applier 贯穿这三步，不是每步各开一个。
 	# 三步都走**同一条意图管道**（README.md §「3. 文件目录结构」）：典当、买卡、编组一律 app.apply(Intent.x)，
 	# 不允许有哪一步退回去直接调 state.buy/state.pawn/state.create_combo。
@@ -178,4 +178,6 @@ static func action_phase(state: GameState, who: String, cfg: AISearch = null,
 	if on_intent.is_valid():
 		app.landed_intent.connect(func(intent: Dictionary, result: Dictionary, _from: String) -> void:
 			on_intent.call(state, intent, result))
-	AIAgent.new(LocalTransport.new(app), who, cfg).run_action_phase_sync()
+	var agent := AIAgent.new(LocalTransport.new(app), who, cfg)
+	agent.decision_observer = on_decision
+	agent.run_action_phase_sync()

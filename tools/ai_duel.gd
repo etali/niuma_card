@@ -84,7 +84,7 @@ static func _valid_label(label: String) -> bool:
 	if not registered:
 		return false
 	var strength := str(parts[1])
-	return AISearch.PRESETS.has(strength) or (strength.is_valid_float()
+	return strength in ["legacy","enhanced"] or AISearch.PRESETS.has(strength) or (strength.is_valid_float()
 		and float(strength) >= 0.0 and float(strength) <= 1.0)
 
 

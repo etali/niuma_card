@@ -7,7 +7,7 @@ extends "res://tests/harness.gd"
 ## AI 参数面板（`scenes/ai_panel.gd`）—— 玩家真的能在对局中途调 AI 强度吗
 ##
 ## 为什么单独立一个文件：`tests/test_ai_search.gd` 判的是**参数对象**
-## （梯子、覆盖、落盘），它对面板只有两条静态判据（档位名有没有中文标签、
+## （梯子、覆盖、会话隔离），它对面板只有两条静态判据（档位名有没有中文标签、
 ## 每个旋钮有没有列出来）。而「玩家点得到、点了有用」这一段原先没有任何观察点 ——
 ## 实测把 `scenes/main.gd` 里 `canvas.add_child(aip)` 那一行删掉，
 ## 55 个测试文件一条不红：面板从此不在画面上，参数层的判据照旧全绿。
@@ -19,18 +19,11 @@ extends "res://tests/harness.gd"
 ## 所以判据一律**发信号**驱动：`emit_signal("pressed")` / 改 `value`，
 ## 不直接调 `_on_xxx`。直接调私有函数的话，把 connect 那一行删掉这些判据全绿。
 ##
-## 落盘那一段要动 `user://ai_search.json`（玩家的真文件），
-## 所以整个文件包在备份 / 还原里，和 test_ai_search.gd 的 `_t_prefs_and_overrides` 同款。
-
-var _real := PackedByteArray()
-var _had := false
+## AI 设置仅保留本次运行；面板操作和模拟重启都不应产生持久参数文件。
 
 
 func _initialize() -> void:
 	print("=== AI 参数面板测试 ===")
-	_had = FileAccess.file_exists(AISearch.USER_PATH)
-	if _had:
-		_real = FileAccess.get_file_as_bytes(AISearch.USER_PATH)
 	AISearch.restore_defaults()
 
 	var main: Node = await boot_main()
@@ -47,7 +40,7 @@ func _initialize() -> void:
 	_t_syncing_guard(panel)
 	_t_knob_rows(panel)
 	_t_presets(panel)
-	_t_save_and_reset(panel)
+	_t_session_and_reset(panel)
 	await _t_takes_effect_mid_match(main, panel)
 
 	_restore()
@@ -207,7 +200,7 @@ func _t_palette_toggle(main: Node) -> void:
 		await process_frame
 		var panel := _find_panel(main)
 		check(panel.offset_bottom <= panel.get_viewport_rect().size.y,
-			"配色面板开合后 AI 参数列表适配剩余高度，保存按钮没有出屏（底 %.0f）" % panel.offset_bottom)
+			"配色面板开合后 AI 参数列表适配剩余高度，还原按钮没有出屏（底 %.0f）" % panel.offset_bottom)
 	var h_back := pal.offset_bottom - pal.offset_top
 	check(absf(h_back - h0) < 0.5,
 		"偶数下之后回到原高（%.0f → %.0f）" % [h0, h_back])
@@ -315,6 +308,7 @@ func _t_presets(panel: AIPanel) -> void:
 	for b in btns:
 		by_text[str((b as Button).text)] = b
 
+	check(not by_text.has("标准配置（默认）") and not by_text.has("增强配置"), "界面只用统一强度轴，不显示两种独立配置")
 	var missing: Array = []
 	for key in AISearch.PRESETS:
 		var label := str(AIPanel.PRESET_LABELS.get(key, key))
@@ -349,48 +343,41 @@ func _t_presets(panel: AIPanel) -> void:
 		"全对" if bad_tip.is_empty() else ", ".join(bad_tip)))
 
 
-## 「改了就广播、按保存才落盘」—— 和配色面板同一个口径。
-## 不落盘这一半也要判：滑块一动就写盘的话，玩家试着玩两下就把默认档改掉了
-func _t_save_and_reset(panel: AIPanel) -> void:
-	var save: Button = _btn(panel, "保存")
+## 改动仅影响本次运行，所有控件直接生效，下次启动恢复默认。
+func _t_session_and_reset(panel: AIPanel) -> void:
+	check(_btn(panel, "保存") == null, "AI 强度不再提供保存按钮")
 	var reset: Button = _btn(panel, "还原默认")
-	if not need(save != null and reset != null, "保存 / 还原默认两颗按钮都在"):
+	if not need(reset != null, "仍可随时还原默认参数"):
 		return
+	check(_visible_text(panel).contains("修改立即生效，仅本次运行")
+			and _visible_text(panel).contains("下次启动恢复默认"), "面板说明参数生效时机和有效期限")
 
 	AISearch.restore_defaults()
-	panel._sync_rows()
 	panel._slider.value = 0.62
-	check(not FileAccess.file_exists(AISearch.USER_PATH),
-		"拖滑块不落盘（还没按保存，%s 还不存在）" % AISearch.USER_PATH)
-
-	var expected := {}
-	for row in panel._rows:
-		expected[str(row["key"])] = _change_row(row)
-	check(panel._slider_val.text.ends_with("*"), "保存前的自定义参数有星号提示")
-	check(not _visible_text(panel).contains(AISearch.prefs().describe()), "AI强度面板不显示无意义的配置摘要")
-	save.emit_signal("pressed")
-	check(FileAccess.file_exists(AISearch.USER_PATH), "按保存之后文件在了")
-	check(panel._status.text == "已保存", "状态栏说了（现在「%s」）" % panel._status.text)
-	AISearch._reset_pref_cache()
-	check(is_equal_approx(AISearch.pref_strength(), 0.62),
-		"重启（清缓存重读盘）之后还是 0.62，读回 %.2f" % AISearch.pref_strength())
+	check(not FileAccess.file_exists(AISearch.USER_PATH), "拖滑块不落盘，强度仅留在本次运行")
 	var wrong := []
-	for key in expected:
-		if not _same_value(AISearch.prefs().get_knob(str(key)), expected[key]):
-			wrong.append(key)
-	check(wrong.is_empty(), "每个自定义参数保存重读后保留（失配：%s）" % str(wrong))
-	panel._sync_rows()
-	check(panel._slider_val.text.ends_with("*"), "重读后自定义星号仍显示")
+	for row in panel._rows:
+		var wanted: Variant = _change_row(row)
+		if not _same_value(AISearch.prefs().get_knob(str(row["key"])), wanted):
+			wrong.append(row["key"])
+	check(wrong.is_empty(), "每个自定义参数改动后当场生效（失配：%s）" % str(wrong))
+	check(panel._slider_val.text.ends_with("*"), "即时生效的自定义参数有星号提示")
+	check(not FileAccess.file_exists(AISearch.USER_PATH), "全部参数调整后仍未生成持久文件")
 
+	AISearch._reset_pref_cache()
+	check(is_equal_approx(AISearch.pref_strength(), AISearch.default_strength())
+			and not AISearch.has_overrides(), "模拟重启后恢复默认强度并丢弃全部自定义参数")
+	panel._sync_rows()
+	check(not panel._slider_val.text.ends_with("*")
+			and is_equal_approx(panel._slider.value, AISearch.default_strength()), "重启后的面板显示默认参数")
+	panel._slider.value = 0.9
+	_change_row(panel._rows[0])
 	reset.emit_signal("pressed")
 	check(is_equal_approx(AISearch.pref_strength(), AISearch.default_strength())
-			and not AISearch.has_overrides(),
-		"按还原默认回到出厂档位并清空自定义参数")
-	check(not FileAccess.file_exists(AISearch.USER_PATH), "还原默认把玩家那份删掉了")
-	check(is_equal_approx(panel._slider.value, AISearch.default_strength()),
-		"滑块跟着回到出厂强度（还原之后面板要一起回填）")
-	check(panel._status.text.begins_with("已还原"),
-		"状态栏说了（现在「%s」）" % panel._status.text)
+			and not AISearch.has_overrides(), "按还原默认回到出厂档位并清空自定义参数")
+	check(not FileAccess.file_exists(AISearch.USER_PATH), "还原默认不产生参数文件")
+	check(is_equal_approx(panel._slider.value, AISearch.default_strength()), "滑块跟着回到出厂强度")
+	check(panel._status.text.begins_with("已还原"), "状态栏说明已还原默认")
 
 
 func _same_value(a: Variant, b: Variant) -> bool:
@@ -509,15 +496,9 @@ func _t_takes_effect_mid_match(main: Node, panel: AIPanel) -> void:
 	check(state.resource_count(who, CardDB.RES_CASH) >= 0, "最弱档接手也没坏")
 
 
-## 把玩家原来那份放回去。备份是整份文件的字节，
-## 不是「记下强度再设回去」—— 后者会把玩家手调的逐项覆盖弄丢
+## 测试结束也不恢复已废弃的持久参数文件。
 func _restore() -> void:
 	AISearch.restore_defaults()
-	if _had:
-		var f := FileAccess.open(AISearch.USER_PATH, FileAccess.WRITE)
-		if f != null:
-			f.store_buffer(_real)
-			f.close()
 	AISearch._reset_pref_cache()
 
 func _visible_text(node: Node) -> String:

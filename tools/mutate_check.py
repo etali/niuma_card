@@ -3034,13 +3034,13 @@ MUTATIONS = [
      '\taip.above = pal\n\tcanvas.add_child(aip)',
      '\tcanvas.add_child(aip)',
      "AI 面板在配色面板下方", "tests/test_ai_panel.gd"),
-    # 52c：`main.gd` 不读玩家偏好，改用固定低档。**面板从此完全失效**：
-    # 拖得动、存得下、摘要照变，只是屏幕上那个对手永远是最低强度。
+    # 52c：`main.gd` 移除新搜索前读取当前设置的接线，重规划继续沿用阶段开始时的值。
+    # 面板拖得动、摘要照变，但下一次决策没有采用新参数。
     # 参数层判据全绿（它们直接调 prefs()，不经过 main.gd）
     ("scenes/main.gd",
-     '\tvar agent := AIAgent.new(pipe, foe_seat, AISearch.prefs())',
-     '\tvar agent := AIAgent.new(pipe, foe_seat, AISearch.from_strength(0.0))',
-     "场景层读玩家偏好", "tests/test_ai_search.gd"),
+     '\tagent.config_provider = AISearch.prefs',
+     '\tagent.config_provider = Callable()',
+     "场景层读玩家偏好", "tests/test_ai_live_parameters.gd"),
     # 52d：`_syncing` 护栏破掉。回填每一行会触发 toggled / value_changed，
     # 那两个回调往下写 set_override —— 于是**拖一下滑块就给每个旋钮盖一层覆盖**，
     # 滑块从此失灵（覆盖盖住档位），面板上只多一个星号
@@ -3078,11 +3078,11 @@ MUTATIONS = [
      '\tvar star := "*" if AISearch.has_overrides() else ""',
      '\tvar star := ""',
      "读数带星号", "tests/test_ai_panel.gd"),
-    # 52g：拖滑块就落盘。和配色同一个口径是「改了就广播、按保存才落盘」——
-    # 一动就写的话，玩家试着拖两下就把自己的默认档改掉了，下次开游戏才发现
+    # 52g：拖滑块就落盘。AI 参数只在本次运行中生效，不应再生成偏好文件。
+    # 直接注入写盘，避免依赖已经移除的 save() API 导致变异仅被语法检查拦住。
     ("scenes/ai_panel.gd",
      '\tAISearch.set_pref_strength(v)   # 会清掉逐项覆盖：拖滑块 = 整档换掉',
-     '\tAISearch.set_pref_strength(v)\n\tAISearch.save()',
+     '\tAISearch.set_pref_strength(v)\n\tvar stale := FileAccess.open(AISearch.USER_PATH, FileAccess.WRITE)\n\tstale.store_string(JSON.stringify({"strength": v}))\n\tstale.close()',
      "拖滑块不落盘", "tests/test_ai_panel.gd"),
     # 52h：跟随失效 —— 改成记一个常量偏移。配色面板一展开，两块面板就叠在一起
     ("scenes/ai_panel.gd",
@@ -3482,37 +3482,31 @@ MUTATIONS = [
      "\twhile _thread != null:",
      "\twhile false:",
      "闸门把两份串起来了", "tests/test_ai_think.gd"),
-    # 58a：秒表没装在 AI 那条路上。计数器于是**永远停在开局那句**
-    # 「一开始想就走字」——面板上有这一行、它从不走字，
+    # 58a：秒表没装在 AI 那条路上。顶部从不显示当前搜索计时，
     # 而 ThinkClock 自己的那些判据（start/stop 对不对）照旧全绿
     ("scenes/main.gd",
-     "\tThinkClock.start(ThinkClock.SRC_AI)\n\t_update_thinking_hint()\n\tvar out: Variant = await _think.run(job, get_tree())",
-     "\t_update_thinking_hint()\n\tvar out: Variant = await _think.run(job, get_tree())",
+     "\tThinkClock.start(ThinkClock.SRC_AI)\n\t_update_thinking_hint()",
+     "\t_update_thinking_hint()",
      "计时器记下了", "tests/test_think_clock.gd"),
-    # 58b：秒表裹在**整个行动阶段**外面，而不是每次搜索各一趟。
-    # 玩家要看的是「每次搜索花掉的时间」（原话），裹整个阶段念出来的是
-    # 三次搜索加两段演出节拍的和 —— 那个数比任何一次搜索都大，
-    # 而且趟数恒为 1，「平均」那半截成了摆设。
-    # 手法：把 stop 挪到 start 后面一行，于是每一趟长度都是 0、
-    # 计的次数对不上（判据钉的是「问了几次 = 记了几趟」）
+    # 58b：搜索之前就停表。次数仍正确，但每次记录接近零，漏掉了实际搜索。
     ("scenes/main.gd",
-     "\tvar out: Variant = await _think.run(job, get_tree())\n\tThinkClock.stop()",
-     "\tThinkClock.stop()\n\tvar out: Variant = await _think.run(job, get_tree())",
+     "\tThinkClock.start(ThinkClock.SRC_AI)\n\t_update_thinking_hint()",
+     "\tThinkClock.start(ThinkClock.SRC_AI)\n\tThinkClock.stop()\n\t_update_thinking_hint()",
      "记下的时长真裹住了搜索", "tests/test_think_clock.gd"),
     # 58c：联网局也念「AI」。对面是个人，管他叫 AI 是错的；
     # 而且联网那一路量到的含网络往返，说法本来就不该和本地 AI 一样
-    ("scenes/ai_panel.gd",
-     '\tvar who := "对手" if ThinkClock.source() == ThinkClock.SRC_FOE else "AI"',
-     '\tvar who := "AI"',
+    ("scenes/main.gd",
+     '\t\tvar prefix := (" · " if drawer_presentation else "\\n") + "对手思考中… "',
+     '\t\tvar prefix := (" · " if drawer_presentation else "\\n") + "AI思考中… "',
      "念「对手」而**不**念 AI", "tests/test_think_clock.gd"),
     # 58d：念的还是估值。这是「换了行、没换数据源」那个坏法 ——
-    # 面板上的实测计数器若被改成固定数字，便不会随实际计算时间变化。
+    # 实测计数器若被改成固定数字，便不会随实际计算时间变化。
     # 屏幕上看不出区别（都是「1.8 秒」），只有换台机器才会发现它不动
     ("engine/think_clock.gd",
      "\tvar ms := Time.get_ticks_msec() - _t0",
      "\tvar ms := 1788",
      "停表之后 last_ms 是真花掉的时间", "tests/test_think_clock.gd"),
-    # 58e：换局不清。上一局的趟数和平均挂在新一局的面板上是假话，
+    # 58e：换局不清。上一局的趟数和平均被算进新一局，
     # 而联网局和单机局量的还不是同一件事（一个含网络往返、一个是纯搜索），
     # 混在一个平均值里那个数没有意义
     ("scenes/main.gd",

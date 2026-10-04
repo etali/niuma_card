@@ -35,6 +35,7 @@ func _initialize() -> void:
 	await test_face_doubles_before_recipe_full()
 	await test_face_restores_on_leave()
 	await test_no_cross_wiring()
+	await test_face_stacks_and_removes_one()
 	finish()
 
 
@@ -272,3 +273,32 @@ func _group(board: Board, cards: Array) -> Dictionary:
 	board.groups.append(g)
 	board.refresh_group(g)
 	return g
+
+
+## 多张同类倍率卡叠乘；逐张移走时卡面必须随剩余张数恢复。
+func test_face_stacks_and_removes_one() -> void:
+	var main: Node = await boot_main()
+	var board: Board = main.board
+	for core_id in ["ditui", "butie"]:
+		var production: bool = core_id == "ditui"
+		var prefix := "+" if production else "−"
+		var base := int(CardDB.get_def(core_id)["output_n" if production else "attack_n"])
+		var multiplier := CardDB.buff_mult("output_x2" if production else "attack_x2")
+		var core: CardEntity = main._spawn_entity(_c(core_id), Vector3(-6.0, 0.05, 4.0), true)
+		var buffs: Array = []
+		for _i in 3:
+			buffs.append(main._spawn_entity(_c("yinqing996" if production else "resou"), Vector3(-6.0, 0.05, 4.0), true))
+		isolate(board, [core] + buffs)
+		_group(board, [core] + buffs)
+		check(core.effect_mult() == multiplier*multiplier*multiplier, "%s 配方未满时三张 Buff 卡面已显示完整叠乘" % core_id)
+		check(core.effect_text() == prefix+str(base*multiplier*multiplier*multiplier), "%s 卡面数值包含三张 Buff" % core_id)
+		for remaining in [2,1]:
+			board._detach_from_group(buffs.pop_back())
+			board.refresh_group(board.group_of(core))
+			var expected := multiplier*multiplier if remaining == 2 else multiplier
+			check(core.effect_mult() == expected, "%s 移走一张后倍率对应剩余 %d 张" % [core_id,remaining])
+			check(core.effect_text() == prefix+str(base*expected), "%s 移走一张后卡面数值恢复" % core_id)
+		board._detach_from_group(buffs.pop_back())
+		board.refresh_group(board.group_of(core))
+		check(core.effect_mult() == 1 and core.effect_text() == prefix+str(base), "%s 移走全部 Buff 后恢复原值" % core_id)
+	main.queue_free()

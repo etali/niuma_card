@@ -12,6 +12,7 @@ const SPAWN_FLY_SPREAD := 0.3
 const SPAWN_FLY_RING := 0.85
 const TEAR_TIME := UIMotion.TEAR
 const SUCK_TIME := UIMotion.TRANSFER
+const PAWN_TRAVEL_TIME := UIMotion.ANTICIPATE + UIMotion.ACT + UIMotion.SETTLE + UIMotion.SETTLE + SUCK_TIME
 var board: Board
 var sfx: Sfx
 var clamp_to_player := false
@@ -22,10 +23,10 @@ func bind(target_board: Board, sound: Sfx, clamp_player := false) -> void:
 	clamp_to_player = clamp_player
 
 func _fly_from(e: CardEntity, from_pos: Vector3, to_pos: Vector3,
-		idx: int = 0, total: int = 1) -> void:
+		idx: int = 0, total: int = 1, delay := 0.0) -> Tween:
 	e.freeze = true
 	var n: int = maxi(total, 1)
-	var stagger: float = SPAWN_FLY_SPREAD / float(n) * float(idx)
+	var stagger: float = delay + SPAWN_FLY_SPREAD / float(n) * float(idx)
 	# 等角度铺一圈，半径交替大小免得 n 大时相邻两张贴太近
 	var ang: float = TAU * float(idx) / float(n)
 	var r: float = SPAWN_FLY_RING * (1.0 if idx % 2 == 0 else 0.6)
@@ -37,9 +38,19 @@ func _fly_from(e: CardEntity, from_pos: Vector3, to_pos: Vector3,
 	e.set_meta("dest_pos", to_pos)
 	# 起飞时小一点、落地长回原大小：远近感，也让密集产出的那一堆卡不糊成一片
 	e._visual.scale = Vector3.ONE * 0.55
-	if idx == 0 and not get_viewport().disable_3d:
-		Feedback.trace(get_parent(), "arrival", from_pos, to_pos + Vector3.UP * 0.08, CardArt.accent_color(e.def_id), SPAWN_FLY_TIME)
 	var tw := create_tween().bind_node(e).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	if idx == 0 and not get_viewport().disable_3d:
+		var trace := func(): Feedback.trace(get_parent(), "arrival", from_pos, to_pos + Vector3.UP * 0.08, CardArt.accent_color(e.def_id), SPAWN_FLY_TIME)
+		if delay > 0.0:
+			tw.parallel().tween_callback(trace).set_delay(stagger)
+		else:
+			trace.call()
+	if delay > 0.0:
+		e.hide()
+		e.set_meta("arrival_hidden", true)
+		tw.parallel().tween_callback(func():
+			e.show()
+			e.remove_meta("arrival_hidden")).set_delay(stagger)
 	tw.parallel().tween_property(e, "position", to_pos, SPAWN_FLY_TIME) \
 		.set_delay(stagger)
 	tw.parallel().tween_property(e._visual, "scale", Vector3.ONE, SPAWN_FLY_TIME) \
@@ -62,6 +73,7 @@ func _fly_from(e: CardEntity, from_pos: Vector3, to_pos: Vector3,
 	# 眼下 _resolve_combo_visual 尾部等 0.7s、飞入只要 0.34s，实际撞不上，
 	# 但那是两个不相干的常量正好错开，不是约束 —— 这里把它变成约束
 	e.set_meta("fly_tw", tw)
+	return tw
 
 func _clear_dest(e: CardEntity) -> void:
 	if is_instance_valid(e) and e.has_meta("dest_pos"):
@@ -97,6 +109,9 @@ func _cancel_fly(e: CardEntity) -> void:
 	# 归宿要撤：掐掉补间意味着它不会飞到那儿去了，留着会让避让绕开一个空位。
 	# 放在 fly_tw 的判断之外 —— 走 _move_to 搬的牌没有 fly_tw，但一样宣告过归宿
 	_clear_dest(e)
+	if e.has_meta("arrival_hidden"):
+		e.show()
+		e.remove_meta("arrival_hidden")
 	if not e.has_meta("fly_tw"):
 		return
 	var tw = e.get_meta("fly_tw")
@@ -175,6 +190,15 @@ func _tear_out(card: CardEntity, dir: Vector3) -> void:
 
 var _transfers: Array[Tween] = []
 
+## 典当先展示完整正面，抵达柜台后再吸收；与付款共用吸收收尾。
+func pawn_into(card: CardEntity, target: Vector3, delay := 0.0) -> Tween:
+	board.drop_card(card)
+	var tween := move_above_table(card, target, delay)
+	tween.tween_interval(UIMotion.SETTLE)
+	tween.tween_callback(func(): card.pulse_feedback("consume"))
+	_consume(tween, card, target, 0.0)
+	return tween
+
 func _suck_into(card: CardEntity, target: Vector3, delay := 0.0) -> void:
 	# 付款与攻击一样要补齐剩余层位；只注销会让新队首停在旧层，
 	# 下次点击按新层数反推起点时，收拢摞可能被排到桌面以下。
@@ -183,11 +207,14 @@ func _suck_into(card: CardEntity, target: Vector3, delay := 0.0) -> void:
 	card.set_meta("dest_pos", target)
 	card.pulse_feedback("consume", Color.TRANSPARENT, delay)
 	var tw := create_tween().bind_node(card).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	_consume(tw, card, target, delay)
+
+func _consume(tw: Tween, card: CardEntity, target: Vector3, delay: float) -> void:
 	# 错开用每条补间自己的 set_delay，不用 tween_interval：
 	# interval 之后紧跟 parallel() 会和 interval **并行**（那就等于没有延迟），
 	# 得写成 chain() 才是串行 —— 两个 parallel 各自带 delay 更不容易读错
 	# （_tear_out 里那两条淡出也是这么错开的）
-	tw.parallel().tween_property(card, "position", target, SUCK_TIME).set_delay(delay)
+	tw.chain().tween_property(card, "position", target, SUCK_TIME).set_delay(delay)
 	tw.parallel().tween_property(card._visual, "scale",
 		Vector3.ONE * 0.1, SUCK_TIME).set_delay(delay)
 	# 错开期间这张牌不会被别人搬走：上面已经 unregister + freeze，

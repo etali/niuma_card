@@ -6,9 +6,11 @@
 """Audit pooled-upgrade golden values with exhaustive count-vector allocation.
 
 This independent oracle does not import Godot or use the production convolution
-DP. Only option, total, and score may be updated; all other frozen Float64 bits
-remain the original pre-optimization observations. Run with --update to refresh
-these three fields deliberately after reviewing a rule change.
+DP. The large-inventory fixture also has an independent closed-form certificate
+for stacked buffs: every core is affordable, every generated user has pawn value,
+and stacking all output buffs on a maximum-output core maximizes total income.
+Only that case's engine/capacity plus option/total/score may be updated; all other
+frozen Float64 bits retain their original pre-optimization observations.
 """
 from collections import Counter
 from functools import lru_cache
@@ -102,6 +104,27 @@ def upgrade_option(fixture, inventory, game):
     return float(total)
 
 
+def stacked_engine_certificate(fixture, case, who):
+    if case["name"] != "large_inventory" or who != "player":
+        return None
+    inventory = Counter(case["cards"][who])
+    # A deliberately fixed, independently checkable certificate for this fixture.
+    assert inventory == Counter(cash=200, user=150, producer=17, grow=8,
+                                upgraded=7, output_buff=5, fill=4)
+    cards, game = fixture["cards"], fixture["game"]
+    assert inventory["user"] >= sum(inventory[k] * cards[k]["recipe_n"] for k in ("producer", "upgraded"))
+    assert inventory["cash"] > inventory["grow"] * cards["grow"]["recipe_n"]
+    # No user shortage: generated users are worth only the pawn price. No core
+    # competes for funding, and the largest output owns every multiplicative buff.
+    upgraded = cards["upgraded"]["output_n"]
+    producer = cards["producer"]["output_n"]
+    grow = cards["grow"]["output_n"] * game["pawn_user"]
+    assert upgraded >= max(producer, grow)
+    return (inventory["upgraded"] * upgraded + inventory["producer"] * producer
+            + inventory["grow"] * (grow - cards["grow"]["recipe_n"])
+            + upgraded * (game["buff_mult"]["output_x2"] ** inventory["output_buff"] - 1))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--update", action="store_true")
@@ -116,8 +139,11 @@ def main():
             option = upgrade_option(fixture, Counter(case["cards"][who]), game)
             frozen = expected[who]
             p = case["parameters"]
-            total = unpack(frozen["asset"]) + p["engine_horizon"] * unpack(frozen["engine"]) + p["upgrade_weight"] * option - p["risk_weight"] * unpack(frozen["risk"])
+            engine = stacked_engine_certificate(fixture, case, who)
+            total = unpack(frozen["asset"]) + p["engine_horizon"] * (unpack(frozen["engine"]) if engine is None else engine) + p["upgrade_weight"] * option - p["risk_weight"] * unpack(frozen["risk"])
             updates[who] = {"option": option, "total": total}
+            if engine is not None:
+                updates[who].update(engine=engine, standalone_capacity=engine)
         for who, other in (("player", "ai"), ("ai", "player")):
             score = max(-100.0, min(100.0, (updates[who]["total"] - updates[other]["total"]) / max(1, game["win_cash"])))
             if case.get("winner"):
@@ -128,7 +154,7 @@ def main():
                     changed.append(f"{case['name']}/{who}/{key}: {unpack(expected[who][key])} -> {value}")
                     expected[who][key] = pack(value)
     if args.update:
-        fixture["upgrade_reference"] = "Same-tier mixed materials, disjoint one-step groups; independently enumerated by ai_features_pooled_reference.py. Only option/total/score updated; all other frozen bits retained."
+        fixture["upgrade_reference"] = "Same-tier mixed materials, disjoint one-step groups; independently enumerated by ai_features_pooled_reference.py. Only option/total/score updated except large_inventory/player engine/capacity: independent stacked-output certificate (base 188 + largest output 10 * (2**5-1) = 498). All other frozen bits retained."
         FIXTURE.write_text(json.dumps(fixture, ensure_ascii=False, indent=2) + "\n")
     elif changed:
         raise SystemExit("Golden differs from independent reference:\n" + "\n".join(changed))

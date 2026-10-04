@@ -4,14 +4,14 @@
 
 extends "res://tests/harness.gd"
 
-## 思考计时器（`engine/think_clock.gd` + `AIPanel` 那一行）的判据。
+## 思考计时器（`engine/think_clock.gd` + 顶部回合状态）的判据。
 ##
 ## 用户要的原话是「外显的实时计数器显示 AI 每次搜索花掉的时间，
 ## 如果是局域网对战则显示对手花掉的时间」。所以要钉三件事：
 ##   1. 那个数随实际墙钟增长，并与最终实测耗时一致
 ##   2. 计时**真的裹在搜索外面** —— 这条最容易假绿：秒表自己 start/stop
 ##      一定对得上，而它到底有没有装在 AI 那条路上是另一件事
-##   3. 联网局念「对手」，单机局念「AI」
+##   3. 单机与联网都在顶部显示当前计时，面板不重复，结束后收起
 ##
 ## 第 2 条的判法是**真跑一个行动阶段**，然后看趟数涨了没有 ——
 ## 不 mock 秒表、不直接调 start/stop。
@@ -106,38 +106,49 @@ func _t_idempotent_stop() -> void:
 	check(ThinkClock.count() == n, "空手 stop 不计入统计（还是 %d 趟）" % n)
 
 
-## 五、面板那一行念的话。三种局面各念一句，且**联网局要念「对手」**。
-##
-## 单独判文本是因为这一行的价值全在「念对了」：数是对的而话说反了
-## （联网局念「AI」）对玩家是同一种错
+## 五、顶部持续走字，结束后清理；每帧更新不得触发资源重新计算。
 func _t_live_text() -> void:
-	var panel := AIPanel.new()
-	# 不进场景树也能问这个函数：它只读 ThinkClock 的静态状态
+	var main: Node = await boot_main()
 	ThinkClock.reset()
-	var never := panel._live_text()
-	check(never != "", "从没想过时也有一行字（不是空白 —— 空白看着像坏了）")
-
+	main._update_thinking_hint(true)
+	var idle: String = main.lbl_round.text
+	check(not idle.contains("思考") and not idle.contains("秒"), "未思考时顶部不显示旧耗时")
+	var panels := main.find_children("AIPanel", "", true, false)
+	var panel_has_clock := false
+	for panel: Node in panels:
+		for label: Node in panel.find_children("*", "Label", true, false):
+			panel_has_clock = panel_has_clock or label.text.contains("⏱") or label.text.contains("思考")
+	check(panels.size() == 1 and not panel_has_clock, "AI 强度面板不再重复显示计时行")
 	ThinkClock.start(ThinkClock.SRC_AI)
-	var running := panel._live_text()
-	check(running.contains("AI") and running.contains("思考中"),
-		"单机局在想的时候念「AI…思考中」（%s）" % running)
+	main._update_thinking_hint()
+	check(main.lbl_round.text.ends_with("对手思考中… 0.0秒"), "顶部在思考开始立即显示零秒")
+	main.lbl_player_res.text = "计时刷新不重算资源"
+	var start := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - start < 250:
+		await process_frame
+	var elapsed := _displayed_seconds(main.lbl_round.text)
+	check(elapsed >= 0.2 and absf(elapsed - ThinkClock.elapsed_ms() / 1000.0) <= 0.15,
+		"顶部计时随真实墙钟增长，无需额外 HUD 刷新（%s）" % main.lbl_round.text)
+	check(main.lbl_player_res.text == "计时刷新不重算资源", "实时计时只更新回合标签，不全量重绘资源 HUD")
 	ThinkClock.stop()
-	var done := panel._live_text()
-	check(done.contains("AI") and done.contains("次"),
-		"单机局想完念「AI」+ 趟数（%s）" % done)
-
-	ThinkClock.reset()
+	main._update_thinking_hint()
+	check(main.lbl_round.text == idle, "思考完成立即收起计时并恢复回合文字")
 	ThinkClock.start(ThinkClock.SRC_FOE)
-	var foe_run := panel._live_text()
+	main._update_thinking_hint()
+	var foe_run: String = main.lbl_round.text
 	check(foe_run.contains("对手") and not foe_run.contains("AI"),
 		"联网局在想的时候念「对手」而**不**念 AI（%s）" % foe_run)
+	check(foe_run.ends_with("0.0秒"), "下一次思考从零开始，不显示上一次耗时")
 	ThinkClock.stop()
-	var foe_done := panel._live_text()
-	check(foe_done.contains("对手") and not foe_done.contains("AI"),
-		"联网局想完也念「对手」（%s）" % foe_done)
-	panel.free()
-
+	main._update_thinking_hint()
+	check(main.lbl_round.text == idle, "联网等待结束也收起当前计时")
 	ThinkClock.reset()
+	main.free()
+
+func _displayed_seconds(text: String) -> float:
+	if not text.contains("对手思考中… "):
+		return -1.0
+	return text.get_slice("对手思考中… ", 1).trim_suffix("秒").to_float()
 
 
 ## 六、**最要紧的一条**：秒表真的装在 AI 那条路上。
@@ -185,7 +196,7 @@ func _t_wired_into_ai_path() -> void:
 	# 趟数对上了还不够：**每一趟得真的裹住那次搜索**。
 	# 趟数对而时长是 0 的写法是存在的 —— stop 摞在 start 后面、
 	# 搜索在它俩之后（实测那个变异：占比 0%，而趟数一分不差）。
-	# 于是面板上念「AI 瞬间 ｜ 3 次 均 瞬间」，满档也这么念。
+	# 于是顶部秒数一直停在零，满档也如此。
 	#
 	# 判占比而不是判「大于 0」：最低档一次搜索约 12 毫秒，
 	# 快机器上真有可能量到 0，那样这条判据会随机红。
@@ -228,8 +239,10 @@ func _foe_side(main: Node) -> void:
 	# 一段可辨认的等待：置标志位的活儿排在 120 毫秒之后
 	var arm := func() -> void:
 		var t0 := Time.get_ticks_msec()
-		while Time.get_ticks_msec() - t0 < 120:
+		while Time.get_ticks_msec() - t0 < 250:
 			await process_frame
+		check(_displayed_seconds(main.lbl_round.text) >= 0.2,
+			"真实联网等待路径在顶部持续显示本次耗时")
 		main._foe_action_done = true
 	arm.call()
 	var t0 := Time.get_ticks_msec()
@@ -242,6 +255,7 @@ func _foe_side(main: Node) -> void:
 	# 量到的是真等的那一段。±60 同前：无头帧长本身有抖动
 	check(absi(ThinkClock.last_ms() - wall) <= 60,
 		"读数就是真等的那段墙钟（%d，实际 %d）" % [ThinkClock.last_ms(), wall])
+	check(not main.lbl_round.text.contains("思考中"), "真实联网等待路径完成后收起顶部计时")
 	ThinkClock.reset()
 
 

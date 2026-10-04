@@ -122,7 +122,7 @@ class ManualBalanceTest(unittest.TestCase):
     def test_engine_fingerprint_tracks_victory_classification(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=pathlib.Path(tmp)
-            for relative in ['engine/state.gd','tools/eval_report.gd','tools/balance/scoring.gd',
+            for relative in ['engine/state.gd','tools/ai_duel.gd','tools/ai_duel_report.gd','tools/ai_decision_stats.gd','tools/eval_report.gd','tools/balance/scoring.gd',
                              'tools/balance/logic.gd','tools/balance/victory.gd','data/ai.json',
                              'data/card_config_schema.json']:
                 path=root/relative
@@ -137,7 +137,7 @@ class ManualBalanceTest(unittest.TestCase):
     def test_schema_change_invalidates_workbench_and_simulation_versions(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=pathlib.Path(tmp)
-            for relative in ['tools/eval_report.gd','data/ai.json','data/card_config_schema.json',
+            for relative in ['tools/ai_duel.gd','tools/ai_duel_report.gd','tools/ai_decision_stats.gd','tools/eval_report.gd','data/ai.json','data/card_config_schema.json',
                              'tools/balance/report.html','tools/balance/report.js','tools/balance/report.css']:
                 path=root/relative
                 path.parent.mkdir(parents=True,exist_ok=True)
@@ -578,6 +578,25 @@ write(output,{'status':'complete','games':[]})
     def release(self,rid):
         (self.store/'runs'/rid/'release').touch()
 
+    def test_duel_and_evaluation_stop_independently_and_capture_manual_parameters(self):
+        spec={'key':'budget','label':'预算','min':1,'max':100,'step':1,'kind':'int'}
+        self.app.schema=[spec]
+        raw={'pairs':5001,'max_rounds':1,'seed_start':1,
+             'a':{'strength':1,'ai_parameters':{'budget':50}},'b':{'strength':0,'ai_parameters':{'budget':1}}}
+        with mock.patch.object(self.app,'profile',side_effect=AssertionError('提交时不重新映射手动参数')):
+            duel=self.app.start_duel({'config_id':'default','options':raw})
+        raw['a']['ai_parameters']['budget']=90
+        self.assertEqual(duel['options']['a']['ai_parameters']['budget'],50)
+        self.assertEqual(duel['options']['b']['ai_parameters']['budget'],1)
+        self.app.schema=[]
+        evaluation=self.start()
+        self.running(duel['id']);self.running(evaluation['id'])
+        self.app.stop({'run_id':duel['id']})
+        self.assertEqual(self.finished(duel['id'])['status'],'cancelled')
+        self.assertEqual(self.app.run(evaluation['id'])['status'],'running')
+        self.release(evaluation['id'])
+        self.assertEqual(self.finished(evaluation['id'])['status'],'complete')
+
     def test_real_processes_overlap_and_stop_is_scoped_to_run(self):
         a,b=self.start(),self.start(1002)
         ar,br=self.running(a['id']),self.running(b['id'])
@@ -753,6 +772,50 @@ class ApiIntegrationTest(unittest.TestCase):
         headers={'Content-Type':'application/json'}
         if token:headers['X-Balance-Token']=type(self).data['token']
         return urllib.request.urlopen(urllib.request.Request(self.url+path,data=json.dumps(body).encode(),headers=headers),timeout=10)
+    def ai_side(self,strength):
+        metadata=json.load(self.post('api/profile',{'strength':strength}))
+        return {'strength':strength,'ai_parameters':metadata['parameters']}
+
+    def test_live_slider_table_contains_exact_engine_profiles(self):
+        metadata=self.data['ai']
+        profiles=metadata['strength_profiles']
+        self.assertEqual(set(profiles),{f'{index/100:.2f}' for index in range(101)})
+        keys={spec['key'] for spec in metadata['schema']}
+        for values in profiles.values():
+            self.assertEqual(set(values),keys)
+            mb.validate_options({**mb.DEFAULT_OPTIONS,'ai_parameters':values},metadata['schema'])
+        self.assertEqual(profiles['0.50'],metadata['parameters'])
+        for strength in (0,.37,.51,.75,1):
+            actual=self.ai_side(strength)['ai_parameters']
+            self.assertEqual(profiles[f'{strength:.2f}'],actual)
+        self.assertEqual(profiles['0.50']['generation_budget'],0)
+        self.assertEqual(profiles['0.51']['generation_budget'],30000)
+
+    def test_duel_validates_and_preserves_all_manual_parameters(self):
+        side=self.ai_side(.5)
+        side['ai_parameters']['engine_horizon']=2.31
+        side['ai_parameters']['financing_mode']=1
+        options={'pairs':1,'max_rounds':1,'seed_start':207,'a':side,'b':self.ai_side(0)}
+        for change in ({'missing':'value'},{'engine_horizon':10.1},{'financing_mode':1.5},
+                       {'node_budget':True},{'unknown_parameter':1}):
+            invalid=copy.deepcopy(options)
+            if 'missing' in change:invalid['a']['ai_parameters'].pop('samples')
+            else:invalid['a']['ai_parameters'].update(change)
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                self.post('api/duel',{'config_id':'default','options':invalid})
+            self.assertEqual(error.exception.code,400);error.exception.close()
+        run=json.load(self.post('api/duel',{'config_id':'default','options':options}))
+        for _ in range(150):
+            result=json.load(urllib.request.urlopen(self.url+'api/run/'+run['id']))
+            if result['status'] not in ('queued','running'):break
+            time.sleep(.1)
+        self.assertEqual(result['status'],'complete',result.get('error'))
+        self.assertEqual(result['options']['a']['ai_parameters'],side['ai_parameters'])
+        actual=result['result']['a']['parameters']
+        self.assertEqual(actual['engine_horizon'],2.31)
+        self.assertEqual(actual['financing_mode'],1)
+        self.assertEqual(set(side['ai_parameters']),{s['key'] for s in self.data['ai']['schema']})
+
     def test_version_requires_name_and_parameters_to_change_together(self):
         cards=self.data['configs'][0]['cards']
         with self.assertRaises(urllib.error.HTTPError) as error:
@@ -770,6 +833,60 @@ class ApiIntegrationTest(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as error:
             self.post('api/config',{'source_id':first['id'],'name':'唯一名称','cards':changed_again})
         self.assertIn('版本名称没有变化',error.exception.read().decode());error.exception.close()
+
+    def test_ai_duel_resolves_two_profiles_and_records_swapped_results(self):
+        options={'pairs':2,'max_rounds':1,'seed_start':113,
+                 'a':self.ai_side(0.1),'b':self.ai_side(0)}
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.post('api/duel',{'config_id':'default','options':options},token=False)
+        self.assertEqual(error.exception.code,403);error.exception.close()
+        for bad in [dict(options,pairs=0),dict(options,a={**options['a'],'strength':2}),
+                    dict(options,b={'strength':0,'ai_parameters':{}}),
+                    dict(options,seed_start=mb.MAX_SAFE_INTEGER)]:
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                self.post('api/duel',{'config_id':'default','options':bad})
+            self.assertEqual(error.exception.code,400);error.exception.close()
+        run=json.load(self.post('api/duel',{'config_id':'default','options':options}))
+        for _ in range(150):
+            result=json.load(urllib.request.urlopen(self.url+'api/run/'+run['id']))
+            if result['status'] not in ('queued','running'):break
+            time.sleep(.1)
+        self.assertEqual(result['status'],'complete',result.get('error'))
+        self.assertEqual(result['kind'],'ai-duel')
+        report=result['result'];summary=report['summary']
+        self.assertNotEqual(report['a']['parameters'],report['b']['parameters'])
+        self.assertEqual(summary['completed_games'],4)
+        self.assertEqual(summary['completed_seed_pairs'],2)
+        self.assertEqual(summary['a_wins']+summary['b_wins']+summary['draws'],4)
+        self.assertEqual(summary['mean_rounds'],1)
+        self.assertEqual(result['progress']['summary']['a_wins'],summary['a_wins'])
+        for seed in (113,114):
+            games=[g for g in report['games'] if g['seed']==seed]
+            self.assertEqual([g['a_seat'] for g in games],['player','ai'])
+        self.assertEqual(report['cards_sha256'],__import__('hashlib').sha256(
+            (pathlib.Path(self.tmp.name)/'runs'/run['id']/'cards.json').read_bytes()).hexdigest())
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.post('api/duel',{'config_id':'default','options':dict(options,pairs=5001,seed_start=mb.MAX_SAFE_INTEGER)})
+        error.exception.close()
+
+    def test_ai_duel_wins_follow_ai_identity_when_swapping_seats(self):
+        cards=copy.deepcopy(self.data['configs'][0]['cards']);cards['_game']['start_cash']=99
+        config=json.load(self.post('api/config',{'source_id':'default','name':'AI对战冲线验证','cards':cards}))
+        options={'pairs':1,'max_rounds':1,'seed_start':115,
+                 'a':self.ai_side(1),'b':self.ai_side(0)}
+        run=json.load(self.post('api/duel',{'config_id':config['id'],'options':options}))
+        for _ in range(150):
+            result=json.load(urllib.request.urlopen(self.url+'api/run/'+run['id']))
+            if result['status'] not in ('queued','running'):break
+            time.sleep(.1)
+        self.assertEqual(result['status'],'complete',result.get('error'))
+        report=result['result'];summary=report['summary']
+        self.assertEqual((summary['a_wins'],summary['b_wins'],summary['draws']),(1,1,0))
+        self.assertEqual([g['winner'] for g in report['games']],['A','B'])
+        self.assertEqual(summary['a_decisive_win_rate'],.5)
+        self.assertEqual(summary['a_score_pair_bootstrap_95'],[])
+        self.assertEqual(report['a']['parameters']['financing_mode'],2)
+        self.assertEqual(report['b']['parameters']['financing_mode'],0)
 
     def test_export_to_selected_path(self):
         target=pathlib.Path(self.tmp.name)/'chosen-name.json'

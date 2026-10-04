@@ -83,7 +83,9 @@ func run_automatic_attack(seat: String, picker: Callable = Callable(),
 				return result
 			transport = provider.call()
 			applier = transport.applier()
-			if transport.state().winner != "" or batch == "" or applier.pool_empty(seat):
+			# 连批只服从规则中的组合锁；散卡允许下一击改选其他合法目标。
+			if transport.state().winner != "" or batch == "" or applier.pool_empty(seat) \
+					or GameState.attack_lock(applier.pools(seat)) != batch:
 				break
 			var same: Array = applier.affordable_targets(seat).filter(func(candidate): return GameState.target_batch(candidate) == batch)
 			if same.is_empty():

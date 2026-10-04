@@ -1358,6 +1358,8 @@ func _flush_ai_moves() -> void:
 ##
 func _ai_fly(e: CardEntity, at: Vector3, lift: float) -> void:
 	kill_ai_move(e.uid)
+	# 连续收到交易时，归位接管尚未结束的到货飞行，避免两条补间争写位置。
+	_main._cancel_fly(e)
 	var from: Vector3 = e.position
 	var span: float = Vector2(at.x - from.x, at.z - from.z).length()
 	var gate: float = foot_gate(from, at)

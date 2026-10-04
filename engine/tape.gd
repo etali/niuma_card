@@ -156,6 +156,15 @@ func _on_landed_intent(intent: Dictionary, result: Dictionary, from_seat: String
 func size() -> int:
 	return steps.size()
 
+## 附加诊断不进入规则意图流，保留搜索时实际使用的强度，支持中局调参溯源。
+func record_ai_decision(state: GameState, who: String, decision: Dictionary) -> void:
+	if not recording(): return
+	if not meta.has("ai_decisions"): meta["ai_decisions"] = []
+	var entry := decision.duplicate(true)
+	entry.merge({"before_step":steps.size()+1,"round":state.round_num,"seat":who,
+		"state_hash":StateCodec.state_hash(state)},true)
+	meta["ai_decisions"].append(entry)
+
 # ---------- 落盘 ----------
 
 func to_dict() -> Dictionary:

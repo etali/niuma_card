@@ -9,7 +9,7 @@ const Strategy = preload("res://engine/ai_strategy.gd")
 const Env = preload("res://engine/ai_environment.gd")
 const Eval = preload("res://engine/ai_evaluation.gd")
 
-## 新实现只需提供接口；参数UI、校验、强度映射、保存和调度都不添加模型分支。
+## 新实现只需提供接口；参数UI、校验、强度映射和调度都不添加模型分支。
 class TestStrategy extends Strategy:
 	func identifier() -> String: return "interface-test"
 	func display_name() -> String: return "测试接口"
@@ -61,15 +61,49 @@ func _test_registration() -> void:
 	check(Registry.unregister("interface-test"), "测试模型可解除注册")
 
 func _test_strength_and_types() -> void:
-	var previous := AISearch.from_strength(0).resolved_parameters()
-	for i in range(1,11):
-		var current := AISearch.from_strength(i/10.0).resolved_parameters()
-		var monotone := true
-		for spec in AISearch.editable_knobs("ai"):
-			if spec.has("strength_range"):
-				monotone = monotone and float(current[spec["key"]]) >= float(previous[spec["key"]])
-		check(monotone, "强度%.1f预算非递减" % (i/10.0))
-		previous = current
+	var baseline: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tests/fixtures/ai_strength_endpoints.json"))
+	for endpoint in [[0.0,"weak"],[0.5,"standard"],[1.0,"strong"]]:
+		var actual := AISearch.from_strength(endpoint[0]).resolved_parameters()
+		actual.erase("profile_version")
+		var expected: Dictionary = baseline[endpoint[1]].duplicate(true)
+		expected.erase("profile_version")
+		var exact := actual.size() == expected.size()
+		for key in expected: exact = exact and actual.get(key) == expected[key]
+		check(exact,"强度%s的参数逐项等于约定的%s锚点" % endpoint)
+	var schema := AISearch.editable_knobs("ai")
+	var mapped := true
+	var valid := true
+	var low_half_exact := true
+	for spec in schema:
+		mapped = mapped and spec.get("strength_points",[]).size() == 3 and spec.get("strength_interpolation") == "linear"
+	for i in range(101):
+		var strength := i/100.0
+		var current := AISearch.from_strength(strength).resolved_parameters()
+		for spec in schema:
+			var key: String = spec["key"]
+			valid = valid and Strategy.validate_value(spec,current[key]) == current[key]
+			valid = valid and (current[key] is int if spec["kind"] == "int" else current[key] is float)
+			if strength <= 0.5:
+				var old_value := lerpf(float(baseline.weak[key]),float(baseline.standard[key]),strength*2)
+				low_half_exact = low_half_exact and current[key] == Strategy.validate_value(spec,old_value)
+	check(mapped,"全部参数通过三锚点线性映射，能力没有独立配置开关表")
+	check(valid,"0到1的101个采样强度全部参数类型、步长与边界合法")
+	check(low_half_exact,"整个低半轴按0与0.5锚点逐项插值")
+	for pair in [[0.624,0],[0.625,1],[0.874,1],[0.875,2]]:
+		check(AISearch.from_strength(pair[0]).get_knob("financing_mode") == pair[1],"典当覆盖在%s按连续插值合法取整为%s" % pair)
+	check(AISearch.from_strength(0.749).get_knob("attack_mode") == 0 and AISearch.from_strength(0.75).get_knob("attack_mode") == 1,
+		"二值能力阈值来自0到1插值后取整")
+	check(AISearch.from_strength(0.5).get_knob("generation_budget") == 0
+		and AISearch.from_strength(0.500001).get_knob("generation_budget") == 30000
+		and AISearch.from_strength(0.51).get_knob("generation_budget") == 30000
+		and AISearch.from_strength(0.75).get_knob("generation_budget") == 30000,
+		"候选生成共享额度哨兵按有效额度平滑过渡，不在0.5右侧骤降到几百节点")
+	var invalid_reference := preload("res://engine/ai_turn_strategy.gd").new().compile_parameters(0.51,{"node_budget":"bad"})
+	check(invalid_reference.node_budget == 30000 and invalid_reference.generation_budget == 30000,
+		"有效额度引用遇到非法外置值时与编译总预算使用同一fallback")
+	check(AISearch.from_preset("legacy").resolved_parameters() == AISearch.from_strength(0.5).resolved_parameters()
+		and AISearch.from_preset("enhanced").resolved_parameters() == AISearch.from_strength(1.0).resolved_parameters(),
+		"旧命令名只是统一强度轴的入口别名")
 	check(AISearch.from_strength(-9).strength == 0 and AISearch.from_strength(9).strength == 1, "强度夹取0~1")
 	check(AISearch.from_tier("ai:mid").strength == AISearch.parse_strength("mid"), "模型和命名强度解析一致")
 	var c := AISearch.from_strength(0)
@@ -85,48 +119,72 @@ func _test_strength_and_types() -> void:
 	check(c.get_knob("node_budget") == 1, "解析profile返回副本，调用方不会污染配置")
 
 func _test_preferences() -> void:
-	var had := FileAccess.file_exists(AISearch.USER_PATH)
-	var real := FileAccess.get_file_as_string(AISearch.USER_PATH) if had else ""
-	var old_pref := AISearch._pref
-	var old_model := AISearch._model_pref
-	var old_overrides := AISearch._overrides.duplicate(true)
-	var f := FileAccess.open(AISearch.USER_PATH,FileAccess.WRITE)
-	f.store_string(JSON.stringify({"model":"v2","strength":0.7,
-		"overrides":{"buy_beam":9,"engine_horizon":4.5,"buy_width":8}}))
-	f.close()
-	AISearch._reset_pref_cache()
-	check(AISearch.pref_model() == "ai" and AISearch.pref_strength() == 0.7,
-		"旧v2偏好迁移到AI，保留已设置强度")
-	check(AISearch.prefs().get_knob("buy_beam") == 9 and AISearch.prefs().get_knob("engine_horizon") == 4.5
-		and not AISearch._overrides.has("buy_width"), "迁移保留合法整数/浮点覆盖，剔除未知参数")
 	var table_hash := StateCodec.table_hash()
-	check(AISearch.save(), "可保存当前实现及覆盖")
-	var saved = JSON.parse_string(FileAccess.get_file_as_string(AISearch.USER_PATH))
-	check(saved.get("model") == "ai" and saved.get("strength") == 0.7,
-		"迁移后保存写入新模型名，保留原强度")
-	AISearch._reset_pref_cache()
-	check(AISearch.prefs().get_knob("buy_beam") == 9 and AISearch.prefs().get_knob("engine_horizon") == 4.5, "重读保存值不丢参数类型和精度")
-	for legacy_model in ["v1", "unknown-model"]:
-		f = FileAccess.open(AISearch.USER_PATH,FileAccess.WRITE)
-		f.store_string(JSON.stringify({"model":legacy_model,"strength":0.7,
-			"overrides":{"buy_beam":9,"engine_horizon":4.5}}))
+	var expected := AISearch.from_strength(AISearch.default_strength()).resolved_parameters()
+	Registry.register(TestStrategy.new())
+	var previous_settings := [
+		{"model":"v2","strength":0.7,"overrides":{"buy_beam":9,"engine_horizon":4.5}},
+		{"model":"ai","strength":1.0,"format_version":3,"overrides":{"node_budget":1}},
+		{"model":"interface-test","strength":0.8,"overrides":{"mode":"wide"}},
+		{"model":"unknown-model","strength":0.9},
+		{"strength":"bad"}, {},
+	]
+	# harness 将 user:// 指向独立目录；只清理旧 AI 文件，不碰其他用户配置。
+	var unrelated_path := "user://unrelated-settings.json"
+	var unrelated := FileAccess.open(unrelated_path,FileAccess.WRITE)
+	unrelated.store_string("unrelated settings")
+	unrelated.close()
+	for stored in previous_settings:
+		var f := FileAccess.open(AISearch.USER_PATH,FileAccess.WRITE)
+		f.store_string(JSON.stringify(stored))
 		f.close()
 		AISearch._reset_pref_cache()
-		check(AISearch.pref_model() == "ai" and AISearch.pref_strength() == 0.7 and not AISearch.has_overrides(),
-			"%s 偏好回当前模型、保留合法强度并清除旧覆盖" % legacy_model)
+		check(AISearch.pref_model() == AISearch.default_model()
+			and AISearch.pref_strength() == AISearch.default_strength()
+			and AISearch.prefs().resolved_parameters() == expected and not AISearch.has_overrides(),
+			"忽略旧模型、强度与逐项参数，本次启动使用默认值：%s" % str(stored))
+		check(not FileAccess.file_exists(AISearch.USER_PATH),"启动时删除旧 AI 参数文件")
+	var malformed := FileAccess.open(AISearch.USER_PATH,FileAccess.WRITE)
+	malformed.store_string("{invalid json")
+	malformed.close()
+	AISearch._reset_pref_cache()
+	check(AISearch.pref_strength() == AISearch.default_strength()
+		and not FileAccess.file_exists(AISearch.USER_PATH),"旧 AI 文件直接删除，无需解析损坏内容")
+	check(FileAccess.get_file_as_string(unrelated_path) == "unrelated settings",
+		"旧 AI 参数清理不影响其他用户设置")
+
+	AISearch.set_pref_strength(0.73)
+	AISearch.set_override("buy_beam",9)
+	AISearch.set_override("engine_horizon",4.5)
+	var active := AISearch.prefs()
+	check(active.strength == 0.73 and active.get_knob("buy_beam") == 9
+		and active.get_knob("engine_horizon") == 4.5,"修改强度及逐项参数立即进入当前运行配置")
+	check(AISearch.prefs().resolved_parameters() == active.resolved_parameters(),
+		"再次读取运行配置保留本次调整")
+	check(not FileAccess.file_exists(AISearch.USER_PATH),"运行中调整 AI 参数始终不落盘")
+	AISearch._reset_pref_cache()
+	check(AISearch.pref_strength() == AISearch.default_strength()
+		and AISearch.prefs().resolved_parameters() == expected and not AISearch.has_overrides(),
+		"重新启动恢复默认参数，不保留上次强度或逐项覆盖")
+
+	AISearch.set_pref_model("interface-test")
+	AISearch.set_pref_strength(0.8)
+	AISearch.set_override("enabled",false)
+	AISearch.set_override("mode","wide")
+	check(AISearch.prefs().model == "interface-test" and AISearch.prefs().get_knob("enabled") == false
+		and AISearch.prefs().get_knob("mode") == "wide","运行时新模型及布尔、枚举覆盖无需保存即生效")
+	AISearch._reset_pref_cache()
+	check(AISearch.pref_model() == AISearch.default_model() and not AISearch.has_overrides(),
+		"新启动不继承上次运行选择的模型")
+	Registry.unregister("interface-test")
+
 	AISearch.set_override("buy_beam",9)
 	AISearch.set_pref_strength(0.2)
 	check(not AISearch.has_overrides(), "移动强度滑块恢复该强度的整套参数")
 	check(StateCodec.table_hash() == table_hash, "AI超参数不修改环境规则指纹")
 	AISearch.restore_defaults()
-	check(not FileAccess.file_exists(AISearch.USER_PATH) and AISearch.prefs().model == "ai", "恢复默认清除文件并使用当前AI")
-	if had:
-		f = FileAccess.open(AISearch.USER_PATH,FileAccess.WRITE)
-		f.store_string(real)
-		f.close()
-	AISearch._pref = old_pref
-	AISearch._model_pref = old_model
-	AISearch._overrides = old_overrides
+	check(not FileAccess.file_exists(AISearch.USER_PATH)
+		and AISearch.prefs().resolved_parameters() == expected, "还原默认即时重置参数且不创建存档")
 
 func _test_real_search_parameters() -> void:
 	var s := GameState.new()

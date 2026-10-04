@@ -50,7 +50,8 @@ def parameter_row(key, column=None, value=None, action="value"):
     def edit(root):
         target = root / "ai.md"
         source = target.read_text()
-        matches = list(re.finditer(r"^\s*\|\s*`%s`\s*\|.*$" % re.escape(key), source, re.MULTILINE))
+        matches = [match for match in re.finditer(r"^\s*\|\s*`%s`\s*\|.*$" % re.escape(key), source, re.MULTILINE)
+                   if match.start() > source.index("## 搜索参数与估值参数")]
         if len(matches) != 1:
             raise ValueError("探针参数行必须恰好出现一次：" + key)
         match = matches[0]
@@ -125,17 +126,15 @@ def probes(snapshot):
     schema = checker.read_parameter_schema(snapshot["engine/ai_turn_strategy.gd"])
     settings = json.loads(snapshot["data/ai.json"])["search"]["ai"]
     for key, spec in schema.items():
-        raw = settings.get(key, spec.get("strength_range", spec["default"]))
-        values = raw if isinstance(raw, list) else [raw]
-        expected = values * 2 if len(values) == 1 and "strength_range" in spec else values
+        raw = settings.get(key, spec["strength_points"])
+        expected = checker.document_values(raw, spec)
         for index, value in enumerate(expected):
             changed = round(value + spec["step"] if value + spec["step"] <= spec["max"]
                             else value - spec["step"], 8)
             configured = list(expected)
             configured[index] = changed
-            if len(expected) == 1:
-                configured = changed
-            label = key + " " + ("强度%d应是" % index if len(expected) == 2 else "默认值应是")
+            configured = [[strength, value] for strength, value in zip((0, 0.5, 1), configured)] if len(expected) == 3 else changed
+            label = key + " " + ("强度%g应是" % (0, 0.5, 1)[index] if len(expected) == 3 else "默认值应是")
             checks.append(("配置漂移 " + key + "/" + str(index),
                            ai(("search", "ai", key), configured), label))
             checks.append(("文档漂移 " + key + "/" + str(index),
@@ -144,7 +143,7 @@ def probes(snapshot):
                        "参数规格 %s 的边界或步长无效" % key))
     # 把端点换成同一行已有数字，防止裸数字查找出现假阳性。
     checks.extend([
-        ("预算列互换碰撞", parameter_row("buy_beam", 1, settings["buy_beam"][1]),
+        ("预算列互换碰撞", parameter_row("buy_beam", 1, settings["buy_beam"][1][1]),
          "buy_beam 强度0应是"),
         ("参数行缺失", parameter_row("buy_beam", action="delete"), "`buy_beam` 命中 0 行"),
         ("参数行重复", parameter_row("risk_weight", action="duplicate"), "`risk_weight` 命中 2 行"),
@@ -158,6 +157,10 @@ def probes(snapshot):
          "search.ai.risk_weight 配置无效：必须是 int/float"),
         ("预算端点数量错误", ai(("search", "ai", "samples"), [1, 3, 4]),
          "search.ai.samples 配置无效：强度范围必须有两个端点"),
+        ("强度锚点乱序", ai(("search", "ai", "samples"), [[0, 1], [0.8, 2], [0.5, 2], [1, 3]]),
+         "强度锚点必须在0到1间严格递增"),
+        ("强度锚点缺端点", ai(("search", "ai", "samples"), [[0.1, 1], [1, 3]]),
+         "强度锚点必须覆盖0到1"),
         ("配置边界独立检查", sequence(ai(("search", "ai", "engine_horizon"), 11),
                                    parameter_row("engine_horizon", 1, 11)),
          "search.ai.engine_horizon 配置无效：超出范围"),
@@ -214,7 +217,8 @@ def positive_probes(snapshot):
         ("改传说升级数量不改文档", card(("shangshi", "upgrade_dup_n"), cards["shangshi"]["upgrade_dup_n"] + 1)),
         ("改路线折算不改文档", card(("_upgrade", "routes", 2, "per"), cards["_upgrade"]["routes"][2]["per"] + 1)),
         ("预算调参并同步文档", sequence(ai("buy_beam", [5, 13]),
-                                    parameter_row("buy_beam", 1, 5), parameter_row("buy_beam", 2, 13))),
+                                    parameter_row("buy_beam", 1, 5), parameter_row("buy_beam", 2, 13),
+                                    parameter_row("buy_beam", 3, 32))),
         ("系数调参并同步文档", sequence(ai("engine_horizon", 3.2), parameter_row("engine_horizon", 1, 3.2))),
         ("有显式配置时修改规格默认", schema_argument("engine_horizon", 5, 3.2)),
         ("有显式配置时修改规格预算端点", schema_argument("buy_beam", 5, 5)),
@@ -222,7 +226,7 @@ def positive_probes(snapshot):
                                           schema_argument("engine_horizon", 5, 3.2),
                                           parameter_row("engine_horizon", 1, 3.2))),
         ("标量覆盖预算两端", sequence(ai("buy_beam", 5), parameter_row("buy_beam", 1, 5),
-                                    parameter_row("buy_beam", 2, 5))),
+                                    parameter_row("buy_beam", 2, 5), parameter_row("buy_beam", 3, 5))),
     ]
 
 

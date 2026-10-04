@@ -24,11 +24,11 @@ signal user_muted_changed(value: bool)
 var _streams := {}
 var _players: Array[AudioStreamPlayer] = []
 var _next := 0
-## 最终静音状态。它由玩家偏好和抽屉收起时的临时挂起共同决定。
+## 普通动作的静音状态；完成提醒可穿过抽屉挂起，但仍遵循玩家声音开关。
 var muted := false
 ## 玩家在界面里选择的声音开关；抽屉自动收起不会改这个值。
 var user_muted := false
-## 抽屉收起期间暂时挂起音效，展开后恢复玩家选择。
+## 抽屉收起期间挂起普通动作音效，完成提醒由动作配置 notification 声明。
 var drawer_suspended := false
 
 func _ready() -> void:
@@ -64,10 +64,12 @@ static func action(name: String) -> Dictionary:
 ## 只有一个可选参数 pitch_scale：逐张错开那种「同一动作连播、音高递变」的场合
 ## 才用得上，眼下没有调用方传它 —— 留着是因为那是演出参数，不是音量档位
 func play(action_name: String, pitch_scale := 1.0) -> void:
-	if muted:
+	if user_muted:
 		return
 	var spec := action(action_name)
 	if spec.is_empty():
+		return
+	if drawer_suspended and not bool(spec.get("notification", false)):
 		return
 	var key := str(spec.get("sound", ""))
 	if not _streams.has(key) or _streams[key] == null:

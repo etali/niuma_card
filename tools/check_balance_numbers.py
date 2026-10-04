@@ -118,6 +118,8 @@ def read_parameter_schema(source):
     calls = re.findall(r"^\s*_(int|float)\((.*)\),\s*$", section, re.MULTILINE)
     if not calls or len(calls) != len(re.findall(r"\b_(?:int|float)\(", section)):
         raise ValueError("parameter_schema 中有不能解析的参数声明")
+    targets_match = re.search(r"const STRENGTH_TARGETS := (\{.*?\})\n", source, re.DOTALL)
+    targets = json.loads(targets_match[1]) if targets_match else {}
     schema = {}
     for helper, arguments in calls:
         values = next(csv.reader([arguments], skipinitialspace=True))
@@ -139,18 +141,17 @@ def read_parameter_schema(source):
                 raise ValueError("参数规格 %s 缺少可解析的 %s" % (key, field))
             token = match[1]
             spec[field] = bindings[token] if token in bindings else _number(token, allow_text=True)
-        range_match = re.search(r'"strength_range"\s*:\s*\[([^\]]+)\]', body)
-        if range_match:
-            tokens = [token.strip() for token in range_match[1].split(",")]
-            spec["strength_range"] = [bindings[token] if token in bindings else _number(token, allow_text=True)
-                                      for token in tokens]
-            if len(tokens) != 2:
-                raise ValueError("参数规格 %s 的 strength_range 必须有两个端点" % key)
+        if helper == "int":
+            spec["strength_target"] = targets.get(key)
+            spec["strength_points"] = [[0, bindings["weak"]], [0.5, bindings["strong"]],
+                                       [1, targets.get(key, bindings["strong"])]]
+        else:
+            spec["strength_points"] = [[s, bindings["value"]] for s in (0, 0.5, 1)]
         if spec["min"] > spec["max"] or spec["step"] <= 0:
             raise ValueError("参数规格 %s 的边界或步长无效" % key)
         if spec["kind"] == "int" and any(spec[field] != int(spec[field]) for field in ("min", "max", "step")):
             raise ValueError("参数规格 %s 的整数边界和步长必须是整数" % key)
-        spec["defaults"] = spec.get("strength_range", [spec["default"]])
+        spec["defaults"] = [point[1] for point in spec["strength_points"]]
         for value in [spec["default"]] + spec["defaults"]:
             problem = _value_problem(value, spec)
             if problem:
@@ -159,40 +160,81 @@ def read_parameter_schema(source):
     return schema
 
 
+def configuration_points(raw, spec):
+    """校验标量、旧两端数组或新强度锚点，返回有序锚点与问题列表。"""
+    problems = []
+    if not isinstance(raw, list):
+        points = [[0, raw], [1, raw]]
+    elif raw and isinstance(raw[0], list):
+        points = raw
+        previous = -1
+        for point in points:
+            if not isinstance(point, list) or len(point) != 2:
+                return [], ["强度锚点必须为[位置,数值]"]
+            try:
+                position = _number(point[0])
+            except (TypeError, ValueError):
+                return [], ["强度锚点位置必须为有限数值"]
+            if position < 0 or position > 1 or position <= previous:
+                problems.append("强度锚点必须在0到1间严格递增")
+            previous = position
+        if points[0][0] != 0 or points[-1][0] != 1:
+            problems.append("强度锚点必须覆盖0到1")
+    elif len(raw) == 2:
+        points = [[0, raw[0]], [0.5, raw[1]], [1, spec.get("strength_target") if spec.get("strength_target") is not None else raw[1]]]
+    else:
+        return [], ["强度范围必须有两个端点，或提供[位置,数值]锚点"]
+    for _, value in points:
+        problem = _value_problem(value, spec)
+        if problem:
+            problems.append(problem)
+    return points, problems
+
+
+def document_values(raw, spec):
+    """整数参数文档展示0/0.5/1三锚点，固定评估系数展示默认强度0.5。"""
+    points, problems = configuration_points(raw, spec)
+    if problems:
+        raise ValueError("；".join(problems))
+    values = []
+    for strength in ((0, 0.5, 1) if spec["kind"] == "int" else (0.5,)):
+        value = points[-1][1]
+        for left, right in zip(points, points[1:]):
+            if strength < right[0]:
+                value = left[1] + (right[1] - left[1]) * (strength - left[0]) / (right[0] - left[0])
+                break
+        # Godot在输出前按schema步长量化，两端数组的中点也必须一致。
+        value = spec["min"] + _round_half_up((value - spec["min"]) / spec["step"]) * spec["step"]
+        values.append(value)
+    return values
+
 def check_ai_tables(root, ai_config, bad):
     """校验合法配置及其文档值；显式配置允许覆盖规格默认值。"""
     schema = read_parameter_schema((root / "engine" / "ai_turn_strategy.gd").read_text())
     configured = ai_config["search"]["ai"]
     lines = (root / "ai.md").read_text().splitlines()
+    table_start = lines.index("## 搜索参数与估值参数")
     count = 0
     unknown = set(configured) - set(schema) - {"profile_version"}
     unknown = {key for key in unknown if not key.startswith("_")}
     if unknown:
         bad.append("data/ai.json.search.ai 包含未注册参数：%s" % "、".join(sorted(unknown)))
     for key, spec in schema.items():
-        raw = configured.get(key, spec.get("strength_range", spec["default"]))
-        values = raw if isinstance(raw, list) else [raw]
-        problems = []
-        if isinstance(raw, list) and len(raw) != 2:
-            problems.append("强度范围必须有两个端点")
-        for value in values:
-            problem = _value_problem(value, spec)
-            if problem:
-                problems.append(problem)
+        raw = configured.get(key, spec["strength_points"])
+        _, problems = configuration_points(raw, spec)
         if problems:
             bad.append("data/ai.json.search.ai.%s 配置无效：%s" % (key, "；".join(problems)))
             continue
-        # 强度预算被一个标量覆盖时，两端取同一值；无覆盖时使用规格 fallback。
-        expected = values * 2 if len(values) == 1 and "strength_range" in spec else values
+        expected = document_values(raw, spec)
         hits = [(i, line) for i, line in enumerate(lines, 1)
-                if re.match(r"^\s*\|\s*`%s`\s*\|" % re.escape(key), line)]
+                if i > table_start and re.match(r"^\s*\|\s*`%s`\s*\|" % re.escape(key), line)]
         if len(hits) != 1:
             bad.append("ai.md 参数表 `%s` 命中 %d 行，应为 1 行" % (key, len(hits)))
             continue
         number, line = hits[0]
         columns = [part.strip().strip("`") for part in line.strip().strip("|").split("|")]
         for index, value in enumerate(expected, 1):
-            label = "强度%d" % (index - 1) if len(expected) == 2 else "默认值"
+            label = "强度%g" % (0, 0.5, 1)[index - 1] if len(expected) == 3 else "默认值"
             if len(columns) <= index or not _same_number(columns[index], value):
                 bad.append("ai.md:%d 的 %s %s应是 %g（第%d列）" % (
                     number, key, label, value, index + 1))

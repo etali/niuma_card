@@ -1,0 +1,262 @@
+{
+  "source": "seed 123004, round 1, high strength first; actual shield reply by default strength",
+  "seat": "player",
+  "state": {
+    "combos": [
+      {
+        "eval": {
+          "attack_n": 3.0,
+          "attack_res": "user",
+          "filled_by_fission": false,
+          "leader": "chaping",
+          "output_card": "",
+          "output_n": 0,
+          "output_res": "",
+          "protect_cash": false,
+          "protect_user": false,
+          "reason": "",
+          "recipe_pay_n": 0,
+          "recipe_res": "user",
+          "type": "attack",
+          "valid": true
+        },
+        "owner": "player",
+        "uids": [
+          42,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ]
+      }
+    ],
+    "draw_first": "player",
+    "log": [],
+    "market": [
+      "chunwan",
+      "ditui",
+      "waimai",
+      "tuisong",
+      "chaping",
+      "touliu"
+    ],
+    "players": {
+      "ai": {
+        "cards": [
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 20
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 21
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 22
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 23
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 24
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 25
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 26
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 27
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 28
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 29
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 30
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 31
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 32
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 33
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 34
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 35
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 36
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 37
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 38
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 39
+          }
+        ]
+      },
+      "player": {
+        "cards": [
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 10
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 11
+          },
+          {
+            "def_id": "user",
+            "locked": true,
+            "uid": 14
+          },
+          {
+            "def_id": "user",
+            "locked": true,
+            "uid": 15
+          },
+          {
+            "def_id": "user",
+            "locked": true,
+            "uid": 16
+          },
+          {
+            "def_id": "user",
+            "locked": true,
+            "uid": 17
+          },
+          {
+            "def_id": "user",
+            "locked": true,
+            "uid": 18
+          },
+          {
+            "def_id": "user",
+            "locked": true,
+            "uid": 19
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 40
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 41
+          },
+          {
+            "def_id": "chaping",
+            "locked": true,
+            "uid": 42
+          },
+          {
+            "def_id": "pinshaoshao",
+            "locked": false,
+            "uid": 43
+          }
+        ]
+      }
+    },
+    "rng": {
+      "seed": "123004",
+      "state": "-5623352414814214330"
+    },
+    "round_num": 1,
+    "uid": 44,
+    "win_reason": "",
+    "winner": ""
+  },
+  "reply_intents": [
+    {
+      "market_idx": 4,
+      "op": "buy",
+      "pay_uids": [],
+      "seat": "ai"
+    },
+    {
+      "market_idx": 3,
+      "op": "buy",
+      "pay_uids": [],
+      "seat": "ai"
+    },
+    {
+      "op": "create_combo",
+      "seat": "ai",
+      "uids": [
+        44,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        45
+      ]
+    }
+  ],
+  "settled_resources": {
+    "player": {
+      "cash": 4,
+      "user": 3
+    },
+    "ai": {
+      "cash": 2,
+      "user": 6
+    }
+  }
+}

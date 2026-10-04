@@ -207,9 +207,8 @@ static func editable_groups() -> Array:
 const PLATE_LABELS := {
 	"plate_cash": "现金",
 	"plate_user": "用户",
-	"plate_t1_money": "变现线",
-	"plate_t1_growth": "拉新线",
-	"plate_t2": "巨头",
+	"plate_t1_money": "用户→现金",
+	"plate_t1_growth": "现金→用户",
 	"plate_t3": "传说",
 	"plate_attack": "攻击",
 	"plate_buff_up": "增强",
@@ -222,6 +221,9 @@ static func _plate_items() -> Array:
 	for slot in DEFAULTS["plates"]:
 		if str(slot).begins_with("_") or not DEFAULTS["plates"][slot] is Dictionary:
 			continue
+		# 旧紫色槽位仍可读取、保存，但已没有卡牌使用，故不再提供无效果的控件。
+		if slot == "plate_t2":
+			continue
 		var name: String = PLATE_LABELS.get(slot, slot)
 		for key in ["face", "band", "accent", "ink"]:
 			out.append({
@@ -231,4 +233,3 @@ static func _plate_items() -> Array:
 				}[key]],
 			})
 	return out
-

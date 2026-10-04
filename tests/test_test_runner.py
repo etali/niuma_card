@@ -3,6 +3,7 @@
 # See LICENSE in the project root.
 
 """真实执行统一入口，验证自动发现、零匹配、错误/超时/取消及用户数据隔离。"""
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -136,6 +137,37 @@ class NewFeature(unittest.TestCase):
         finally:
             if process.poll() is None:
                 process.kill(); process.wait()
+
+
+class RuntimeRequestPathsTest(unittest.TestCase):
+    def test_report_requests_keep_paths_after_project_isolation(self):
+        spec = importlib.util.spec_from_file_location("test_runtime", ROOT / "tools/test_runtime.py")
+        runtime = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runtime)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            source = directory / "source"
+            isolated = directory / "isolated"
+            source.mkdir()
+            isolated.mkdir()
+            cards = source / "cards.json"
+            cards.write_text('{"cash":{"kind":"unit"}}')
+            request = source / "request.json"
+            request.write_text(json.dumps({"cards_path":"cards.json", "output_path":"result.json",
+                                           "progress_path":"progress.json", "options":{"pairs":1}}))
+            original = request.read_bytes()
+            for script in ("eval_report.gd", "ai_duel_report.gd"):
+                with self.subTest(script=script):
+                    args = ["-s", "tools/" + script, "--", "request.json"]
+                    adjusted = runtime.preserve_project_paths(args, source, isolated)
+                    snapshot = json.loads(Path(adjusted[-1]).read_text())
+                    self.assertEqual(Path(snapshot["cards_path"]), cards)
+                    self.assertEqual(Path(snapshot["cards_path"]).read_text(), cards.read_text())
+                    self.assertEqual(Path(snapshot["output_path"]), source / "result.json")
+                    self.assertEqual(Path(snapshot["progress_path"]), source / "progress.json")
+                    self.assertEqual(snapshot["options"], {"pairs":1})
+                    self.assertEqual(request.read_bytes(), original, "不改调用方的持久请求")
+                    self.assertEqual(args[-1], "request.json", "不改调用方的命令参数")
 
 
 class GodotIsolationTest(unittest.TestCase):

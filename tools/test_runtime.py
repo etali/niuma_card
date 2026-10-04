@@ -74,7 +74,7 @@ def preserve_project_paths(args, root, temporary):
             if (root / value).exists() or "/" in value or Path(value).suffix.lower() in (".json", ".png", ".csv", ".txt", ".log"):
                 args[index] = absolute(value)
 
-    if script == "eval_report.gd" and len(args) == split + 2:
+    if script in ("eval_report.gd", "ai_duel_report.gd") and len(args) == split + 2:
         request_path = Path(args[-1])
         try: request = json.loads(request_path.read_text(encoding="utf-8"))
         except (OSError, ValueError): return args

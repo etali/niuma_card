@@ -27,9 +27,7 @@ class ProbeStrategy:
 		]
 
 ## 独立起面板，核对注册模型、完整参数 schema、浮点输入与外部同步。
-## 备份整份用户文件，保存 / 还原按钮也走真实路径。
-var _real := PackedByteArray()
-var _had := false
+## 参数改动即时生效；模拟重启丢弃设置，不读写持久参数。
 
 
 func _initialize() -> void:
@@ -37,9 +35,6 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	_had = FileAccess.file_exists(AISearch.USER_PATH)
-	if _had:
-		_real = FileAccess.get_file_as_bytes(AISearch.USER_PATH)
 	AISearch.restore_defaults()
 	AISearch.set_pref_strength(0.45)
 	var panel := AIPanel.new()
@@ -50,7 +45,8 @@ func _run() -> void:
 	_t_schema(panel)
 	_t_external_sync(panel)
 	await _t_scroll(panel)
-	_t_float_roundtrip(panel)
+	_t_float_session(panel)
+	await _t_number_typing(panel)
 	_t_additional_model(panel)
 
 	panel.queue_free()
@@ -85,9 +81,14 @@ func _t_schema(panel: AIPanel) -> void:
 		"面板显示全部搜索预算与估值系数（%d 项）" % panel._rows.size())
 	var wrong := []
 	var floats := 0
-	for i in mini(panel._rows.size(), specs.size()):
-		var row: Dictionary = panel._rows[i]
-		var spec: Dictionary = specs[i]
+	var by_key := {}
+	for row in panel._rows: by_key[row["key"]] = row
+	check(by_key.size()==specs.size(),"分组展示仍覆盖每个参数且没有重复控件")
+	for spec in specs:
+		if not by_key.has(spec["key"]):
+			wrong.append(str(spec["key"]))
+			continue
+		var row: Dictionary = by_key[spec["key"]]
 		var node: Control = row["node"]
 		if row["key"] != spec["key"] or row["kind"] != spec["kind"]:
 			wrong.append(str(spec["key"]))
@@ -140,12 +141,13 @@ func _t_scroll(panel: AIPanel) -> void:
 		"参数列表高度有界（%.0f 像素）" % panel._knobs_scroll.size.y)
 	check(panel._knobs_scroll.get_v_scroll_bar().max_value > panel._knobs_scroll.size.y,
 		"所有参数可滚动访问")
-	var save := _button(panel, "保存")
-	check(save != null and not panel._knobs_scroll.is_ancestor_of(save),
-		"保存按钮位于滚动列表外，始终可见")
+	var reset := _button(panel, "还原默认")
+	check(reset != null and not panel._knobs_scroll.is_ancestor_of(reset),
+		"还原按钮位于滚动列表外，始终可见")
+	check(_button(panel, "保存") == null, "面板不提供保存 AI 参数的入口")
 
 
-func _t_float_roundtrip(panel: AIPanel) -> void:
+func _t_float_session(panel: AIPanel) -> void:
 	var float_row := {}
 	for row in panel._rows:
 		if str(row["kind"]) == "float":
@@ -162,14 +164,56 @@ func _t_float_roundtrip(panel: AIPanel) -> void:
 	check(is_equal_approx(float(AISearch.prefs().get_knob(key)), wanted),
 		"浮点控件信号把小数系数写入真实配置")
 	check(panel._slider_val.text.ends_with("*"), "自定义系数显示星号")
-	_button(panel, "保存").pressed.emit()
+	check(not FileAccess.file_exists(AISearch.USER_PATH), "浮点系数修改也不落盘")
 	AISearch._reset_pref_cache()
-	check(is_equal_approx(float(AISearch.prefs().get_knob(key)), wanted),
-		"浮点系数保存重读保留精度")
-	check(AISearch.prefs().model == "ai", "保存重读保留所选模型")
+	check(not AISearch.has_overrides() and is_equal_approx(float(AISearch.prefs().get_knob(key)),
+			float(AISearch.from_strength(AISearch.default_strength()).get_knob(key))),
+		"模拟重启丢弃浮点自定义参数，恢复默认值")
 	_button(panel, "还原默认").pressed.emit()
 	check(not AISearch.has_overrides() and not panel._slider_val.text.ends_with("*"),
 		"还原按钮清除自定义系数并同步显示")
+
+
+## 仅发 text_changed，不回车、不失焦，必须立即生效且保留正在输入的文字。
+func _t_number_typing(panel: AIPanel) -> void:
+	var by_key := {}
+	for row in panel._rows:
+		by_key[str(row["key"])] = row["node"]
+	var integer := by_key["node_budget"] as SpinBox
+	var decimal := by_key["upgrade_weight"] as SpinBox
+	_type_number(integer, "12345", 3)
+	check(AISearch.prefs().get_knob("node_budget") == 12345 and integer.value == 12345,
+		"整数键入未回车、未失焦时，当前参数和控件值已更新")
+	await process_frame
+	check(integer.get_line_edit().text == "12345" and integer.get_line_edit().caret_column == 3,
+		"整数实时应用后仍保留文本与编辑光标")
+	_type_number(decimal, "0.", 2)
+	await process_frame
+	check(decimal.get_line_edit().text == "0.", "小数点后的未完成输入不会被格式化吞掉")
+	_type_number(decimal, "0.3", 3)
+	check(is_equal_approx(float(AISearch.prefs().get_knob("upgrade_weight")), 0.3),
+		"小数键入过程中第一位已即时生效")
+	_type_number(decimal, "0.35", 4)
+	await process_frame
+	check(is_equal_approx(float(AISearch.prefs().get_knob("upgrade_weight")), 0.35)
+			and decimal.get_line_edit().text == "0.35" and decimal.get_line_edit().caret_column == 4,
+		"继续输入小数保留完整文本与光标，参数同步为 0.35")
+	for text in ["", "-", "0", str(int(integer.max_value)+1), "1.5", "NaN"]:
+		_type_number(integer, text, text.length())
+		check(AISearch.prefs().get_knob("node_budget") == 12345
+				and integer.get_line_edit().text == text,
+			"未完成或非法整数不覆盖运行值也不打断输入：%s" % text)
+	_type_number(integer, "12", 2)
+	check(AISearch.prefs().get_knob("node_budget") == 12, "修正非法输入为有效整数后立即应用")
+	check(not FileAccess.file_exists(AISearch.USER_PATH), "数字键入不会生成 AI 参数文件")
+	_button(panel, "还原默认").pressed.emit()
+
+
+func _type_number(spinbox: SpinBox, text: String, caret: int) -> void:
+	var edit := spinbox.get_line_edit()
+	edit.text = text
+	edit.caret_column = caret
+	edit.text_changed.emit(text)
 
 
 func _t_additional_model(panel: AIPanel) -> void:
@@ -223,10 +267,11 @@ func _t_additional_model(panel: AIPanel) -> void:
 	(by_key["enabled"] as CheckBox).button_pressed = true
 	choice.select(1)
 	choice.item_selected.emit(1)
-	_button(panel, "保存").pressed.emit()
-	AISearch._reset_pref_cache()
 	check(AISearch.pref_model() == "ui_schema_probe" and AISearch.prefs().get_knob("enabled") == true
-			and AISearch.prefs().get_knob("policy") == "second", "额外模型、布尔与枚举覆盖保存重读一致")
+			and AISearch.prefs().get_knob("policy") == "second", "额外模型、布尔与枚举覆盖直接生效")
+	check(not FileAccess.file_exists(AISearch.USER_PATH), "切换模型和修改四类参数不会生成文件")
+	AISearch._reset_pref_cache()
+	check(AISearch.pref_model() == "ai" and not AISearch.has_overrides(), "模拟重启恢复默认模型且清空四类覆盖")
 	panel._model_choice.select(original_index)
 	panel._model_choice.item_selected.emit(original_index)
 	check(AISearch.prefs().model == "ai" and panel._rows.size() == AISearch.editable_knobs().size()
@@ -245,11 +290,6 @@ func _button(node: Node, text: String) -> Button:
 
 func _restore() -> void:
 	AISearch.restore_defaults()
-	if _had:
-		var file := FileAccess.open(AISearch.USER_PATH, FileAccess.WRITE)
-		if file != null:
-			file.store_buffer(_real)
-			file.close()
 	AISearch._reset_pref_cache()
 
 func _visible_text(node: Node) -> String:

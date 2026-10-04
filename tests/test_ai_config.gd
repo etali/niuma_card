@@ -16,9 +16,9 @@ func _initialize() -> void:
 	f.close()
 	var old := AIConfig._source
 	AIConfig._source = TEMP_PATH
-	var cfg := AISearch.from_strength(1)
+	var cfg := AISearch.from_strength(0.5)
 	check(cfg.get_knob("buy_beam") == 5 and cfg.get_knob("engine_horizon") == 4.5, "外置配置覆盖预算端点与浮点系数")
-	check(cfg.get_knob("node_budget") == search["ai"]["node_budget"][1], "未提供参数沿用内置配置")
+	check(cfg.get_knob("node_budget") == search["ai"]["node_budget"][1][1], "未提供参数沿用内置配置")
 	check(AISearch.default_strength() == 0.23, "外置默认强度生效")
 	var copy := AIConfig.read_section("search")
 	copy["ai"]["buy_beam"][0] = 999
@@ -31,15 +31,15 @@ func _initialize() -> void:
 	var migrated := AIConfig.read_section("search")
 	check(migrated.get("default_model") == "ai" and not migrated.has("v2"),
 		"旧外置默认模型与v2参数段迁移为ai，不保留旧键")
-	var migrated_config := AISearch.from_strength(1)
+	var migrated_config := AISearch.from_strength(0.5)
 	check(migrated_config.model == "ai" and migrated_config.get_knob("buy_beam") == 7
 		and migrated_config.get_knob("engine_horizon") == 3.5 and AISearch.default_strength() == 0.31,
 		"旧外置配置在合并内置默认前迁移，保留预算、浮点参数与默认强度")
-	check(migrated_config.get_knob("node_budget") == search["ai"]["node_budget"][1],
+	check(migrated_config.get_knob("node_budget") == search["ai"]["node_budget"][1][1],
 		"旧外置配置缺失参数仍由当前内置AI补齐")
 	_write_external({"default_model":"v2","ai":{"buy_beam":[4,6]},
 		"v2":{"buy_beam":[1,2],"engine_horizon":9.0}})
-	var explicit_config := AISearch.from_strength(1)
+	var explicit_config := AISearch.from_strength(0.5)
 	check(explicit_config.get_knob("buy_beam") == 6
 		and explicit_config.get_knob("engine_horizon") == AIConfig.builtin_section("search")["ai"]["engine_horizon"],
 		"新旧参数段同时存在时仅使用显式ai段，不从旧v2混入覆盖")

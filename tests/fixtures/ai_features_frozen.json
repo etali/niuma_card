@@ -92,7 +92,7 @@
       "name": "大额资产",
       "kind": "legend",
       "price": -1.0,
-      "pawn": 9.007199254740992e+15
+      "pawn": 9007199254740992.0
     },
     "tiny": {
       "name": "小额资产",
@@ -783,15 +783,15 @@
       "expected_bits": {
         "player": {
           "asset": "0000000000c07e40",
-          "engine": "0000000000c06d40",
+          "engine": "0000000000207f40",
           "option": "0000000000005e40",
           "risk": "176cc1166cc1963f",
           "cash": "0000000000006940",
           "users": "0000000000c06240",
-          "total": "daa81216b3789440",
-          "standalone_capacity": "0000000000c06d40",
+          "total": "6c54098b5988a040",
+          "standalone_capacity": "0000000000207f40",
           "standalone_user_price": "abaaaaaaaaaa0a40",
-          "score": "dc90ce2250cc2840"
+          "score": "fc0a5d3a84753440"
         },
         "ai": {
           "asset": "0000000000003f40",
@@ -803,7 +803,7 @@
           "total": "e27a14ae47915140",
           "standalone_capacity": "3333333333b32940",
           "standalone_user_price": "0000000000000840",
-          "score": "dc90ce2250cc28c0"
+          "score": "fc0a5d3a847534c0"
         }
       }
     },
@@ -991,5 +991,5 @@
       }
     }
   ],
-  "upgrade_reference": "Same-tier mixed materials, disjoint one-step groups; independently enumerated by ai_features_pooled_reference.py. Only option/total/score updated; all other frozen bits retained."
+  "upgrade_reference": "Same-tier mixed materials, disjoint one-step groups; independently enumerated by ai_features_pooled_reference.py. Only option/total/score updated except large_inventory/player engine/capacity: independent stacked-output certificate (base 188 + largest output 10 * (2**5-1) = 498). All other frozen bits retained."
 }

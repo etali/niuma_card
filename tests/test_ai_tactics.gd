@@ -135,11 +135,10 @@ func _test_budget() -> void:
 	var monotone := true
 	for i in range(1, 11):
 		var p := Plan.profile(i / 10.0)
-		for key in p:
-			if p[key] is int:
-				monotone = monotone and int(p[key]) >= int(previous[key])
+		for key in ["node_budget","buy_beam","build_beam","plans","replies","sales","finalists","samples","future_rounds","target_trials"]:
+			monotone = monotone and int(p[key]) >= int(previous[key])
 		previous = p
-	check(monotone, "AI自身所有预算随强度非递减，0不退回v1")
+	check(monotone, "总预算和主要搜索宽度随整体强度非递减，局部额度另按分配策略调整")
 
 
 func _test_market_order() -> void:

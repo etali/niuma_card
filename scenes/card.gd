@@ -244,7 +244,8 @@ func setup(p_uid: int, p_def_id: String) -> void:
 
 	var shape := CollisionShape3D.new()
 	var box_shape := BoxShape3D.new()
-	box_shape.size = Vector3(CARD_SIZE.x, 0.08, CARD_SIZE.z)
+	# 碰撞厚度与卡身一致，避免冻结牌摞的隐形厚盒把旁边散卡挤入桌面。
+	box_shape.size = CARD_SIZE
 	shape.shape = box_shape
 	add_child(shape)
 

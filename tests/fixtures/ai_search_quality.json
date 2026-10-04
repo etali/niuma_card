@@ -1,0 +1,216 @@
+{
+  "source": "20261003_182756_112steps, before action 56",
+  "state": {
+    "combos": [],
+    "draw_first": "ai",
+    "log": [],
+    "market": [
+      "zuokong",
+      "pinshaoshao",
+      "butie",
+      "liebian",
+      "ditui",
+      "pinshaoshao",
+      "chaping",
+      "butie"
+    ],
+    "players": {
+      "ai": {
+        "cards": [
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 39
+          },
+          {
+            "def_id": "shuabuting",
+            "locked": false,
+            "uid": 41
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 52
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 53
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 54
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 55
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 56
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 57
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 75
+          },
+          {
+            "def_id": "yinqing996",
+            "locked": false,
+            "uid": 76
+          },
+          {
+            "def_id": "yinqing996",
+            "locked": false,
+            "uid": 77
+          }
+        ]
+      },
+      "player": {
+        "cards": [
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 6
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 7
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 8
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 9
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 12
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 13
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 14
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 15
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 16
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 17
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 18
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 19
+          },
+          {
+            "def_id": "baoyue",
+            "locked": false,
+            "uid": 51
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 58
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 59
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 60
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 61
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 62
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 63
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 78
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 79
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 80
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 81
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 82
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 83
+          }
+        ]
+      }
+    },
+    "rng": {
+      "seed": "-6898243095099083969",
+      "state": "-7936056584894398011"
+    },
+    "round_num": 4,
+    "uid": 84,
+    "win_reason": "",
+    "winner": ""
+  }
+}

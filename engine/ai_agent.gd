@@ -15,8 +15,13 @@ const STEP_THINK := "think"
 const STEP_DONE := ""
 
 var think: Callable = Callable()
+## 交互宿主可在每次新搜索前提供当前设置；模拟器保留构造时显式传入的配置。
+## 只在驱动线程调用，返回值随后冻结，不让工作线程读取可变玩家设置。
+var config_provider: Callable = Callable()
 ## 由会话宿主提供；只在驱动线程查询，不让旧计划跨越重开/退出继续落地。
 var cancelled: Callable = Callable()
+## 搜索完成后在驱动线程报告冻结的参数和诊断，供录像、HTML对战共用。
+var decision_observer: Callable = Callable()
 var _t: Transport
 var _seat: String
 var _cfg: AISearch
@@ -78,11 +83,15 @@ func plan_job() -> Callable:
 	# 在调用线程冻结输入，工作线程不会与认输/换局共同读写同一牌局。
 	var st := AIEnvironment.copy(state())
 	var seat := _seat
+	var current: AISearch = config_provider.call() if config_provider.is_valid() else _cfg
 	var cfg := AISearch.new()
-	cfg.model = _cfg.model
-	cfg.strength = _cfg.strength
-	cfg.parameters = _cfg.resolved_parameters()
-	return func() -> Variant: return AIPlan.choose_plan(st, seat, cfg)
+	cfg.model = current.model
+	cfg.strength = current.strength
+	cfg.parameters = current.resolved_parameters()
+	return func() -> Variant:
+		var plan := AIPlan.choose_plan(st, seat, cfg)
+		plan["configuration"] = {"model":cfg.model,"strength":cfg.strength,"parameters":cfg.parameters.duplicate(true)}
+		return plan
 
 func next_step() -> String:
 	if is_cancelled() or state().winner != "" or _replans >= MAX_REPLANS:
@@ -96,6 +105,9 @@ func next_step() -> String:
 			if is_cancelled():
 				return STEP_DONE
 		_intents = _plan.get("intents", []).duplicate(true)
+		if decision_observer.is_valid():
+			decision_observer.call(state(),_seat,{"configuration":_plan.get("configuration",{}),
+				"diagnostics":_plan.get("diagnostics",{}),"intents":_intents.duplicate(true)})
 		_plan = {}
 		_ready = true
 		_asked_think = false

@@ -164,6 +164,8 @@ func _t2_pawn(main: Node) -> void:
 	check(r.has("uids"), "pawn 的结果回传了 uids（表现层要靠它认该撤哪几张）")
 	await settle()
 	check(not main.entities.has(uid), "对手典当掉的卡从场上消失（uid=%d）" % uid)
+	check(_foe_entity_count(main) == state.players[main.foe_seat]["cards"].size(),
+		"普通典当换来的现金也全部出现在牌桌上")
 
 # ---------- T3 编组 ----------
 

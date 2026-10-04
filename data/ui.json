@@ -47,7 +47,7 @@
       "foreground": ""
     },
     "plates": {
-      "_说明": "九个底板槽位。face=卡面填充，band=标题带填充，accent=配方凑满的墨团色，ink=卡名/图标/数字墨色。face/band 是原九张底板贴图的精确众数色，故默认渲出来与母版化之前一致",
+      "_说明": "底板按卡牌功能分色。plate_t1_money 为用户→现金，plate_t1_growth 为现金→用户，所有等级生产卡共用对应方向的配色；plate_t2 仅保留旧配色数据，不再用于卡牌。face=卡面填充，band=标题带填充，accent=配方凑满的墨团色，ink=卡名/图标/数字墨色。",
       "plate_cash": {
         "face": "#E9D28E",
         "band": "#E2BD52",
@@ -149,6 +149,11 @@
       "confirm_turn": {
         "sound": "confirm",
         "db": -3.0
+      },
+      "foe_action_done": {
+        "sound": "confirm",
+        "db": -3.0,
+        "notification": true
       },
       "buy": {
         "sound": "buy",

@@ -27,10 +27,21 @@ func _initialize() -> void:
 	var request := _json(args[0])
 	AIConfig._source = "res://data/ai.json"
 	if request.get("action") == "metadata":
-		var strength := float(request.get("strength", 1.0))
+		var strength := float(request.get("strength", AISearch.default_strength()))
 		var profile := AISearch.from_strength(strength)
-		_write(str(request["output_path"]), {"schema":AISearch.editable_knobs(profile.model),
-			"parameters":profile.resolved_parameters(),"model":profile.model,
+		var schema := AISearch.editable_knobs(profile.model)
+		# 网页滑钮步长为0.01。所有刻度由真实引擎一次解析，拖动仅回填快照，
+		# 不在每个input事件启动Godot，也不在JavaScript复制参数映射公式。
+		var strength_profiles := {}
+		for index in range(101):
+			var mapped := AISearch.from_model(profile.model,index/100.0).resolved_parameters()
+			var editable := {}
+			for spec in schema: editable[spec["key"]] = mapped[spec["key"]]
+			strength_profiles["%.2f" % (index/100.0)] = editable
+		_write(str(request["output_path"]), {"schema":schema,
+			"parameters":profile.resolved_parameters(),"strength_profiles":strength_profiles,"model":profile.model,
+			"strength":strength,"default_strength":AISearch.default_strength(),
+			"profile_version":profile.implementation().profile_version(),
 			"max_rounds":AIConfig.read_section("simulation").get("max_rounds",80)})
 		quit(0)
 		return

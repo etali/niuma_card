@@ -22,11 +22,11 @@ extends "res://tests/harness.gd"
 ## 或者管道里某处拿 def["output_n"] 而不是 eval["output_n"]，第 1 层照样绿。
 ##
 ## 变异提示（每条都实跑验证过会红）：
-##   combo_rules.gd 的 `evaluate()`：`ldef["output_n"] * (CardDB.buff_mult("output_x2") if output_x2 else 1)`
+##   combo_rules.gd 的 `evaluate()`：`ldef["output_n"] * int(multipliers["output"])`
 ##     改成 `ldef["output_n"]`                        → 第 1/2/3/4 组全红
 ##     条件上再加 `and ldef["output_res"] == CardDB.RES_CASH`
 ##                                                    → 只有产用户的那几条红（这就是本次报障的形状）
-##   combo_rules.gd 的 `evaluate()`：`"output_x2": output_x2 = true` 删掉 → 全红
+##   combo_rules.gd 的共享 effect_multipliers：`"output_x2"` 那支删掉 → 全红
 ##   engine/settle.gd 的 `_resolve_combo()`：`for i in eval["output_n"]`
 ##     改成 `for i in CardDB.get_def(eval["leader"])["output_n"]`
 ##                                                    → 第 3/4 组红（第 1/2 组绿：eval 自己是对的）

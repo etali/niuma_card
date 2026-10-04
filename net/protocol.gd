@@ -65,7 +65,8 @@ extends RefCounted
 ## v6 服务器没有这个结果，连上后会丢失结算反馈，因此必须在握手拒绝混用。
 ## v8：入座和落地回执携带完整 recovery 检查点。状态、阶段和行动方属于同一次
 ## 服务端事务，恢复不再把尚未播完的展示快照与最新阶段拼在一起。
-const VERSION := 8
+## v9：同类数值 Buff 按张数叠乘，避免与只应用一次倍率的旧客户端混用。
+const VERSION := 9
 ## 仅录像里的权威快照恢复标记，不是玩家可提交的 Intent。
 const RECOVERY_STEP := "recovery"
 

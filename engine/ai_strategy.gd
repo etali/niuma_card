@@ -16,7 +16,7 @@ func display_name() -> String:
 func profile_version() -> String:
 	return "1"
 
-## [{key,label,group,kind,min,max,step,hint,default,strength_range?,options?}]
+## [{key,label,group,kind,min,max,step,hint,default,strength_points?,strength_interpolation?,strength_range?,options?}]
 ## kind: int / float / bool / enum；enum.options: [{value,label}]。
 func parameter_schema() -> Array:
 	return []
@@ -24,17 +24,55 @@ func parameter_schema() -> Array:
 func compile_parameters(strength: float, source: Dictionary) -> Dictionary:
 	var s := clampf(strength, 0.0, 1.0) if is_finite(strength) else 0.0
 	var out := {"profile_version": profile_version()}
-	for spec in parameter_schema():
-		var value: Variant = spec["default"]
-		var configured: Variant = source.get(spec["key"], spec.get("strength_range", value))
-		if configured is Array and configured.size() == 2 and str(spec["kind"]) in ["int", "float"]:
-			if _number(configured[0]) and _number(configured[1]):
-				value = lerpf(float(configured[0]), float(configured[1]), s)
-		else:
-			value = configured
+	var schema := parameter_schema()
+	for spec in schema:
+		var zero_equivalent := 0.0
+		# 0为共享额度哨兵时，插值的正值段从默认强度的有效总额度开始。
+		# 不插值成刚刚大于0的局部额度，否则滑块稍微变强反而会丢失绝大部分候选。
+		if spec.has("effective_zero_limit"):
+			for reference in schema:
+				if reference["key"] == spec["effective_zero_limit"]:
+					var effective: Variant = validate_value(reference,_configured_value(reference,source,0.5))
+					if effective == null: effective = reference["default"]
+					if _number(effective): zero_equivalent = float(effective)
+		var value: Variant = _configured_value(spec,source,s,zero_equivalent)
 		var checked: Variant = validate_value(spec, value)
 		out[spec["key"]] = checked if checked != null else spec["default"]
 	return out
+
+static func _configured_value(spec: Dictionary, source: Dictionary, strength: float, zero_equivalent := 0.0) -> Variant:
+	var fallback: Variant = spec["default"]
+	var configured: Variant = source.get(spec["key"], spec.get("strength_points", spec.get("strength_range", fallback)))
+	if configured is Array and not configured.is_empty() and configured[0] is Array:
+		return interpolate_points(configured,strength,str(spec.get("strength_interpolation","linear")),fallback,zero_equivalent)
+	if configured is Array and configured.size() == 2 and str(spec["kind"]) in ["int", "float"]:
+		if _number(configured[0]) and _number(configured[1]):
+			return lerpf(float(configured[0]), float(configured[1]), strength)
+		return fallback
+	return configured
+
+## 锚点区间线性插值，随后统一按schema量化整数/步长。step仅为其他注册模型保留。
+static func interpolate_points(points: Array, strength: float, mode: String, fallback: Variant, zero_equivalent := 0.0) -> Variant:
+	if points.is_empty(): return fallback
+	var previous := -1.0
+	for point in points:
+		if not point is Array or point.size() != 2 or not _number(point[0]): return fallback
+		var position := float(point[0])
+		if position < 0.0 or position > 1.0 or position <= previous: return fallback
+		previous = position
+	if float(points[0][0]) != 0.0 or float(points.back()[0]) != 1.0: return fallback
+	for index in range(1,points.size()):
+		var left: Array = points[index-1]
+		var right: Array = points[index]
+		if strength < float(right[0]):
+			if mode == "step": return left[1]
+			if mode != "linear" or not _number(left[1]) or not _number(right[1]): return fallback
+			var fraction := (strength-float(left[0]))/(float(right[0])-float(left[0]))
+			var left_value := float(left[1])
+			if strength > float(left[0]) and left_value == 0.0 and float(right[1]) > 0.0:
+				left_value = zero_equivalent
+			return lerpf(left_value,float(right[1]),fraction)
+	return points.back()[1]
 
 func choose_plan(_state: GameState, _who: String, _config) -> Dictionary:
 	push_error("AI 实现没有提供 choose_plan")

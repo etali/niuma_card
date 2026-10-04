@@ -219,13 +219,37 @@ func caption(intent: Dictionary = {}, grouped_size := 1) -> String:
 	return progress
 
 func seek(step: int) -> Dictionary:
-	step = clampi(step, 0, record.size())
-	rewind()
+	if step < 0 or step > record.size():
+		return {"ok": false, "reason": "录像步骤超出范围"}
+	if step == cursor:
+		return {"ok": true, "changed": false}
+	# 跳步在独立会话中重放；中途校验失败时，不发布部分结果覆盖当前牌桌。
+	var target = new()
+	target.record = record
+	target.action_groups = action_groups
+	target.rewind()
 	for i in step:
-		var advanced := advance()
+		var advanced: Dictionary = target.advance()
 		if not advanced.get("ok", false):
 			return advanced
-	return {"ok": true}
+	state = target.state
+	applier = target.applier
+	cursor = target.cursor
+	action_cursor = target.action_cursor
+	view = target.view
+	market_indices = target.market_indices
+	market_count = target.market_count
+	phase = target.phase
+	actor = target.actor
+	error = ""
+	return {"ok": true, "changed": true}
+
+## 界面的“步”与前进、后退共用行动组：同一摞连续攻击只占一步，0 表示初始状态。
+func seek_action(step: Variant) -> Dictionary:
+	if not Intent.valid_integer(step, 0) or step > action_count():
+		return {"ok": false, "reason": "请输入 0～%d 范围内的整数行动步数" % action_count()}
+	var raw_step := 0 if int(step) == 0 else int(action_groups[int(step) - 1]["end"])
+	return seek(raw_step)
 
 func previous() -> Dictionary:
 	if cursor <= 0:

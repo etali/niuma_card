@@ -28,34 +28,36 @@ const REASON_DUPLICATE_CARD := "同一张卡不能在一个组合中重复使用
 ## 资源不对称（重构后）：**配方里的现金会被吃掉，配方里的用户永久驻场。**
 ## 所以 recipe_pay_n 只在 recipe_res == cash 时非零；用户配方是席位不是成本。
 
-## 这一组里的翻倍 Buff 各自生效几倍：{output: 1|2, attack: 1|2}。
-##
-## evaluate() 已经把翻倍算进 output_n/attack_n 了，为什么还要单独一个：
-## **卡面要在配方凑满之前就显示翻倍。** evaluate 对没凑满的组返回
-## valid=false、output_n=0，拿 output_n / def["output_n"] 反推倍数会除到 0 上 ——
-## 而玩家把 996 拖进去的那一刻配方通常还没满，正是最需要看到「×2」的时刻。
-##
-## 所以倍数是「组里有没有那张 Buff」的函数，跟配方满不满无关：
-## 卡面说的是「这一组凑满后会产多少」，和 D 位墨团 0/3 一起读才完整
-## （和 output_n 的关系是：配方满时 output_n == def.output_n × 这里的 output）。
-##
-## 判定口径必须和 `evaluate()` 里那段 Buff 扫描（认 `buff_type` 的那个 match）逐字一致：
-## 两处分开数就会出现「卡面写 ×2、结算只发一份」
+## 同类数值 Buff 逐张相乘；不同类型分别作用于产出、攻击。
+## 卡面在配方凑满之前也要显示这组未来的倍率，因此它不依赖 evaluate().valid。
+## evaluate() 直接使用同一结果，避免卡面和结算各自计算出现分歧。
+## 规则描述允许不带 UID；实体牌带 UID 时，同一张牌至多计算一次。
 static func effect_multipliers(cards: Array) -> Dictionary:
-	var out := { "output": 1, "attack": 1 }
+	var out := {"output": 1, "attack": 1}
+	var seen := {}
 	for c in cards:
+		if not c is Dictionary:
+			continue
+		if c.has("uid"):
+			var uid := int(c["uid"])
+			if seen.has(uid): continue
+			seen[uid] = true
 		var def: Dictionary = CardDB.get_def(str(c.get("def_id", "")))
-		# 认 kind 再认 buff_type：非 Buff 卡将来若也带上这个字段（比如某张
-		# product 卡自带增益），不该在这里被当成一张 Buff 计数
 		if def.get("kind", "") != CardDB.KIND_BUFF:
 			continue
-		# 倍率读配置（`_game.buff_mult`），不写 2：这个数在记号、结算、AI 估价
-		# 三处都要用，写死一处就会和另外两处漂
 		var bt := str(def.get("buff_type", ""))
 		match bt:
-			"output_x2": out["output"] = CardDB.buff_mult(bt)
-			"attack_x2": out["attack"] = CardDB.buff_mult(bt)
+			"output_x2": out["output"] *= CardDB.buff_mult(bt)
+			"attack_x2": out["attack"] *= CardDB.buff_mult(bt)
 	return out
+
+## 供按数量分配 Buff 的 AI 使用，和逐张应用规则一致；不限制可叠加张数。
+static func stacked_multiplier(buff_type: String, count: int) -> int:
+	var multiplier := 1
+	var per_card := CardDB.buff_mult(buff_type)
+	for _i in count:
+		multiplier *= per_card
+	return multiplier
 
 
 static func evaluate(cards: Array) -> Dictionary:
@@ -102,13 +104,10 @@ static func evaluate(cards: Array) -> Dictionary:
 	# 裂变鬼才：只要组里有 ≥1 张用户卡、且核心卡的配方要用户，用户就算补满。
 	# 不是翻倍——翻倍在大配方上要先自己凑一半，补满是「有一张就够」
 	var user_fill := false
-	var output_x2 := false
-	var attack_x2 := false
+	var multipliers := effect_multipliers(buffs)
 	for b in buffs:
 		match CardDB.get_def(b["def_id"]).get("buff_type", ""):
 			"user_fill": user_fill = true
-			"output_x2": output_x2 = true
-			"attack_x2": attack_x2 = true
 			"protect_user": result["protect_user"] = true
 			"protect_cash": result["protect_cash"] = true
 
@@ -160,11 +159,11 @@ static func evaluate(cards: Array) -> Dictionary:
 			# 所以这里没有「升级判定抢在生产前面」的先后问题
 			result["type"] = "production"
 			result["output_res"] = ldef["output_res"]
-			result["output_n"] = ldef["output_n"] * (CardDB.buff_mult("output_x2") if output_x2 else 1)
+			result["output_n"] = ldef["output_n"] * int(multipliers["output"])
 		else:
 			result["type"] = "attack"
 			result["attack_res"] = ldef["attack_res"]
-			result["attack_n"] = ldef["attack_n"] * (CardDB.buff_mult("attack_x2") if attack_x2 else 1)
+			result["attack_n"] = ldef["attack_n"] * int(multipliers["attack"])
 		return result
 
 	if ldef["kind"] == CardDB.KIND_LEGEND:

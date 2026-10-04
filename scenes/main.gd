@@ -124,6 +124,8 @@ func _session_current(generation: int) -> bool:
 
 func _invalidate_session() -> void:
 	_session_generation += 1
+	if is_instance_valid(_table_actions):
+		_table_actions.cancel_pawn()
 	if pipe != null and pipe.applied.is_connected(_on_intent_applied):
 		pipe.applied.disconnect(_on_intent_applied)
 	_client_action_pending = false
@@ -199,6 +201,9 @@ var replay_session: RefCounted
 var _replay_picker: CanvasLayer
 var _replay_busy := false
 var _replay_previous_button: Button
+var _replay_step_input: LineEdit
+var _replay_jump_button: Button
+var _replay_step_range: Label
 var _replay_presenter: Node
 var _record_layout_pending := false
 var _record_layout_seat := ""
@@ -730,9 +735,8 @@ func _setup_hud() -> void:
 	# AI 参数面板，贴在选色面板下方。
 	# above 在 add_child 之前赋值：AIPanel._ready 里要按它算自己的位置，
 	# 而 _ready 是 add_child 那一刻同步跑的，之后再赋就晚了。
-	# 这个面板不连任何信号到主场景 —— 强度是每个阶段现读的
-	# （_drive_ai_action 的行动阶段、_drive_ai_attack 的攻击阶段各读一次
-	# AISearch.prefs()），没有「要重刷什么」这件事
+	# 这个面板不连任何信号到主场景：每次新行动搜索和选靶都会读取
+	# AISearch.prefs()。已经开始的搜索和已生成的行动计划持有自己的快照。
 	var aip := AIPanel.new()
 	aip.above = pal
 	canvas.add_child(aip)
@@ -1067,6 +1071,7 @@ func _drawer_timer(seconds: float) -> SceneTreeTimer:
 
 func _process(delta: float) -> void:
 	_flush_record_view()
+	_update_thinking_hint()
 	# 联网局的心跳。WebSocketPeer 是轮询式的，不 poll 就什么都不会发生
 	# （收不到、发不出、也不报错）。
 	#
@@ -1206,6 +1211,8 @@ func _sync_round() -> void:
 ## 从 _respawn_all 里拆出来是给「入座了但还没发牌」用的（_draw_net_table）：
 ## 那一刻没有牌可摆，但单机局那副牌还在桌上，留着会让人以为联网局已经开打了
 func _clear_table() -> void:
+	if is_instance_valid(_table_actions):
+		_table_actions.cancel_pawn()
 	for uid in entities.keys():
 		var e: CardEntity = entities[uid]
 		if is_instance_valid(e):
@@ -1991,17 +1998,19 @@ func _render_foe_buy(r: Dictionary) -> void:
 ## 那是结果自带的信息，联网局照样读得到
 func _render_foe_pawn(r: Dictionary) -> void:
 	var uids: Array = r.get("uids", [])
-	for u in uids:
-		if entities.has(u):
-			_fly_out(entities[u], _pawn_position() + Vector3(0, 2, 0))
-			entities.erase(u)
+	var cards: Array = _table_actions._members(uids)
+	var counts := {}
+	for card in cards:
+		counts[card.def_id] = int(counts.get(card.def_id, 0)) + 1
+	var names: Array[String] = []
+	for def_id in counts:
+		names.append("「%s」×%d" % [CardDB.card_name(def_id), counts[def_id]])
+	_table_actions.pawn(cards, uids, foe_seat)
 	_update_hud()
+	var message := "对手典当 %s → 现金 +%d" % ["、".join(names) if not names.is_empty() else "%d 张卡" % uids.size(), int(r.get("total", 0))]
 	if state.winner != "":
-		_show_message("对手典当 %d 张卡冲线！资金破百在即" % uids.size(), Palette.semantic("danger"))
-		return
-	_sync_entities()    # 典当换出的现金立即生成实体并归堆
-	layout._layout_ai_idle()
-	_show_message("对手典当 %d 张卡救急 → 现金回暖" % uids.size(), Palette.semantic("pending"))
+		message += "，现金已达 %d" % state.resource_count(foe_seat, CardDB.RES_CASH)
+	_show_message(message, Palette.semantic("danger" if state.winner != "" else "pending"))
 
 ## 对手认输了。
 ##
@@ -3325,11 +3334,17 @@ func _run_foe_action() -> void:
 		await _await_foe_action()
 		if not _session_current(session):
 			return
+	if _table_actions.pawn_busy():
+		await _table_actions.pawn_finished
+		if not _session_current(session):
+			return
 	_foe_completed_round = state.round_num
 	_refresh_mascot_state()
 	if state.winner != "":   # 对手典当冲线，直接终局
 		_show_game_over()
 		return
+	# 单机与联网共用的行动收尾：所有操作完成后只提醒一次，不在每次搜索后响。
+	sfx.play("foe_action_done")
 	if state.action_first() == foe_seat:
 		# 对手先手行动完毕 → 玩家后手行动（看得到对手的阵型）
 		_actor = my_seat
@@ -3366,11 +3381,12 @@ func set_foe_remote(remote: bool) -> void:
 ## 而平衡数字只从模拟器那一份量出来
 func _drive_ai_action() -> void:
 	var session := _session_generation
-	# 强度取用户偏好（AI 参数面板改的就是它）。每回合重新读一次，
-	# 所以对局中途拖滑块下一回合就生效 —— 那是这个面板存在的理由
+	# 本次运行的设置在每次新搜索前读取；已有搜索和行动计划保持快照。
 	var agent := AIAgent.new(pipe, foe_seat, AISearch.prefs())
-	# 把搜索丢到工作线程上：满档一次决策 1.7 秒，摞在主线程上就是画面冻住、
-	# 光标不动，看着像挂了。`AIThink` 的类注释写了为什么这条边界是干净的
+	agent.config_provider = AISearch.prefs
+	agent.decision_observer = tape.record_ai_decision
+	# 搜索放在工作线程，增加计算预算时仍保持画面与输入响应。
+	# `AIThink` 的类注释说明线程间的状态隔离边界。
 	agent.think = _think_off_thread
 	agent.cancelled = func(): return not _session_current(session)
 	await agent.run_action_phase(_ai_beat)
@@ -3384,9 +3400,7 @@ func _drive_ai_action() -> void:
 func _think_off_thread(job: Callable) -> Variant:
 	var session := _session_generation
 	_thinking = true
-	# 秒表包住的是**这一次搜索**，不是整个行动阶段：一个阶段里
-	# 典当/买卡/编组各问一次，玩家要看的是「每次搜索多久」（原话）。
-	# 包整个阶段的话三次会摞成一个数，而那个数和面板上的档位估值对不上
+	# 只量本次搜索的真实墙钟；方案之后逐条落地的演出不计入思考耗时。
 	ThinkClock.start(ThinkClock.SRC_AI)
 	_update_thinking_hint()
 	var out: Variant = await _think.run(job, get_tree(), func(): return not _session_current(session))
@@ -3403,11 +3417,46 @@ func _think_off_thread(job: Callable) -> Variant:
 ## 那个工作线程。整个场景共用一个 —— 同一时刻只有一个座位在想
 var _think := AIThink.new()
 var _thinking := false
+var _thinking_tick := -1
 
-## 「对手思考中」那句的开关。只改 HUD 那一行文字，不新建任何节点
-func _update_thinking_hint() -> void:
-	if state != null and lbl_round != null:
-		_update_hud()
+## 只在十分之一秒读数变化时更新回合标签，不重算资源、盾牌或整块 HUD。
+func _update_thinking_hint(force := false) -> void:
+	if state == null or lbl_round == null or replay_session != null:
+		return
+	var tick := int(ThinkClock.elapsed_ms() / 100) if ThinkClock.running() else -1
+	if not force and tick == _thinking_tick:
+		return
+	_thinking_tick = tick
+	var phase_text: String = {PHASE_ACTION:"行动", PHASE_ATTACK:"攻击",
+		PHASE_SETTLING:"结算中", PHASE_OVER:"终局"}[phase]
+	var first := "你" if state.draw_first == my_seat else "对手"
+	var base := "第 %d 回合 · %s · %s先手" % [state.round_num, phase_text, first]
+	if drawer_presentation == null:
+		base = "第 %d 回合 · %s\n%s先手" % [state.round_num, phase_text, first]
+	var text := base
+	var reserved := base
+	if tick >= 0:
+		var prefix := (" · " if drawer_presentation else "\n") + "对手思考中… "
+		text += prefix + "%.1f秒" % (tick / 10.0)
+		# 预留三位秒数，0.0→999.9 期间数字增长不推动顶栏；更久仍可自然扩展。
+		reserved += prefix + "9".repeat(maxi(3, str(int(tick / 10)).length())) + ".9秒"
+	var wanted := 184.0
+	var font := lbl_round.get_theme_font("font")
+	var font_size := lbl_round.get_theme_font_size("font_size")
+	for line in reserved.split("\n"):
+		wanted = maxf(wanted, ceilf(font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x))
+	var resized := not is_equal_approx(lbl_round.custom_minimum_size.x, wanted)
+	lbl_round.custom_minimum_size.x = wanted
+	if drawer_presentation:
+		# 抽屉主题按逻辑尺寸缩放，保留动态占位，避免 relayout 恢复旧宽度。
+		lbl_round.set_meta("drawer_min_base", Vector2(wanted / drawer_presentation._responsive_factor(), 0))
+	lbl_round.text = text
+	lbl_round.tooltip_text = text
+	if resized:
+		if drawer_presentation:
+			drawer_presentation.relayout.call_deferred()
+		else:
+			_position_table_hud.call_deferred()
 
 ## 退出前把工作线程收干净。
 ##
@@ -3424,12 +3473,13 @@ func _exit_tree() -> void:
 ## AI 每走完一步，停多久。返回 Signal 就等它，返回 null 就不等
 ## （见 AIAgent.run_action_phase）。节拍长度是表现层的事，所以判断在这边
 func _ai_beat(step: String):
+	if step == AIAgent.STEP_PAWN and _table_actions.pawn_busy():
+		return _table_actions.pawn_finished
 	if step == AIAgent.STEP_BUY:
 		_update_hud()
 		return _drawer_timer(BEAT_AI_BUY).timeout
 	if step == AIAgent.STEP_BUY_DONE or step == AIAgent.STEP_COMBO:
 		return _drawer_timer(BEAT_AI_STEP).timeout
-	# 典当那步不垫拍：冲线成功的话 winner 已落定，调用方要立刻去终局
 	return null
 
 ## 联网局：等对方把行动阶段走完。
@@ -3447,10 +3497,12 @@ func _await_foe_action() -> void:
 	# 量到的是**含网络往返**的墙钟，不是对方的纯搜索时间：
 	# 那个数这边拿不到（协议里没有这一项），而玩家等的确实是这一段
 	ThinkClock.start(ThinkClock.SRC_FOE)
+	_update_thinking_hint()
 	while _session_current(session) and state.winner == "" and not _foe_action_done:
 		await get_tree().process_frame
 	if _session_current(session):
 		ThinkClock.stop()
+		_update_thinking_hint()
 		_foe_action_done = false
 
 ## 对方发来的 action_done 把这个置起来。由 _on_intent_applied 之外的
@@ -3599,13 +3651,7 @@ func _play_attack_turn(who: String, pools: Dictionary) -> Dictionary:
 ## 发的意图和次序必须与 Transport.run_attack_phase 一致（装弹 → 反复点选 → 收尾）
 func _drive_ai_attack(who: String, pools: Dictionary) -> Dictionary:
 	var session := _session_generation
-	var picker := AIPlan.target_picker(AISearch.prefs())
-	var choose := func(current: GameState, seat: String, targets: Array, current_pools: Dictionary) -> Dictionary:
-		# 与行动计划同一边界：主线程冻结输入，搜索期间认输/退出只改真实牌桌。
-		var snapshot := AIEnvironment.copy(current)
-		var target_snapshot := targets.duplicate(true)
-		var pool_snapshot := current_pools.duplicate(true)
-		return await _think_off_thread(func(): return picker.call(snapshot, seat, target_snapshot, pool_snapshot))
+	var choose := _live_ai_target_picker()
 	var before := func(target: Dictionary) -> void:
 		_hl_target(target, true)
 		await _drawer_timer(BEAT_ATTACK_AIM).timeout
@@ -3617,6 +3663,23 @@ func _drive_ai_attack(who: String, pools: Dictionary) -> Dictionary:
 	var flow := _round_flow()
 	var result: Dictionary = await flow.run_automatic_attack(who, choose, before, after, exhausted)
 	return result if _session_current(session) else Intent.err("cancelled", "牌局已切换")
+
+## 每次选靶读取当前设置；未改参数时复用闭包，保留整个攻击阶段的共享预算。
+func _live_ai_target_picker() -> Callable:
+	var active := {"model":"", "parameters":{}, "picker":Callable()}
+	return func(current: GameState, seat: String, targets: Array, current_pools: Dictionary) -> Dictionary:
+		var cfg := AISearch.prefs()
+		var parameters := cfg.resolved_parameters()
+		if cfg.model != active["model"] or parameters != active["parameters"]:
+			active["model"] = cfg.model
+			active["parameters"] = parameters
+			active["picker"] = AIPlan.target_picker(cfg)
+		# 与行动计划同一边界：主线程冻结输入，搜索期间认输/退出只改真实牌桌。
+		var picker: Callable = active["picker"]
+		var snapshot := AIEnvironment.copy(current)
+		var target_snapshot := targets.duplicate(true)
+		var pool_snapshot := current_pools.duplicate(true)
+		return await _think_off_thread(func(): return picker.call(snapshot, seat, target_snapshot, pool_snapshot))
 
 ## 联网局：等对方把攻击回合走完。他每一击都会经 _render_foe_attack 画出来；
 ## 这里等的是一条 attack_done —— 池子清零是它的效果（IntentApply._attack_done），
@@ -4576,7 +4639,7 @@ func _reset_session_flags(keep_net := false) -> void:
 	_foe_action_done = false
 	_foe_combo_shown = 0
 	# 思考秒表也一局一次性。放在 keep_net 那道返回**之前**：rematch 也要清 ——
-	# 上一局的趟数和平均值挂在新一局的面板上是假话，而且联网局和单机局
+	# 上一局的趟数和平均值不能混入新局，而且联网局和单机局
 	# 量的还不是同一件事（一个含网络往返，一个是纯搜索）
 	ThinkClock.reset()
 	# 撕牌的截止时刻一局一次性：上一局末尾那批撕到一半就重开的话，
@@ -4639,29 +4702,7 @@ func _reset_session_flags(keep_net := false) -> void:
 # ---------- HUD ----------
 
 func _update_hud() -> void:
-	var phase_text: String = {
-		PHASE_ACTION: "行动阶段",
-		PHASE_ATTACK: "攻击阶段",
-		PHASE_SETTLING: "结算中",
-		PHASE_OVER: "终局",
-	}[phase]
-	lbl_round.text = "第 %d 回合 · %s · %s先手" % [
-		state.round_num, phase_text,
-		"你" if state.draw_first == my_seat else "对手",
-	]
-	# 「对手思考中」挂在这条常驻读数后面，**不另开一个飘字** ——
-	# 突然出现又消失的提示是要杜绝的那种（scenes/main.gd 的 HUD 与面板实现）。
-	# 满档一次决策 1.7 秒，没有这句的话玩家分不清「在想」和「卡住了」
-	if drawer_presentation == null:
-		var short_phase := phase_text.replace("行动阶段", "行动").replace("攻击阶段", "攻击")
-		lbl_round.text = "第 %d 回合 · %s\n%s先手" % [state.round_num, short_phase,
-			"你" if state.draw_first == my_seat else "对手"]
-	if _thinking:
-		lbl_round.text += " · 对手思考中…"
-	# HUD 这一行只在**想的时候**挂那句话，不挂实时秒数：
-	# 这一行是每帧重建的字符串，但 `_update_hud` 不是每帧调
-	# （它挂在状态变化上），秒数写这儿会停在开始想的那一刻不动。
-	# 实时那份在 AI 面板里，那边有 `_process`（见 `AIPanel._live_text`）
+	_update_thinking_hint(true)
 	# HUD 读的是资源总量（破百看这个）→ 计量名。
 	#
 	# 两个读数各带一个括号（scenes/main.gd 的 HUD 与面板实现）：资源不对称之后一个总数说明不了局面 ——
@@ -4928,9 +4969,15 @@ func _render_replay_step(intent: Dictionary = {}, rebuild := true) -> void:
 			drawer_presentation._apply_tree_theme(_replay_previous_button)
 		else:
 			_replay_previous_button.position = btn_pass.position - Vector2(200, 0)
+	if _replay_step_input == null:
+		_build_replay_seek_controls()
 	_set_button("录像下一步", _replay_next)
 	btn_pass.disabled = _replay_busy or replay_session.action_cursor >= replay_session.action_count() or replay_session.error != ""
 	_replay_previous_button.disabled = _replay_busy or replay_session.action_cursor <= 0
+	_replay_step_input.editable = not _replay_busy
+	_replay_step_input.text = str(replay_session.action_cursor)
+	_replay_jump_button.disabled = _replay_busy
+	_replay_step_range.text = "行动步（0～%d）" % replay_session.action_count()
 	btn_resign.text = "退出录像"
 	btn_resign.accessibility_name = "退出录像，开始新对局"
 	btn_resign.tooltip_text = "退出录像，开始新对局"
@@ -4940,6 +4987,67 @@ func _render_replay_step(intent: Dictionary = {}, rebuild := true) -> void:
 	lbl_round.text = "录像 · 第 %d 回合 · 行动 %d / %d" % [state.round_num, replay_session.action_cursor, replay_session.action_count()]
 	if drawer_presentation:
 		drawer_presentation.compact_header_resources()
+
+func _build_replay_seek_controls() -> void:
+	var controls := VBoxContainer.new()
+	controls.name = "ReplaySeekControls"
+	controls.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	controls.add_theme_constant_override("separation", 2)
+	var parent: Node = btn_pass.get_parent()
+	parent.add_child(controls)
+	parent.move_child(controls, _replay_previous_button.get_index())
+	_replay_step_range = Label.new()
+	_replay_step_range.add_theme_font_override("font", Fonts.zh())
+	_replay_step_range.add_theme_font_size_override("font_size", 12)
+	controls.add_child(_replay_step_range)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	controls.add_child(row)
+	_replay_step_input = LineEdit.new()
+	_replay_step_input.name = "ReplayStepInput"
+	_replay_step_input.custom_minimum_size.x = 76
+	_replay_step_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_replay_step_input.select_all_on_focus = true
+	_replay_step_input.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
+	_replay_step_input.accessibility_name = "录像行动步数"
+	_replay_step_input.tooltip_text = "0 为初始状态；同一摞连续攻击算一步，与上一步、下一步一致。输入后回车或点击跳转。"
+	_replay_step_input.text_submitted.connect(func(_text: String): _replay_jump())
+	row.add_child(_replay_step_input)
+	_replay_jump_button = Button.new()
+	_replay_jump_button.name = "ReplayJump"
+	_replay_jump_button.text = "跳转"
+	_replay_jump_button.add_theme_font_override("font", Fonts.zh())
+	_replay_jump_button.pressed.connect(_replay_jump)
+	row.add_child(_replay_jump_button)
+	if drawer_presentation:
+		_replay_step_range.set_meta("drawer_font_base", 12)
+		drawer_presentation._apply_tree_theme(controls)
+	else:
+		# 普通牌桌底部有独立消息栏；录像导航放到它上方并跟随窗口右下角。
+		_replay_previous_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+		_replay_previous_button.position = btn_pass.position - Vector2(200, 72)
+		controls.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+		controls.position = btn_pass.position - Vector2(370, 72)
+
+func _replay_jump() -> Dictionary:
+	if replay_session == null or _replay_busy:
+		return {"ok": false, "reason": "请等待当前录像动画结束"}
+	var text := _replay_step_input.text.strip_edges()
+	var maximum := str(replay_session.action_count())
+	# 先比较十进制位数，避免任意长输入经 to_int 溢出后误跳到另一个合法步骤。
+	var digits := text.trim_prefix("+").lstrip("0")
+	if not text.is_valid_int() or text.begins_with("-") or digits.length() > maximum.length() \
+			or (digits.length() == maximum.length() and digits > maximum):
+		var invalid := {"ok": false, "reason": "请输入 0～%s 范围内的整数行动步数" % maximum}
+		_show_message(invalid["reason"], Palette.semantic("danger"))
+		return invalid
+	var result: Dictionary = replay_session.seek_action(text.to_int())
+	if not result.get("ok", false):
+		_show_message(str(result["reason"]), Palette.semantic("danger"))
+		return result
+	_hide_attack_label()
+	_render_replay_step({}, result.get("changed", false))
+	return result
 
 func _replay_next() -> void:
 	var session := _session_generation

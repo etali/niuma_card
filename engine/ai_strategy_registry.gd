@@ -16,7 +16,7 @@ static func _ensure() -> void:
 	_ready = true
 	register(BuiltinAI.new())
 
-## 新 AI 实现注册一次即可接入模型选择、参数面板、设置持久化和统一执行入口。
+## 新 AI 实现注册一次即可接入模型选择、参数面板、运行时设置和统一执行入口。
 static func register(strategy: Strategy) -> bool:
 	_ensure()
 	var id := strategy.identifier()

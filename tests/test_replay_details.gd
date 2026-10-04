@@ -101,6 +101,14 @@ func _local_recording() -> void:
 			var face: Vector2 = camera.unproject_position(slot_card.position + Vector3(0, CardEntity.Y_PLATE, 0))
 			check(face.distance_to(camera.unproject_position(frame.position)) < 0.5, "货架卡%d的卡面与槽框投影误差小于半像素" % index)
 		var action_total: int = replay.replay_session.action_count()
+		for step in [action_total, 1, 0]:
+			replay._replay_step_input.text = str(step)
+			replay._replay_jump_button.pressed.emit()
+			await settle()
+			var raw_step := 0 if step == 0 else int(replay.replay_session.action_groups[step - 1]["end"])
+			var expected_view: Dictionary = data["head_view"] if raw_step == 0 else data["steps"][raw_step - 1]["view"]
+			check(_positions_match(Snapshot.capture(replay), expected_view),
+				"直接跳到行动%d后双方牌位、分组和市场空位恢复且不被旧动画改写" % step)
 		for action_index in action_total:
 			var action_group: Dictionary = replay.replay_session.action_groups[action_index]
 			var last_raw: int = int(action_group["end"]) - 1

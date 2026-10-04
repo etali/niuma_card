@@ -1,0 +1,1521 @@
+{
+  "actual": {
+    "attack": [
+      {
+        "op": "pawn",
+        "seat": "ai",
+        "uids": [
+          46.0
+        ]
+      },
+      {
+        "op": "create_combo",
+        "seat": "ai",
+        "uids": [
+          47.0,
+          45.0,
+          52.0,
+          53.0,
+          54.0,
+          55.0,
+          56.0
+        ]
+      }
+    ],
+    "defenses": [],
+    "state": {
+      "combos": [],
+      "draw_first": "ai",
+      "log": [],
+      "market": [
+        "yunketang",
+        "butie",
+        "baoyue",
+        "yinqing996",
+        "shanzhai",
+        "pinshaoshao",
+        "jiangjia",
+        "eryouxuan"
+      ],
+      "players": {
+        "ai": {
+          "cards": [
+            {
+              "def_id": "user",
+              "locked": false,
+              "uid": 36.0
+            },
+            {
+              "def_id": "user",
+              "locked": false,
+              "uid": 37.0
+            },
+            {
+              "def_id": "user",
+              "locked": false,
+              "uid": 38.0
+            },
+            {
+              "def_id": "user",
+              "locked": false,
+              "uid": 39.0
+            },
+            {
+              "def_id": "cash",
+              "locked": false,
+              "uid": 45.0
+            },
+            {
+              "def_id": "yunketang",
+              "locked": false,
+              "uid": 46.0
+            },
+            {
+              "def_id": "butie",
+              "fired_round": 1.0,
+              "locked": false,
+              "uid": 47.0
+            },
+            {
+              "def_id": "cash",
+              "locked": false,
+              "uid": 52.0
+            },
+            {
+              "def_id": "cash",
+              "locked": false,
+              "uid": 53.0
+            },
+            {
+              "def_id": "cash",
+              "locked": false,
+              "uid": 54.0
+            },
+            {
+              "def_id": "cash",
+              "locked": false,
+              "uid": 55.0
+            }
+          ]
+        },
+        "player": {
+          "cards": [
+            {
+              "def_id": "cash",
+              "locked": false,
+              "uid": 10.0
+            },
+            {
+              "def_id": "cash",
+              "locked": false,
+              "uid": 11.0
+            },
+            {
+              "def_id": "user",
+              "locked": false,
+              "uid": 16.0
+            },
+            {
+              "def_id": "user",
+              "locked": false,
+              "uid": 17.0
+            },
+            {
+              "def_id": "user",
+              "locked": false,
+              "uid": 18.0
+            },
+            {
+              "def_id": "user",
+              "locked": false,
+              "uid": 19.0
+            },
+            {
+              "def_id": "shuabuting",
+              "locked": false,
+              "uid": 40.0
+            },
+            {
+              "def_id": "yunketang",
+              "locked": false,
+              "uid": 41.0
+            },
+            {
+              "def_id": "cash",
+              "locked": false,
+              "uid": 48.0
+            },
+            {
+              "def_id": "cash",
+              "locked": false,
+              "uid": 49.0
+            },
+            {
+              "def_id": "cash",
+              "locked": false,
+              "uid": 50.0
+            },
+            {
+              "def_id": "cash",
+              "locked": false,
+              "uid": 51.0
+            }
+          ]
+        }
+      },
+      "rng": {
+        "seed": "181004",
+        "state": "-8574644671743543426"
+      },
+      "round_num": 2.0,
+      "uid": 56.0,
+      "win_reason": "",
+      "winner": ""
+    }
+  },
+  "cards": {
+    "_comment": "牛马牌 · 卡牌配置。kind: unit/product/attack/buff/legend；price=-1 不进公共区；weight=公共区权重；recipe_*=生产或攻击配方；output_*=产出；attack_*=攻击；upgrade_from=升级来源：具体卡面 id 表示同名 T1 升对应 T2，历史占位键 dup_t2 表示同档生产卡升传说（允许同名或异名，T1/T2 不混用）；upgrade_dup_n=来源侧所需张数，实际材料数由 _upgrade.routes.per 折算，必须精确相等；升级只放生产卡，不夹资源、Buff、攻击、传说或未知卡，不吃现金和用户；buff_type=user_fill（组内有≥1张用户卡即视为用户配方补满）/output_x2/attack_x2/protect_user/protect_cash；pawn=可选固定出售价格，缺省按公式计算",
+    "_game": {
+      "_note": "全局规则数值：market_size=每回合公共区卡位数；start_cash/start_user=开局资源；win_cash=资金胜利线；res_labels=资源的计量名（卡名取自各资源卡自己的 name）；buff_mult=各 buff_type 的倍率（键必须是 CardDB.KNOWN_BUFF_TYPES 里的值，缺一项就等于那张 Buff 不生效，所以 ComboRules 和卡面记号都从这里取，不各写一份 2）；attack_cost_per_card=点掉一张单位卡要几点攻击（组内组外同价，掩体由防御 Buff 提供；抬它等于全线削弱攻击射程，攻击量上限的判据会跟着放宽，见 test_simulator 那条一回合斩护栏）；pawn_rate=典当折价的除数（标价÷它、T2 递归也÷它；这个数原先在 CardDB.pawn_value 里写两遍、balance.md 和 README.md 里各抄了一份「÷2」，是纯经济旋钮，抬它等于全线削弱典当这条救命通道）；pawn_user=一张用户卡当掉给几块（现金卡不可当，恒为 0，那不是旋钮而是规则）。注意这两个只管**公式**：三张传说卡不走公式，价钱写在各自的 pawn 字段上",
+      "attack_cost_per_card": 1.0,
+      "buff_mult": {
+        "attack_x2": 2.0,
+        "output_x2": 2.0
+      },
+      "market_size": 8.0,
+      "pawn_rate": 2.0,
+      "pawn_user": 1.0,
+      "start_cash": 12.0,
+      "start_user": 8.0,
+      "win_cash": 100.0
+    },
+    "_upgrade": {
+      "_note": "生产卡纯卡面升级路线表。具体来源 self 要求材料全部同名，保留两张同名 T1 升对应 T2；dup_key 沿用历史键 dup_t2，表示任意同档生产卡合成传说，允许同名或不同名，T1/T2 不能混用。routes 按 kind+tier 匹配，按表中顺序查找；key=self 使用具体卡面 id，key=dup_key 使用占位键并且只返回 legend 产物；per 为材料档位的折算率。实际材料张数必须精确等于产物 upgrade_dup_n×per，不足、超出或除不尽均无效，旧 require_multiple 字段保留兼容但 false 也不允许截断材料。当前 T1 的三个传说档位为 4/6/8，T2 为 2/3/4，产物和门槛仍从各卡 upgrade_from/upgrade_dup_n 与本表 per 派生，不在代码复制数字。升级组合只接受同档生产卡，不能夹带其他类型；最长路线由 max_upgrade_dup_n×max_per 派生。",
+      "dup_key": "dup_t2",
+      "routes": [
+        {
+          "key": "dup_key",
+          "kind": "product",
+          "per": 1.0,
+          "require_multiple": true,
+          "tier": 2.0
+        },
+        {
+          "key": "self",
+          "kind": "product",
+          "per": 1.0,
+          "require_multiple": true,
+          "tier": 1.0
+        },
+        {
+          "key": "dup_key",
+          "kind": "product",
+          "per": 2.0,
+          "require_multiple": true,
+          "tier": 1.0
+        },
+        {
+          "key": "self",
+          "per": 1.0,
+          "require_multiple": true
+        }
+      ]
+    },
+    "baiyibutie": {
+      "flavor": "电商巨头：烧钱烧出了信仰",
+      "kind": "product",
+      "name": "百亿补贴",
+      "output_n": 7.0,
+      "output_res": "user",
+      "price": -1.0,
+      "recipe_n": 5.0,
+      "recipe_res": "cash",
+      "tier": 2.0,
+      "upgrade_dup_n": 2.0,
+      "upgrade_from": "pinshaoshao",
+      "weight": 0.0
+    },
+    "banxiaoshi": {
+      "flavor": "即时零售：你懒到什么程度，我就送到什么程度",
+      "kind": "product",
+      "name": "半价生活圈",
+      "output_n": 10.0,
+      "output_res": "user",
+      "price": -1.0,
+      "recipe_n": 6.0,
+      "recipe_res": "cash",
+      "tier": 2.0,
+      "upgrade_dup_n": 2.0,
+      "upgrade_from": "waimai",
+      "weight": 0.0
+    },
+    "baoyue": {
+      "flavor": "会员订阅：用户根本不知道自己在续费",
+      "kind": "product",
+      "name": "连续包月",
+      "output_n": 6.0,
+      "output_res": "cash",
+      "price": 5.0,
+      "recipe_n": 4.0,
+      "recipe_res": "user",
+      "tier": 1.0,
+      "weight": 8.0
+    },
+    "butie": {
+      "attack_n": 4.0,
+      "attack_res": "user",
+      "flavor": "价格战就是拿钱砸钱，你补10块我补20",
+      "kind": "attack",
+      "name": "补贴大战",
+      "price": 5.0,
+      "recipe_n": 6.0,
+      "recipe_res": "cash",
+      "tier": 1.0,
+      "weight": 3.0
+    },
+    "cash": {
+      "flavor": "投资人的钱，烧起来不心疼",
+      "kind": "unit",
+      "name": "现金",
+      "price": -1.0,
+      "res": "cash",
+      "tier": 0.0,
+      "weight": 0.0
+    },
+    "chaping": {
+      "attack_n": 3.0,
+      "attack_res": "user",
+      "flavor": "一星保护协会已抵达战场",
+      "kind": "attack",
+      "name": "差评轰炸",
+      "price": 6.0,
+      "recipe_n": 6.0,
+      "recipe_res": "user",
+      "tier": 1.0,
+      "weight": 2.0
+    },
+    "chunwan": {
+      "flavor": "广告一响，全国人民都知道你融到钱了",
+      "kind": "product",
+      "name": "春晚冠名",
+      "output_n": 10.0,
+      "output_res": "user",
+      "price": 7.0,
+      "recipe_n": 6.0,
+      "recipe_res": "cash",
+      "tier": 1.0,
+      "weight": 3.0
+    },
+    "ditui": {
+      "flavor": "扫码送鸡蛋，菜市场才是流量洼地",
+      "kind": "product",
+      "name": "地推扫码",
+      "output_n": 2.0,
+      "output_res": "user",
+      "price": 3.0,
+      "recipe_n": 2.0,
+      "recipe_res": "cash",
+      "tier": 1.0,
+      "weight": 9.0
+    },
+    "dujiaoshou": {
+      "flavor": "PPT里的饼，成真了",
+      "kind": "legend",
+      "name": "独角兽",
+      "pawn": 30.0,
+      "price": -1.0,
+      "tier": 3.0,
+      "upgrade_dup_n": 2.0,
+      "upgrade_from": "dup_t2",
+      "weight": 0.0
+    },
+    "eryouxuan": {
+      "attack_n": 6.0,
+      "attack_res": "user",
+      "flavor": "商家只能站一边：有他没我，有我没他",
+      "kind": "attack",
+      "name": "二选一",
+      "price": 10.0,
+      "recipe_n": 8.0,
+      "recipe_res": "cash",
+      "tier": 1.0,
+      "weight": 1.0
+    },
+    "guomin": {
+      "flavor": "上至八十下至八岁，人手一个",
+      "kind": "legend",
+      "name": "国民应用",
+      "pawn": 70.0,
+      "price": -1.0,
+      "tier": 3.0,
+      "upgrade_dup_n": 3.0,
+      "upgrade_from": "dup_t2",
+      "weight": 0.0
+    },
+    "heigongguan": {
+      "attack_n": 2.0,
+      "attack_res": "user",
+      "flavor": "花钱雇的水军，竞对的瓜周一十点见",
+      "kind": "attack",
+      "name": "黑公关通稿",
+      "price": 3.0,
+      "recipe_n": 4.0,
+      "recipe_res": "cash",
+      "tier": 1.0,
+      "weight": 6.0
+    },
+    "jiangjia": {
+      "buff_type": "protect_cash",
+      "flavor": "你打价格战？我跟，全场五折还送券",
+      "kind": "buff",
+      "name": "降价促销",
+      "price": 4.0,
+      "tier": 1.0,
+      "weight": 3.0
+    },
+    "jiaolv": {
+      "flavor": "知识付费：你买的不是课，是缓解焦虑",
+      "kind": "product",
+      "name": "焦虑贩卖机",
+      "output_n": 9.0,
+      "output_res": "cash",
+      "price": -1.0,
+      "recipe_n": 4.0,
+      "recipe_res": "user",
+      "tier": 2.0,
+      "upgrade_dup_n": 2.0,
+      "upgrade_from": "yunketang",
+      "weight": 0.0
+    },
+    "liebian": {
+      "buff_type": "user_fill",
+      "flavor": "增长黑客：1个用户能裂变出8个群",
+      "kind": "buff",
+      "name": "裂变鬼才",
+      "price": 6.0,
+      "tier": 1.0,
+      "weight": 3.0
+    },
+    "liulianghe": {
+      "flavor": "投流投到最后，平台开始给你造数据",
+      "kind": "product",
+      "name": "流量黑洞",
+      "output_n": 12.0,
+      "output_res": "user",
+      "price": -1.0,
+      "recipe_n": 6.0,
+      "recipe_res": "cash",
+      "tier": 2.0,
+      "upgrade_dup_n": 2.0,
+      "upgrade_from": "touliu",
+      "weight": 0.0
+    },
+    "pinshaoshao": {
+      "flavor": "社交电商：亲，在吗？帮我砍一刀",
+      "kind": "product",
+      "name": "拼少少",
+      "output_n": 4.0,
+      "output_res": "user",
+      "price": 4.0,
+      "recipe_n": 3.0,
+      "recipe_res": "cash",
+      "tier": 1.0,
+      "weight": 8.0
+    },
+    "resou": {
+      "buff_type": "attack_x2",
+      "flavor": "热搜第一，给你挂一整天",
+      "kind": "buff",
+      "name": "热搜包年",
+      "price": 8.0,
+      "tier": 1.0,
+      "weight": 3.0
+    },
+    "shangshi": {
+      "flavor": "今晚全公司加餐，加了根鸡腿",
+      "kind": "legend",
+      "name": "上市敲钟",
+      "pawn": 100.0,
+      "price": -1.0,
+      "tier": 3.0,
+      "upgrade_dup_n": 4.0,
+      "upgrade_from": "dup_t2",
+      "weight": 0.0
+    },
+    "shanzhai": {
+      "attack_n": 2.0,
+      "attack_res": "user",
+      "flavor": "你上线新功能，我下周就有同款",
+      "kind": "attack",
+      "name": "山寨围剿",
+      "price": 4.0,
+      "recipe_n": 6.0,
+      "recipe_res": "user",
+      "tier": 1.0,
+      "weight": 3.0
+    },
+    "shuabuting": {
+      "flavor": "短视频App：我就刷五分钟。三小时后：天亮了啊？",
+      "kind": "product",
+      "name": "刷不停",
+      "output_n": 8.0,
+      "output_res": "cash",
+      "price": 6.0,
+      "recipe_n": 5.0,
+      "recipe_res": "user",
+      "tier": 1.0,
+      "weight": 7.0
+    },
+    "touliu": {
+      "flavor": "精准投放：你刚搜过什么，我就出现在哪",
+      "kind": "product",
+      "name": "广告投流",
+      "output_n": 8.0,
+      "output_res": "user",
+      "price": 6.0,
+      "recipe_n": 5.0,
+      "recipe_res": "cash",
+      "tier": 1.0,
+      "weight": 7.0
+    },
+    "tuanzhang": {
+      "flavor": "社区团购：一个团长管8个群，群群都在接龙",
+      "kind": "product",
+      "name": "地推冲锋队",
+      "output_n": 4.0,
+      "output_res": "user",
+      "price": -1.0,
+      "recipe_n": 3.0,
+      "recipe_res": "cash",
+      "tier": 2.0,
+      "upgrade_dup_n": 2.0,
+      "upgrade_from": "ditui",
+      "weight": 0.0
+    },
+    "tuisong": {
+      "buff_type": "protect_user",
+      "flavor": "UG手段召回流失用户：再卸载我一次试试？",
+      "kind": "buff",
+      "name": "推送弹窗",
+      "price": 4.0,
+      "tier": 1.0,
+      "weight": 3.0
+    },
+    "user": {
+      "flavor": "官方称呼\"家人\"，内部称呼\"韭菜\"",
+      "kind": "unit",
+      "name": "用户",
+      "price": -1.0,
+      "res": "user",
+      "tier": 0.0,
+      "weight": 0.0
+    },
+    "waimai": {
+      "flavor": "首单立减20，薅完记得再来",
+      "kind": "product",
+      "name": "外卖补贴",
+      "output_n": 6.0,
+      "output_res": "user",
+      "price": 5.0,
+      "recipe_n": 4.0,
+      "recipe_res": "cash",
+      "tier": 1.0,
+      "weight": 7.0
+    },
+    "xinxijianfang": {
+      "flavor": "算法帝国：你喜欢什么，我就让你只看什么",
+      "kind": "product",
+      "name": "信息茧房",
+      "output_n": 18.0,
+      "output_res": "cash",
+      "price": -1.0,
+      "recipe_n": 7.0,
+      "recipe_res": "user",
+      "tier": 2.0,
+      "upgrade_dup_n": 2.0,
+      "upgrade_from": "shuabuting",
+      "weight": 0.0
+    },
+    "xufei": {
+      "flavor": "订阅帝国：取消入口藏在第7级菜单",
+      "kind": "product",
+      "name": "自动续费矩阵",
+      "output_n": 14.0,
+      "output_res": "cash",
+      "price": -1.0,
+      "recipe_n": 5.0,
+      "recipe_res": "user",
+      "tier": 2.0,
+      "upgrade_dup_n": 2.0,
+      "upgrade_from": "baoyue",
+      "weight": 0.0
+    },
+    "yinqing996": {
+      "buff_type": "output_x2",
+      "flavor": "狼性团队：只要头发掉得够快，需求就追不上我",
+      "kind": "buff",
+      "name": "996引擎",
+      "price": 6.0,
+      "tier": 1.0,
+      "weight": 4.0
+    },
+    "yunketang": {
+      "flavor": "在线教育：知识改变命运，也改变财报",
+      "kind": "product",
+      "name": "云课堂",
+      "output_n": 4.0,
+      "output_res": "cash",
+      "price": 4.0,
+      "recipe_n": 3.0,
+      "recipe_res": "user",
+      "tier": 1.0,
+      "weight": 9.0
+    },
+    "zuokong": {
+      "attack_n": 3.0,
+      "attack_res": "cash",
+      "flavor": "一页PPT，百亿市值灰飞烟灭",
+      "kind": "attack",
+      "name": "做空报告",
+      "price": 4.0,
+      "recipe_n": 6.0,
+      "recipe_res": "user",
+      "tier": 1.0,
+      "weight": 4.0
+    }
+  },
+  "defense_competitors": [
+    {
+      "intents": [
+        {
+          "op": "pawn",
+          "seat": "player",
+          "uids": [
+            41
+          ]
+        },
+        {
+          "market_idx": 1,
+          "op": "buy",
+          "pay_uids": [],
+          "seat": "player"
+        },
+        {
+          "op": "create_combo",
+          "seat": "player",
+          "uids": [
+            40,
+            16,
+            60
+          ]
+        }
+      ],
+      "rank": 0.2825
+    },
+    {
+      "intents": [
+        {
+          "op": "pawn",
+          "seat": "player",
+          "uids": [
+            41
+          ]
+        },
+        {
+          "market_idx": 1,
+          "op": "buy",
+          "pay_uids": [],
+          "seat": "player"
+        },
+        {
+          "op": "create_combo",
+          "seat": "player",
+          "uids": [
+            40,
+            16,
+            60,
+            17,
+            18,
+            19
+          ]
+        }
+      ],
+      "rank": 0.2825
+    },
+    {
+      "intents": [
+        {
+          "op": "pawn",
+          "seat": "player",
+          "uids": [
+            16
+          ]
+        },
+        {
+          "market_idx": 1,
+          "op": "buy",
+          "pay_uids": [],
+          "seat": "player"
+        },
+        {
+          "op": "create_combo",
+          "seat": "player",
+          "uids": [
+            40,
+            17,
+            59
+          ]
+        }
+      ],
+      "rank": 0.275833333333333
+    },
+    {
+      "intents": [
+        {
+          "op": "pawn",
+          "seat": "player",
+          "uids": [
+            16
+          ]
+        },
+        {
+          "market_idx": 1,
+          "op": "buy",
+          "pay_uids": [],
+          "seat": "player"
+        },
+        {
+          "op": "create_combo",
+          "seat": "player",
+          "uids": [
+            40,
+            17,
+            59,
+            18,
+            19
+          ]
+        }
+      ],
+      "rank": 0.275833333333333
+    },
+    {
+      "intents": [
+        {
+          "op": "pawn",
+          "seat": "player",
+          "uids": [
+            16
+          ]
+        },
+        {
+          "market_idx": 0,
+          "op": "buy",
+          "pay_uids": [],
+          "seat": "player"
+        },
+        {
+          "op": "create_combo",
+          "seat": "player",
+          "uids": [
+            41,
+            17,
+            18,
+            19
+          ]
+        },
+        {
+          "op": "create_combo",
+          "seat": "player",
+          "uids": [
+            59,
+            50,
+            51,
+            58
+          ]
+        }
+      ],
+      "rank": 0.165833333333333
+    },
+    {
+      "intents": [
+        {
+          "op": "pawn",
+          "seat": "player",
+          "uids": [
+            16
+          ]
+        },
+        {
+          "market_idx": 0,
+          "op": "buy",
+          "pay_uids": [],
+          "seat": "player"
+        },
+        {
+          "op": "create_combo",
+          "seat": "player",
+          "uids": [
+            41,
+            17,
+            18,
+            19
+          ]
+        }
+      ],
+      "rank": 0.155833333333333
+    }
+  ],
+  "parameters": {
+    "allocation_budget": 128.0,
+    "allocation_mode": 1.0,
+    "attack_depth": 3.0,
+    "attack_discount": 0.75,
+    "attack_mode": 1.0,
+    "build_beam": 12.0,
+    "buy_beam": 20.0,
+    "candidate_dedup": 1.0,
+    "engine_horizon": 3.0,
+    "finalists": 4.0,
+    "financing_beam": 128.0,
+    "financing_choices": 8.0,
+    "financing_mode": 2.0,
+    "formation_mode": 1.0,
+    "future_reply_limit": 2.0,
+    "future_rounds": 2.0,
+    "generation_budget": 30000.0,
+    "node_budget": 400000.0,
+    "plans": 16.0,
+    "profile_version": "4.0",
+    "protection_bonus": 0.15,
+    "replies": 16.0,
+    "reply_generation_budget": 2048.0,
+    "reply_mode": 1.0,
+    "resale_budget": 512.0,
+    "resale_mode": 1.0,
+    "risk_weight": 1.0,
+    "rollout_build_beam": 2.0,
+    "rollout_buy_beam": 3.0,
+    "rollout_capabilities": 1.0,
+    "rollout_plans": 2.0,
+    "rollout_step_budget": 512.0,
+    "sales": 2.0,
+    "samples": 3.0,
+    "spent_attack_discount": 0.25,
+    "tactical_extension": 1.0,
+    "target_trials": 36.0,
+    "upgrade_weight": 0.65
+  },
+  "samples": [
+    {
+      "attack": [
+        {
+          "op": "pawn",
+          "seat": "ai",
+          "uids": [
+            46.0
+          ]
+        },
+        {
+          "op": "create_combo",
+          "seat": "ai",
+          "uids": [
+            47.0,
+            45.0,
+            52.0,
+            53.0,
+            54.0,
+            55.0,
+            56.0
+          ]
+        }
+      ],
+      "defenses": [],
+      "sample": 0,
+      "state": {
+        "combos": [],
+        "draw_first": "ai",
+        "log": [],
+        "market": [
+          "touliu",
+          "touliu",
+          "waimai",
+          "ditui",
+          "yunketang",
+          "zuokong",
+          "yinqing996",
+          "baoyue"
+        ],
+        "players": {
+          "ai": {
+            "cards": [
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 36
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 37
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 38
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 39
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 45
+              },
+              {
+                "def_id": "yunketang",
+                "locked": false,
+                "uid": 46
+              },
+              {
+                "def_id": "butie",
+                "fired_round": 1,
+                "locked": false,
+                "uid": 47
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 52
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 53
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 54
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 55
+              }
+            ]
+          },
+          "player": {
+            "cards": [
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 10
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 11
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 16
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 17
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 18
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 19
+              },
+              {
+                "def_id": "shuabuting",
+                "locked": false,
+                "uid": 40
+              },
+              {
+                "def_id": "yunketang",
+                "locked": false,
+                "uid": 41
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 48
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 49
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 50
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 51
+              }
+            ]
+          }
+        },
+        "rng": {
+          "seed": "1007922",
+          "state": "-4843077030175140092"
+        },
+        "round_num": 2,
+        "uid": 56,
+        "win_reason": "",
+        "winner": ""
+      }
+    },
+    {
+      "attack": [
+        {
+          "op": "pawn",
+          "seat": "ai",
+          "uids": [
+            46.0
+          ]
+        },
+        {
+          "op": "create_combo",
+          "seat": "ai",
+          "uids": [
+            47.0,
+            45.0,
+            52.0,
+            53.0,
+            54.0,
+            55.0,
+            56.0
+          ]
+        }
+      ],
+      "defenses": [
+        [
+          {
+            "op": "pawn",
+            "seat": "player",
+            "uids": [
+              40.0
+            ]
+          },
+          {
+            "market_idx": 3.0,
+            "op": "buy",
+            "pay_uids": [],
+            "seat": "player"
+          },
+          {
+            "op": "create_combo",
+            "seat": "player",
+            "uids": [
+              41.0,
+              16.0,
+              17.0,
+              18.0,
+              61.0
+            ]
+          }
+        ],
+        [
+          {
+            "market_idx": 3.0,
+            "op": "buy",
+            "pay_uids": [],
+            "seat": "player"
+          },
+          {
+            "op": "create_combo",
+            "seat": "player",
+            "uids": [
+              41.0,
+              16.0,
+              17.0,
+              18.0,
+              58.0
+            ]
+          }
+        ]
+      ],
+      "sample": 1,
+      "state": {
+        "combos": [],
+        "draw_first": "ai",
+        "log": [],
+        "market": [
+          "pinshaoshao",
+          "liebian",
+          "zuokong",
+          "tuisong",
+          "jiangjia",
+          "heigongguan",
+          "yunketang",
+          "heigongguan"
+        ],
+        "players": {
+          "ai": {
+            "cards": [
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 36
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 37
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 38
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 39
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 45
+              },
+              {
+                "def_id": "yunketang",
+                "locked": false,
+                "uid": 46
+              },
+              {
+                "def_id": "butie",
+                "fired_round": 1,
+                "locked": false,
+                "uid": 47
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 52
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 53
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 54
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 55
+              }
+            ]
+          },
+          "player": {
+            "cards": [
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 10
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 11
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 16
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 17
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 18
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 19
+              },
+              {
+                "def_id": "shuabuting",
+                "locked": false,
+                "uid": 40
+              },
+              {
+                "def_id": "yunketang",
+                "locked": false,
+                "uid": 41
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 48
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 49
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 50
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 51
+              }
+            ]
+          }
+        },
+        "rng": {
+          "seed": "1112651",
+          "state": "-1347336657964235511"
+        },
+        "round_num": 2,
+        "uid": 56,
+        "win_reason": "",
+        "winner": ""
+      }
+    },
+    {
+      "attack": [
+        {
+          "op": "pawn",
+          "seat": "ai",
+          "uids": [
+            46.0
+          ]
+        },
+        {
+          "op": "create_combo",
+          "seat": "ai",
+          "uids": [
+            47.0,
+            45.0,
+            52.0,
+            53.0,
+            54.0,
+            55.0,
+            56.0
+          ]
+        }
+      ],
+      "defenses": [
+        [
+          {
+            "op": "pawn",
+            "seat": "player",
+            "uids": [
+              40.0
+            ]
+          },
+          {
+            "market_idx": 0.0,
+            "op": "buy",
+            "pay_uids": [],
+            "seat": "player"
+          },
+          {
+            "op": "create_combo",
+            "seat": "player",
+            "uids": [
+              41.0,
+              16.0,
+              17.0,
+              18.0,
+              61.0
+            ]
+          }
+        ],
+        [
+          {
+            "market_idx": 0.0,
+            "op": "buy",
+            "pay_uids": [],
+            "seat": "player"
+          },
+          {
+            "op": "create_combo",
+            "seat": "player",
+            "uids": [
+              41.0,
+              16.0,
+              17.0,
+              18.0,
+              58.0
+            ]
+          }
+        ],
+        [
+          {
+            "op": "pawn",
+            "seat": "player",
+            "uids": [
+              16.0,
+              17.0,
+              18.0
+            ]
+          },
+          {
+            "op": "pawn",
+            "seat": "player",
+            "uids": [
+              41.0
+            ]
+          },
+          {
+            "market_idx": 0.0,
+            "op": "buy",
+            "pay_uids": [],
+            "seat": "player"
+          },
+          {
+            "market_idx": 5.0,
+            "op": "buy",
+            "pay_uids": [],
+            "seat": "player"
+          },
+          {
+            "op": "create_combo",
+            "seat": "player",
+            "uids": [
+              40.0,
+              19.0,
+              64.0,
+              63.0
+            ]
+          }
+        ]
+      ],
+      "sample": 2,
+      "state": {
+        "combos": [],
+        "draw_first": "ai",
+        "log": [],
+        "market": [
+          "tuisong",
+          "ditui",
+          "heigongguan",
+          "touliu",
+          "heigongguan",
+          "tuisong",
+          "liebian",
+          "waimai"
+        ],
+        "players": {
+          "ai": {
+            "cards": [
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 36
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 37
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 38
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 39
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 45
+              },
+              {
+                "def_id": "yunketang",
+                "locked": false,
+                "uid": 46
+              },
+              {
+                "def_id": "butie",
+                "fired_round": 1,
+                "locked": false,
+                "uid": 47
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 52
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 53
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 54
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 55
+              }
+            ]
+          },
+          "player": {
+            "cards": [
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 10
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 11
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 16
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 17
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 18
+              },
+              {
+                "def_id": "user",
+                "locked": false,
+                "uid": 19
+              },
+              {
+                "def_id": "shuabuting",
+                "locked": false,
+                "uid": 40
+              },
+              {
+                "def_id": "yunketang",
+                "locked": false,
+                "uid": 41
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 48
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 49
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 50
+              },
+              {
+                "def_id": "cash",
+                "locked": false,
+                "uid": 51
+              }
+            ]
+          }
+        },
+        "rng": {
+          "seed": "1217380",
+          "state": "2148403714246669070"
+        },
+        "round_num": 2,
+        "uid": 56,
+        "win_reason": "",
+        "winner": ""
+      }
+    }
+  ],
+  "source": "seed181004, strength1 first vs strength0.75 second; round2 positions and shared-market samples from round1 settled state",
+  "defense_representatives": [
+    {
+      "intents": [
+        {
+          "op": "pawn",
+          "seat": "player",
+          "uids": [
+            40
+          ]
+        },
+        {
+          "market_idx": 3,
+          "op": "buy",
+          "pay_uids": [],
+          "seat": "player"
+        },
+        {
+          "op": "create_combo",
+          "seat": "player",
+          "uids": [
+            41,
+            16,
+            17,
+            18,
+            61
+          ]
+        }
+      ],
+      "rank": 0.141833333333333
+    },
+    {
+      "intents": [
+        {
+          "market_idx": 3,
+          "op": "buy",
+          "pay_uids": [],
+          "seat": "player"
+        },
+        {
+          "op": "create_combo",
+          "seat": "player",
+          "uids": [
+            41,
+            16,
+            17,
+            18,
+            58
+          ]
+        }
+      ],
+      "rank": 0.1385
+    }
+  ]
+}

@@ -7,27 +7,199 @@ extends RefCounted
 
 const Env = preload("res://engine/ai_environment.gd")
 const Eval = preload("res://engine/ai_evaluation.gd")
+const Capabilities = preload("res://engine/ai_capabilities.gd")
 const Context = preload("res://engine/ai_context.gd")
+const WORK_COUNTERS := ["_work","_generation_work","_stage_work"]
 
 ## 宏动作生成器。返回 {state,intents,rank}；state 只属于搜索，真实局面仅重放 intents。
 static func generate(state: GameState, who: String, profile: Dictionary) -> Array:
-	# 每个生成器只买卖/编组自身手牌；对方特征只在这次调用内复用。
+	return generate_with_status(state,who,profile)["nodes"]
+
+## 基础运营先形成完整方案，再用余下额度扩展融资、防御与材料分配。
+## 基础与扩展共用买卖、编组及评分入口；基础方案不再参加扩展池的截断。
+## complete 表示本次预定的有限扩展未被额度打断，不表示穷举了合法动作。
+static func generate_with_status(state: GameState, who: String, profile: Dictionary) -> Dictionary:
 	# 浅拷贝隔离局部评分快照，规则缓存和展开额度仍与整个搜索共享。
 	profile = profile.duplicate()
+	profile.erase("_generation_limited")
+	if int(profile.get("generation_budget",0)) > 0:
+		profile["_generation_work"] = [int(profile["generation_budget"])]
 	if not profile.has("_context"):
 		profile["_context"] = Context.new()
 	var immediate := winning_pawn(state, who, profile["_context"])
 	if not immediate.is_empty():
 		var won := Env.copy(state)
 		Env.replay(won, immediate)
-		return [{"state": won, "intents": immediate, "rank": Eval.TERMINAL_SCORE}]
-	profile["_opponent_features"] = Eval.features(state, GameState.opponent(who), profile)
-	var holdings := _purchases(state, who, profile)
+		var node := {"state":won,"intents":immediate,"rank":Eval.TERMINAL_SCORE,"baseline":true,"generation_stage":0}
+		return {"nodes":[node],"baseline":[node],"complete":true,"baseline_complete":true,
+			"rescue":[],"rescue_complete":true,"rescue_work":0}
+	var expanded := false
+	for key in ["financing_mode","resale_mode","allocation_mode","formation_mode","candidate_dedup","tactical_extension"]:
+		expanded = expanded or int(profile.get(key,0)) > 0
+	var basic := profile.duplicate()
+	if expanded:
+		# 同一基础搜索在不同调用中仍遵守更小的回应/前推宽度。
+		var widths := {"buy_beam":12,"build_beam":8,"plans":16}
+		for key in widths: basic[key] = mini(int(basic[key]),int(widths[key]))
+		for key in ["financing_mode","resale_mode","allocation_mode","formation_mode","candidate_dedup","tactical_extension"]:
+			basic[key] = 0
+	# 先完成原持牌运营，避免交易耗尽额度或静态排序把停购路线挤出最终池。
+	var initial := {"state":Env.copy(state),"intents":[],"rank":_score(state,who,basic)}
+	var operating := _build(initial,who,basic)
+	var protected := operating.duplicate()
+	if _payable_plan(initial["state"],who): protected.append(initial)
+	var baseline := _generate_candidates(state,who,basic,operating)
+	var baseline_complete := not exhausted(basic)
+	# 保护只决定是否参与比较，不改变分数；优先评价原持牌路线后再评价交易。
+	protected = _retain_nodes(baseline,protected)
+	baseline = protected + baseline.filter(func(n):return not protected.has(n))
+	for node in baseline:
+		node["baseline"] = true
+		node["generation_stage"] = 0
+	if not expanded or not baseline_complete:
+		return {"nodes":baseline,"baseline":baseline,"complete":baseline_complete,"baseline_complete":baseline_complete,
+			"rescue":[],"rescue_complete":baseline_complete or int(profile.get("tactical_extension",0)) == 0,"rescue_work":0}
+	# 普通基础先完成，再为市场阻断或现金缓冲预留有限单步交易。
+	# 后备不进入普通排名；搜索仅在普通方案均判败时按相同规格补评。
+	var rescue := _rescue_transactions(state,who,profile) if int(profile.get("tactical_extension",0)) > 0 else {"nodes":[],"complete":true,"work":0}
+	# 逐级扩展复用同一生成器；更大的融资空间不能挤掉较小空间已形成的路线。
+	# 各层共享总额度和规则缓存，只对整条合法方案按语义去重。
+	var modes: Array = [int(profile.get("financing_mode",0))]
+	if modes[0] > 1: modes.push_front(1)
+	var nodes: Array = []
+	baseline = _retain_nodes(nodes,baseline)
+	var stages: Array = []
+	var complete := true
+	var stage_index := 0
+	for mode in modes:
+		stage_index += 1
+		var stage := profile.duplicate()
+		stage["financing_mode"] = mode
+		stage.erase("_generation_limited")
+		stage["_generation_holdings"] = 0
+		stage["_generation_tactical_candidates"] = 0
+		var before := remaining_work(stage)
+		var expanded_nodes := _generate_candidates(state,who,stage) if not exhausted(stage) else []
+		for node in expanded_nodes: node["generation_stage"] = stage_index
+		var stage_complete: bool = not exhausted(stage) and not stage.get("_generation_limited",false)
+		stages.append({"stage":stage_index,"financing_mode":mode,"complete":stage_complete,"candidates":expanded_nodes.size(),
+			"work":maxi(0,before-remaining_work(stage)),"holdings":int(stage["_generation_holdings"]),
+			"tactical_candidates":int(stage["_generation_tactical_candidates"])})
+		complete = complete and stage_complete
+		# 保留先完成层的顺序，有限评价额度也应先比较它们。
+		_retain_nodes(nodes,expanded_nodes)
+	return {"nodes":nodes,"baseline":baseline,"complete":complete,"baseline_complete":true,
+		"generation_stages":stages,"rescue":rescue["nodes"],"rescue_complete":rescue["complete"],"rescue_work":rescue["work"]}
+
+## 基于原局面的一次购买或单卡种一张典当，不展开完整交易树或重复编组。
+## 每条尝试照常扣共享额度；付款与能否结束行动均由正式规则验证。
+static func _rescue_transactions(state: GameState, who: String, profile: Dictionary) -> Dictionary:
+	if state.winner != "": return {"nodes":[],"complete":true,"work":0}
+	var choices: Array = []
+	var market_seen := {}
+	for index in state.market.size():
+		var id := str(state.market[index])
+		if market_seen.has(id): continue
+		market_seen[id] = true
+		choices.append({"key":"buy:"+semantic_key(id,profile.get("_context")),"intent":Intent.buy(who,index)})
+	var sales := {}
+	for card in state.players[who]["cards"]:
+		var id := str(card["def_id"])
+		var d := CardDB.get_def(id)
+		if d.get("kind") == CardDB.KIND_UNIT and d.get("res") == CardDB.RES_CASH: continue
+		if CardDB.pawn_value(id) <= 0: continue
+		# 同种牌优先出售未入组的一张；只有已入组牌时仍交给真实裁决。
+		if not sales.has(id) or (sales[id].get("locked",false) and not card.get("locked",false)):
+			sales[id] = card
+	for id in sales:
+		choices.append({"key":"pawn:"+semantic_key(id,profile.get("_context")),"intent":Intent.pawn(who,[sales[id]["uid"]])})
+	choices.sort_custom(func(a: Dictionary,b: Dictionary)->bool:return a["key"]<b["key"])
+	var out: Array = []
+	var work := 0
+	for choice in choices:
+		if not spend(profile): return {"nodes":out,"complete":false,"work":work}
+		work += 1
+		var next := Env.copy(state)
+		var intents: Array = [choice["intent"]]
+		if not Env.replay(next,intents) or not _payable_plan(next,who): continue
+		var node := {"state":next,"intents":intents,"rank":_score(next,who,profile),
+			"generation_stage":1,"baseline":false}
+		_retain_nodes(out,[node])
+	return {"nodes":out,"complete":true,"work":work}
+
+## 合并时保留池引用最终节点；相同局面不会因不同 UID 或行动前缀重复评价。
+static func _retain_nodes(nodes: Array, retained: Array) -> Array:
+	var seen := {}
+	for node in nodes:
+		if not node.has("_signature"): node["_signature"] = Capabilities.signature(node["state"])
+		if not seen.has(node["_signature"]): seen[node["_signature"]] = node
+	var out: Array = []
+	var added := {}
+	for node in retained:
+		if not node.has("_signature"): node["_signature"] = Capabilities.signature(node["state"])
+		var key: String = node["_signature"]
+		if added.has(key): continue
+		added[key] = true
+		if not seen.has(key):
+			nodes.append(node)
+			seen[key] = node
+		out.append(seen[key])
+	return out
+
+static func _generate_candidates(state: GameState, who: String, profile: Dictionary, operating: Array = []) -> Array:
+	profile["_generation_holdings"] = 0
+	profile["_generation_tactical_candidates"] = 0
+	var trading := profile
+	if int(profile.get("financing_mode",0)) > 0 or int(profile.get("resale_mode",0)) > 0:
+		var available := remaining_work(profile)
+		if available >= 0:
+			# 扩展交易至多先用一半；剩余额度交给同一编组器形成可运营方案。
+			# 只增加阶段上限，原生成与搜索总账仍逐次共同扣费。
+			trading = profile.duplicate()
+			trading["_stage_work"] = [available / 2]
+	var holdings := Capabilities.purchases(state, who, trading) if int(profile.get("financing_mode",0)) > 0 else _purchases(state, who, trading)
+	if int(profile.get("financing_mode",0)) == 0 and int(profile.get("resale_mode",0)) > 0:
+		holdings.append_array(Capabilities.resale_transactions(holdings.duplicate(),who,trading))
+	if trading.has("_stage_work") and int(trading["_stage_work"][0]) <= 0:
+		profile["_generation_limited"] = true
 	var out: Array = []
 	for node in holdings:
-		out.append_array(_build(node, who, profile))
-	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["rank"] > b["rank"])
-	return out.slice(0, mini(int(profile["plans"]), out.size()))
+		if exhausted(profile) and not out.is_empty(): break
+		profile["_generation_holdings"] += 1
+		out.append_array(operating if node["intents"].is_empty() and not operating.is_empty() else _build(node, who, profile))
+	var selected: Array
+	if int(profile.get("candidate_dedup",0)) > 0:
+		selected = Capabilities.select(out,int(profile["plans"]),who,"rank",true,profile)
+	else:
+		out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return Capabilities.compare_nodes(a,b,who,"rank",profile))
+		selected = out.slice(0, mini(int(profile["plans"]), out.size()))
+	if int(profile.get("tactical_extension",0)) > 0:
+		# 静态生产分不能独占最终池。保留实际可支付的两类攻击各一个，
+		# 是否致胜仍由同一真实回应结算判断，不在这里增加分数或标记终局。
+		var attacks := {}
+		for node in out:
+			var pools := attack_pools(node,who)
+			for res in pools:
+				if int(pools[res]) <= 0: continue
+				if not attacks.has(res) or int(pools[res]) > int(attack_pools(attacks[res],who)[res]) \
+						or (int(pools[res]) == int(attack_pools(attacks[res],who)[res]) and Capabilities.compare_nodes(node,attacks[res],who,"rank",profile)):
+					attacks[res] = node
+		var ordinary_size := selected.size()
+		_retain_nodes(selected,attacks.values())
+		profile["_generation_tactical_candidates"] = selected.size()-ordinary_size
+	return selected
+
+## 完整节点不可变；真实装弹包含付款顺序和现金归零保护。
+static func attack_pools(node: Dictionary, who: String) -> Dictionary:
+	if node.has("_attack_pools") and node["_attack_pools"]["who"] == who:
+		return node["_attack_pools"]["pools"]
+	var pools := {CardDB.RES_CASH:0,CardDB.RES_USER:0}
+	for combo in node["state"].combos:
+		if combo["owner"] == who and combo["eval"].get("type") == "attack":
+			pools = Env.copy(node["state"]).arm_attacks(who)
+			break
+	node["_attack_pools"] = {"who":who,"pools":pools}
+	return pools
 
 ## 确定冲线覆盖全部可典当非现金牌，保证至少保留一用户；由环境复核。
 static func winning_pawn(state: GameState, who: String, context = null) -> Array:
@@ -106,7 +278,7 @@ static func _purchases(state: GameState, who: String, profile: Dictionary) -> Ar
 			bought_slots.append(original_idx)
 			next.append({"state": s, "intents": intents, "rank": _score(s, who, profile), "slots": bought_slots})
 		next.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["rank"] > b["rank"])
-		beam = next.slice(0, mini(int(profile["buy_beam"]), next.size()))
+		beam = Capabilities._select_holdings(next,int(profile["buy_beam"]),who,profile) if int(profile.get("tactical_extension",0)) > 0 or int(profile.get("formation_mode",0)) > 0 else next.slice(0, mini(int(profile["buy_beam"]), next.size()))
 	# 停购永远存在；截断后仍保留，可防止购买排序把保守路线删除。
 	beam.append(sources[0])
 	var dedup: Array = []
@@ -152,8 +324,8 @@ static func _build(start: Dictionary, who: String, profile: Dictionary) -> Array
 				intents.append(intent)
 				next.append({"state": ns, "intents": intents,
 					"merit": float(node["merit"]) + float(option["merit"])})
-		next.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["merit"] > b["merit"])
-		beam = next.slice(0, mini(int(profile["build_beam"]), next.size()))
+		next.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return Capabilities.compare_nodes(a,b,who,"merit",profile))
+		beam = Capabilities.select(next,int(profile["build_beam"]),who,"merit",true,profile) if int(profile.get("candidate_dedup",0)) > 0 else next.slice(0, mini(int(profile["build_beam"]), next.size()))
 		processed[int(core["uid"])] = true
 	var out: Array = []
 	for node in beam:
@@ -164,7 +336,7 @@ static func _build(start: Dictionary, who: String, profile: Dictionary) -> Array
 			continue
 		out.append({"state": s, "intents": node["intents"],
 			"rank": _score(s, who, profile) + float(node["merit"]) / maxf(1, CardDB.game_rules()["win_cash"])})
-	if out.is_empty():
+	if out.is_empty() and _payable_plan(initial,who):
 		# 有限 beam 可能只剩不可支付的组合；停编仍保留买卖后的合法局面。
 		out.append({"state": initial, "intents": start["intents"], "rank": _score(initial, who, profile)})
 	return out
@@ -179,8 +351,8 @@ static func _payable_plan(state: GameState, who: String) -> bool:
 	return not has_payment or bool(Settle.check_action_completion(state, who, piles)["ok"])
 
 static func _score(state: GameState, who: String, profile: Dictionary) -> float:
-	# 终局判定仍由统一评分入口逐个执行，不能被对方的非终局特征覆盖。
-	return Eval.score(state, who, profile, profile.get("_opponent_features", {}))
+	# 威胁估值依赖双方持牌；自己买卖攻击牌后不能沿用旧的对方特征。
+	return Eval.score(state, who, profile)
 
 static func _core_priority(c: Dictionary) -> float:
 	var d := CardDB.get_def(str(c["def_id"]))
@@ -192,11 +364,11 @@ static func _core_options(state: GameState, who: String, core: Dictionary, proce
 	var context = parameters.get("_context")
 	if context == null:
 		context = Context.new()
+	parameters = parameters.duplicate()
+	parameters["_context"] = context
 	var id := str(core["def_id"])
 	var d := CardDB.get_def(id)
 	var same: Array = [int(core["uid"])]
-	var units: Array = []
-	var buffs := {}
 	var peers: Array = []
 	for c in state.players[who]["cards"]:
 		if bool(c.get("locked", false)):
@@ -207,12 +379,6 @@ static func _core_options(state: GameState, who: String, core: Dictionary, proce
 		if cd.get("kind") == CardDB.KIND_PRODUCT and cd.get("tier") == d.get("tier") \
 				and int(c["uid"]) != int(core["uid"]) and not processed.has(int(c["uid"])):
 			peers.append(c)
-		if cd.get("kind") == CardDB.KIND_UNIT and cd.get("res") == d.get("recipe_res"):
-			units.append(int(c["uid"]))
-		if cd.get("kind") == CardDB.KIND_BUFF:
-			var bt := str(cd.get("buff_type", ""))
-			if not buffs.has(bt):
-				buffs[bt] = int(c["uid"])
 	var out: Array = []
 	var upgrade_seen := {}
 	for n in range(2, mini(same.size(), context.max_upgrade_n()) + 1):
@@ -236,6 +402,32 @@ static func _core_options(state: GameState, who: String, core: Dictionary, proce
 				var uids: Array = [int(core["uid"])]
 				for peer in peers.slice(0, n - 1): uids.append(int(peer["uid"]))
 				_append_upgrade(out, upgrade_seen, state, who, uids, target, context)
+	if int(profile.get("allocation_mode",0)) > 0:
+		for uids in Capabilities.allocations(state,who,core,peers,parameters):
+			var ids: Array = []
+			for uid in uids: ids.append(str(state.find_card(who,uid)["def_id"]))
+			var target := ComboRules.upgrade_target_for_ids(ids)
+			if target != "": _append_upgrade(out,upgrade_seen,state,who,uids,target,context)
+	out.append_array(recipe_options(state,who,core,parameters))
+	if int(profile.get("formation_mode",0)) > 0:
+		out.append_array(Capabilities.formations(state,who,out,parameters))
+	return out
+
+## 常规配方与 Buff 的共享枚举；持牌能力摘要复用它，不另写攻击/护盾配方。
+static func recipe_options(state: GameState, who: String, core: Dictionary, parameters: Dictionary) -> Array:
+	var d := CardDB.get_def(str(core["def_id"]))
+	var units: Array = []
+	var buffs := {}
+	for c in state.players[who]["cards"]:
+		if bool(c.get("locked",false)): continue
+		var cd := CardDB.get_def(str(c["def_id"]))
+		if cd.get("kind") == CardDB.KIND_UNIT and cd.get("res") == d.get("recipe_res"):
+			units.append(int(c["uid"]))
+		if cd.get("kind") == CardDB.KIND_BUFF:
+			var bt := str(cd.get("buff_type",""))
+			if not buffs.has(bt): buffs[bt] = []
+			buffs[bt].append(int(c["uid"]))
+	var out: Array = []
 	var need := int(d.get("recipe_n", 0))
 	var enhancement := "output_x2" if d.get("kind") == CardDB.KIND_PRODUCT else "attack_x2"
 	var protection := CardDB.protect_key(str(d.get("recipe_res", "")))
@@ -246,19 +438,18 @@ static func _core_options(state: GameState, who: String, core: Dictionary, proce
 		var required := 1 if use_fill else need
 		if units.size() < required:
 			continue
-		for enhanced in [false, true]:
-			if enhanced and not buffs.has(enhancement):
-				continue
+		# 同类型 Buff 只枚举使用张数，不枚举等价 UID 子集；n 张只有 n+1 条路线。
+		for enhancement_count in range(buffs.get(enhancement, []).size() + 1):
 			for protected in [false, true]:
 				if protected and not buffs.has(protection):
 					continue
 				var ids: Array = [int(core["uid"])] + units.slice(0, required)
 				if use_fill:
-					ids.append(buffs["user_fill"])
-				if enhanced:
-					ids.append(buffs[enhancement])
+					ids.append(buffs["user_fill"][0])
+				if enhancement_count > 0:
+					ids.append_array(buffs[enhancement].slice(0, enhancement_count))
 				if protected:
-					ids.append(buffs[protection])
+					ids.append(buffs[protection][0])
 				if seen.has(str(ids)):
 					continue
 				seen[str(ids)] = true
@@ -305,17 +496,8 @@ static func _combo_value(state: GameState, who: String, ev: Dictionary) -> float
 	var output := float(ev["output_n"])
 	if ev["output_res"] == CardDB.RES_CASH:
 		return output
-	var demand := 0
-	for c in state.players[who]["cards"]:
-		var d := CardDB.get_def(str(c["def_id"]))
-		if d.get("recipe_res", "") == CardDB.RES_USER:
-			demand += int(d.get("recipe_n", 0))
-	var pending := 0
-	for c in state.combos:
-		if c["owner"] == who and c["eval"].get("output_res", "") == CardDB.RES_USER:
-			pending += int(c["eval"].get("output_n", 0))
-	var missing := maxi(0, demand - state.resource_count(who, CardDB.RES_USER) - pending)
-	return minf(output, missing) * Eval.user_price(state, who) + maxf(0, output - missing) * CardDB.pawn_user()
+	# 与保有产能估值共用真实典当底价；用户增加不能反向压低同一产出的价值。
+	return output * CardDB.pawn_user()
 
 
 static func semantic_key(id: String, context = null) -> String:
@@ -325,13 +507,19 @@ static func semantic_key(id: String, context = null) -> String:
 
 ## 节点额度由搜索上下文共享；单独调用生成器可不带额度。
 static func spend(profile: Dictionary) -> bool:
-	if not profile.has("_work"):
-		return true
-	var work: Array = profile["_work"]
-	if int(work[0]) <= 0:
-		return false
-	work[0] = int(work[0]) - 1
+	if exhausted(profile): return false
+	for key in WORK_COUNTERS:
+		if profile.has(key): profile[key][0] -= 1
 	return true
 
 static func exhausted(profile: Dictionary) -> bool:
-	return profile.has("_work") and int(profile["_work"][0]) <= 0
+	return remaining_work(profile) == 0
+
+## 无计数器表示调用方未设额度；阶段额度只缩小可用工作，不增加总额。
+static func remaining_work(profile: Dictionary) -> int:
+	var remaining := -1
+	for key in WORK_COUNTERS:
+		if profile.has(key):
+			var value := maxi(0,int(profile[key][0]))
+			remaining = value if remaining < 0 else mini(remaining,value)
+	return remaining

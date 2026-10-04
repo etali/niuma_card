@@ -5,9 +5,10 @@
 class_name AISearch
 extends RefCounted
 
-## 通用 AI profile + 用户偏好。算法只拿已解析快照，面板和算法读同一参数规格。
+## 通用 AI profile + 本次运行的设置。算法只拿已解析快照，面板和算法读同一参数规格。
 const Registry = preload("res://engine/ai_strategy_registry.gd")
 const Strategy = preload("res://engine/ai_strategy.gd")
+## 仅用于清理旧版本的持久化文件；不再读取或写入玩家 AI 参数。
 const USER_PATH := "user://ai_search.json"
 
 var model := "ai"
@@ -39,6 +40,21 @@ static func from_model(name: String, s: float) -> AISearch:
 	cfg.parameters = provider.compile_parameters(cfg.strength, search_defaults().get(id, {}))
 	return cfg
 
+## 保留旧命令配置名；玩家界面统一使用0~1整体强度。旧strength按一半迁移。
+static func from_preset(name: String, strength := 1.0) -> AISearch:
+	return from_model("ai", 1.0 if name == "enhanced" else clampf(strength,0.0,1.0)*0.5)
+
+static func enhanced_overrides() -> Dictionary:
+	# 仅供读取旧报告格式的工具；值直接来自统一强度映射，不能另维护一套配置。
+	var parameters := from_model("ai",1.0).resolved_parameters()
+	parameters.erase("profile_version")
+	return parameters
+
+static func set_capability_preset(name: String) -> void:
+	if name not in ["legacy","enhanced"]: return
+	set_pref_model("ai")
+	set_pref_strength(1.0 if name == "enhanced" else 0.5)
+
 static func models() -> Array:
 	return Registry.models()
 
@@ -53,6 +69,8 @@ static func parse_strength(txt: String) -> float:
 	return clampf(float(t), 0.0, 1.0) if t.is_valid_float() and is_finite(float(t)) else 0.0
 
 static func from_tier(txt: String) -> AISearch:
+	if txt.strip_edges().to_lower() in ["ai:enhanced", "ai:legacy"]:
+		return from_preset(txt.strip_edges().to_lower().get_slice(":", 1))
 	var parts := txt.strip_edges().to_lower().split(":", false)
 	if parts.size() == 2:
 		return from_model(str(parts[0]), parse_strength(str(parts[1])))
@@ -114,29 +132,15 @@ static func bus() -> Bus:
 	return _bus
 
 static func default_strength() -> float:
-	var value := float(search_defaults().get("default_strength", 1.0))
-	return clampf(value, 0.0, 1.0) if is_finite(value) else 1.0
+	var value := float(search_defaults().get("default_strength", 0.5))
+	return clampf(value, 0.0, 1.0) if is_finite(value) else 0.5
 
 static func pref_strength() -> float:
 	if _pref < 0.0:
-		var stored := AIConfig.read_json(USER_PATH)
-		var value: Variant = stored.get("strength", default_strength())
-		_pref = clampf(float(value), 0.0, 1.0) if Strategy._number(value) else default_strength()
-		_model_pref = str(stored.get("model", default_model()))
-		# 只迁移曾保存的同一套实现；不把旧名字重新注册为可选模型。
-		if _model_pref == "v2":
-			_model_pref = "ai"
-		var removed := Registry.get_strategy(_model_pref) == null
-		if removed:
-			_model_pref = default_model()
-		_overrides = {}
-		# 旧实现或未知键不可污染现模型；已知模型只接受其schema声明的参数。
-		var ov: Variant = stored.get("overrides", {})
-		if not removed and ov is Dictionary:
-			var cfg := from_model(_model_pref, _pref)
-			for key in ov:
-				if cfg.apply_override(str(key), ov[key]):
-					_overrides[key] = cfg.get_knob(str(key))
+		_discard_saved_settings()
+		_pref = default_strength()
+		_model_pref = default_model()
+		_overrides.clear()
 	return _pref
 
 static func pref_model() -> String:
@@ -181,17 +185,15 @@ static func has_overrides() -> bool:
 	pref_strength()
 	return not _overrides.is_empty()
 
-static func save() -> bool:
-	var file := FileAccess.open(USER_PATH, FileAccess.WRITE)
-	if file == null:
-		return false
-	file.store_string(JSON.stringify({"format_version":2, "model":pref_model(),
-		"strength":pref_strength(), "overrides":_overrides}, "  ", false))
-	return true
+static func _discard_saved_settings() -> void:
+	if not FileAccess.file_exists(USER_PATH):
+		return
+	var error := DirAccess.remove_absolute(ProjectSettings.globalize_path(USER_PATH))
+	if error != OK and FileAccess.file_exists(USER_PATH):
+		push_warning("无法清理旧 AI 参数文件（仍不读取）：%s" % error_string(error))
 
 static func restore_defaults() -> void:
-	if FileAccess.file_exists(USER_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(USER_PATH))
+	_discard_saved_settings()
 	_pref = default_strength()
 	_model_pref = default_model()
 	_overrides.clear()

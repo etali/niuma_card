@@ -5,7 +5,7 @@
 extends RefCounted
 
 ## 单次决策内的卡表派生值。调用方在下一次决策重新建立，不跨配置或线程共享。
-## 这里只缓存规则查询和材料计数 DP，不保存可变的牌局/卡牌实例。
+## 这里只缓存规则查询、材料计数 DP 和库存特征，不保存可变的牌局/卡牌实例。
 var _pawn_values: Dictionary = {}
 var _upgrade_limit := -1
 var _upgrade_targets: Dictionary = {}
@@ -14,6 +14,12 @@ var _ordinary_upgrade_dp: Dictionary = {}
 var _legend_targets: Dictionary = {}
 var _pooled_values: Dictionary = {}
 var _semantic_keys: Dictionary = {}
+## 只缓存本次搜索的资源配置，不含UID/编组顺序；同库存的候选共用结果。
+var allocation_values: Dictionary = {}
+var allocation_stats: Dictionary = {}
+var feature_values: Dictionary = {}
+var feature_calls := 0
+var feature_hits := 0
 
 func pawn_value(id: String) -> int:
 	if not _pawn_values.has(id):

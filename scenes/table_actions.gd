@@ -10,9 +10,12 @@ const Motion = preload("res://scenes/ui_motion.gd")
 const Feedback = preload("res://scenes/table_feedback.gd")
 const Regions = preload("res://scenes/table_regions.gd")
 var host: Node3D
+signal pawn_finished
+var _pawn_moves: Array[Dictionary] = []
 
 func bind(table: Node3D) -> void:
 	host = table
+	set_process(false)
 	host.board.card_picked.connect(func(_card): host.sfx.play("card_pickup"))
 	host.board.pile_toggled.connect(func(): host.sfx.play("pile_toggle"))
 	host.board.card_dropped_table.connect(func(): host.sfx.play("card_drop"))
@@ -42,29 +45,83 @@ func purchase(index: int, card: CardEntity, result: Dictionary) -> void:
 	host.sfx.play("buy")
 	host._event_feedback("purchase", card.global_position + Vector3(0, 0.5, 0), Palette.semantic("cash"), 12)
 
-func pawn(cards: Array, uids: Array) -> void:
+func pawn(cards: Array, uids: Array, owner := "") -> void:
 	var motion: Node = _motion()
+	var who: String = host.my_seat if owner == "" else owner
+	var mine: bool = who == host.my_seat
+	var counter: Vector3 = host._pawn_position() + Vector3(0, 0.8, 0)
+	var sold: Array = cards.filter(func(card): return is_instance_valid(card) and uids.has(card.uid))
+	var spread := minf(Motion.ACT, Motion.STAGGER * maxi(0, sold.size() - 1))
 	var back := Vector3.INF
-	for card in cards:
-		if uids.has(card.uid):
+	for i in sold.size():
+		var card: CardEntity = sold[i]
+		if back == Vector3.INF:
 			back = card.global_position
-			break
-	for card in cards:
-		if uids.has(card.uid):
-			host.entities.erase(card.uid)
-			motion._suck_into(card, host._pawn_position() + Vector3(0, 0.8, 0))
+		host.entities.erase(card.uid)
+		if mine:
+			motion._suck_into(card, counter)
+		else:
+			host.layout.kill_ai_move(card.uid)
+			var tween: Tween = motion.pawn_into(card, counter, spread * float(i) / maxf(1, sold.size() - 1))
+			_pawn_moves.append({"card": card, "tween": tween, "retired": true})
 	if back == Vector3.INF:
 		back = host.layout._free_spot(host.layout.PLAYER_PILE_CASH_ANCHOR, host.my_seat)
 	back.y = 0.05
 	# 现金回到可操作牌区，不能沿用柜台落点而遮住购牌栏。
-	back = host.board.clamp_player_position(back)
+	back = host.board.clamp_player_position(back) if mine else host.layout._unit_anchor(who, "cash")
 	var fresh: Array = []
-	for record in host.state.players[host.my_seat]["cards"]:
+	for record in host.state.players[who]["cards"]:
 		if not host.entities.has(record["uid"]):
-			fresh.append(host._spawn_entity(record, back, true))
-	host.layout._stack_arrivals(fresh, back, 0, true, 1)
+			fresh.append(host._spawn_entity(record, back, mine))
+	if mine:
+		host.layout._stack_arrivals(fresh, back, 0, true, 1)
+	else:
+		# 先登记完整到账状态并让现有布局确定归宿，动画只搬这批持有的实体。
+		host.layout._layout_ai_idle()
+		for i in fresh.size():
+			var card: CardEntity = fresh[i]
+			var target: Vector3 = host.layout._ai_flight.get(card.uid, {}).get("at", card.position)
+			host.layout.kill_ai_move(card.uid)
+			var tween: Tween = motion._fly_from(card, counter, target, i, fresh.size(), motion.PAWN_TRAVEL_TIME + spread)
+			_pawn_moves.append({"card": card, "tween": tween, "retired": false, "at": target})
+		set_process(pawn_busy())
 	host.sfx.play("pawn")
 	host._event_feedback("pawn", host._pawn_position() + Vector3(0, 1.0, 0), Palette.semantic("cash"), 12)
+
+func pawn_busy() -> bool:
+	return _pawn_moves.any(func(move):
+		var tween: Tween = move["tween"]
+		return tween != null and tween.is_valid() and tween.is_running())
+
+func _process(_delta: float) -> void:
+	if not pawn_busy():
+		_pawn_moves.clear()
+		set_process(false)
+		pawn_finished.emit()
+
+## 换局/认输立即结束表现；钱已由裁决到账，收束实体不再扫描或修改业务状态。
+func cancel_pawn() -> void:
+	if _pawn_moves.is_empty():
+		return
+	for move in _pawn_moves:
+		var card: CardEntity = move["card"] if is_instance_valid(move["card"]) else null
+		var tween: Tween = move["tween"]
+		if tween == null or not tween.is_valid() or not tween.is_running():
+			continue
+		if card == null:
+			tween.kill()
+			continue
+		if move["retired"]:
+			tween.kill()
+			card.queue_free()
+		elif card.get_meta("fly_tw", null) == tween:
+			_motion()._cancel_fly(card)
+			card.position = move["at"]
+		else:
+			tween.kill()
+	_pawn_moves.clear()
+	set_process(false)
+	pawn_finished.emit()
 
 func pay_recipe(uids: Array, at: Vector3) -> int:
 	var motion: Node = _motion()

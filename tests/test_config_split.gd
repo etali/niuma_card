@@ -33,8 +33,8 @@ func _initialize() -> void:
 	for item in Palette._plate_items():
 		if item["slot"] not in editable_slots:
 			editable_slots.append(item["slot"])
-	check(editable_slots.size() == 9 and "_说明" not in editable_slots,
-		"九种底板可调，配置说明文字不会生成色板槽位")
+	check(editable_slots.size() == 8 and "_说明" not in editable_slots and "plate_t2" not in editable_slots,
+		"八种功能底板可调，说明文字与不再使用的等级槽位不生成控件")
 
 	# 三类外置文件可以独立覆盖；不用写项目根目录或真正的玩家偏好文件。
 	_write(UI_TEMP, {"defaults": {"window_fraction": 0.85},

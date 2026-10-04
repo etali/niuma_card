@@ -16,7 +16,7 @@ const PLATE_CASH := "plate_cash"
 const PLATE_USER := "plate_user"
 const PLATE_T1_MONEY := "plate_t1_money"
 const PLATE_T1_GROWTH := "plate_t1_growth"
-const PLATE_T2 := "plate_t2"
+const PLATE_T2 := "plate_t2" # 仅保留旧配色槽位名称，生产卡不再按等级取色。
 const PLATE_T3 := "plate_t3"
 const PLATE_ATTACK := "plate_attack"
 const PLATE_BUFF_UP := "plate_buff_up"
@@ -50,7 +50,7 @@ static func _ensure_loaded() -> void:
 	# 读表借 Palette 那份：两边都是「缺文件就静默降级成 {}」的同一套口径
 	_manifest = Palette.read_json(MANIFEST)
 
-## def_id → 配色槽位。按 cards.json 的类别、资源、档位、产出和 Buff 类型推导，
+## def_id → 配色槽位。按 cards.json 的类别、资源、产出和 Buff 类型推导，
 ## 同类卡牌共用配色，无需为每张卡单独维护映射。
 static func plate_slot(def_id: String) -> String:
 	var def: Dictionary = CardDB.get_def(def_id)
@@ -66,9 +66,8 @@ static func plate_slot(def_id: String) -> String:
 			return PLATE_BUFF_DEF if str(def.get("buff_type", "")).begins_with("protect_") \
 				else PLATE_BUFF_UP
 		CardDB.KIND_PRODUCT:
-			if int(def.get("tier", 1)) >= 2:
-				return PLATE_T2
-			# T1 分两条生产线：产出现金 = 变现线，产出用户 = 拉新线（balance.md §「T1 创业产品」）
+			# 生产牌按实际资源方向分色：用户→现金是变现线，现金→用户是拉新线。
+			# T1/T2 共用功能色；升级、换名或导入新卡表都不应改变同一方向的配色。
 			return PLATE_T1_MONEY if def.get("output_res") == CardDB.RES_CASH \
 				else PLATE_T1_GROWTH
 	return PLATE_T1_MONEY

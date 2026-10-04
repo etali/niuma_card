@@ -49,10 +49,17 @@ func _test_evaluation_coefficients() -> void:
 	s.add_card(WHO,"hyper_product")
 	var base := _cfg("upgrade_weight",0.0)
 	var heavy := _cfg("upgrade_weight",1.0)
+	# 升级和保留生产是替代用途；关闭生产估值后单独核验升级系数。
+	base.apply_override("engine_horizon",0.0)
+	heavy.apply_override("engine_horizon",0.0)
 	var features := Eval.features(s,WHO,base.resolved_parameters())
 	var gap := AIPlan.score(s,WHO,heavy) - AIPlan.score(s,WHO,base)
 	check(float(features["option"]) > 0 and is_equal_approx(gap,float(features["option"])/CardDB.game_rules()["win_cash"]),
 		"升级权重在通用评估入口按真实升级增量生效")
+	base.apply_override("engine_horizon",10.0)
+	heavy.apply_override("engine_horizon",10.0)
+	check(is_equal_approx(AIPlan.score(s,WHO,heavy),AIPlan.score(s,WHO,base)),
+		"生产价值更高时不把同批材料的升级收益重复相加")
 	base = _cfg("risk_weight",0.0)
 	heavy = _cfg("risk_weight",2.0)
 	check(AIPlan.score(s,WHO,heavy) < AIPlan.score(s,WHO,base),

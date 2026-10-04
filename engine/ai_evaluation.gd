@@ -6,28 +6,40 @@ class_name AIEvaluator
 extends RefCounted
 
 const Context = preload("res://engine/ai_context.gd")
+const Allocation = preload("res://engine/ai_resource_allocation.gd")
 
 ## 所有经济量来自当前规则。固定系数只表示估计时域、风险等算法偏好。
 const TERMINAL_SCORE := 1000000.0
 
-## 传入 opponent_features 时，调用方须保证规则、参数及对方手牌都未变。
+## 传入 opponent_features 时，调用方须保证规则、参数及双方手牌都未变（含攻击威胁）。
 ## 该复用只省去对方特征计算，不能替代每次评分前的胜负检查。
 static func score(state: GameState, who: String, parameters: Dictionary = {}, opponent_features: Dictionary = {}) -> float:
 	var p := _parameters(parameters)
 	if state.winner != "":
 		return TERMINAL_SCORE if state.winner == who else -TERMINAL_SCORE
 	var context := _context(p)
-	var a := _features(state, who, p, context)
-	var b := opponent_features if not opponent_features.is_empty() else _features(state, GameState.opponent(who), p, context)
+	var own := _summary(state,who)
+	var opposing := _summary(state,GameState.opponent(who))
+	var a := _features(own,opposing,p,context)
+	var b := opponent_features if not opponent_features.is_empty() else _features(opposing,own,p,context)
 	var scale := maxf(1.0, float(CardDB.game_rules()["win_cash"]))
 	return clampf((float(a["total"]) - float(b["total"])) / scale, -100.0, 100.0)
 
 static func features(state: GameState, who: String, parameters: Dictionary = {}) -> Dictionary:
 	var p := _parameters(parameters)
-	return _features(state, who, p, _context(p))
+	# 对外保留可修改字典的接口；调用方的改动不能污染同次决策的缓存。
+	return _features(_summary(state,who),_summary(state,GameState.opponent(who)),p,_context(p)).duplicate()
 
-static func _features(state: GameState, who: String, p: Dictionary, context: Context) -> Dictionary:
-	var summary := _summary(state, who)
+static func _features(summary: Dictionary, opposing: Dictionary, p: Dictionary, context: Context) -> Dictionary:
+	# 依赖双方库存；保留非单位牌原顺序以保持资产/升级的浮点加法次序。
+	# 原生字节编码保留全部参数精度，不使用录像canon的十位小数格式。
+	var key := var_to_bytes([summary["cash"],summary["users"],summary["nonunits"],
+		opposing["cash"],opposing["users"],opposing["nonunits"],float(p["engine_horizon"]),
+		float(p["upgrade_weight"]),float(p["risk_weight"]),float(p["attack_discount"])])
+	context.feature_calls += 1
+	if context.feature_values.has(key):
+		context.feature_hits += 1
+		return context.feature_values[key]
 	var cash := int(summary["cash"])
 	var users := int(summary["users"])
 	var inventory: Dictionary = summary["inventory"]
@@ -35,15 +47,23 @@ static func _features(state: GameState, who: String, p: Dictionary, context: Con
 	# 保留逐牌相加及原顺序，不能改成同名数量乘单价，避免浮点结合顺序变化。
 	for id in summary["nonunits"]:
 		assets += context.pawn_value(str(id))
-	var engine := _capacity(summary, p)
+	var engine := _capacity(summary, p, context)
 	# 引擎是未来净现金流，不重复加核心购价。升级只加超过当前典当底价的增量。
 	var upgrade := context.inventory_upgrade_value(inventory)
 	# 平滑资源安全项：只惩罚接近清零，不用旧固定现金/用户保留线。
 	var unit_value := float(summary["user_price"])
 	var risk := unit_value / maxf(float(users), 1.0)
-	var total := assets + float(p["engine_horizon"]) * engine + float(p["upgrade_weight"]) * upgrade - float(p["risk_weight"]) * risk
-	return {"asset": assets, "engine": engine, "option": upgrade, "risk": risk,
+	# 现金增加不能被缩短估计时域抵消。生产与升级是同批资产的替代用途，
+	# 取较大潜力；所有强度共用同一口径。
+	var potential := maxf(float(p["engine_horizon"])*engine,float(p["upgrade_weight"])*upgrade)
+	var threat := Allocation.value(opposing,
+		[1.0/maxf(cash,1.0),unit_value/maxf(users,1.0)],false,
+		context.allocation_values,context.allocation_stats)
+	var total := assets + potential - float(p["risk_weight"])*(risk+threat)
+	var value := {"asset": assets, "engine": engine, "option": upgrade, "risk": risk,
 		"cash": cash, "users": users, "total": total}
+	context.feature_values[key] = value
+	return value
 
 ## 用户的影子价格来自手中用户驻场引擎的单位收益；无用用户只有典当底价。
 static func user_price(state: GameState, who: String) -> float:
@@ -62,7 +82,7 @@ static func user_price(state: GameState, who: String) -> float:
 ## 结算后也从保有卡牌估计下一回合能力。共享资源按容量分配，不逐张重复计值。
 static func capacity(state: GameState, who: String, parameters: Dictionary = {}) -> float:
 	var p := _parameters(parameters)
-	return _capacity(_summary(state, who), p)
+	return _capacity(_summary(state, who), p, _context(p))
 
 ## 每次调用独立收集；资源数、资产顺序、核心次序和材料首次出现次序保持不变。
 static func _summary(state: GameState, who: String) -> Dictionary:
@@ -72,7 +92,6 @@ static func _summary(state: GameState, who: String) -> Dictionary:
 	var nonunits: Array = []
 	var cores: Array = []
 	var mults := {"output_x2": 0, "attack_x2": 0, "user_fill": 0}
-	var demand := 0
 	var shadow := float(CardDB.pawn_user())
 	for c in state.players[who]["cards"]:
 		var id := str(c["def_id"])
@@ -86,12 +105,10 @@ static func _summary(state: GameState, who: String) -> Dictionary:
 			nonunits.append(id)
 			inventory[id] = int(inventory.get(id, 0)) + 1
 		var bt := str(d.get("buff_type", ""))
-		if mults.has(bt):
+		if d.get("kind") == CardDB.KIND_BUFF and mults.has(bt):
 			mults[bt] += 1
 		if d.get("kind") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
 			cores.append(d)
-			if d.get("recipe_res", "") == CardDB.RES_USER:
-				demand += int(d.get("recipe_n", 0))
 		if d.get("recipe_res", "") == CardDB.RES_USER:
 			var need := maxi(1, int(d.get("recipe_n", 0)))
 			var income := float(d.get("output_n", 0)) if d.get("output_res", "") == CardDB.RES_CASH else 0.0
@@ -99,66 +116,13 @@ static func _summary(state: GameState, who: String) -> Dictionary:
 				income = floorf(float(d.get("attack_n", 0)) / maxf(1, CardDB.game_rules()["attack_cost_per_card"]))
 			shadow = maxf(shadow, income / need)
 	return {"cash":cash,"users":users,"inventory":inventory,"nonunits":nonunits,
-		"cores":cores,"mults":mults,"demand":demand,"user_price":shadow}
+		"cores":cores,"mults":mults,"user_price":shadow}
 
-static func _capacity(summary: Dictionary, p: Dictionary) -> float:
-	var users := int(summary["users"])
-	var cash := maxi(0, int(summary["cash"]) - 1)
-	var cores: Array = summary["cores"]
-	var mults: Dictionary = summary["mults"].duplicate()
-	var demand := int(summary["demand"])
-	var missing := maxi(0, demand - users)
-	var shadow := float(summary["user_price"])
-	var rows: Array = []
-	for d in cores:
-		var kind := str(d.get("kind"))
-		var output := float(d.get("output_n", 0))
-		var res := str(d.get("recipe_res", ""))
-		var need := int(d.get("recipe_n", 0))
-		var value := output
-		if kind == CardDB.KIND_ATTACK:
-			value = floorf(float(d.get("attack_n", 0)) / maxf(1, CardDB.game_rules()["attack_cost_per_card"])) * float(p["attack_discount"])
-		elif d.get("output_res") == CardDB.RES_USER:
-			value = minf(output, missing) * shadow + maxf(0.0, output - missing) * CardDB.pawn_user()
-		if res == CardDB.RES_CASH:
-			value -= need
-		rows.append({"d": d, "value": value, "ratio": value / maxf(1, need)})
-	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["ratio"] > b["ratio"])
-	var total := 0.0
-	for row in rows:
-		var d: Dictionary = row["d"]
-		var need := int(d.get("recipe_n", 0))
-		var user_recipe: bool = d.get("recipe_res") == CardDB.RES_USER
-		var fill := user_recipe and int(mults["user_fill"]) > 0 and need > 1
-		if fill:
-			need = 1
-		if need > (users if user_recipe else cash):
-			continue
-		var value := float(row["value"])
-		var bt := "attack_x2" if d.get("kind") == CardDB.KIND_ATTACK else "output_x2"
-		var pay := 0 if user_recipe else need
-		var multiplier := CardDB.buff_mult(bt) if int(mults[bt]) > 0 else 1
-		var user_output := 0
-		if d.get("kind") == CardDB.KIND_ATTACK:
-			value = floorf(float(d.get("attack_n", 0)) * multiplier / maxf(1, CardDB.game_rules()["attack_cost_per_card"])) * float(p["attack_discount"]) - pay
-		elif d.get("output_res") == CardDB.RES_USER:
-			user_output = int(d.get("output_n", 0)) * multiplier
-			value = minf(user_output, missing) * shadow + maxf(0, user_output - missing) * CardDB.pawn_user() - pay
-		else:
-			value = (value + pay) * multiplier - pay
-		if value <= 0:
-			continue
-		if user_recipe:
-			users -= need
-		else:
-			cash -= need
-		if fill:
-			mults["user_fill"] -= 1
-		if int(mults[bt]) > 0:
-			mults[bt] -= 1
-		missing = maxi(0, missing - user_output)
-		total += value
-	return total
+static func _capacity(summary: Dictionary, p: Dictionary, context: Context = null) -> float:
+	if context == null: context = _context(p)
+	var discount := float(p["attack_discount"])
+	return Allocation.value(summary,[discount,discount],true,
+		context.allocation_values,context.allocation_stats)
 
 
 static func _parameters(p: Dictionary) -> Dictionary:

@@ -72,7 +72,7 @@ static func _config_candidates() -> Array[String]:
 		PATH,
 	]
 
-## 缺失的玩家偏好不警告；必需的出厂配置由调用方指定 warn_missing。
+## 可选文件缺失时不警告；必需的出厂配置由调用方指定 warn_missing。
 ## FileAccess 同时支持 res:// 导出包内文件与外置绝对路径。
 static func read_json(path: String, warn_missing := false) -> Dictionary:
 	if not FileAccess.file_exists(path):
@@ -91,7 +91,7 @@ static func read_json(path: String, warn_missing := false) -> Dictionary:
 		push_warning("AI 配置必须是 JSON 字典：%s" % path)
 	return {}
 
-## 配置热重载/测试时使用，不触碰 user://ai_search.json。
+## 配置热重载/测试时使用，只清理出厂参数缓存，不重置本次运行的玩家设置。
 static func reset_cache() -> void:
 	_cache.clear()
 	_source = ""

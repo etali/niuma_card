@@ -107,7 +107,7 @@ func _fixture(kind := "ordinary") -> GameState:
 	return state
 
 func _config(strength: float, overrides: Dictionary = {}) -> AISearch:
-	var cfg := AISearch.from_model("ai", strength)
+	var cfg := AISearch.from_model("ai", strength * 0.5)
 	for key in overrides:
 		_check(cfg.apply_override(str(key), overrides[key]), "无效探针覆盖："+str(key))
 	return cfg

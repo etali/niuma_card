@@ -64,13 +64,8 @@ static func produce(state: GameState, observe: Callable = Callable()) -> void:
 ## 一次性跑完：先手攻击 → 后手攻击 → 产出结算 → 收尾（无头模拟器用）
 ## 清零即胜：任一攻击阶段把对方打到 0，后续阶段直接跳过
 ##
-## cfgs：`{座位: AISearch}`，和 `MatchSimulator.run_rounds` 同一份形状。
-## 缺座位 / 缺参数 = 手写的四档打分 = 改造前。
-##
-## **这个参数就是缺陷「攻击阶段点谁」的修法。** 改造前这里一个 picker 都不传，
-## 于是选靶整个在搜索空间外面：`Settle.attack_phase` 的 `target_picker` 参数
-## 早就在了、`engine/transport.gd` 也一直在穿它，但无头这条路上没有任何调用方
-## 给得出一个会搜索的 picker —— 搜索强度调到满档，点靶用的还是那份四档权重表
+## cfgs：`{座位: AISearch}`，与 MatchSimulator.run_rounds 使用同一参数。
+## 缺少座位配置时由 AIPlan 选择默认配置；双方各用自己的共享选靶入口。
 static func run(state: GameState, cfgs: Dictionary = {}, observe: Callable = Callable()) -> void:
 	var order := state.action_order()
 	attack_phase(state, order[0], AIPlan.target_picker(cfgs.get(order[0])), observe)
@@ -136,10 +131,7 @@ static func _resolve_combo(state: GameState, combo: Dictionary) -> Dictionary:
 			GameState.seat_arg(owner), leader_name, paid["reason"]])
 		return { "resolved": false, "reason": paid["reason"], "paid_uids": [] }
 
-	# 走到这里这一组就算真结算了（齐整、配方付得出）。给组里的 Buff 记一笔「立过功」，
-	# AI 的典当挑选据此不卖它 —— 缘由见 `GameState.buff_just_worked`。
-	# **必须在这一行之后、第 4 步之前**：前面三步任一条不过都是整组作废，
-	# 作废的组里那张 Buff 什么都没干成，记上就变成「白占一回合保护」
+	# 付款成功后记录 Buff 的实际生效回合；该标记不构成 AI 的禁售条件。
 	state.mark_buff_worked(owner, combo)
 
 	# 第 4 步：组合效果
