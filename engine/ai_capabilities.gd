@@ -4,6 +4,8 @@ extends RefCounted
 
 ## 可选动作能力；关闭时不进入这些分支，旧候选次序/评分/额度原样保留。
 ## 搜索额度只截断探索，不改变任何游戏规则。所有变更经 IntentApply 复核。
+const Work = preload("res://engine/ai_work_budget.gd")
+const Cancellation = preload("res://engine/ai_cancellation.gd")
 const Env = preload("res://engine/ai_environment.gd")
 const Eval = preload("res://engine/ai_evaluation.gd")
 
@@ -403,8 +405,9 @@ static func _holding_tactics(node: Dictionary, who: String, p: Dictionary) -> Di
 		var protects: bool = guard and d.get("kind") in [CardDB.KIND_PRODUCT,CardDB.KIND_ATTACK] and shields.has(CardDB.protect_key(str(d.get("recipe_res",""))))
 		if not attacks and not protects: continue
 		for option in AIActions.recipe_options(state,who,core,p):
+			if not Work.charge(p,Work.state_cost(state),"tactics"): return values
 			var candidate := Env.copy(state)
-			if not Env.replay(candidate,[Intent.create_combo(who,option["uids"])]) or not AIActions._payable_plan(candidate,who): continue
+			if not Env.replay(candidate,[Intent.create_combo(who,option["uids"])]) or not AIActions._payable_plan(candidate,who,p): continue
 			var combo: Dictionary = candidate.combos.back()
 			if protects:
 				for res in [CardDB.RES_CASH,CardDB.RES_USER]:
@@ -412,6 +415,7 @@ static func _holding_tactics(node: Dictionary, who: String, p: Dictionary) -> Di
 			if attacks:
 				var pools := candidate.arm_attacks(who)
 				for res in pools: values["attack_"+res] = maxi(values["attack_"+res],int(pools[res]))
+	if Cancellation.requested(p): return values
 	node["_holding_tactics"] = {"key":key,"values":values}
 	return values
 

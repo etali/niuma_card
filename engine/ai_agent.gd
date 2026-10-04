@@ -88,6 +88,7 @@ func plan_job() -> Callable:
 	cfg.model = current.model
 	cfg.strength = current.strength
 	cfg.parameters = current.resolved_parameters()
+	cfg.work_session = AIPlan.work_session(state(),seat,cfg)
 	return func(cancelled_check: Callable = Callable()) -> Variant:
 		cfg.cancelled_check = cancelled_check
 		var plan := AIPlan.choose_plan(st, seat, cfg)

@@ -93,6 +93,14 @@ class ManualBalanceTest(unittest.TestCase):
         with self.assertRaises(ValueError):mb.validate_options(o,schema)
         self.assertEqual(mb.digest(self.base),mb.digest(copy.deepcopy(self.base)))
 
+    def test_strength_derived_ratio_is_read_only(self):
+        schema=[{'key':'search_fraction','kind':'float','min':0,'max':1,'step':.000001,
+                 'label':'计算上限使用比例','read_only':True,'strength_points':[[0,.002],[.5,.12675],[1,1]]}]
+        o=copy.deepcopy(mb.DEFAULT_OPTIONS);o['ai_parameters']={'search_fraction':.12675}
+        self.assertEqual(mb.validate_options(o,schema),o)
+        o['ai_parameters']['search_fraction']=.5
+        with self.assertRaisesRegex(ValueError,'不能单独修改'):mb.validate_options(o,schema)
+
     def test_simulation_budget_has_only_numeric_safety_limits(self):
         options=copy.deepcopy(mb.DEFAULT_OPTIONS)
         options.update(pairs=5001,max_rounds=10000,seed_start=2147483648)
@@ -781,15 +789,15 @@ class ApiIntegrationTest(unittest.TestCase):
         profiles=metadata['strength_profiles']
         self.assertEqual(set(profiles),{f'{index/100:.2f}' for index in range(101)})
         keys={spec['key'] for spec in metadata['schema']}
-        for values in profiles.values():
+        for strength,values in profiles.items():
             self.assertEqual(set(values),keys)
-            mb.validate_options({**mb.DEFAULT_OPTIONS,'ai_parameters':values},metadata['schema'])
+            mb.validate_options({**mb.DEFAULT_OPTIONS,'strength':float(strength),'ai_parameters':values},metadata['schema'])
         self.assertEqual(profiles['0.50'],metadata['parameters'])
         for strength in (0,.37,.51,.75,1):
             actual=self.ai_side(strength)['ai_parameters']
             self.assertEqual(profiles[f'{strength:.2f}'],actual)
-        self.assertEqual(profiles['0.50']['generation_budget'],0)
-        self.assertEqual(profiles['0.51']['generation_budget'],30000)
+        self.assertEqual(profiles['0.50']['generation_budget'],2560)
+        self.assertEqual(profiles['0.51']['generation_budget'],2560)
 
     def test_duel_validates_and_preserves_all_manual_parameters(self):
         side=self.ai_side(.5)
@@ -1063,7 +1071,7 @@ class ApiIntegrationTest(unittest.TestCase):
         options=copy.deepcopy(mb.DEFAULT_OPTIONS)
         editable={s['key'] for s in latest['ai']['schema']}
         options.update(pairs=5001,max_rounds=1000,seed_start=5001,strength=1.0,
-                       ai_parameters={k:v for k,v in latest['ai']['parameters'].items() if k in editable})
+                       ai_parameters={k:v for k,v in latest['ai']['strength_profiles']['1.00'].items() if k in editable})
         try:
             response=self.post('api/run',{'config_id':config['id'],'options':options})
         except urllib.error.HTTPError as error:

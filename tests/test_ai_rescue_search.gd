@@ -158,8 +158,9 @@ func _test_scope_and_interrupt() -> void:
 
 func _test_real_market_denial() -> void:
 	var cfg := AISearch.from_model("ai",1.0)
-	# 此用例验证完整节点规格；墙钟截止另由test_ai_time_budget验证。
-	cfg.apply_override("think_time_ms",300000)
+	# 此用例验证完整节点规格；计算额度另由test_ai_work_budget验证。
+	cfg.apply_override("compute_budget",10000000)
+	cfg.apply_override("search_fraction",1.0)
 	for key in fixture.parameters: cfg.apply_override(key,fixture.parameters[key])
 	cfg.apply_override("future_rounds",0)
 	var s := _position()
@@ -173,7 +174,7 @@ func _test_real_market_denial() -> void:
 	check(d.root_candidates == d.current_attempted+d.current_unvisited and
 		d.current_attempted == d.current_complete+d.current_incomplete and d.current_complete == d.evaluated_roots,
 		"完整choose普通加补救的候选总数、尝试、完成和未访问相符")
-	check(d.generation_nodes+d.current_nodes+d.future_nodes == d.expanded_nodes and d.expanded_nodes <= d.profile.node_budget
+	check(d.generation_nodes+d.current_nodes+d.future_nodes == d.expanded_nodes and d.compute_used <= d.compute_limit
 		and d.future_nodes == 0,"实际三阶段费用与总预算一致，关闭未来无隐藏前推")
 	var chosen := Env.copy(s)
 	check(Env.replay(chosen,result.intents),"补救最终意图可在原局面逐条真实执行")

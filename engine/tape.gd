@@ -128,6 +128,7 @@ func start(applier: IntentApply, note := "") -> void:
 		"note": note,
 		"at": Time.get_datetime_string_from_system(true),
 		"round": int(applier.state.round_num),
+		"rng": applier.state.rng_snapshot(),
 	}
 	applier.landed_intent.connect(_on_landed_intent)
 
@@ -162,7 +163,7 @@ func record_ai_decision(state: GameState, who: String, decision: Dictionary) -> 
 	if not meta.has("ai_decisions"): meta["ai_decisions"] = []
 	var entry := decision.duplicate(true)
 	entry.merge({"before_step":steps.size()+1,"round":state.round_num,"seat":who,
-		"state_hash":StateCodec.state_hash(state)},true)
+		"state_hash":StateCodec.state_hash(state),"rng":state.rng_snapshot()},true)
 	meta["ai_decisions"].append(entry)
 
 # ---------- 落盘 ----------
@@ -387,7 +388,7 @@ func start_remote(net: NetTransport, note := "联网客户端") -> void:
 	_gesture = {}
 	configuration = RecordingConfig.dump()
 	table = StateCodec.table_hash()
-	meta = {"note": note, "at": Time.get_datetime_string_from_system(true), "round": net.state().round_num}
+	meta = {"note": note, "at": Time.get_datetime_string_from_system(true), "round": net.state().round_num, "rng":net.state().rng_snapshot()}
 	net.recorded_step.connect(_on_remote_step)
 
 func _on_remote_step(result: Dictionary, snapshot: Dictionary) -> void:

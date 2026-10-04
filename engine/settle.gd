@@ -68,9 +68,9 @@ static func produce(state: GameState, observe: Callable = Callable()) -> void:
 ## 缺少座位配置时由 AIPlan 选择默认配置；双方各用自己的共享选靶入口。
 static func run(state: GameState, cfgs: Dictionary = {}, observe: Callable = Callable()) -> void:
 	var order := state.action_order()
-	attack_phase(state, order[0], AIPlan.target_picker(cfgs.get(order[0])), observe)
+	attack_phase(state, order[0], AIPlan.target_picker(cfgs.get(order[0]),state,order[0]), observe)
 	if state.winner == "":
-		attack_phase(state, order[1], AIPlan.target_picker(cfgs.get(order[1])), observe)
+		attack_phase(state, order[1], AIPlan.target_picker(cfgs.get(order[1]),state,order[1]), observe)
 	if state.winner == "":
 		produce(state, observe)
 	finalize(state)

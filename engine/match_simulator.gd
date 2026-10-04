@@ -135,11 +135,11 @@ static func continue_from_attack(state: GameState, who: String, pools: Dictionar
 		max_rounds: int, cfgs: Dictionary = {}) -> GameState:
 	if state.winner != "":
 		return state
-	Settle.spend_pool(state, who, pools, AIPlan.target_picker(cfgs.get(who)))
+	Settle.spend_pool(state, who, pools, AIPlan.target_picker(cfgs.get(who),state,who))
 	var opp := GameState.opponent(who)
 	# 我是先手 → 对手的攻击阶段还没打；我是后手 → 他已经打过了
 	if state.winner == "" and who == state.action_order()[0]:
-		Settle.attack_phase(state, opp, AIPlan.target_picker(cfgs.get(opp)))
+		Settle.attack_phase(state, opp, AIPlan.target_picker(cfgs.get(opp),state,opp))
 	if state.winner == "":
 		Settle.produce(state)
 	Settle.finalize(state)

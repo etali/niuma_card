@@ -75,6 +75,7 @@ static func _card_out(c: Dictionary) -> Dictionary:
 ## state 的引用，换对象要把每个持有点都改一遍（而漏掉一个就是「界面还在读旧局」）。
 ## 重连的语义本来也是「这一局变成那样」，不是「换一局」
 static func restore(s: GameState, d: Dictionary) -> void:
+	s.ai_work_sessions.clear()
 	var players := {}
 	var src: Dictionary = d.get("players", {})
 	for who in src:

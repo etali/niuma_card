@@ -12,6 +12,9 @@ extends RefCounted
 ## 引擎这边不存 phase —— 两份记录会各说各话（真出现过 settle vs settling 这种
 ## 取值对不上，而引擎那份只写不读，对不上也没人发现）
 
+## 运行时AI额度不进入状态编码、规则指纹或搜索副本。每座位每回合一份。
+var ai_work_sessions: Dictionary = {}
+
 const PLAYER := "player"
 const AI := "ai"
 
@@ -163,6 +166,7 @@ func rng_restore(d) -> void:
 ## first: 抽卡先手。留空 = 沿用当前值（单机局照旧从 PLAYER 开）。
 ## 联网 rematch 传对手，让先手在局间轮换（net/room.gd 的 reset_for_rematch）
 func new_game(first := "") -> void:
+	ai_work_sessions.clear()
 	players = {
 		PLAYER: { "cards": [] },
 		AI: { "cards": [] },

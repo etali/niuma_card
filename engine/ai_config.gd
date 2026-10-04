@@ -42,15 +42,6 @@ static func _raw_section(key: String, path: String) -> Dictionary:
 		_cache[path] = read_json(path, true)
 	var section: Variant = (_cache[path] as Dictionary).get(key, {})
 	var result := (section as Dictionary).duplicate(true) if section is Dictionary else {}
-	if key == "search":
-		# 同一套算法改名，旧外置配置也须在合并内置默认值前迁移，保留自定义预算。
-		# 同时给出新旧两节时，以明确的 ai 节为准；缺项仍由内置配置补齐。
-		if result.has("v2"):
-			if not result.has("ai"):
-				result["ai"] = result["v2"]
-			result.erase("v2")
-		if result.get("default_model") == "v2":
-			result["default_model"] = "ai"
 	return result
 
 static func _merge(base: Dictionary, over: Dictionary) -> Dictionary:

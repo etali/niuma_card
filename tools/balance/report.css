@@ -25,3 +25,5 @@
 .ai-group { grid-column: 1 / -1; margin: 12px 0 0; }
 
 input[type=range]{width:100%;padding:0;accent-color:var(--blue);border:0;background:transparent}output{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600}.duel-sides{display:grid;grid-template-columns:1fr 1fr;gap:18px}.duel-side{min-width:0;padding:12px;background:var(--bg)}.duel-side h3{margin:0 0 10px}.duel-budget{margin-top:16px}.duel-side .ai-fields{max-height:540px}.duel-side .ai-fields input{background:var(--paper)}@media(max-width:900px){.duel-sides{grid-template-columns:1fr}}
+
+.workbench-tabs{display:flex;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--line);padding-bottom:8px}.workbench-tabs button{font-weight:600;padding:10px 20px}.workbench-tabs button[aria-selected="true"]{background:var(--blue);border-color:var(--blue);color:#fff}.workbench-tabs button[aria-selected="true"]:hover{background:#1b448e}.duel-config .controls{margin-bottom:0}.duel-config p{margin-bottom:0}@media(max-width:700px){.workbench-tabs button{flex:1;padding:10px 8px}}

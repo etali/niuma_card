@@ -44,7 +44,8 @@ func _test_partial_current() -> void:
 		check(int(p._work[0]) == remaining,"不启动注定无法完成规格的残量评价")
 	for budget in [4000,4500]:
 		var cfg := AISearch.from_model("ai",1.0)
-		cfg.apply_override("node_budget",budget)
+		cfg.apply_override("compute_budget",budget)
+		cfg.apply_override("search_fraction",1.0)
 		cfg.apply_override("future_rounds",0)
 		var result := Plan.choose_plan(_position(),"ai",cfg)
 		var actual := _position()
@@ -53,7 +54,7 @@ func _test_partial_current() -> void:
 		var is_loss: bool = verified.complete and verified.score == -AIEvaluator.TERMINAL_SCORE
 		check(not is_loss or not result.diagnostics.selected_evaluation_complete or result.diagnostics.score == -AIEvaluator.TERMINAL_SCORE,
 			"%d总预算不能把已知必败的末根当已完成安全评价" % budget)
-		check(result.diagnostics.expanded_nodes <= budget,"%d总预算计数未越界" % budget)
+		check(result.diagnostics.compute_used <= budget,"%d总预算计数未越界" % budget)
 		var stats: Dictionary=result.diagnostics
 		check(stats.generation_nodes>=0 and stats.current_nodes>=0 and stats.future_nodes>=0 and
 			stats.generation_nodes+stats.current_nodes+stats.future_nodes==stats.expanded_nodes,

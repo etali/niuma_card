@@ -42,7 +42,7 @@ def pawn_value(def_id, cards, game):
     source = card.get("upgrade_from", "")
     if source in cards:
         count = max(2, int(card.get("upgrade_dup_n", 2)))
-        return max(1, _round_half_up(pawn_value(source, cards, game) * count / rate))
+        return max(1, _round_half_up(int(cards[source]["price"]) * count / rate))
     return 0
 
 
@@ -63,7 +63,7 @@ def readme_checks(f):
     wants = [
         ("用户卡的价钱", "用户卡 %d 现金/张" % f["pawn_user"]),
         ("可购卡的折价率", "标价 %s" % f["pawn_rate_s"]),
-        ("T2 的折价率", "配方卡价值之和 %s 递归计算" % f["pawn_rate_s"]),
+        ("T2 的折价率", "下级材料购牌价之和 %s" % f["pawn_rate_s"]),
         ("T2 的升级张数", "同名下级卡×%d" % f["t2_dup_n"]),
     ]
     for label, key in (("独角兽", "dujiaoshou"), ("国民应用", "guomin"), ("上市敲钟", "shangshi")):
@@ -106,6 +106,9 @@ def _value_problem(value, spec):
         return "超出范围 [%g, %g]" % (spec["min"], spec["max"])
     if spec["kind"] == "int" and number != int(number):
         return "整数参数不能含小数"
+    # 自动推导的只读曲线保留原始精度，运行时使用时才量化。
+    if spec.get("read_only"):
+        return None
     steps = (number - spec["min"]) / spec["step"]
     if not math.isclose(steps, round(steps), rel_tol=0.0, abs_tol=1e-7):
         return "未对齐步长 %g（起点 %g）" % (spec["step"], spec["min"])
@@ -114,12 +117,35 @@ def _value_problem(value, spec):
 
 def read_parameter_schema(source):
     """读取注册规格及 helper 的 kind/min/max/step/default，拒绝不支持的格式。"""
+    constants = dict(re.findall(
+        r"^const\s+([A-Za-z_][A-Za-z_0-9]*)\s*(?::\s*(?:int|float)\s*)?:?=\s*([^\n#]+)",
+        source, re.MULTILINE))
+
+    def number(token, seen=()):
+        token = token.strip()
+        if re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", token):
+            if token not in constants:
+                raise ValueError("未定义的数值常量：" + token)
+            if token in seen:
+                raise ValueError("数值常量循环引用：" + " -> ".join((*seen, token)))
+            return number(constants[token], (*seen, token))
+        try:
+            return _number(token, allow_text=True)
+        except ValueError as error:
+            raise ValueError("不支持的数值声明：" + token) from error
+
     section = source.split("func parameter_schema()", 1)[1].split("\nfunc ", 1)[0]
     calls = re.findall(r"^\s*_(int|float)\((.*)\),\s*$", section, re.MULTILINE)
     if not calls or len(calls) != len(re.findall(r"\b_(?:int|float)\(", section)):
         raise ValueError("parameter_schema 中有不能解析的参数声明")
     targets_match = re.search(r"const STRENGTH_TARGETS := (\{.*?\})\n", source, re.DOTALL)
-    targets = json.loads(targets_match[1]) if targets_match else {}
+    # 只替换字典值位置的常量引用，不执行 GDScript，也不改动键名。
+    targets_text = re.sub(
+        r'(:\s*)([A-Za-z_][A-Za-z_0-9]*)(?=\s*[,}])',
+        lambda match: match[1] + json.dumps(number(match[2])),
+        targets_match[1]) if targets_match else "{}"
+    targets = json.loads(targets_text)
+    targets = {key: _number(value) for key, value in targets.items()}
     schema = {}
     for helper, arguments in calls:
         values = next(csv.reader([arguments], skipinitialspace=True))
@@ -129,7 +155,7 @@ def read_parameter_schema(source):
         if key in schema:
             raise ValueError("参数规格键重复：" + key)
         names = ["lower", "upper", "weak", "strong"] if helper == "int" else ["lower", "upper", "value"]
-        bindings = {name: _number(value, allow_text=True) for name, value in zip(names, values[3:-1])}
+        bindings = {name: number(value) for name, value in zip(names, values[3:-1])}
         body = source.split("func _" + helper + "(", 1)[1].split("\nfunc ", 1)[0]
         kind_match = re.search(r'"kind"\s*:\s*"([^"\n]+)"', body)
         if kind_match is None or kind_match[1] not in ("int", "float") or kind_match[1] != helper:
@@ -140,13 +166,35 @@ def read_parameter_schema(source):
             if match is None:
                 raise ValueError("参数规格 %s 缺少可解析的 %s" % (key, field))
             token = match[1]
-            spec[field] = bindings[token] if token in bindings else _number(token, allow_text=True)
+            spec[field] = bindings[token] if token in bindings else number(token)
         if helper == "int":
             spec["strength_target"] = targets.get(key)
             spec["strength_points"] = [[0, bindings["weak"]], [0.5, bindings["strong"]],
                                        [1, targets.get(key, bindings["strong"])]]
         else:
             spec["strength_points"] = [[s, bindings["value"]] for s in (0, 0.5, 1)]
+        override = re.search(
+            r'\n\tif key == "' + re.escape(key) + r'":\n(.*?)(?=\n\t[^\t]|\Z)',
+            body, re.DOTALL)
+        if override:
+            for field in ("min", "max", "step", "default"):
+                assignment = re.search(r'spec\["' + field + r'"\]\s*=\s*([^\n#]+)', override[1])
+                if assignment:
+                    spec[field] = number(assignment[1])
+            spec["read_only"] = bool(re.search(r'spec\["read_only"\]\s*=\s*true\b', override[1]))
+            if 'spec["strength_points"]' in override[1]:
+                # 当前只读计算比例由数值常量和三次曲线生成；格式变更须明确报错。
+                minimum = re.search(r'var minimum := float\((\w+)\)/(\w+)', override[1])
+                count = re.search(r'for index in range\((\d+)\):', override[1])
+                divisor = re.search(r'var s := index/([0-9.]+)', override[1])
+                if not (spec["read_only"] and minimum and count and divisor
+                        and 'points.append([s,minimum+(1.0-minimum)*s*s*s])' in override[1]):
+                    raise ValueError("不支持的参数强度曲线：" + key)
+                low = number(minimum[1]) / number(minimum[2])
+                positions = [i / number(divisor[1]) for i in range(int(count[1]))]
+                if not positions or positions[0] != 0 or positions[-1] != 1:
+                    raise ValueError("参数强度曲线必须覆盖0到1：" + key)
+                spec["strength_points"] = [[s, low + (1 - low) * s ** 3] for s in positions]
         if spec["min"] > spec["max"] or spec["step"] <= 0:
             raise ValueError("参数规格 %s 的边界或步长无效" % key)
         if spec["kind"] == "int" and any(spec[field] != int(spec[field]) for field in ("min", "max", "step")):
@@ -197,7 +245,7 @@ def document_values(raw, spec):
     if problems:
         raise ValueError("；".join(problems))
     values = []
-    for strength in ((0, 0.5, 1) if spec["kind"] == "int" else (0.5,)):
+    for strength in ((0, 0.5, 1) if spec["kind"] == "int" or spec.get("read_only") else (0.5,)):
         value = points[-1][1]
         for left, right in zip(points, points[1:]):
             if strength < right[0]:
@@ -213,7 +261,11 @@ def check_ai_tables(root, ai_config, bad):
     schema = read_parameter_schema((root / "engine" / "ai_turn_strategy.gd").read_text())
     configured = ai_config["search"]["ai"]
     lines = (root / "ai.md").read_text().splitlines()
-    table_start = lines.index("## 搜索参数与估值参数")
+    headers = [i for i, line in enumerate(lines)
+               if re.match(r"^\|\s*参数\s*\|\s*强度\s*0\s*\|\s*强度\s*0\.5\s*\|\s*强度\s*1\s*\|", line)]
+    if len(headers) != 1:
+        raise ValueError("ai.md 强度参数表表头命中 %d 行，应为 1 行" % len(headers))
+    table_start = headers[0]
     count = 0
     unknown = set(configured) - set(schema) - {"profile_version"}
     unknown = {key for key in unknown if not key.startswith("_")}

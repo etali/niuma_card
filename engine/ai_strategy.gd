@@ -35,7 +35,7 @@ func compile_parameters(strength: float, source: Dictionary) -> Dictionary:
 					var effective: Variant = validate_value(reference,_configured_value(reference,source,0.5))
 					if effective == null: effective = reference["default"]
 					if _number(effective): zero_equivalent = float(effective)
-		var value: Variant = _configured_value(spec,source,s,zero_equivalent)
+		var value: Variant = _configured_value(spec,{} if spec.get("read_only",false) else source,s,zero_equivalent)
 		var checked: Variant = validate_value(spec, value)
 		out[spec["key"]] = checked if checked != null else spec["default"]
 	return out
@@ -81,6 +81,10 @@ func choose_plan(_state: GameState, _who: String, _config) -> Dictionary:
 func target_picker(_config) -> Callable:
 	push_error("AI 实现没有提供 target_picker")
 	return Callable()
+
+## 只有确定不会展开搜索的选靶才能在主线程执行；新模型默认仍走工作线程。
+func can_pick_target_inline(_targets: Array) -> bool:
+	return false
 
 func evaluate(_state: GameState, _who: String, _parameters: Dictionary) -> float:
 	push_error("AI 实现没有提供 evaluate")

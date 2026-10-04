@@ -17,18 +17,19 @@ func _initialize() -> void:
 		for key in ["financing_mode","allocation_mode","formation_mode","candidate_dedup","reply_mode","rollout_capabilities","tactical_extension","resale_mode","attack_mode"]:
 			check(p[key] == 0,"强度%s保持基线%s关闭" % [strength,key])
 	check(AISearch.from_tier(" AI:ENHANCED ").get_knob("financing_mode")==2,"命名配置忽略大小写和两端空格")
-	var cfg := AISearch.from_preset("enhanced")
-	# 此用例验证完整节点规格；墙钟截止另由test_ai_time_budget验证。
-	cfg.apply_override("think_time_ms",300000)
+	var cfg := AISearch.from_strength(1.0)
+	# 此用例验证完整节点规格；计算额度另由test_ai_work_budget验证。
+	cfg.apply_override("compute_budget",10000000)
+	cfg.apply_override("search_fraction",1.0)
 	var p := cfg.resolved_parameters()
 	check(p.financing_mode == 2 and p.reply_mode == 1,"增强是同一实现的参数集合")
 	var s := state()
 	var before := StateCodec.state_hash(s)
-	var old := AITurnPlan.choose_plan(s,"ai",AISearch.from_preset("legacy"))
+	var old := AITurnPlan.choose_plan(s,"ai",AISearch.from_strength(0.5))
 	check(Env.replay(Env.copy(s),old.intents),"默认配置使用共用评分与搜索，方案通过真实规则")
 	var result := AITurnPlan.choose_plan(s,"ai",cfg)
 	check(StateCodec.state_hash(s) == before,"两种搜索都不改变输入状态")
-	check(result.diagnostics.expanded_nodes <= p.node_budget,"增强搜索遵守总展开额度")
+	check(result.diagnostics.compute_used <= result.diagnostics.compute_limit,"增强搜索遵守总展开额度")
 	check(Env.replay(s,result.intents),"增强方案全部通过真实规则")
 	var bulk := false
 	for it in result.intents:
@@ -73,7 +74,7 @@ func _test_timing(p: Dictionary) -> void:
 	s.draw_first = "player"
 	check(Cap.cashout_winner_after_round(s) == "","后手能典当不等于已必胜")
 	check(s.winner == "","扩展评估不篡改实际winner")
-	var legacy := AISearch.from_preset("legacy").resolved_parameters()
+	var legacy := AISearch.from_strength(0.5).resolved_parameters()
 	check(absf(AITurnPlan.settled_score(s,"ai",legacy)) < AIEvaluator.TERMINAL_SCORE,"兼容评估保持原静态分")
 func _test_modes(p: Dictionary) -> void:
 	var same := state()
@@ -87,10 +88,11 @@ func _test_modes(p: Dictionary) -> void:
 	var off := p.duplicate()
 	off.rollout_capabilities = 0
 	check(AITurnPlan._fast_profile(off).financing_mode == 0,"前推动作能力可独立关闭")
-	var tiny := AISearch.from_preset("enhanced")
-	tiny.apply_override("node_budget",1)
+	var tiny := AISearch.from_strength(1.0)
+	tiny.apply_override("compute_budget",100)
+	tiny.apply_override("search_fraction",1.0)
 	var action := AITurnPlan.choose_plan(state(),"ai",tiny)
-	check(action.diagnostics.expanded_nodes<=1 and Env.replay(state(),action.intents),"极小预算仍返回合法方案")
+	check(action.diagnostics.compute_used<=85 and Env.replay(state(),action.intents),"极小预算仍返回合法方案")
 
 func _test_small_space(parameters: Dictionary) -> void:
 	var s := GameState.new()
@@ -126,9 +128,9 @@ func _test_small_space(parameters: Dictionary) -> void:
 			reference[Cap.signature(next)] = true
 	check(actual == reference and actual.size()==16,"小局面联合融资覆盖全部16种数量组合，对照独立穷举")
 	var paid := state()
-	var roots := AIActions.generate(paid,"ai",AISearch.from_preset("legacy").resolved_parameters())
+	var roots := AIActions.generate(paid,"ai",AISearch.from_strength(0.5).resolved_parameters())
 	var leaf := Env.copy(roots[0].state)
-	var old := AISearch.from_preset("legacy").resolved_parameters()
+	var old := AISearch.from_strength(0.5).resolved_parameters()
 	var enhanced := parameters.duplicate()
 	var r0 := AITurnPlan.resolve_current(leaf,"ai",old)
 	var r1 := AITurnPlan.resolve_current(leaf,"ai",enhanced)

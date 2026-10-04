@@ -161,5 +161,5 @@ func _test_market_order() -> void:
 	b_cards.sort()
 	check(a_cards == b_cards, "相同市场只改变展示顺序，仍选择同一语义购买方案")
 	var chosen := Plan.choose_plan(s, GameState.AI, cfg)
-	check(int(chosen["diagnostics"]["expanded_nodes"]) <= int(chosen["diagnostics"]["profile"]["node_budget"]),
+	check(int(chosen["diagnostics"]["compute_used"]) <= int(chosen["diagnostics"]["compute_limit"]),
 		"搜索使用并遵守展开节点额度")

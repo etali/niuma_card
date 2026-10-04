@@ -279,6 +279,9 @@ func _t_knob_rows(panel: AIPanel) -> void:
 	panel._slider.value = 0.0
 	var missed: Array = []
 	for r in panel._rows:
+		if r["kind"] == "readonly":
+			check(r["node"] is Label,"计算使用比例显示为只读标签")
+			continue
 		AISearch.clear_overrides()
 		panel._sync_rows()
 		var key := str(r["key"])
@@ -357,6 +360,7 @@ func _t_session_and_reset(panel: AIPanel) -> void:
 	check(not FileAccess.file_exists(AISearch.USER_PATH), "拖滑块不落盘，强度仅留在本次运行")
 	var wrong := []
 	for row in panel._rows:
+		if row["kind"] == "readonly": continue
 		var wanted: Variant = _change_row(row)
 		if not _same_value(AISearch.prefs().get_knob(str(row["key"])), wanted):
 			wrong.append(row["key"])
@@ -389,6 +393,8 @@ func _same_value(a: Variant, b: Variant) -> bool:
 func _shown(row: Dictionary) -> Variant:
 	var node: Control = row["node"]
 	match str(row["kind"]):
+		"readonly":
+			return float((node as Label).text.trim_suffix("%"))/100.0
 		"bool":
 			return (node as CheckBox).button_pressed
 		"enum":

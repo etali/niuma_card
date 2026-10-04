@@ -46,7 +46,7 @@ func _test_bounds_and_order()->void:
 	check(terminal.evaluated_responses==[1,1] and terminal.skipped_responses==5 and terminal.lower_bound_exits==2,"-1下界退出不必继续结算不可能更坏的回应")
 	var interrupted:=Plan._future_layer(contenders,[1,1,1],"ai",_profile(),
 		func(ci:int,_ri:int)->Dictionary:return {"complete":ci==0,"value":0.1,"evaluations":1})
-	check(not interrupted.complete and interrupted.value_kinds==["exact","pending","pending"],"回应未完成不能伪装上界证据或共同层完成")
+	check(not interrupted.complete and interrupted.value_kinds==["exact","incomplete","incomplete"],"局部失败不跳过其他候选，也不能伪装上界证据或共同层完成")
 	# 少量独立完整矩阵：直接穷举每行最小值，覆盖冠军更换、负值、平分和下界。
 	var matrices:=[[[0.2,0.4],[-0.5,-0.9],[0.3,0.1]],[[0.1,0.9],[0.8,0.9],[0.7,0.8]],
 		[[-0.6,-0.2],[-0.4,-0.9],[-0.3,-0.1]],[[-1.0,0.9],[-1.0,-0.2],[-1.0,0.4]],

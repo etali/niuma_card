@@ -187,6 +187,17 @@ def validate_options(o, schema):
         s = specs.get(key)
         if not s or not numeric(v) or not s['min'] <= v <= s['max']:
             raise ValueError('AI参数无效：'+key)
+        if s.get('read_only'):
+            points = s['strength_points']
+            expected = points[-1][1]
+            for left, right in zip(points, points[1:]):
+                if o['strength'] < right[0]:
+                    fraction = (o['strength'] - left[0]) / (right[0] - left[0])
+                    expected = left[1] + (right[1] - left[1]) * fraction
+                    break
+            expected = s['min'] + math.floor((expected - s['min']) / s['step'] + 0.5) * s['step']
+            if not math.isclose(v, expected, rel_tol=0, abs_tol=1e-10):
+                raise ValueError(s['label']+'由强度自动推导，不能单独修改')
         if s['kind']=='int' and v != int(v): raise ValueError('AI参数要求整数：'+s['label'])
         step = (v-s['min'])/s['step']
         if abs(step-round(step)) > 1e-6: raise ValueError('AI参数步长不正确：'+s['label'])

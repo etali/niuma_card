@@ -84,7 +84,7 @@ func _build() -> void:
 	_body.add_child(_model_choice)
 	_body.add_child(_build_slider_row())
 	_body.add_child(_build_presets())
-	_body.add_child(_label("修改立即生效，仅本次运行\n下次启动恢复默认强度", 12, Color(0.72, 0.82, 0.62)))
+	_body.add_child(_label("每回合计算与单阶段节点上限可单独调整\n改变强度保留两个上限；计算使用比例只读\n修改立即生效，仅本次运行，下次启动恢复默认", 12, Color(0.72, 0.82, 0.62)))
 	_knobs_scroll = ScrollContainer.new()
 	_knobs_scroll.custom_minimum_size = Vector2(LIST_W, KNOBS_H)
 	_knobs_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -178,6 +178,7 @@ func _rebuild_knobs(model: String) -> void:
 	var groups := grouped.keys()
 	var group_order := groups.duplicate()
 	groups.sort_custom(func(a,b):
+		if (a == "计算预算") != (b == "计算预算"): return a == "计算预算"
 		if a.begins_with("设计能力") != b.begins_with("设计能力"): return a.begins_with("设计能力")
 		return group_order.find(a) < group_order.find(b))
 	for group in groups:
@@ -187,7 +188,7 @@ func _rebuild_knobs(model: String) -> void:
 
 func _build_knob_row(k: Dictionary) -> HBoxContainer:
 	var key := str(k["key"])
-	var kind := str(k["kind"])
+	var kind := "readonly" if k.get("read_only",false) else str(k["kind"])
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 6)
 
@@ -199,6 +200,9 @@ func _build_knob_row(k: Dictionary) -> HBoxContainer:
 
 	var node: Control
 	match kind:
+		"readonly":
+			node = _label("",12,Color(0.72,0.82,0.62))
+			node.custom_minimum_size = Vector2(86,0)
 		"bool":
 			var cb := CheckBox.new()
 			cb.toggled.connect(_on_knob_bool.bind(key))
@@ -338,6 +342,8 @@ func _sync_rows() -> void:
 			continue
 		var value: Variant = cfg.get_knob(str(r["key"]))
 		match str(r["kind"]):
+			"readonly":
+				(node as Label).text = "%.4f%%" % (float(value)*100.0)
 			"bool":
 				(node as CheckBox).button_pressed = bool(value)
 			"enum":
