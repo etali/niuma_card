@@ -16,6 +16,9 @@ var rounds_sum := 0
 var started := 0
 var decision_totals := {"A":{},"B":{}}
 var decision_trace: FileAccess
+var recordings: Array = []
+var recording_dir := ""
+var recording_configs: Dictionary = {}
 
 func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -52,6 +55,11 @@ func _initialize() -> void:
 			printerr("无法创建逐决策诊断记录")
 			quit(3)
 			return
+	recording_dir = str(request["output_path"]).get_base_dir().path_join("recordings")
+	if DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(recording_dir)) != OK:
+		printerr("无法创建对战录像目录")
+		quit(3)
+		return
 	var games: Array = []
 	for pair in int(options["pairs"]):
 		var seed_i := int(options["seed_start"]) + pair
@@ -59,10 +67,22 @@ func _initialize() -> void:
 			var game_started := Time.get_ticks_usec()
 			var a_seat: String = GameState.AI if swap else GameState.PLAYER
 			var decisions := {"A":{},"B":{}}
+			var tape := Tape.new()
+			var file_name := "%06d_seed%d_%s.json" % [completed+1,seed_i,"A后手" if swap else "A先手"]
+			var seats_config := AISearch.duel_seats(configs[0],configs[1],swap)
+			recording_configs = {}
+			for seat in seats_config:
+				var config: AISearch = seats_config[seat]
+				recording_configs[seat] = {"side":"A" if seat == a_seat else "B","model":config.model,
+					"strength":config.strength,"parameters":config.resolved_parameters()}
+			recordings.append({"file":file_name,"seed":seed_i,"swap":swap,"a_seat":a_seat,"status":"recording"})
 			var state := MatchSimulator.run_rounds(int(options["max_rounds"]),seed_i,
 				func(s: GameState) -> void: _progress(seed_i,s.round_num),Callable(),Callable(),
-				AISearch.duel_seats(configs[0],configs[1],swap),"",{
+				seats_config,"",{
+				"tape":tape,
+				"checkpoint":func(s: GameState) -> void: _save_recording(tape,s,file_name),
 				"decision":func(s: GameState,who: String,decision: Dictionary) -> void:
+					tape.record_ai_decision(s,who,decision)
 					var side := "A" if who == a_seat else "B"
 					DecisionStats.add(decisions[side],decision["diagnostics"])
 					DecisionStats.add(decision_totals[side],decision["diagnostics"])
@@ -71,9 +91,12 @@ func _initialize() -> void:
 						decision_trace.store_line(JSON.stringify({"seed":seed_i,"swap":swap,"seat":who,
 							"state":StateCodec.snapshot(AIEnvironment.copy(s)),"decision":decision}))
 						decision_trace.flush()})
+			recordings[-1]["status"] = "complete"
+			_save_recording(tape,state,file_name)
+			tape.stop()
 			var winner := "draw" if state.winner.is_empty() else ("A" if state.winner == a_seat else "B")
 			games.append({"seed":seed_i,"swap":swap,"a_seat":a_seat,"winner":winner,
-				"win_reason":state.win_reason,"rounds":mini(state.round_num,int(options["max_rounds"])),
+				"recording":file_name,"win_reason":state.win_reason,"rounds":mini(state.round_num,int(options["max_rounds"])),
 				"decisions":decisions,"duration_ms":(Time.get_ticks_usec()-game_started)/1000.0})
 			counts[winner] += 1
 			seats[a_seat][winner] += 1
@@ -86,7 +109,7 @@ func _initialize() -> void:
 	summary["decisions"] = decision_totals
 	var result := {"schema":"manual-ai-duel-v1","status":"complete","protocol":"paired-seed-seat-swap-v1",
 		"a":Duel._config("A",configs[0]),"b":Duel._config("B",configs[1]),"options":options,
-		"summary":summary,"games":games,"table_hash":StateCodec.table_hash(),
+		"summary":summary,"games":games,"recordings":recordings,"table_hash":StateCodec.table_hash(),
 		"cards_sha256":FileAccess.get_sha256(str(request["cards_path"])),
 		"ai_sha256":FileAccess.get_sha256(AIConfig.source_path()),"engine_source_hash":Duel._engine_source_hash(),
 		"godot":Engine.get_version_info()["string"],"elapsed_seconds":(Time.get_ticks_usec()-started)/1000000.0}
@@ -104,4 +127,19 @@ func _progress(seed_i: int, round_num: int) -> void:
 		"mean_rounds":float(rounds_sum)/completed if completed else null,"by_a_seat":seats}
 	if not Report._write(str(request["progress_path"]),{"completed":completed,"total":int(options["pairs"])*2,
 		"seed":seed_i,"round":round_num,"summary":summary,"decisions":decision_totals}):
+		quit(3)
+
+func _save_recording(tape: Tape, state: GameState, file_name: String) -> void:
+	var item: Dictionary = recordings[-1]
+	item.merge({"steps":tape.size(),"round":state.round_num,"winner":state.winner},true)
+	tape.meta.merge({"source":"html-ai-duel","seed":str(item["seed"]),"swap":item["swap"],
+		"a_seat":item["a_seat"],"ai_seats":recording_configs,"status":item["status"],
+		"max_rounds":options["max_rounds"],"final_state_hash":StateCodec.state_hash(state)},true)
+	var settings: Dictionary = tape.configuration["settings"]
+	settings["ai_seats"] = recording_configs
+	var first: Dictionary = recording_configs[GameState.PLAYER]
+	settings.merge({"ai_model":first["model"],"ai_strength":first["strength"],"ai_parameters":first["parameters"]},true)
+	if not Tape.JsonStore.save(recording_dir.path_join(file_name),tape.to_dict()) or not Tape.JsonStore.save(
+		recording_dir.get_base_dir().path_join("recordings.json"),recordings):
+		printerr("无法保存对战录像："+file_name)
 		quit(3)

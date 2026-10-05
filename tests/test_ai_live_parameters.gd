@@ -92,6 +92,9 @@ func _test_decision_recording() -> void:
 	agent.decision_observer = tape.record_ai_decision
 	agent.run_action_phase_sync()
 	var decisions: Array = tape.meta.get("ai_decisions",[])
+	check(tape.meta.rng == pipe.state().rng_snapshot() and tape.meta.rng.seed is String,
+		"录像元信息保存精确字符串随机种子与当前位置")
+	check(decisions[0].rng == pipe.state().rng_snapshot(),"每次AI决策独立保存随机状态")
 	check(decisions.size() == 1 and tape.steps.is_empty(), "空过决策也记录诊断，不增加录像规则步骤")
 	check(decisions[0]["configuration"]["strength"] == 0.75
 		and decisions[0]["configuration"]["parameters"]["width"] == 7

@@ -2827,12 +2827,12 @@ MUTATIONS = [
      '		return maxi(1, roundi(price / pawn_rate()))',
      '		return maxi(1, roundi(price / 3.0))',
      "= round(标价/", "tests/test_pawn.gd"),
-    # 46b：递归那一路不听配置。和 46a 是两条独立的路
-    #（可购卡走标价、T2 走递归），各自能单独坏掉
+    # 46b：材料购价那一路不听配置。和 46a 是两条独立的路
+    #（可购卡走标价、T2 走材料购价），各自能单独坏掉
     ("engine/card_db.gd",
-     '		return maxi(1, roundi(pawn_value(from_id) * dup_n / pawn_rate()))',
-     '		return maxi(1, roundi(pawn_value(from_id) * dup_n / 3.0))',
-     "递归回收", "tests/test_pawn.gd"),
+     '		return maxi(1, roundi(int(get_def(from_id)["price"]) * dup_n / pawn_rate()))',
+     '		return maxi(1, roundi(int(get_def(from_id)["price"]) * dup_n / 3.0))',
+     "成本回收", "tests/test_pawn.gd"),
     # 46c：用户卡那个价钱不听配置
     ("engine/card_db.gd",
      '		return pawn_user() if def.get("res") == RES_USER else 0',

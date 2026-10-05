@@ -1,7 +1,7 @@
 {
   "_comment": "牛马牌 · 卡牌配置。kind: unit/product/attack/buff/legend；price=-1 不进公共区；weight=公共区权重；recipe_*=生产或攻击配方；output_*=产出；attack_*=攻击；upgrade_from=升级来源：具体卡面 id 表示同名 T1 升对应 T2，历史占位键 dup_t2 表示同档生产卡升传说（允许同名或异名，T1/T2 不混用）；upgrade_dup_n=来源侧所需张数，实际材料数由 _upgrade.routes.per 折算，必须精确相等；升级只放生产卡，不夹资源、Buff、攻击、传说或未知卡，不吃现金和用户；buff_type=user_fill（组内有≥1张用户卡即视为用户配方补满）/output_x2/attack_x2/protect_user/protect_cash；pawn=可选固定出售价格，缺省按公式计算",
   "_game": {
-    "_note": "全局规则数值：market_size=每回合公共区卡位数；start_cash/start_user=开局资源；win_cash=资金胜利线；res_labels=资源的计量名（卡名取自各资源卡自己的 name）；buff_mult=各 buff_type 的倍率（键必须是 CardDB.KNOWN_BUFF_TYPES 里的值，缺一项就等于那张 Buff 不生效，所以 ComboRules 和卡面记号都从这里取，不各写一份 2）；attack_cost_per_card=点掉一张单位卡要几点攻击（组内组外同价，掩体由防御 Buff 提供；抬它等于全线削弱攻击射程，攻击量上限的判据会跟着放宽，见 test_simulator 那条一回合斩护栏）；pawn_rate=典当折价的除数（标价÷它、T2 递归也÷它；这个数原先在 CardDB.pawn_value 里写两遍、balance.md 和 README.md 里各抄了一份「÷2」，是纯经济旋钮，抬它等于全线削弱典当这条救命通道）；pawn_user=一张用户卡当掉给几块（现金卡不可当，恒为 0，那不是旋钮而是规则）。注意这两个只管**公式**：三张传说卡不走公式，价钱写在各自的 pawn 字段上",
+    "_note": "全局规则数值：market_size=每回合公共区卡位数；start_cash/start_user=开局资源；win_cash=资金胜利线；res_labels=资源的计量名（卡名取自各资源卡自己的 name）；buff_mult=各 buff_type 的倍率（键必须是 CardDB.KNOWN_BUFF_TYPES 里的值，缺一项就等于那张 Buff 不生效，所以 ComboRules 和卡面记号都从这里取，不各写一份 2）；attack_cost_per_card=点掉一张单位卡要几点攻击（组内组外同价，掩体由防御 Buff 提供；抬它等于全线削弱攻击射程，攻击量上限的判据会跟着放宽，见 test_simulator 那条一回合斩护栏）；pawn_rate=典当折价的除数（标价÷它、T2 材料购牌价之和也÷它；这个数原先在 CardDB.pawn_value 里写两遍、balance.md 和 README.md 里各抄了一份「÷2」，是纯经济旋钮，抬它等于全线削弱典当这条救命通道）；pawn_user=一张用户卡当掉给几块（现金卡不可当，恒为 0，那不是旋钮而是规则）。注意这两个只管**公式**：三张传说卡不走公式，价钱写在各自的 pawn 字段上",
     "market_size": 8,
     "start_cash": 12,
     "start_user": 8,

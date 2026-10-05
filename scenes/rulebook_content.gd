@@ -150,7 +150,7 @@ static func _pawn_section() -> Dictionary:
 			{"title": "立即使用", "text": "获得的现金可继续购买或组卡。典当完成后立即检查胜负，无须等回合结束。"},
 		]),
 		_block("text", "回收价如何计算",
-			"用户卡：%s×%d。可购卡：标价 ÷ %s，四舍五入；由同名下级卡合成的卡：材料回收价合计 ÷ %s，再四舍五入。正价卡不会因折价而变成零回收。卡表有固定回收价时，使用该卡的定价。" % [
+			"用户卡：%s×%d。可购卡：标价 ÷ %s，四舍五入；由同名下级卡合成的卡：材料购牌价合计 ÷ %s，四舍五入。正价卡不会因折价而变成零回收。卡表有固定回收价时，使用该卡的定价。" % [
 				CardDB.card_label(CardDB.RES_CASH), CardDB.pawn_user(), str(CardDB.pawn_rate()), str(CardDB.pawn_rate())]),
 		_block("cards", "传说卡兑现", "传说卡本身不计入资金，典当后才成为现金；能否获胜取决于变现后的资金总量。", legends),
 		_block("cards", "当前卡表的回收价", "按每张卡分别计算，再合计。", ordinary),
@@ -208,7 +208,7 @@ static func _pawn_source_text(def: Dictionary) -> String:
 		return "用户回收价随当前规则配置。" if def.get("res", "") == CardDB.RES_USER else "现金是典当所得，不能再次典当。"
 	if int(def.get("price", -1)) > 0:
 		return "标价 %s×%d，按当前典当折价率回收。" % [CardDB.card_label(CardDB.RES_CASH), int(def["price"])]
-	return "按同名下级材料的回收价递归折算。"
+	return "按同名下级材料的购牌价之和折算。"
 
 
 static func _buff_text(buff_type: String) -> String:

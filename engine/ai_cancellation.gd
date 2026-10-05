@@ -18,15 +18,12 @@ func is_cancelled() -> bool:
 	return result
 
 static func requested(parameters: Dictionary) -> bool:
-	if expired(parameters): return true
+	if parameters.has("_compute") and parameters["_compute"].stopped(): return true
 	if not parameters.has("_cancelled"): return false
 	return probe_requested(parameters["_cancelled"])
 
 static func probe_requested(probe: Callable) -> bool:
 	return probe.is_valid() and bool(probe.call())
-
-static func expired(parameters: Dictionary) -> bool:
-	return parameters.has("_deadline_usec") and Time.get_ticks_usec() >= int(parameters["_deadline_usec"])
 
 static func checker(parameters: Dictionary) -> Callable:
 	return func() -> bool: return requested(parameters)

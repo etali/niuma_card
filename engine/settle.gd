@@ -13,7 +13,12 @@ extends RefCounted
 ## 不传则使用 AIPlan.target_picker（无头模拟器双方同款策略）
 ## 每次点选后立即判定胜负：对方现金/用户被清零 → 攻击阶段当场结束（清零即胜）
 static func attack_phase(state: GameState, who: String, target_picker: Callable = Callable(),
-		observe: Callable = Callable()) -> void:
+		observe: Callable = Callable(), applier: IntentApply = null) -> void:
+	if applier != null:
+		applier.apply(Intent.arm_attacks(who))
+		spend_pool(state,who,applier.pools(who),target_picker,observe,applier)
+		if state.winner == "": applier.apply(Intent.attack_done(who,Intent.DONE_EXHAUSTED))
+		return
 	# arm_attacks 而不是 attack_pool：这一句就是「装弹」，配方现金在这里被吃掉
 	var pools: Dictionary = state.arm_attacks(who)
 	if int(pools[CardDB.RES_CASH]) <= 0 and int(pools[CardDB.RES_USER]) <= 0:
@@ -31,13 +36,15 @@ static func attack_phase(state: GameState, who: String, target_picker: Callable 
 ## 那会 `arm_attacks` 第二遍，把配方现金再吃一次、点数池凭空翻倍。
 ## 装弹和花点是两件事，这个签名就是那条缝
 static func spend_pool(state: GameState, who: String, pools: Dictionary,
-		target_picker: Callable = Callable(), observe: Callable = Callable()) -> void:
+		target_picker: Callable = Callable(), observe: Callable = Callable(),
+		applier: IntentApply = null) -> void:
 	if target_picker.is_null():
 		target_picker = AIPlan.target_picker()
 	var victim := GameState.opponent(who)
 	while state.winner == "" and (int(pools[CardDB.RES_CASH]) > 0 or int(pools[CardDB.RES_USER]) > 0):
 		var affordable: Array = state.affordable_targets(victim, pools)
 		if affordable.is_empty():
+			if applier != null: break # attack_done统一记录余点日志。
 			state.log_fmt("%s 剩余点数（%s）点不起任何目标，余点作废", [
 				GameState.seat_arg(who), GameState.pool_text(pools)])
 			break
@@ -46,7 +53,7 @@ static func spend_pool(state: GameState, who: String, pools: Dictionary,
 			break
 		if observe.is_valid():
 			observe.call("before_attack", state, {"owner": who, "target": target})
-		var r: Dictionary = state.apply_attack(who, target, pools)
+		var r: Dictionary = applier.apply(Intent.apply_attack(who,target)) if applier != null else state.apply_attack(who, target, pools)
 		if not r["ok"]:
 			state.log_msg("⚔ 点选失败：%s" % r["reason"])
 			break
@@ -66,14 +73,20 @@ static func produce(state: GameState, observe: Callable = Callable()) -> void:
 ##
 ## cfgs：`{座位: AISearch}`，与 MatchSimulator.run_rounds 使用同一参数。
 ## 缺少座位配置时由 AIPlan 选择默认配置；双方各用自己的共享选靶入口。
-static func run(state: GameState, cfgs: Dictionary = {}, observe: Callable = Callable()) -> void:
+static func run(state: GameState, cfgs: Dictionary = {}, observe: Callable = Callable(),
+		applier: IntentApply = null) -> void:
 	var order := state.action_order()
-	attack_phase(state, order[0], AIPlan.target_picker(cfgs.get(order[0])), observe)
+	attack_phase(state, order[0], AIPlan.target_picker(cfgs.get(order[0]),state,order[0]), observe, applier)
 	if state.winner == "":
-		attack_phase(state, order[1], AIPlan.target_picker(cfgs.get(order[1])), observe)
+		attack_phase(state, order[1], AIPlan.target_picker(cfgs.get(order[1]),state,order[1]), observe, applier)
 	if state.winner == "":
-		produce(state, observe)
-	finalize(state)
+		if applier == null: produce(state, observe)
+		else:
+			for index in applier.production_count():
+				var result := applier.apply(Intent.produce(index))
+				if observe.is_valid(): observe.call("production",state,{"combo":result["combo"],"result":result["resolution"]})
+	if applier != null: applier.apply(Intent.finalize())
+	else: finalize(state)
 
 ## 按结算顺序返回产出/升级组合（先手方先结算）
 ##

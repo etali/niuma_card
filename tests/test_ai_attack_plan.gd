@@ -8,6 +8,7 @@ func _initialize()->void:
 	CardDB.ensure_loaded()
 	await _test_sequences()
 	_test_baseline_incumbent()
+	_test_marginal_fallback()
 	_test_invalidations()
 	finish()
 func _users(s:GameState,who:String,n:int)->Array:
@@ -33,6 +34,7 @@ func _test_sequences()->void:
 	for count in [3,4,5]:
 		var initial:=_state(count)
 		var cfg:=AISearch.from_model("ai",1.0)
+		cfg.apply_override("target_trials",64)
 		var p:=cfg.resolved_parameters();p["_context"]=AIActions.Context.new()
 		var probe:=Env.copy(initial);var pools:=probe.arm_attacks("ai");var budget:=[64]
 		var searched:=Plan._attack_sequence(probe,"ai",pools,p,budget,3)
@@ -83,3 +85,34 @@ func _test_baseline_incumbent()->void:
 			var reference:=Env.copy(initial);Env.settle(reference,Plan.target_picker(cfg))
 			check(Plan.settled_score(actual,"ai",p)>=Plan.settled_score(reference,"ai",p),"%d组/%d次真实完整攻击不丢失低深度模式的后续改进" % [count,trials])
 			check(actual.resource_count("player","cash")==({4:32,5:38}[count]),"仍按真实生产规则拆掉有收益的三个小组")
+
+func _test_marginal_fallback()->void:
+	var cfg:=AISearch.from_model("ai",1.0)
+	cfg.apply_override("target_trials",0)
+	var initial:=_state(5)
+	var pools:=initial.arm_attacks("ai")
+	var before:=StateCodec.canon([Env.key(initial),initial.rng_snapshot(),initial.stats,pools])
+	var picked:=Plan.greedy_target(initial,"ai",initial.affordable_targets("player",pools),pools,cfg.resolved_parameters())
+	check(picked.get("leader","")=="xufei","无搜索额度时，首击按可拆组收益排序，而非大组整体产出")
+	check(StateCodec.canon([Env.key(initial),initial.rng_snapshot(),initial.stats,pools])==before,"拆组收益预判不修改状态、随机流、统计或攻击池")
+	var actual:=Env.copy(initial);Env.settle(actual,Plan.target_picker(cfg))
+	check(actual.resource_count("player","cash")==38,"0次试算的合法fallback也能拆掉收益最高的三个小组")
+	var saved:Dictionary=CardDB.CARDS["xufei"].duplicate(true)
+	CardDB.CARDS["xufei"]["output_n"]=1
+	actual=_state(5);Env.settle(actual,Plan.target_picker(cfg))
+	check(actual.resource_count("player","cash")==33,"修改产出配置后转拆包月，收益判断没有固定卡牌优先级")
+	CardDB.CARDS["xufei"]=saved
+	var old_cost:int=CardDB.GAME["attack_cost_per_card"]
+	CardDB.GAME["attack_cost_per_card"]=2
+	actual=_state(5);Env.settle(actual,Plan.target_picker(cfg))
+	check(actual.resource_count("player","cash")==55,"修改攻击成本后，三点攻击只能拆一个最高收益小组")
+	CardDB.GAME["attack_cost_per_card"]=old_cost
+	initial=_state(1);pools=initial.arm_attacks("ai")
+	picked=Plan.greedy_target(initial,"ai",initial.affordable_targets("player",pools),pools,cfg.resolved_parameters())
+	check(picked.get("leader","")=="yunketang","三击拆不掉的大组没有停产收益")
+	var old_need:int=CardDB.CARDS["xinxijianfang"]["recipe_n"]
+	CardDB.CARDS["xinxijianfang"]["recipe_n"]=8
+	initial=_state(1);pools=initial.arm_attacks("ai")
+	picked=Plan.greedy_target(initial,"ai",initial.affordable_targets("player",pools),pools,cfg.resolved_parameters())
+	check(picked.get("leader","")=="xinxijianfang","修改配方使三击足以拆组后，大组重新获得相应攻击收益")
+	CardDB.CARDS["xinxijianfang"]["recipe_n"]=old_need

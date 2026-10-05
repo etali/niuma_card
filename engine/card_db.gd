@@ -317,7 +317,7 @@ static func buff_mult(buff_type: String) -> int:
 
 ## 典当折价的除数（`_game.pawn_rate`）。
 ##
-## 不写死：pawn_value 里要用两次（标价那一路、T2 递归那一路），
+## 不写死：pawn_value 里要用两次（标价那一路、T2 材料购价那一路），
 ## 而 tools/check_card_table.py 和 check_balance_numbers.py 各自复刻了一份公式 ——
 ## 写死的话这个数就有四份，改一处的形态是「卡表上的回收价和游戏里发的钱不一样」
 static func pawn_rate() -> float:
@@ -433,8 +433,8 @@ static func total_weight() -> int:
 
 ## 典当回收价（现金卡不可典当，返回 0）
 ## 用户卡 `_game.pawn_user`；可购组合卡 = 标价 ÷ `_game.pawn_rate`（四舍五入）；
-## 配方升级卡（T2）= 配方卡价值之和 ÷ 同一个折价率
-## （递归：同名下级卡×upgrade_dup_n 的回收价，升级不吃资源）；
+## 配方升级卡（T2）= 下级材料购牌价之和 ÷ 同一个折价率
+## （同名下级卡购牌价×upgrade_dup_n，升级不吃资源）；
 ## 传说卡不走公式，直接以卡表各自的 pawn 字段为准（三张的数看卡表）
 ##
 ## 折价率和用户卡价钱都读配置，不写字面量：这里要用两次，
@@ -452,9 +452,9 @@ static func pawn_value(def_id: String) -> int:
 		return maxi(1, roundi(price / pawn_rate()))
 	var from_id: String = def.get("upgrade_from", "")
 	if from_id != "" and CARDS.has(from_id):
-		# 递归：升级配方 = 同名下级卡×upgrade_dup_n（纯卡面，不吃资源）
+		# 升级成本按材料购牌价计算，不使用材料的典当价。
 		var dup_n: int = maxi(2, int(def.get("upgrade_dup_n", 2)))
-		return maxi(1, roundi(pawn_value(from_id) * dup_n / pawn_rate()))
+		return maxi(1, roundi(int(get_def(from_id)["price"]) * dup_n / pawn_rate()))
 	return 0
 
 static func _config_candidates() -> Array:

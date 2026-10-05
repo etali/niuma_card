@@ -226,9 +226,8 @@ func _t_slider_drives_prefs(panel: AIPanel) -> void:
 		"拖到 0.8 之后偏好就是 0.8（读回 %.2f）" % AISearch.pref_strength())
 	var high := AISearch.prefs().resolved_parameters()
 	var low := AISearch.from_model(AISearch.pref_model(), 0.0).resolved_parameters()
-	check(int(high["buy_beam"]) > int(low["buy_beam"]),
-		"0.8 档比最底档搜索更宽（购买 Beam %d > %d）" % [
-			high["buy_beam"], low["buy_beam"]])
+	check(high["buy_beam"] == low["buy_beam"] and high["search_fraction"] > low["search_fraction"],
+		"改变强度保留共同搜索规格，只提高计算比例")
 
 
 ## `_syncing` 护栏。回填每一行会触发 CheckBox.toggled / SpinBox.value_changed，
@@ -279,6 +278,9 @@ func _t_knob_rows(panel: AIPanel) -> void:
 	panel._slider.value = 0.0
 	var missed: Array = []
 	for r in panel._rows:
+		if r["kind"] == "readonly":
+			check(r["node"] is Label,"计算使用比例显示为只读标签")
+			continue
 		AISearch.clear_overrides()
 		panel._sync_rows()
 		var key := str(r["key"])
@@ -357,6 +359,7 @@ func _t_session_and_reset(panel: AIPanel) -> void:
 	check(not FileAccess.file_exists(AISearch.USER_PATH), "拖滑块不落盘，强度仅留在本次运行")
 	var wrong := []
 	for row in panel._rows:
+		if row["kind"] == "readonly": continue
 		var wanted: Variant = _change_row(row)
 		if not _same_value(AISearch.prefs().get_knob(str(row["key"])), wanted):
 			wrong.append(row["key"])
@@ -389,6 +392,8 @@ func _same_value(a: Variant, b: Variant) -> bool:
 func _shown(row: Dictionary) -> Variant:
 	var node: Control = row["node"]
 	match str(row["kind"]):
+		"readonly":
+			return float((node as Label).text.trim_suffix("%"))/100.0
 		"bool":
 			return (node as CheckBox).button_pressed
 		"enum":

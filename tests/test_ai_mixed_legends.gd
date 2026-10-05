@@ -68,7 +68,9 @@ func _ids(tier: int, count: int) -> Array:
 
 func _options(state: GameState, processed: Dictionary = {}) -> Array:
 	var core: Dictionary = state.players[GameState.AI]["cards"][3]
-	return Actions._core_options(state, GameState.AI, core, processed, AITurnPlan.profile(0.0))
+	var p := AITurnPlan.profile(0.0)
+	p["allocation_mode"] = 0 # 本测试明确验证两种基础材料排序。
+	return Actions._core_options(state, GameState.AI, core, processed, p)
 
 func _target(state: GameState, option: Dictionary) -> String:
 	var ids: Array = []

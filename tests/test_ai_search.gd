@@ -71,43 +71,27 @@ func _test_strength_and_types() -> void:
 		for key in expected: exact = exact and actual.get(key) == expected[key]
 		check(exact,"强度%s的参数逐项等于约定的%s锚点" % endpoint)
 	var schema := AISearch.editable_knobs("ai")
-	var mapped := true
 	var valid := true
-	var low_half_exact := true
-	for spec in schema:
-		mapped = mapped and spec.get("strength_points",[]).size() >= 3 and spec.get("strength_interpolation") == "linear"
+	var monotone := true
+	var previous := AISearch.from_strength(0.0).resolved_parameters()
 	for i in range(101):
-		var strength := i/100.0
-		var current := AISearch.from_strength(strength).resolved_parameters()
+		var current := AISearch.from_strength(i/100.0).resolved_parameters()
 		for spec in schema:
 			var key: String = spec["key"]
 			valid = valid and Strategy.validate_value(spec,current[key]) == current[key]
 			valid = valid and (current[key] is int if spec["kind"] == "int" else current[key] is float)
-			if strength <= 0.5:
-				var old_value := lerpf(float(baseline.weak[key]),float(baseline.standard[key]),strength*2)
-				low_half_exact = low_half_exact and current[key] == Strategy.validate_value(spec,old_value)
-	check(mapped,"全部参数通过相邻锚点线性映射，能力没有独立配置开关表")
-	check(valid,"0到1的101个采样强度全部参数类型、步长与边界合法")
-	check(low_half_exact,"整个低半轴按0与0.5锚点逐项插值")
-	var intermediate := AISearch.from_strength(0.75).resolved_parameters()
-	var smooth := AISearch.from_strength(0.875).resolved_parameters()
-	check(intermediate.future_reply_limit==2 and intermediate.finalists==4 and intermediate.node_budget==215000, "高段中间锚点由通用映射解析，保持原0.75数值")
-	check(smooth.future_reply_limit==65 and smooth.finalists==6 and smooth.node_budget==1107500, "0.75至1按相邻锚点平滑线性插值并量化")
-	for pair in [[0.624,0],[0.625,1],[0.874,1],[0.875,2]]:
-		check(AISearch.from_strength(pair[0]).get_knob("financing_mode") == pair[1],"典当覆盖在%s按连续插值合法取整为%s" % pair)
-	check(AISearch.from_strength(0.749).get_knob("attack_mode") == 0 and AISearch.from_strength(0.75).get_knob("attack_mode") == 1,
-		"二值能力阈值来自0到1插值后取整")
-	check(AISearch.from_strength(0.5).get_knob("generation_budget") == 0
-		and AISearch.from_strength(0.500001).get_knob("generation_budget") == 30000
-		and AISearch.from_strength(0.51).get_knob("generation_budget") == 30000
-		and AISearch.from_strength(0.75).get_knob("generation_budget") == 30000,
-		"候选生成共享额度哨兵按有效额度平滑过渡，不在0.5右侧骤降到几百节点")
-	var invalid_reference := preload("res://engine/ai_turn_strategy.gd").new().compile_parameters(0.51,{"node_budget":"bad"})
-	check(invalid_reference.node_budget == 30000 and invalid_reference.generation_budget == 30000,
-		"有效额度引用遇到非法外置值时与编译总预算使用同一fallback")
-	check(AISearch.from_preset("legacy").resolved_parameters() == AISearch.from_strength(0.5).resolved_parameters()
-		and AISearch.from_preset("enhanced").resolved_parameters() == AISearch.from_strength(1.0).resolved_parameters(),
-		"旧命令名只是统一强度轴的入口别名")
+			monotone = monotone and float(current[key]) >= float(previous[key])
+		previous = current
+	check(valid,"101个强度的参数类型、步长与边界合法")
+	check(monotone,"计算比例与阶段覆盖上限随强度非递减")
+	check(AISearch.from_strength(0).get_knob("compute_budget") == AISearch.from_strength(1).get_knob("compute_budget"),
+		"所有强度共享独立计算上限")
+	var low_spec := AISearch.from_strength(0.0).resolved_parameters()
+	var high_spec := AISearch.from_strength(1.0).resolved_parameters()
+	low_spec.erase("search_fraction")
+	high_spec.erase("search_fraction")
+	check(low_spec == high_spec,"所有强度共用搜索规格，只有预算比例改变")
+	check(not AISearch.from_strength(1).resolved_parameters().has("think_time_ms"),"时间不参与搜索停止条件")
 	check(AISearch.from_strength(-9).strength == 0 and AISearch.from_strength(9).strength == 1, "强度夹取0~1")
 	check(AISearch.from_tier("ai:mid").strength == AISearch.parse_strength("mid"), "模型和命名强度解析一致")
 	var c := AISearch.from_strength(0)
@@ -186,6 +170,9 @@ func _test_preferences() -> void:
 	AISearch.set_pref_strength(0.2)
 	check(not AISearch.has_overrides(), "移动强度滑块恢复该强度的整套参数")
 	check(StateCodec.table_hash() == table_hash, "AI超参数不修改环境规则指纹")
+	AISearch.set_override("compute_budget",240000)
+	AISearch.set_pref_strength(1.0)
+	check(AISearch.prefs().get_knob("compute_budget") == 240000,"改变强度保留玩家计算上限")
 	AISearch.restore_defaults()
 	check(not FileAccess.file_exists(AISearch.USER_PATH)
 		and AISearch.prefs().resolved_parameters() == expected, "还原默认即时重置参数且不创建存档")
@@ -195,14 +182,15 @@ func _test_real_search_parameters() -> void:
 	s.set_seed(1)
 	s.new_game()
 	var cfg := AISearch.from_strength(0)
-	cfg.apply_override("node_budget",5)
+	cfg.apply_override("compute_budget",100)
+	cfg.apply_override("search_fraction",1.0)
 	cfg.apply_override("plans",1)
 	cfg.apply_override("engine_horizon",0.0)
 	var before := StateCodec.canon({"players":s.players,"snapshot":StateCodec.snapshot(s)})
 	var selected := AIPlan.choose_plan(s,GameState.AI,cfg)
 	var d: Dictionary = selected["diagnostics"]
-	check(d["profile"]["node_budget"] == 5 and int(d["expanded_nodes"]) <= 5, "节点覆盖真正控制展开工作量")
-	check(d["root_candidates"] <= 1 and d["profile"]["engine_horizon"] == 0.0, "方案与估值覆盖进入搜索内部，不只改面板显示")
+	check(d["profile"]["compute_budget"] == 100 and int(d["compute_used"]) <= 85, "计算覆盖控制实际工作量并为攻击预留额度")
+	check(d["profile"]["plans"] == 1 and d["profile"]["engine_horizon"] == 0.0, "方案与估值覆盖进入搜索内部，不只改面板显示")
 	check(before == StateCodec.canon({"players":s.players,"snapshot":StateCodec.snapshot(s)}), "超参数搜索仍保持只读")
 	var card := ""
 	for id in CardDB.all_cards():

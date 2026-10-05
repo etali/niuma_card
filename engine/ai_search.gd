@@ -16,6 +16,8 @@ var strength := 0.0
 var parameters: Dictionary = {}
 ## 仅本次运行使用，不保存到配置或录像。
 var cancelled_check: Callable = Callable()
+## 运行时共享账本，不进入参数快照或录像。
+var work_session: RefCounted
 
 static func search_defaults() -> Dictionary:
 	return AIConfig.read_section("search")
@@ -42,21 +44,6 @@ static func from_model(name: String, s: float) -> AISearch:
 	cfg.parameters = provider.compile_parameters(cfg.strength, search_defaults().get(id, {}))
 	return cfg
 
-## 保留旧命令配置名；玩家界面统一使用0~1整体强度。旧strength按一半迁移。
-static func from_preset(name: String, strength := 1.0) -> AISearch:
-	return from_model("ai", 1.0 if name == "enhanced" else clampf(strength,0.0,1.0)*0.5)
-
-static func enhanced_overrides() -> Dictionary:
-	# 仅供读取旧报告格式的工具；值直接来自统一强度映射，不能另维护一套配置。
-	var parameters := from_model("ai",1.0).resolved_parameters()
-	parameters.erase("profile_version")
-	return parameters
-
-static func set_capability_preset(name: String) -> void:
-	if name not in ["legacy","enhanced"]: return
-	set_pref_model("ai")
-	set_pref_strength(1.0 if name == "enhanced" else 0.5)
-
 static func models() -> Array:
 	return Registry.models()
 
@@ -71,8 +58,6 @@ static func parse_strength(txt: String) -> float:
 	return clampf(float(t), 0.0, 1.0) if t.is_valid_float() and is_finite(float(t)) else 0.0
 
 static func from_tier(txt: String) -> AISearch:
-	if txt.strip_edges().to_lower() in ["ai:enhanced", "ai:legacy"]:
-		return from_preset(txt.strip_edges().to_lower().get_slice(":", 1))
 	var parts := txt.strip_edges().to_lower().split(":", false)
 	if parts.size() == 2:
 		return from_model(str(parts[0]), parse_strength(str(parts[1])))
@@ -106,6 +91,8 @@ func apply_override(key: String, value: Variant) -> bool:
 		if checked == null:
 			return false
 		resolved_parameters()
+		# 全参数快照可以携带相同派生值，不能借覆盖项改写强度推导结果。
+		if spec.get("read_only",false): return checked == parameters[key]
 		parameters[key] = checked
 		return true
 	return false
@@ -168,7 +155,11 @@ static func set_pref_strength(s: float) -> void:
 	if not is_finite(s):
 		return
 	_pref = clampf(s, 0.0, 1.0)
+	var budget_overrides := {}
+	for key in ["compute_budget","node_budget"]:
+		if _overrides.has(key): budget_overrides[key] = _overrides[key]
 	_overrides.clear()
+	_overrides.merge(budget_overrides,true)
 	bus().changed.emit(_pref)
 
 static func set_override(key: String, value: Variant) -> void:

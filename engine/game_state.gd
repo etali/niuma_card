@@ -12,6 +12,9 @@ extends RefCounted
 ## 引擎这边不存 phase —— 两份记录会各说各话（真出现过 settle vs settling 这种
 ## 取值对不上，而引擎那份只写不读，对不上也没人发现）
 
+## 运行时AI额度不进入状态编码、规则指纹或搜索副本。每座位每回合一份。
+var ai_work_sessions: Dictionary = {}
+
 const PLAYER := "player"
 const AI := "ai"
 
@@ -163,6 +166,7 @@ func rng_restore(d) -> void:
 ## first: 抽卡先手。留空 = 沿用当前值（单机局照旧从 PLAYER 开）。
 ## 联网 rematch 传对手，让先手在局间轮换（net/room.gd 的 reset_for_rematch）
 func new_game(first := "") -> void:
+	ai_work_sessions.clear()
 	players = {
 		PLAYER: { "cards": [] },
 		AI: { "cards": [] },
@@ -537,7 +541,13 @@ func combo_survivors(who: String, combo: Dictionary) -> Array:
 ## 超出配方的富余投料被啃掉几张，配方还满着，产出就不该作废；
 ## 真要废掉整组，得咬穿配方需要的那几张（它们正好是防御 Buff 的保护额度）
 func combo_intact(who: String, combo: Dictionary) -> bool:
+	return combo_intact_without(who, combo, {})
+
+## AI 的拆组收益预判共用齐整检查，不另写配方/裂变/升级规则，也不修改实局。
+func combo_intact_without(who: String, combo: Dictionary, removed: Dictionary) -> bool:
 	var alive := combo_survivors(who, combo)
+	if not removed.is_empty():
+		alive = alive.filter(func(c): return not removed.has(c["uid"]))
 	if alive.size() < combo["uids"].size():
 		var eval := ComboRules.evaluate(alive)
 		if not eval["valid"]:

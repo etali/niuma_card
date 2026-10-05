@@ -84,16 +84,27 @@ func _initialize() -> void:
 		check(CardDB.pawn_value(id) == want, "%s（标价%d）回收 %d = round(标价/%s)" % [
 			CardDB.card_name(id), price, want, rate])
 	# T2：升级改成「同名×upgrade_dup_n、不吃资源」之后，
-	# 回收价 = round(下级卡回收价 × dup_n / 折价率)
-	for id in ["xinxijianfang", "jiaolv", "banxiaoshi"]:
+	# 回收价 = round(下级卡购牌价 × dup_n / 折价率)
+	for id in ["xinxijianfang", "baiyibutie", "banxiaoshi", "tuanzhang", "liulianghe", "jiaolv", "xufei"]:
 		var d: Dictionary = CardDB.get_def(id)
 		var from_id := str(d["upgrade_from"])
 		var dup := maxi(2, int(d.get("upgrade_dup_n", 2)))
-		var want := maxi(1, roundi(CardDB.pawn_value(from_id) * dup / rate))
+		var want := maxi(1, roundi(int(CardDB.get_def(from_id)["price"]) * dup / rate))
 		check(CardDB.pawn_value(id) == want,
-			"%s（T2，%s %d×%d÷%s）递归回收 %d" % [
+			"%s（T2，%s %d×%d÷%s）成本回收 %d" % [
 				CardDB.card_name(id), CardDB.card_name(from_id),
-				CardDB.pawn_value(from_id), dup, rate, want])
+				int(CardDB.get_def(from_id)["price"]), dup, rate, want])
+	# 材料售价覆盖不能改变升级成本；先合计购价再折价、四舍五入。
+	var saved_source: Dictionary = CardDB.CARDS["ditui"].duplicate(true)
+	var saved_rate = CardDB.GAME["pawn_rate"]
+	CardDB.CARDS["ditui"]["pawn"] = 99
+	CardDB.GAME["pawn_rate"] = 4.0
+	check(CardDB.pawn_value("ditui") == 99 and CardDB.pawn_value("tuanzhang") == 2,
+		"材料固定售价不影响升级成本：两张购价3的地推扫码，6÷4四舍五入回收2")
+	check(CardDB.pawn_value("dujiaoshou") == 30 and CardDB.pawn_value("guomin") == 70
+		and CardDB.pawn_value("shangshi") == 100, "材料成本规则与折价率变化不影响传说固定价格")
+	CardDB.CARDS["ditui"] = saved_source
+	CardDB.GAME["pawn_rate"] = saved_rate
 	# 传说卡不走上面两条公式，读卡表里写死的 `pawn` 字段 —— 那是平衡旋钮
 	# （压过一轮，为的是掐掉「攒传说 → 一次换钱破百」这条捷径）。
 	# 判据钉的是「有没有绕开公式」：值取自 pawn 字段，且确实不等于公式会给的数

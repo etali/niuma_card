@@ -46,7 +46,7 @@ def upgrade_option(fixture, inventory, game):
             return max(1, math.floor(card["price"] / game["pawn_rate"] + 0.5))
         source = card.get("upgrade_from")
         if source in cards:
-            return max(1, math.floor(pawn(source) * max(2, card.get("upgrade_dup_n", 2)) / game["pawn_rate"] + 0.5))
+            return max(1, math.floor(cards[source]["price"] * max(2, card.get("upgrade_dup_n", 2)) / game["pawn_rate"] + 0.5))
         return 0
 
     def target(ids):

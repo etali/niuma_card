@@ -3673,13 +3673,19 @@ func _live_ai_target_picker() -> Callable:
 		if cfg.model != active["model"] or parameters != active["parameters"]:
 			active["model"] = cfg.model
 			active["parameters"] = parameters
-			active["picker"] = AIPlan.target_picker(cfg)
+			active["picker"] = AIPlan.target_picker(cfg,current,seat)
 		# 与行动计划同一边界：主线程冻结输入，搜索期间认输/退出只改真实牌桌。
 		var picker: Callable = active["picker"]
+		# 同组同类靶在搜索中等价，锁定组合后的续击通常无需再开线程。
+		# 仍调用原选择器，消费缓存续打并推进预算，保持真实执行与模拟一致。
+		if cfg.implementation().can_pick_target_inline(targets):
+			return picker.call(current,seat,targets,current_pools)
 		var snapshot := AIEnvironment.copy(current)
 		var target_snapshot := targets.duplicate(true)
 		var pool_snapshot := current_pools.duplicate(true)
-		return await _think_off_thread(func(): return picker.call(snapshot, seat, target_snapshot, pool_snapshot))
+		return await _think_off_thread(func(cancelled_check: Callable = Callable()):
+			if picker.get_argument_count() >= 5: return picker.call(snapshot,seat,target_snapshot,pool_snapshot,cancelled_check)
+			return picker.call(snapshot,seat,target_snapshot,pool_snapshot))
 
 ## 联网局：等对方把攻击回合走完。他每一击都会经 _render_foe_attack 画出来；
 ## 这里等的是一条 attack_done —— 池子清零是它的效果（IntentApply._attack_done），

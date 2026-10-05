@@ -8,6 +8,7 @@ const Cancellation = preload("res://engine/ai_cancellation.gd")
 
 ## 保有牌的可行资源分配。每个核心可不用；用户、现金席位与每张Buff只分配一次。
 ## 现金席位来自已有牌，付款余额则遵守先攻击、再免现金生产、最后付费生产的顺序。
+var _work_check: Callable = Callable()
 var _cancelled_check: Callable = Callable()
 var _rows: Array = []
 var _memo := {}
@@ -19,7 +20,7 @@ var _cash_caps: Array[int] = []
 var _user_caps: Array[int] = []
 
 static func value(summary: Dictionary, attack_weights: Array, production: bool,
-		cache: Dictionary, stats: Dictionary, cancelled_check: Callable = Callable()) -> float:
+		cache: Dictionary, stats: Dictionary, cancelled_check: Callable = Callable(), work_check: Callable = Callable()) -> float:
 	if Cancellation.probe_requested(cancelled_check): return 0.0
 	stats["calls"] = int(stats.get("calls",0)) + 1
 	var key := var_to_bytes([summary["cash"],summary["users"],StateCodec.canon(summary["inventory"]),
@@ -29,6 +30,7 @@ static func value(summary: Dictionary, attack_weights: Array, production: bool,
 		return float(cache[key])
 	var solver = new()
 	solver._cancelled_check = cancelled_check
+	solver._work_check = work_check
 	solver._production = production
 	solver._attack_weights = attack_weights
 	solver._pawn_user = float(CardDB.pawn_user())
@@ -69,6 +71,7 @@ func _best(index: int, slots: int, wallet: int, users: int, outputs: int, attack
 	users = mini(users,_user_caps[index])
 	var key := str([index,slots,wallet,users,outputs,attacks,fills,cash_remainder,user_remainder])
 	if _memo.has(key): return float(_memo[key])
+	if _work_check.is_valid() and not _work_check.call(): return 0.0
 	var best := _best(index+1,slots,wallet,users,outputs,attacks,fills,cash_remainder,user_remainder)
 	var d: Dictionary = _rows[index]
 	var user_recipe: bool = d.get("recipe_res") == CardDB.RES_USER
@@ -80,6 +83,8 @@ func _best(index: int, slots: int, wallet: int, users: int, outputs: int, attack
 		var pay := 0 if user_recipe else need
 		if need > (users if user_recipe else slots) or (pay > 0 and wallet <= pay): continue
 		for buffs in range(buff_count+1):
+			if Cancellation.probe_requested(_cancelled_check): return 0.0
+			if _work_check.is_valid() and not _work_check.call(): return 0.0
 			var multiplier := ComboRules.stacked_multiplier(bt,buffs)
 			var income := 0
 			var cash_points := cash_remainder
@@ -104,5 +109,6 @@ func _best(index: int, slots: int, wallet: int, users: int, outputs: int, attack
 			best = maxf(best,gain+_best(index+1,slots-pay,wallet-pay+income,
 				users-(need if user_recipe else 0),outputs-(0 if attack else buffs),
 				attacks-(buffs if attack else 0),fills-fill,cash_points,user_points))
+	if Cancellation.probe_requested(_cancelled_check): return 0.0
 	_memo[key] = best
 	return best

@@ -46,6 +46,8 @@ func _test_resource_assignment() -> void:
 		s.add_card(GameState.AI, id)
 	var p := Plan.profile(1)
 	p["sales"] = 0
+	p["financing_mode"] = 0
+	p["resale_mode"] = 0
 	var nodes := Actions.generate(s, GameState.AI, p)
 	var best_income := 0
 	var chosen := {}
@@ -113,6 +115,8 @@ func _test_price_and_stop() -> void:
 	s.market = ["probe_a"]
 	var p := Plan.profile(0)
 	p["sales"] = 0
+	p["financing_mode"] = 0
+	p["resale_mode"] = 0
 	CardDB.CARDS["probe_a"]["price"] = 21
 	var costly := Actions.generate(s, GameState.AI, p)
 	var bought := false
@@ -161,5 +165,5 @@ func _test_market_order() -> void:
 	b_cards.sort()
 	check(a_cards == b_cards, "相同市场只改变展示顺序，仍选择同一语义购买方案")
 	var chosen := Plan.choose_plan(s, GameState.AI, cfg)
-	check(int(chosen["diagnostics"]["expanded_nodes"]) <= int(chosen["diagnostics"]["profile"]["node_budget"]),
+	check(int(chosen["diagnostics"]["compute_used"]) <= int(chosen["diagnostics"]["compute_limit"]),
 		"搜索使用并遵守展开节点额度")

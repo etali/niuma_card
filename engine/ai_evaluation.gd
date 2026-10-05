@@ -5,6 +5,7 @@
 class_name AIEvaluator
 extends RefCounted
 
+const Work = preload("res://engine/ai_work_budget.gd")
 const Cancellation = preload("res://engine/ai_cancellation.gd")
 
 const Context = preload("res://engine/ai_context.gd")
@@ -19,6 +20,7 @@ static func score(state: GameState, who: String, parameters: Dictionary = {}, op
 	var p := _parameters(parameters)
 	if state.winner != "":
 		return TERMINAL_SCORE if state.winner == who else -TERMINAL_SCORE
+	if not Work.charge(p,Work.state_cost(state),"evaluation"): return 0.0
 	var context := _context(p)
 	var own := _summary(state,who)
 	var opposing := _summary(state,GameState.opponent(who))
@@ -60,7 +62,7 @@ static func _features(summary: Dictionary, opposing: Dictionary, p: Dictionary, 
 	var potential := maxf(float(p["engine_horizon"])*engine,float(p["upgrade_weight"])*upgrade)
 	var threat := Allocation.value(opposing,
 		[1.0/maxf(cash,1.0),unit_value/maxf(users,1.0)],false,
-		context.allocation_values,context.allocation_stats,Cancellation.checker(p))
+		context.allocation_values,context.allocation_stats,Cancellation.checker(p),Work.checker(p,"allocation"))
 	var total := assets + potential - float(p["risk_weight"])*(risk+threat)
 	var value := {"asset": assets, "engine": engine, "option": upgrade, "risk": risk,
 		"cash": cash, "users": users, "total": total}
@@ -124,7 +126,7 @@ static func _capacity(summary: Dictionary, p: Dictionary, context: Context = nul
 	if context == null: context = _context(p)
 	var discount := float(p["attack_discount"])
 	return Allocation.value(summary,[discount,discount],true,
-		context.allocation_values,context.allocation_stats,Cancellation.checker(p))
+		context.allocation_values,context.allocation_stats,Cancellation.checker(p),Work.checker(p,"allocation"))
 
 
 static func _parameters(p: Dictionary) -> Dictionary:
@@ -132,4 +134,6 @@ static func _parameters(p: Dictionary) -> Dictionary:
 
 static func _context(p: Dictionary) -> Context:
 	var context: Variant = p.get("_context")
-	return context if context is Context else Context.new()
+	var result = context if context is Context else Context.new()
+	result.work_check = Work.checker(p,"upgrade")
+	return result

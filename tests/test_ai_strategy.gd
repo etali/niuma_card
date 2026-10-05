@@ -18,7 +18,7 @@ func _test_model_profile() -> void:
 	var low := AISearch.from_model("ai", 0.0)
 	var high := AISearch.from_model("ai", 1.0)
 	check(low.model == "ai" and high.model == "ai", "低高档均使用当前策略")
-	check(int(low.get_knob("node_budget")) < int(high.get_knob("node_budget")),
+	check(AITurnPlan.effective_budget(low.resolved_parameters()) < AITurnPlan.effective_budget(high.resolved_parameters()),
 		"强度升高会增加当前实现的实际预算")
 	check(AISearch.from_tier("ai:0.45").model == "ai"
 		and is_equal_approx(AISearch.from_tier("ai:0.45").strength, 0.45),

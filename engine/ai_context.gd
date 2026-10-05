@@ -6,6 +6,11 @@ extends RefCounted
 
 ## 单次决策内的卡表派生值。调用方在下一次决策重新建立，不跨配置或线程共享。
 ## 这里只缓存规则查询、材料计数 DP 和库存特征，不保存可变的牌局/卡牌实例。
+var work_check: Callable = Callable()
+
+func _charge() -> bool:
+	return not work_check.is_valid() or bool(work_check.call())
+
 var _pawn_values: Dictionary = {}
 var _upgrade_limit := -1
 var _upgrade_targets: Dictionary = {}
@@ -52,11 +57,13 @@ func _same_name_value(id: String, count: int, include_legends: bool) -> float:
 	for n in range(dp.size(), count + 1):
 		var best: float = dp[n - 1]
 		for k in range(2, mini(n, max_upgrade_n()) + 1):
+			if not _charge(): return 0.0
 			var target := upgrade_target(id, k)
 			if target == "" or (not include_legends and CardDB.get_def(target).get("kind") == CardDB.KIND_LEGEND):
 				continue
 			var gain := maxf(0.0, pawn_value(target) - k * pawn_value(id))
 			best = maxf(best, float(dp[n - k]) + gain)
+		if work_check.is_valid() and not _charge(): return 0.0
 		dp.append(best)
 	return float(dp[count])
 
@@ -100,6 +107,7 @@ func _pooled_upgrade_value(tier: int, inventory: Dictionary) -> float:
 		next.fill(-INF)
 		for used in allocated.size():
 			for reserved in range(count + 1):
+				if not _charge(): return 0.0
 				var value := float(allocated[used]) + _same_name_value(str(id), count - reserved, false) \
 					- reserved * pawn_value(str(id))
 				next[used + reserved] = maxf(float(next[used + reserved]), value)
@@ -110,6 +118,7 @@ func _pooled_upgrade_value(tier: int, inventory: Dictionary) -> float:
 	for count in range(1, allocated.size()):
 		var payout := -INF
 		for size in range(2, mini(count, max_upgrade_n()) + 1):
+			if not _charge(): return 0.0
 			var target := legend_upgrade_target(tier, size)
 			if target != "":
 				payout = maxf(payout, float(payouts[count - size]) + pawn_value(target))

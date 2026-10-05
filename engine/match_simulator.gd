@@ -58,7 +58,8 @@ static func run_game(max_rounds := ROUNDS_FROM_CONFIG, rng_seed := 0,
 ## 三个点位不是随便切的，是「哪些数只在那一刻存在」定下来的，所以钩子在这三处。
 ## 平衡工具原先自己写了一遍这个循环（连 end_round/start_round 和回合上限一起），
 ## 于是「回合怎么推进」有两份定义。钩子都是可选的，不传就是纯模拟
-## observers 是可选只读采集钩子：before_action / intent / settle；搜索副本不继承。
+## observers 支持采集钩子 before_action / intent / decision / settle；搜索副本不继承。
+## tape可选录制整局，统一裁决器覆盖结算与回合推进；checkpoint在开局和每回合结束保存。
 ## first 指定开局抽卡先手，留空沿用 PLAYER。
 ## cfgs：`{座位: AISearch}`，缺的座位使用当前实现强度0。
 ## 两个座位各带一份是为了**档位对打** —— `ai.md` §「怎么判定搜索变强」：
@@ -73,6 +74,11 @@ static func run_rounds(max_rounds := ROUNDS_FROM_CONFIG, rng_seed := 0,
 	if rng_seed != 0:
 		state.set_seed(rng_seed)
 	state.new_game(first)
+	var recorded_applier: IntentApply = null
+	if observers.has("tape"):
+		recorded_applier = IntentApply.new(state)
+		(observers["tape"] as Tape).start(recorded_applier,"HTML AI对战")
+		if observers.has("checkpoint"): observers["checkpoint"].call(state)
 	if max_rounds <= 0:
 		max_rounds = int(CardDB.sim_rules()["max_rounds"])
 	while state.winner == "" and state.round_num <= max_rounds:
@@ -83,18 +89,22 @@ static func run_rounds(max_rounds := ROUNDS_FROM_CONFIG, rng_seed := 0,
 				break
 			if observers.has("before_action"):
 				observers["before_action"].call(state, who)
-			action_phase(state, who, cfgs.get(who), observers.get("intent", Callable()), observers.get("decision", Callable()))
+			action_phase(state, who, cfgs.get(who), observers.get("intent", Callable()), observers.get("decision", Callable()), recorded_applier)
 		if not before_settle.is_null():
 			before_settle.call(state)
 		if state.winner == "":
-			Settle.run(state, cfgs, observers.get("settle", Callable()))
+			Settle.run(state, cfgs, observers.get("settle", Callable()), recorded_applier)
 		else:
-			Settle.finalize(state)
+			if recorded_applier != null: recorded_applier.apply(Intent.finalize())
+			else: Settle.finalize(state)
 		if not after_settle.is_null():
 			after_settle.call(state)
 		if state.winner == "":
-			state.end_round()
-			state.start_round()
+			if recorded_applier != null: recorded_applier.apply(Intent.next_round())
+			else:
+				state.end_round()
+				state.start_round()
+		if observers.has("checkpoint"): observers["checkpoint"].call(state)
 	return state
 
 ## 从一个**行动阶段刚做完**的局面接着打下去（`AIPlan.rollout_score` 的前推用）。
@@ -135,11 +145,11 @@ static func continue_from_attack(state: GameState, who: String, pools: Dictionar
 		max_rounds: int, cfgs: Dictionary = {}) -> GameState:
 	if state.winner != "":
 		return state
-	Settle.spend_pool(state, who, pools, AIPlan.target_picker(cfgs.get(who)))
+	Settle.spend_pool(state, who, pools, AIPlan.target_picker(cfgs.get(who),state,who))
 	var opp := GameState.opponent(who)
 	# 我是先手 → 对手的攻击阶段还没打；我是后手 → 他已经打过了
 	if state.winner == "" and who == state.action_order()[0]:
-		Settle.attack_phase(state, opp, AIPlan.target_picker(cfgs.get(opp)))
+		Settle.attack_phase(state, opp, AIPlan.target_picker(cfgs.get(opp),state,opp))
 	if state.winner == "":
 		Settle.produce(state)
 	Settle.finalize(state)
@@ -166,7 +176,8 @@ static func _loop_rounds(state: GameState, left: int, cfgs: Dictionary) -> GameS
 ## cfg：搜索强度（`engine/ai_search.gd`）。不传 = 当前实现强度0。
 ## 预算由传入profile决定；不读取屏幕偏好文件，便于离线复现。
 static func action_phase(state: GameState, who: String, cfg: AISearch = null,
-		on_intent: Callable = Callable(), on_decision: Callable = Callable()) -> void:
+		on_intent: Callable = Callable(), on_decision: Callable = Callable(),
+		recorded_applier: IntentApply = null) -> void:
 	# 一个 applier 贯穿这三步，不是每步各开一个。
 	# 三步都走**同一条意图管道**（README.md §「3. 文件目录结构」）：典当、买卡、编组一律 app.apply(Intent.x)，
 	# 不允许有哪一步退回去直接调 state.buy/state.pawn/state.create_combo。
@@ -174,10 +185,11 @@ static func action_phase(state: GameState, who: String, cfg: AISearch = null,
 	# 而平衡数字全是从这条路上量出来的。它绕开管道的话，
 	# 以后谁在 IntentApply 里加一道买卡的判断，**模拟器量的就是另一个游戏**：
 	# 报表照旧出数、一条错都不报，只是那些数不再描述玩家真正在玩的东西
-	var app := IntentApply.new(state)
-	if on_intent.is_valid():
-		app.landed_intent.connect(func(intent: Dictionary, result: Dictionary, _from: String) -> void:
-			on_intent.call(state, intent, result))
+	var app := recorded_applier if recorded_applier != null else IntentApply.new(state)
+	var intent_observer := func(intent: Dictionary, result: Dictionary, _from: String) -> void:
+		on_intent.call(state, intent, result)
+	if on_intent.is_valid(): app.landed_intent.connect(intent_observer)
 	var agent := AIAgent.new(LocalTransport.new(app), who, cfg)
 	agent.decision_observer = on_decision
 	agent.run_action_phase_sync()
+	if on_intent.is_valid(): app.landed_intent.disconnect(intent_observer)

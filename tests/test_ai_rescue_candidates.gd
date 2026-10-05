@@ -147,10 +147,11 @@ func _test_generation_contract() -> void:
 	check(ordinary_work+int(result.rescue_work)+stage_work == 512-int(p._work[0]),
 		"基础、后备和扩展扣费相加等于实际总扣费，无额外预算")
 	var default_profile := AISearch.from_model("ai",0.5).resolved_parameters()
+	default_profile["tactical_extension"] = 0
 	default_profile["_work"] = [int(default_profile.node_budget)]
 	var default_result := AIActions.generate_with_status(state,who,default_profile)
 	check(default_result.rescue.is_empty() and default_result.rescue_work == 0,
-		"默认强度关闭战术后备，不新增生成工作")
+		"明确关闭战术后备，不新增生成工作")
 	var interrupted := _profile()
 	interrupted["_work"] = [1]
 	var incomplete := AIActions.generate_with_status(state,who,interrupted)

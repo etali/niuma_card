@@ -5,6 +5,7 @@
 class_name AIActions
 extends RefCounted
 
+const Work = preload("res://engine/ai_work_budget.gd")
 const Cancellation = preload("res://engine/ai_cancellation.gd")
 
 const Env = preload("res://engine/ai_environment.gd")
@@ -23,12 +24,14 @@ static func generate(state: GameState, who: String, profile: Dictionary) -> Arra
 static func generate_with_status(state: GameState, who: String, profile: Dictionary) -> Dictionary:
 	# 浅拷贝隔离局部评分快照，规则缓存和展开额度仍与整个搜索共享。
 	profile = profile.duplicate()
+	profile["_counter_limits"] = profile.get("_counter_limits",{}).duplicate()
 	profile.erase("_generation_limited")
 	if int(profile.get("generation_budget",0)) > 0:
 		profile["_generation_work"] = [int(profile["generation_budget"])]
+		profile["_counter_limits"]["_generation_work"] = int(profile["generation_budget"])
 	if not profile.has("_context"):
 		profile["_context"] = Context.new()
-	var immediate := winning_pawn(state, who, profile["_context"])
+	var immediate := winning_pawn(state, who, profile["_context"]) if Work.charge(profile,Work.state_cost(state),"victory") else []
 	if not immediate.is_empty():
 		var won := Env.copy(state)
 		Env.replay(won, immediate)
@@ -48,8 +51,9 @@ static func generate_with_status(state: GameState, who: String, profile: Diction
 	# 先完成原持牌运营，避免交易耗尽额度或静态排序把停购路线挤出最终池。
 	var initial := {"state":Env.copy(state),"intents":[],"rank":_score(state,who,basic)}
 	var operating := _build(initial,who,basic)
+	if profile.has("_on_operating") and not exhausted(basic): profile["_on_operating"].call(operating)
 	var protected := operating.duplicate()
-	if _payable_plan(initial["state"],who): protected.append(initial)
+	if _payable_plan(initial["state"],who,basic): protected.append(initial)
 	var baseline := _generate_candidates(state,who,basic,operating)
 	var baseline_complete := not exhausted(basic)
 	# 保护只决定是否参与比较，不改变分数；优先评价原持牌路线后再评价交易。
@@ -58,12 +62,16 @@ static func generate_with_status(state: GameState, who: String, profile: Diction
 	for node in baseline:
 		node["baseline"] = true
 		node["generation_stage"] = 0
+	if profile.has("_on_candidates"): profile["_on_candidates"].call(baseline)
 	if not expanded or not baseline_complete:
 		return {"nodes":baseline,"baseline":baseline,"complete":baseline_complete,"baseline_complete":baseline_complete,
 			"rescue":[],"rescue_complete":baseline_complete or int(profile.get("tactical_extension",0)) == 0,"rescue_work":0}
 	# 普通基础先完成，再为市场阻断或现金缓冲预留有限单步交易。
 	# 后备不进入普通排名；搜索仅在普通方案均判败时按相同规格补评。
 	var rescue := _rescue_transactions(state,who,profile) if int(profile.get("tactical_extension",0)) > 0 else {"nodes":[],"complete":true,"work":0}
+	if profile.has("_on_candidates"):
+		for node in rescue.nodes: node["_rescue"] = true
+		profile["_on_candidates"].call(rescue.nodes)
 	# 逐级扩展复用同一生成器；更大的融资空间不能挤掉较小空间已形成的路线。
 	# 各层共享总额度和规则缓存，只对整条合法方案按语义去重。
 	var modes: Array = [int(profile.get("financing_mode",0))]
@@ -90,6 +98,7 @@ static func generate_with_status(state: GameState, who: String, profile: Diction
 		complete = complete and stage_complete
 		# 保留先完成层的顺序，有限评价额度也应先比较它们。
 		_retain_nodes(nodes,expanded_nodes)
+		if profile.has("_on_candidates"): profile["_on_candidates"].call(expanded_nodes)
 	return {"nodes":nodes,"baseline":baseline,"complete":complete,"baseline_complete":true,
 		"generation_stages":stages,"rescue":rescue["nodes"],"rescue_complete":rescue["complete"],"rescue_work":rescue["work"]}
 
@@ -123,7 +132,7 @@ static func _rescue_transactions(state: GameState, who: String, profile: Diction
 		work += 1
 		var next := Env.copy(state)
 		var intents: Array = [choice["intent"]]
-		if not Env.replay(next,intents) or not _payable_plan(next,who): continue
+		if not Env.replay(next,intents) or not _payable_plan(next,who,profile): continue
 		var node := {"state":next,"intents":intents,"rank":_score(next,who,profile),
 			"generation_stage":1,"baseline":false}
 		_retain_nodes(out,[node])
@@ -159,6 +168,8 @@ static func _generate_candidates(state: GameState, who: String, profile: Diction
 			# 只增加阶段上限，原生成与搜索总账仍逐次共同扣费。
 			trading = profile.duplicate()
 			trading["_stage_work"] = [available / 2]
+			trading["_counter_limits"] = profile.get("_counter_limits",{}).duplicate()
+			trading["_counter_limits"]["_stage_work"] = int(available / 2)
 	var holdings := Capabilities.purchases(state, who, trading) if int(profile.get("financing_mode",0)) > 0 else _purchases(state, who, trading)
 	if int(profile.get("financing_mode",0)) == 0 and int(profile.get("resale_mode",0)) > 0:
 		holdings.append_array(Capabilities.resale_transactions(holdings.duplicate(),who,trading))
@@ -334,16 +345,17 @@ static func _build(start: Dictionary, who: String, profile: Dictionary) -> Array
 		var s: GameState = node["state"]
 		# 只在整个编组方案形成后检查付款：后访问的收入组合也可能先结算。
 		# 与玩家完成行动共用真实结算预演，不在搜索里复制现金余额公式。
-		if not _payable_plan(s, who):
+		if not _payable_plan(s, who,profile):
 			continue
 		out.append({"state": s, "intents": node["intents"],
 			"rank": _score(s, who, profile) + float(node["merit"]) / maxf(1, CardDB.game_rules()["win_cash"])})
-	if out.is_empty() and _payable_plan(initial,who):
+	if out.is_empty() and _payable_plan(initial,who,profile):
 		# 有限 beam 可能只剩不可支付的组合；停编仍保留买卖后的合法局面。
 		out.append({"state": initial, "intents": start["intents"], "rank": _score(initial, who, profile)})
 	return out
 
-static func _payable_plan(state: GameState, who: String) -> bool:
+static func _payable_plan(state: GameState, who: String, profile: Dictionary = {}) -> bool:
+	if not Work.charge(profile,Work.state_cost(state),"payment"): return false
 	var piles: Array = []
 	var has_payment := false
 	for combo in state.combos:
@@ -509,13 +521,18 @@ static func semantic_key(id: String, context = null) -> String:
 
 ## 节点额度由搜索上下文共享；单独调用生成器可不带额度。
 static func spend(profile: Dictionary) -> bool:
-	if exhausted(profile): return false
+	if exhausted(profile) or not Work.charge(profile): return false
 	for key in WORK_COUNTERS:
 		if profile.has(key): profile[key][0] -= 1
 	return true
 
 static func exhausted(profile: Dictionary) -> bool:
-	return Cancellation.requested(profile) or remaining_work(profile) == 0
+	if Cancellation.requested(profile): return true
+	if remaining_work(profile) != 0: return false
+	for key in WORK_COUNTERS:
+		if profile.has(key) and int(profile[key][0]) <= 0:
+			Work.counter_failure(profile,key,int(profile[key][0]))
+	return true
 
 ## 无计数器表示调用方未设额度；阶段额度只缩小可用工作，不增加总额。
 static func remaining_work(profile: Dictionary) -> int:
