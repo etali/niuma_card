@@ -392,8 +392,8 @@ func _test_modes() -> void:
 	for cash in 3:
 		for users in [3,4]: check(counts.has(str([cash,users])), "mode2包含现金%d/用户%d阵型" % [cash,users])
 	var baseline := AISearch.from_model("ai",0.5).resolved_parameters()
-	check(int(baseline.formation_mode) == 0 and StateCodec.canon(AIActions._core_options(s,"ai",core,{},baseline)) == StateCodec.canon(none),
-		"0.5仍关闭扩展阵型，基线候选与既有纯配方一致")
+	check(int(baseline.formation_mode) == 1 and StateCodec.canon(AIActions._core_options(s,"ai",core,{},baseline)) == StateCodec.canon(none),
+		"所有强度共用防御能力，无威胁时仍只生成纯配方")
 	s.add_card("ai","tuisong")
 	var protected_options := AIActions._core_options(s,"ai",core,{},_profile())
 	var no_padding := true

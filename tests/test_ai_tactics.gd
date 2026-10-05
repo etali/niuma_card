@@ -46,6 +46,8 @@ func _test_resource_assignment() -> void:
 		s.add_card(GameState.AI, id)
 	var p := Plan.profile(1)
 	p["sales"] = 0
+	p["financing_mode"] = 0
+	p["resale_mode"] = 0
 	var nodes := Actions.generate(s, GameState.AI, p)
 	var best_income := 0
 	var chosen := {}
@@ -113,6 +115,8 @@ func _test_price_and_stop() -> void:
 	s.market = ["probe_a"]
 	var p := Plan.profile(0)
 	p["sales"] = 0
+	p["financing_mode"] = 0
+	p["resale_mode"] = 0
 	CardDB.CARDS["probe_a"]["price"] = 21
 	var costly := Actions.generate(s, GameState.AI, p)
 	var bought := false

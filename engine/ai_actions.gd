@@ -51,6 +51,7 @@ static func generate_with_status(state: GameState, who: String, profile: Diction
 	# 先完成原持牌运营，避免交易耗尽额度或静态排序把停购路线挤出最终池。
 	var initial := {"state":Env.copy(state),"intents":[],"rank":_score(state,who,basic)}
 	var operating := _build(initial,who,basic)
+	if profile.has("_on_operating") and not exhausted(basic): profile["_on_operating"].call(operating)
 	var protected := operating.duplicate()
 	if _payable_plan(initial["state"],who,basic): protected.append(initial)
 	var baseline := _generate_candidates(state,who,basic,operating)
@@ -61,12 +62,16 @@ static func generate_with_status(state: GameState, who: String, profile: Diction
 	for node in baseline:
 		node["baseline"] = true
 		node["generation_stage"] = 0
+	if profile.has("_on_candidates"): profile["_on_candidates"].call(baseline)
 	if not expanded or not baseline_complete:
 		return {"nodes":baseline,"baseline":baseline,"complete":baseline_complete,"baseline_complete":baseline_complete,
 			"rescue":[],"rescue_complete":baseline_complete or int(profile.get("tactical_extension",0)) == 0,"rescue_work":0}
 	# 普通基础先完成，再为市场阻断或现金缓冲预留有限单步交易。
 	# 后备不进入普通排名；搜索仅在普通方案均判败时按相同规格补评。
 	var rescue := _rescue_transactions(state,who,profile) if int(profile.get("tactical_extension",0)) > 0 else {"nodes":[],"complete":true,"work":0}
+	if profile.has("_on_candidates"):
+		for node in rescue.nodes: node["_rescue"] = true
+		profile["_on_candidates"].call(rescue.nodes)
 	# 逐级扩展复用同一生成器；更大的融资空间不能挤掉较小空间已形成的路线。
 	# 各层共享总额度和规则缓存，只对整条合法方案按语义去重。
 	var modes: Array = [int(profile.get("financing_mode",0))]
@@ -93,6 +98,7 @@ static func generate_with_status(state: GameState, who: String, profile: Diction
 		complete = complete and stage_complete
 		# 保留先完成层的顺序，有限评价额度也应先比较它们。
 		_retain_nodes(nodes,expanded_nodes)
+		if profile.has("_on_candidates"): profile["_on_candidates"].call(expanded_nodes)
 	return {"nodes":nodes,"baseline":baseline,"complete":complete,"baseline_complete":true,
 		"generation_stages":stages,"rescue":rescue["nodes"],"rescue_complete":rescue["complete"],"rescue_work":rescue["work"]}
 

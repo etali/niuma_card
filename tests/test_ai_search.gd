@@ -86,10 +86,11 @@ func _test_strength_and_types() -> void:
 	check(monotone,"计算比例与阶段覆盖上限随强度非递减")
 	check(AISearch.from_strength(0).get_knob("compute_budget") == AISearch.from_strength(1).get_knob("compute_budget"),
 		"所有强度共享独立计算上限")
-	check(AISearch.from_strength(0.25).get_knob("formation_mode") == 1
-		and AISearch.from_strength(0.25).get_knob("attack_mode") == 0
-		and AISearch.from_strength(0.375).get_knob("attack_mode") == 1,
-		"防御与连续攻击在不同阶段开启")
+	var low_spec := AISearch.from_strength(0.0).resolved_parameters()
+	var high_spec := AISearch.from_strength(1.0).resolved_parameters()
+	low_spec.erase("search_fraction")
+	high_spec.erase("search_fraction")
+	check(low_spec == high_spec,"所有强度共用搜索规格，只有预算比例改变")
 	check(not AISearch.from_strength(1).resolved_parameters().has("think_time_ms"),"时间不参与搜索停止条件")
 	check(AISearch.from_strength(-9).strength == 0 and AISearch.from_strength(9).strength == 1, "强度夹取0~1")
 	check(AISearch.from_tier("ai:mid").strength == AISearch.parse_strength("mid"), "模型和命名强度解析一致")

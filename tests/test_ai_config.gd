@@ -17,12 +17,12 @@ func _initialize() -> void:
 	var old := AIConfig._source
 	AIConfig._source = TEMP_PATH
 	var cfg := AISearch.from_strength(0.5)
-	check(cfg.get_knob("buy_beam") == 5 and cfg.get_knob("engine_horizon") == 4.5, "外置配置覆盖预算端点与浮点系数")
-	check(cfg.get_knob("node_budget") == search["ai"]["node_budget"][1][1], "未提供参数沿用内置配置")
+	check(cfg.get_knob("buy_beam") == 8 and cfg.get_knob("engine_horizon") == 4.5, "外置配置覆盖预算端点与浮点系数")
+	check(cfg.get_knob("node_budget") == search["ai"]["node_budget"], "未提供参数沿用内置配置")
 	check(AISearch.default_strength() == 0.23, "外置默认强度生效")
 	var copy := AIConfig.read_section("search")
 	copy["ai"]["buy_beam"][0][1] = 999
-	check(AISearch.from_strength(0).get_knob("buy_beam") == 2, "外置配置返回深副本")
+	check(AISearch.from_strength(0).get_knob("buy_beam") == 8, "外置配置返回深副本")
 	var hash1 := StateCodec.table_hash()
 	cfg.apply_override("node_budget",50)
 	check(StateCodec.table_hash() == hash1, "AI配置与规则指纹独立")

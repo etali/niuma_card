@@ -15,8 +15,6 @@ const Capabilities = preload("res://engine/ai_capabilities.gd")
 const Context = preload("res://engine/ai_context.gd")
 
 # 分配比例只用于防止独占，不把节点数乘固定倍率当成计算上限。
-const ROOT_GENERATION_SHARE := 0.25
-const CURRENT_EVALUATION_SHARE := 0.5
 const INNER_GENERATION_SHARE := 0.5
 const ROLLOUT_ACTION_SHARE := 0.4
 
@@ -25,98 +23,275 @@ const ROLLOUT_ACTION_SHARE := 0.4
 static func profile(strength: float) -> Dictionary:
 	return AISearch.from_model("ai", strength).resolved_parameters()
 
-## 所有强度执行相同的阶段前缀。旧候选进入新规格的共同比较，
-## 未完成阶段不能替换上一完整阶段；墙钟仅记录耗时，不参与决策。
+const SearchTask = preload("res://engine/ai_search_task.gd")
+const SEARCH_QUANTUM := 4096
+const ACTIVE_TASKS := 8
+
+## 所有强度运行同一条确定性任务序列。任务的局部规格不读取剩余总预算，
+## 总预算只截断执行；局部配额只暂停调用栈，不制造失败或重新生成。
 static func choose_plan(state: GameState, who: String, cfg: AISearch) -> Dictionary:
 	var configured := cfg.resolved_parameters()
 	var started := Time.get_ticks_usec()
 	var session = cfg.work_session
 	if session == null: session = Work.new(effective_budget(configured))
-	# 为真实攻击保留15%；重规划沿用同一父账本，不重新领取额度。
 	var meter = session.scope(maxi(0,int(session.limit*0.85)-session.used),"action_planning")
 	var failure_start: int = session.failure_log["events"].size()
 	var failure_count_start: int = session.failure_log["count"]
-	var context := Context.new()
-	var retained: Array = []
+	var queue: Array = [{"kind":"baseline"}]
+	var active: Array = []
+	var history: Array = []
+	var batches: Array = []
+	var nodes: Array = []
+	var ranked: Array = []
 	var committed: Dictionary = {}
-	var trace: Array = []
-	var totals := {"expanded_nodes":0,"generation_nodes":0,"current_nodes":0,"future_nodes":0,
-		"current_attempted":0,"current_retry_attempts":0,"current_complete":0,"current_incomplete":0,"current_unvisited":0,
-		"root_candidates":0,"current_coverage_limited":0,"evaluations":0,"evaluated_roots":0,"future_evaluations":0,"candidate_expansions":0}
-	var upper := AISearch.from_model("ai",cfg.strength).resolved_parameters()
-	# 除整体比例与预算外，自定义控件是阶段探索的上限；估值系数全阶段一致。
-	for stage in range(9):
-		if stage > int(floor(cfg.strength*8.0)) or meter.stopped() or Cancellation.probe_requested(cfg.cancelled_check): break
-		var p := AISearch.from_model("ai",stage/8.0).resolved_parameters()
-		for key in p:
-			if key in ["profile_version","compute_budget","search_fraction"]: continue
-			if configured.get(key) != upper.get(key):
-				p[key] = min(p[key],configured[key]) if p[key] is int else configured[key]
-		# 这些参数是实际硬上限/启动提示，允许玩家向上覆盖。
-		for key in ["node_budget","generation_budget","reply_generation_budget","rollout_step_budget"]:
-			if key == "node_budget" or configured.get(key) != upper.get(key): p[key] = configured[key]
-		for key in ["engine_horizon","upgrade_weight","risk_weight","attack_discount","protection_bonus","spent_attack_discount"]:
-			p[key] = configured[key]
-		p["_diagnostic_location"] = {"stage":stage,"operation":"search_stage","seat":who}
-		meter.location = p["_diagnostic_location"].duplicate()
-		p["_compute"] = meter
-		p["_context"] = context
-		p["_budget_allocations"] = {}
-		p["_work"] = [int(p["node_budget"])]
-		p["_counter_limits"] = {"_work":int(p["node_budget"])}
-		if cfg.cancelled_check.is_valid(): p["_cancelled"] = cfg.cancelled_check
-		var result := _search_stage(state,who,p,retained)
-		for key in totals: totals[key] += int(result["diagnostics"].get(key,0))
-		trace.append({"stage":stage,"complete":result["stage_complete"],
-			"work":result["work"],"candidates":result["diagnostics"]["root_candidates"],
-			"candidate_expansions":result["diagnostics"]["candidate_expansions"],
-			"future_layers":result["diagnostics"]["future_complete_layers"],
-			"stop_reason":result["stop_reason"],"parameters":_public_parameters(p),
-			"budget_allocations":p["_budget_allocations"].duplicate(true),
-			"generation_baseline_complete":result["diagnostics"]["generation_baseline_complete"],
-			"current_incomplete":result["diagnostics"]["current_incomplete"],
-			"current_unvisited":result["diagnostics"]["current_unvisited"],
-			"future_incomplete":result["diagnostics"]["future_incomplete"],
-			"future_failed_layer":result["diagnostics"]["future_failed_layer"],
-			"current_retry_attempts":result["diagnostics"]["current_retry_attempts"]})
-		if committed.is_empty(): committed = result
-		if not result["stage_complete"]: break
-		committed = result
-		retained = result["retained"]
-		if absf(float(result["diagnostics"].get("score",0.0))) == Eval.TERMINAL_SCORE:
-			trace[-1]["stop_reason"] = "terminal_score"
+	var future := {"complete_layers":0,"depth":0,"samples":0,"reply_limit":0,"evaluations":0,"incomplete":false,"trace":[]}
+	var future_started := false
+	var future_contenders: Array = []
+	var future_replies: Array = []
+	var future_values: Array = []
+	var future_cache := {}
+	var future_depth := 1
+	var future_samples := 1
+	var future_pending := 0
+	var future_failed := false
+	var expansions := 0
+	var evaluations := 0
+	var rescue_work := 0
+	var node_failures: Array = []
+	var task_index := 0
+	var batch_count := 0
+	var proven_win := false
+	while not meter.stopped() and not Cancellation.probe_requested(cfg.cancelled_check):
+		while active.size() < ACTIVE_TASKS and not queue.is_empty():
+			var heavy := active.filter(func(x):return x.kind in ["generation","refinement","future"]).size()
+			var next := -1
+			for i in queue.size():
+				if heavy < 2 or queue[i].kind not in ["generation","refinement","future"]:
+					next = i
+					break
+			if next < 0: break
+			var spec: Dictionary = queue[next]
+			queue.remove_at(next)
+			var task = SearchTask.new()
+			task.kind = spec.kind
+			task.node = spec.get("node",{})
+			var p := _task_parameters(configured,task.kind)
+			p["_diagnostic_location"] = {"task":task_index,"operation":task.kind,"seat":who}
+			if task.kind in ["evaluation","refinement"]: p["_diagnostic_location"]["candidate"] = nodes.find(task.node)
+			# 独立缓存与节点计数，暂停任务不留下指向其他任务的规则回调。
+			p["_context"] = Context.new()
+			p["_work"] = [int(p.node_budget)]
+			p["_counter_limits"] = {"_work":int(p.node_budget)}
+			p["_budget_allocations"] = {}
+			p["_resumable"] = true
+			p["_compute"] = Work.new(1000000000)
+			p["_compute"].task_gate = task
+			p["_cancelled"] = func(): return task.cancelled() or Cancellation.probe_requested(cfg.cancelled_check)
+			var callback := func(job) -> Dictionary:
+				if job.kind == "tactics":
+					var tactical := Actions._rescue_transactions(state,who,p)
+					return {"generated":{"nodes":[],"rescue":tactical.nodes,"rescue_work":tactical.work,"complete":tactical.complete,"baseline_complete":true},"expansions":int(p.node_budget)-int(p._work[0]),"failures":p._compute.failure_log.events}
+				if job.kind in ["baseline","generation"]:
+					p["_on_operating"] = func(operating): job.progress = {"operating":operating}
+					p["_on_candidates"] = func(published):
+						if not job.progress.has("candidates"): job.progress["candidates"] = []
+						job.progress.candidates.append_array(published)
+					var generated := Actions.generate_with_status(state,who,p)
+					return {"generated":generated,"parameters":_public_parameters(p),"expansions":int(p.node_budget)-int(p._work[0]),"failures":p._compute.failure_log.events}
+				if job.kind in ["evaluation","refinement"]:
+					if job.kind == "refinement":
+						p["_on_response_score"] = func(value,settled):
+							if value < float(job.progress.get("response_score",INF)): job.progress = {"response_score":value,"response_state":settled}
+					var resolved := resolve_current(job.node.state,who,p)
+					return {"resolved":resolved,"expansions":int(p.node_budget)-int(p._work[0]),"failures":p._compute.failure_log.events}
+				var pending := {}
+				var mean := _future_response_mean(spec.initial,int(spec.ci),int(spec.ri),int(spec.depth),int(spec.samples),int(state.round_num)*1000003+7919,spec.cache,pending,who,p)
+				return {"mean":mean,"pending":pending,"expansions":int(p.node_budget)-int(p._work[0]),"failures":p._compute.failure_log.events}
+
+			task.set_meta("search_id",task_index)
+			if task.kind == "future_response":
+				var at := {"ci":spec.ci,"ri":spec.ri,"depth":spec.depth,"samples":spec.samples}
+				task.set_meta("future_location",at)
+				p["_diagnostic_location"].merge(at,true)
+			task.start(callback,meter)
+			active.append(task)
+			history.append({"task":task_index,"kind":task.kind,"work":0,"complete":false,"turns":0,"candidate":p["_diagnostic_location"].get("candidate",-1),"parameters":_public_parameters(p),"_counter":p._work})
+			task_index += 1
+		if active.is_empty():
+			if not future_started and not ranked.is_empty() and int(configured.future_rounds) > 0:
+				future_started = true
+				future_contenders = _finalists(ranked,int(configured.finalists),configured,who)
+				for candidate in future_contenders: future_replies.append(_future_responses(candidate,configured))
+			if future_started and not future_failed and future_depth <= int(configured.future_rounds):
+				future_values.clear()
+				for ci in future_contenders.size():
+					var values: Array = []
+					for ri in future_replies[ci].size():
+						values.append(null)
+						queue.append({"kind":"future_response","initial":future_replies[ci][ri],"ci":ci,"ri":ri,"depth":future_depth,"samples":future_samples,"cache":future_cache})
+						future_pending += 1
+					future_values.append(values)
+				if future_pending > 0: continue
 			break
-	if committed.is_empty():
-		committed = {"intents":[],"diagnostics":{"score":null,"selected_evaluation_complete":false,
-			"fallback_used":true,"future_complete_layers":0,"future_depth":0,"future_samples":0,
-			"future_incomplete":false,"root_candidates":0}}
-	var diagnostics: Dictionary = committed["diagnostics"]
-	# 选中方案的结果与全部已付计算量分别记录；未完成阶段也照常收费。
-	diagnostics.merge(totals,true)
-	diagnostics["profile"] = configured
-	diagnostics["search_stages"] = trace
-	diagnostics["completed_search_stages"] = trace.filter(func(row): return row["complete"]).size()
-	diagnostics["compute_limit"] = session.limit
-	diagnostics["compute_used"] = meter.used
-	diagnostics["compute_remaining"] = session.remaining()
-	diagnostics["compute_categories"] = meter.categories.duplicate()
-	diagnostics["cancelled"] = Cancellation.probe_requested(cfg.cancelled_check)
-	diagnostics["budget_diagnostics_version"] = 2
-	diagnostics["budget_policy"] = "shared_fair_v1"
-	diagnostics["rng"] = state.rng_snapshot()
-	diagnostics["future_sample_seed_base"] = str(int(state.round_num)*1000003+7919)
-	diagnostics["future_sample_seed_stride"] = "104729"
-	diagnostics["future_sample_seeds"] = range(int(configured["samples"])).map(func(i): return str(int(state.round_num)*1000003+7919+i*104729))
-	diagnostics["compute_exhausted"] = not diagnostics["cancelled"] and session.stopped()
-	diagnostics["planning_budget_exhausted"] = not diagnostics["cancelled"] and meter.stopped()
-	diagnostics["budget_failures"] = session.failure_log["events"].slice(failure_start).duplicate(true)
-	diagnostics["budget_failure_count"] = int(session.failure_log["count"])-failure_count_start
-	diagnostics["budget_failures_dropped"] = diagnostics["budget_failure_count"]-diagnostics["budget_failures"].size()
-	diagnostics["search_stop_reason"] = "cancelled" if diagnostics["cancelled"] else (trace[-1]["stop_reason"] if not trace.is_empty() and not trace[-1]["complete"] else ("planning_budget" if meter.stopped() else ("terminal_score" if not trace.is_empty() and trace[-1]["stop_reason"] == "terminal_score" else "stage_prefix_complete")))
-	diagnostics["local_budget_failure"] = diagnostics["budget_failure_count"] > 0
-	diagnostics["budget_exhausted"] = diagnostics["compute_exhausted"] or diagnostics["planning_budget_exhausted"] or (not trace.is_empty() and not trace[-1]["complete"] and diagnostics["local_budget_failure"])
-	diagnostics["elapsed_ms"] = (Time.get_ticks_usec()-started)/1000.0
-	return {"intents":committed["intents"],"diagnostics":diagnostics}
+
+		var task = active.pop_front()
+		var before: int = meter.used
+		task.advance(SEARCH_QUANTUM)
+		var id: int = task.get_meta("search_id")
+		var row: Dictionary = history[id]
+		row.work = task.work
+		row.turns = task.turns
+		batch_count += 1
+		if batches.size() < 2048: batches.append({"task":id,"kind":task.kind,"work":meter.used-before,"total":meter.used,"complete":task.done})
+		if task.progress.has("candidates"):
+			_enqueue_candidates(nodes,task.progress.candidates,queue)
+			task.progress.candidates.clear()
+		if committed.is_empty() and task.progress.has("operating") and not task.progress.operating.is_empty():
+			committed = {"node":_fallback(task.progress.operating,state,who,configured),"score":null}
+		if task.kind == "refinement" and task.progress.has("response_score"):
+			for candidate in ranked:
+				if candidate.node == task.node:
+					if float(task.progress.response_score) < float(candidate.score):
+						candidate.score = task.progress.response_score
+						candidate.state = task.progress.response_state
+						candidate.responses.append(task.progress.response_state)
+			ranked.sort_custom(func(a,b):return Capabilities.compare_nodes(a,b,who,"score",configured))
+			if not ranked.is_empty(): committed = ranked[0]
+
+		if task.done:
+			task.stop()
+			row.complete = true
+			node_failures.append_array(task.result.get("failures",[]))
+			if task.kind in ["baseline","generation","tactics"]:
+				var generated: Dictionary = task.result.get("generated",{})
+				row.complete = bool(generated.get("complete",false))
+				row["baseline_complete"] = generated.get("baseline_complete",false)
+				rescue_work += int(generated.get("rescue_work",0))
+				for node in generated.get("rescue",[]): node["_rescue"] = true
+				_enqueue_candidates(nodes,generated.get("nodes",[])+generated.get("rescue",[]),queue)
+				if task.kind == "baseline":
+					if int(configured.tactical_extension) > 0: queue.append({"kind":"tactics"})
+					queue.append({"kind":"generation"})
+				if committed.is_empty() and not nodes.is_empty(): committed = {"node":_fallback(nodes,state,who,configured),"score":null}
+			elif task.kind in ["evaluation","refinement"]:
+				var resolved: Dictionary = task.result.get("resolved",{})
+				evaluations += int(resolved.get("evaluations",0))
+				row.complete = bool(resolved.get("complete",false)) and not bool(resolved.get("coverage_limited",true))
+				if row.complete:
+					var candidate := {"node":task.node,"state":resolved.state,"score":resolved.score,"responses":resolved.responses,"baseline":task.node.get("baseline",false)}
+					if task.kind == "evaluation":
+						ranked.append(candidate)
+						queue.append({"kind":"refinement","node":task.node})
+					else:
+						for i in ranked.size():
+							if ranked[i].node == task.node:
+								if float(ranked[i].score) < float(candidate.score):
+									candidate.score = ranked[i].score
+									candidate.state = ranked[i].state
+								candidate.responses.append_array(ranked[i].responses)
+								ranked[i] = candidate
+						task.node["_refined"] = true
+						ranked.sort_custom(func(a,b): return Capabilities.compare_nodes(a,b,who,"score",configured))
+					committed = ranked[0]
+					# 仅真实行动已经获胜时提前停止；有限回应的+T不是证明。
+					proven_win = task.node.state.winner == who
+			elif task.kind == "future_response":
+				var mean: Dictionary = task.result.get("mean",{})
+				row.complete = bool(mean.get("complete",false))
+				future.evaluations += int(mean.get("evaluations",0))
+				future_pending -= 1
+				var at: Dictionary = task.get_meta("future_location")
+				if row.complete:
+					future_values[int(at.ci)][int(at.ri)] = mean.value
+					future_cache.merge(task.result.pending,true)
+				else: future_failed = true
+				if future_pending == 0 and not future_failed:
+					var layer := _completed_future_layer(future_contenders,future_values,who,configured)
+					committed = future_contenders[int(layer.winner)]
+					future.best = committed
+					future["value"] = layer.values[int(layer.winner)]
+					future.complete_layers += 1
+					future.depth = future_depth
+					future.samples = future_samples
+					future.trace.append({"depth":future_depth,"samples":future_samples,"values":layer.values,"winner":layer.winner})
+					future_samples += 1
+					if future_samples > int(configured.samples):
+						future_samples = 1
+						future_depth += 1
+
+		else:
+			active.append(task)
+		if proven_win: break
+	# 所有栈必须唤醒并收回；清理计算不收费，不提交停止后的残缺结果。
+	for task in active: task.stop()
+	for row in history:
+		expansions += int(configured.node_budget)-int(row._counter[0])
+		row.erase("_counter")
+	var generation_work := 0; var current_work := 0; var future_work := 0
+	for row in history:
+		if row.kind in ["baseline","generation","tactics"]: generation_work += int(row.work)
+		elif row.kind in ["evaluation","refinement"]: current_work += int(row.work)
+		else: future_work += int(row.work)
+	var cancelled := Cancellation.probe_requested(cfg.cancelled_check)
+	var stop_reason := "cancelled" if cancelled else ("proven_win" if proven_win else ("planning_budget" if meter.stopped() else ("node_limit" if node_failures.any(func(x): return x.get("kind") == "nodes") else "search_complete")))
+	var failures: Array = session.failure_log.events.slice(failure_start).duplicate(true)
+	failures.append_array(node_failures)
+	var failure_count := int(session.failure_log.count)-failure_count_start+node_failures.size()
+	failures = failures.slice(0,512)
+	var diagnostics := {"model":"ai","profile":configured,"budget_policy":"resumable_round_robin_v2","budget_diagnostics_version":3,
+		"search_tasks":history,"search_batches":batches,"search_batches_dropped":batch_count-batches.size(),"completed_search_tasks":history.filter(func(x):return x.complete).size(),
+		"compute_limit":session.limit,"compute_used":meter.used,"compute_remaining":session.remaining(),"compute_categories":meter.categories.duplicate(),
+		"compute_exhausted":not cancelled and session.stopped(),"planning_budget_exhausted":not cancelled and meter.stopped(),
+		"cancelled":cancelled,"search_stop_reason":stop_reason,"budget_exhausted":meter.stopped() or stop_reason == "node_limit",
+		"budget_failures":failures,"budget_failure_count":failure_count,
+		"budget_failures_dropped":maxi(0,failure_count-failures.size()),
+		"local_budget_failure":not node_failures.is_empty(),"rng":state.rng_snapshot(),
+		"future_sample_seed_base":str(int(state.round_num)*1000003+7919),"future_sample_seed_stride":"104729",
+		"future_sample_seeds":range(int(configured.samples)).map(func(i): return str(int(state.round_num)*1000003+7919+i*104729)),
+		"rescue_work":rescue_work,"rescue_available":nodes.filter(func(x):return x.get("_rescue",false)).size(),
+		"rescue_candidates":nodes.filter(func(x):return x.get("_rescue",false)).size(),"rescue_evaluated":ranked.filter(func(x):return x.node.get("_rescue",false)).size(),
+		"root_candidates":nodes.size(),"evaluated_roots":ranked.size(),"current_complete":ranked.size(),"refined_candidates":ranked.filter(func(x):return x.node.get("_refined",false)).size(),
+		"current_incomplete":history.filter(func(x):return x.kind == "evaluation" and not x.complete).size(),"current_unvisited":queue.filter(func(x):return x.kind == "evaluation").size(),
+		"current_attempted":history.filter(func(x):return x.kind == "evaluation").size(),"current_retry_attempts":0,"current_coverage_limited":0,
+		"evaluations":evaluations,"candidate_expansions":expansions,"expanded_nodes":meter.used,
+		"generation_nodes":generation_work,"current_nodes":current_work,"future_nodes":future_work,
+		"score":committed.get("score"),"selected_evaluation_complete":not ranked.is_empty(),
+		"selected_refinement_complete":committed.get("node",{}).get("_refined",false),"future_started":future_started,"fallback_used":ranked.is_empty(),
+		"future_complete_layers":future.complete_layers,"future_depth":future.depth,"future_samples":future.samples,
+		"future_value":future.get("value"),"future_evaluations":future.evaluations,"future_layers":future.trace,"future_incomplete":int(configured.future_rounds) > 0 and not proven_win and (not future_started or future_pending > 0 or future_failed),
+		"elapsed_ms":(Time.get_ticks_usec()-started)/1000.0}
+	return {"intents":committed.get("node",{}).get("intents",[]),"diagnostics":diagnostics}
+
+static func _enqueue_candidates(nodes: Array, published: Array, queue: Array) -> void:
+	for node in Actions._retain_nodes(nodes,published):
+		if not node.has("_scheduled"):
+			node["_scheduled"] = true
+			queue.append({"kind":"evaluation","node":node})
+
+## 整个共同层完成才选赢家；每个候选取已经完整计算的回应均值之最小值。
+static func _completed_future_layer(contenders: Array, response_values: Array, who: String, p: Dictionary) -> Dictionary:
+	var values: Array = []
+	var winner := -1
+	for ci in contenders.size():
+		assert(not response_values[ci].is_empty() and not response_values[ci].has(null))
+		var value: float = response_values[ci].min()
+		values.append(value)
+		if winner < 0 or value > float(values[winner]) or (value == values[winner] and Capabilities.compare_nodes(contenders[ci],contenders[winner],who,"score",p)):
+			winner = ci
+	return {"values":values,"winner":winner}
+
+static func _task_parameters(configured: Dictionary, kind: String) -> Dictionary:
+	var p := configured.duplicate()
+	if kind in ["baseline","generation"]: p["generation_budget"] = 0
+	if kind == "baseline":
+		for key in ["financing_mode","resale_mode","allocation_mode","formation_mode","candidate_dedup","tactical_extension"]: p[key] = 0
+		p["buy_beam"] = mini(4,int(p.buy_beam))
+		p["build_beam"] = mini(3,int(p.build_beam))
+		p["plans"] = mini(6,int(p.plans))
+	if kind == "evaluation":
+		for key in ["financing_mode","resale_mode","allocation_mode","formation_mode"]: p[key] = 0
+		p["replies"] = mini(4,int(p.replies))
+	return p
 
 static func _public_parameters(p: Dictionary) -> Dictionary:
 	var out := {}
@@ -134,65 +309,6 @@ static func effective_budget(p: Dictionary) -> int:
 	# 比例按百万分之一量化，用整数乘除避免浮点尾差少扣一个单位。
 	var fraction_units := roundi(float(p.get("search_fraction",1.0))*1000000)
 	return maxi(1,int(p.get("compute_budget",3000000))*fraction_units/1000000)
-
-static func _search_stage(state: GameState, who: String, p: Dictionary, retained: Array) -> Dictionary:
-	var meter = p["_compute"]
-	var before: int = meter.used
-	# 先给生成一个预算份额，其余保证可以评价和深化；未使用的额度不预扣。
-	var generation_limit := share_budget(meter.remaining(),ROOT_GENERATION_SHARE)
-	p["_budget_allocations"]["root_generation"] = generation_limit
-	var generated := _generate_budgeted(state,who,p,int(p["generation_budget"]),"root_generation",generation_limit)
-	var after_generation: int = meter.used
-	var ordered: Array = []
-	# 历史候选和历史冠军都保留；不与新池共同做静态截断。
-	Actions._retain_nodes(ordered,retained)
-	Actions._retain_nodes(ordered,generated.get("baseline",[]))
-	Actions._retain_nodes(ordered,generated["nodes"])
-	var fallback := _fallback(ordered,state,who,p)
-	var current_limit := share_budget(meter.remaining(),CURRENT_EVALUATION_SHARE)
-	p["_budget_allocations"]["current_evaluation"] = current_limit
-	var current_p := _located(p,{"operation":"current_evaluation"})
-	current_p["_compute"] = meter.scope(current_limit,"current_evaluation",current_p["_diagnostic_location"])
-	var current := _evaluate_candidates(ordered,generated.get("rescue",[]),who,current_p)
-	var ranked: Array = current["ranked"]
-	var after_current: int = meter.used
-	ranked.sort_custom(func(a: Dictionary,b: Dictionary)->bool: return Capabilities.compare_nodes(a,b,who,"score",p))
-	var best: Dictionary = ranked[0] if not ranked.is_empty() else {"node":fallback,"score":null}
-	var complete: bool = generated.get("baseline_complete",false) and not ranked.is_empty() and current["incomplete"] == 0 and current["unvisited"] == 0
-	var future := {"complete_layers":0,"depth":0,"samples":0,"reply_limit":0,"evaluations":0,"incomplete":false,"trace":[]}
-	if complete and int(p["future_rounds"]) > 0 and absf(float(best["score"])) < Eval.TERMINAL_SCORE:
-		var contenders := _finalists(ranked,int(p["finalists"]),p,who)
-		# 上一阶段真正选中的方案必须参加相同深度/样本的比较。
-		if not retained.is_empty():
-			for candidate in ranked:
-				if candidate["node"] == retained[0] and not contenders.has(candidate): contenders.append(candidate)
-		p["_budget_allocations"]["future_comparison"] = meter.remaining()
-		future = _deepen(state,who,contenders,p)
-		if future.has("best"): best = future["best"]
-		# 没有任何完整未来层时，不宣称本阶段精度提升完成。
-		if future["complete_layers"] == 0: complete = false
-	var saved: Array = [best["node"]]
-	Actions._retain_nodes(saved,ordered)
-	return {"intents":best["node"]["intents"],"retained":saved,"stage_complete":complete,
-		"stop_reason":"complete" if complete else ("generation_baseline_incomplete" if not generated.get("baseline_complete",false) else ("current_evaluation_incomplete" if ranked.is_empty() or current["incomplete"] > 0 or current["unvisited"] > 0 else "future_layer_incomplete")),
-		"work":meter.used-before,"diagnostics":{
-		"model":"ai","root_candidates":current["candidates"],"evaluations":current["evaluations"],
-		"evaluated_roots":ranked.size(),"current_attempted":current["attempted"],"current_retry_attempts":current["retry_attempts"],"current_complete":ranked.size(),
-		"current_incomplete":current["incomplete"],"current_unvisited":current["unvisited"],
-		"current_coverage_limited":current["coverage_limited"],"generation_complete":generated.get("complete",false),"generation_baseline_complete":generated.get("baseline_complete",false),
-		"rescue_candidates":current["rescue_candidates"],"rescue_evaluated":current["rescue_evaluated"],
-		"rescue_available":generated.get("rescue",[]).size(),"rescue_work":generated.get("rescue_work",0),
-		"rescue_complete":generated.get("rescue_complete",true),"generation_stages":generated.get("generation_stages",[]),
-		"baseline_candidates":generated.get("baseline",[]).size(),"selected_evaluation_complete":not ranked.is_empty(),
-		"score":best["score"],"expanded_nodes":meter.used-before,
-		"candidate_expansions":int(p["node_budget"])-int(p["_work"][0]),
-		"fallback_used":ranked.is_empty(),
-		"generation_nodes":after_generation-before,"current_nodes":after_current-after_generation,
-		"future_nodes":meter.used-after_current,
-		"future_complete_layers":future["complete_layers"],"future_depth":future["depth"],
-		"future_samples":future["samples"],"future_reply_limit":future["reply_limit"],
-		"future_evaluations":future["evaluations"],"future_failed_layer":future.get("failed_layer",{}),"future_incomplete":future["incomplete"],"future_layers":future["trace"],
-		"future_value":future.get("value"),"future_response_counts":future.get("response_counts",[])}}
 
 ## 尚无完成的当前评价时，选择已生成且完整合法的最高静态分方案。
 static func _fallback(nodes: Array, state: GameState, who: String, p: Dictionary) -> Dictionary:
@@ -239,7 +355,7 @@ static func _evaluate_candidates(ordinary: Array, rescue: Array, who: String, p:
 					if attempt > 0: failed.append_array(waiting.slice(waiting.find(node)))
 					break
 				var evaluation := _located(p,{"operation":"current_evaluation","candidate":nodes.find(node),"evaluation_attempt":attempt,"rescue":phase == 1,"seat":who})
-				if p.has("_compute"):
+				if p.has("_compute") and not p.get("_resumable",false):
 					evaluation["_compute"] = p["_compute"].scope(candidate_limit,"candidate_evaluation",evaluation["_diagnostic_location"])
 				var resolved := resolve_current(node["state"],who,evaluation,score_only)
 				if attempt == 0: result["attempted"] += 1
@@ -311,6 +427,10 @@ static func fair_budget(remaining: int, siblings: int) -> int:
 ## 节点参数现在是首次生成的启动提示；真正硬边界是分配份额和阶段节点上限。
 ## 第一次按局面规模估算；不足时用同一分配份额中的余量重试一次。
 static func _generate_budgeted(state: GameState, who: String, p: Dictionary, hint: int, operation: String, amount: int) -> Dictionary:
+	if p.get("_resumable",false):
+		var full := p.duplicate()
+		full["generation_budget"] = 0
+		return Actions.generate_with_status(state,who,full)
 	if not p.has("_compute"): return Actions.generate_with_status(state,who,p)
 	var local := _located(p,{"operation":operation,"seat":who,"round":state.round_num})
 	var allocation = p["_compute"].scope(amount,operation+"_allocation",local["_diagnostic_location"])
@@ -336,7 +456,7 @@ static func _generate_scope(state: GameState, who: String, p: Dictionary, hint: 
 		return {"nodes":[],"rescue":[],"rescue_complete":false,"complete":false,"interrupted":true,"coverage_limited":false}
 	var amount := share_budget(p["_compute"].remaining(),INNER_GENERATION_SHARE) if p.has("_compute") else 0
 	var generated := _generate_budgeted(state,who,p,hint,operation,amount)
-	var complete: bool = generated.get("complete",false) or generated.get("baseline_complete",false)
+	var complete: bool = generated.get("complete",false) if p.get("_resumable",false) else (generated.get("complete",false) or generated.get("baseline_complete",false))
 	return {"nodes":generated["nodes"],"rescue":generated.get("rescue",[]),"rescue_complete":generated.get("rescue_complete",true),"complete":complete,"interrupted":false,
 		"coverage_limited":not bool(generated.get("complete",false)) or not bool(generated.get("rescue_complete",true))}
 
@@ -399,6 +519,7 @@ static func _deepen(state: GameState, who: String, contenders: Array, p: Diction
 				"lower_bound_exits":layer["lower_bound_exits"],"evaluation_order":layer["evaluation_order"],"winner":winner,
 				"reply_priority":layer["reply_priority"],"response_orders":layer["response_orders"],
 				"sample_bound_exits":layer["sample_bound_exits"],"skipped_samples":layer["skipped_samples"]})
+			if p.has("_on_future_layer"): p["_on_future_layer"].call(result)
 	return result
 
 ## 本层赢家必须有精确最坏值。已算回应均值的最小值只构成其他候选的上界；
@@ -504,12 +625,12 @@ static func _sample_mean(samples: int, cutoff: float, evaluate_sample: Callable)
 static func _future_response_mean(initial: GameState, ci: int, ri: int, depth: int, samples: int,
 		seed_base: int, cache: Dictionary, pending: Dictionary, who: String, p: Dictionary, cutoff: float = -INF) -> Dictionary:
 	p = _located(p,{"operation":"future_response","future_candidate":ci,"future_response":ri,"depth":depth,"samples":samples})
-	if p.has("_compute") and p.has("_future_response_limit"):
+	if p.has("_compute") and p.has("_future_response_limit") and not p.get("_resumable",false):
 		p["_compute"] = p["_compute"].scope(int(p["_future_response_limit"]),"future_response",p["_diagnostic_location"])
 	var sample_limit := fair_budget(p["_compute"].remaining(),samples) if p.has("_compute") else 0
 	var evaluate_sample := func(sample: int) -> Dictionary:
 		var sample_p := _located(p,{"sample":sample})
-		if p.has("_compute"):
+		if p.has("_compute") and not p.get("_resumable",false):
 			sample_p["_compute"] = p["_compute"].scope(sample_limit,"future_sample",sample_p["_diagnostic_location"])
 		var continued := _future_continuation(initial,ci,ri,sample,depth,seed_base,cache,pending,sample_p)
 		if not continued["complete"]: return continued
@@ -540,7 +661,7 @@ static func _future_continuation(initial: GameState, ci: int, ri: int, sample: i
 		# 已保存的较浅状态不可被下一次 _rollout 原地修改。
 		next = Env.copy(next)
 		var step_p := _located(p,{"future_step":step})
-		if p.has("_compute"): step_p["_compute"] = p["_compute"].scope(step_limit,"future_step",step_p["_diagnostic_location"])
+		if p.has("_compute") and not p.get("_resumable",false): step_p["_compute"] = p["_compute"].scope(step_limit,"future_step",step_p["_diagnostic_location"])
 		var rollout := _rollout(next,1,step_p)
 		evaluations += 1
 		if not rollout["complete"]: return {"complete":false,"evaluations":evaluations}
@@ -597,7 +718,7 @@ static func resolve_current(leaf: GameState, who: String, p: Dictionary, score_o
 	var ranked: Array = []
 	for phase in 2:
 		# 对方普通回应从本方看全为 +T，才给对方同样的近端补查机会。
-		var nodes: Array = replies if phase == 0 else _rescue_after_losses(replies,rescue,ranked,Eval.TERMINAL_SCORE)
+		var nodes: Array = replies if phase == 0 else (rescue if p.get("_resumable",false) else _rescue_after_losses(replies,rescue,ranked,Eval.TERMINAL_SCORE))
 		if phase == 1: rescue_candidates = nodes.size()
 		for reply in nodes:
 			if Cancellation.requested(p):
@@ -610,6 +731,7 @@ static func resolve_current(leaf: GameState, who: String, p: Dictionary, score_o
 			if Cancellation.requested(p):
 				return _interrupted_resolution(leaf,ranked.size(),limited,rescue_complete)
 			ranked.append({"state":settled,"score":score})
+			if p.has("_on_response_score"): p["_on_response_score"].call(score,settled)
 			if phase == 1: rescue_evaluated += 1
 			if score_only and ranked[-1]["score"] == -Eval.TERMINAL_SCORE:
 				break
@@ -652,7 +774,7 @@ static func _rollout(state: GameState, rounds: int, context: Dictionary) -> Dict
 		for who in state.action_order():
 			if state.winner != "": break
 			var action_p := _located(fast,{"operation":"rollout_action","seat":who,"round":state.round_num})
-			if context.has("_compute"):
+			if context.has("_compute") and not context.get("_resumable",false):
 				action_p["_compute"] = context["_compute"].scope(action_limit,"rollout_action",action_p["_diagnostic_location"])
 			var generated := _generate_scope(state,who,action_p,int(context.get("rollout_step_budget",512)),"rollout_action_generation")
 			if not generated["complete"]: return {"complete":false}

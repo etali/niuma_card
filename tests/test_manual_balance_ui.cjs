@@ -1635,7 +1635,7 @@ test('整体强度以滑钮映射全部AI参数，修改滑钮保留计算和节
 test('三处强度滑钮拖动时同步应用全部可调参数，保留表单且不请求映射接口',async()=>{
  const aiConfig=JSON.parse(readFileSync(path.join(__dirname,'../data/ai.json'),'utf8')).search.ai;
  const keys=Object.keys(aiConfig).filter(key=>Array.isArray(aiConfig[key])||typeof aiConfig[key]==='number');
- assert.equal(keys.length,39);
+ assert.equal(keys.length,36);
  const schema=keys.map(key=>({key,label:key,kind:'int',min:0,max:10000000,step:1,hint:''}));
  // Deliberately distinct snapshots prove the UI applies server results, rather than its own interpolation.
  const strength_profiles=Object.fromEntries(Array.from({length:101},(_,step)=>[(step/100).toFixed(2),
@@ -1792,7 +1792,7 @@ test('AI 对战位于页面最下，双方完整呈现全部可调参数并保�
  const aiConfig=JSON.parse(readFileSync(path.join(__dirname,'../data/ai.json'),'utf8')).search.ai;
  const keys=Object.keys(aiConfig).filter(key=>Array.isArray(aiConfig[key])||typeof aiConfig[key]==='number');
  const anchor=(key,index)=>{const value=Array.isArray(aiConfig[key])?aiConfig[key][index][1]:aiConfig[key];return key==='search_fraction'?Math.round(value*1000000)/1000000:value};
- assert.equal(keys.length,39,'全部能力、预算与评估参数都应包含');
+ assert.equal(keys.length,36,'全部能力、预算与评估参数都应包含');
  const schema=keys.map((key,index)=>({key,label:key,group:index%2?'计算预算':'设计能力',
   kind:['search_fraction','upgrade_weight','attack_discount','protection_bonus','spent_attack_discount'].includes(key)?'float':'int',min:0,max:10000000,step:key==='search_fraction'?.000001:['upgrade_weight','attack_discount','protection_bonus','spent_attack_discount'].includes(key)?.01:1,hint:'测试参数'}));
  const parameters=Object.fromEntries(keys.map(key=>[key,anchor(key,1)]));
@@ -1910,7 +1910,7 @@ test('三处计算使用比例只读显示、跟随强度，两个预算可独�
  const schema=[
   {key:'search_fraction',label:'计算上限使用比例',kind:'float',min:0,max:1,step:.000001,read_only:true,hint:'由强度自动推导'},
   {key:'compute_budget',label:'每回合计算上限',kind:'int',min:100,max:1000000000,step:1,hint:''},
-  {key:'node_budget',label:'单阶段节点上限',kind:'int',min:1,max:1000000000,step:1,hint:''}];
+  {key:'node_budget',label:'单项搜索节点上限',kind:'int',min:1,max:1000000000,step:1,hint:''}];
  const strength_profiles={'0.00':{search_fraction:.002,compute_budget:3000000,node_budget:45000},
   '0.50':{search_fraction:.12675,compute_budget:3000000,node_budget:45000},
   '1.00':{search_fraction:1,compute_budget:3000000,node_budget:45000}};

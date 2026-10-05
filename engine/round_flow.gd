@@ -54,6 +54,7 @@ func run_automatic_attack(seat: String, picker: Callable = Callable(),
 		exhausted: Callable = Callable()) -> Dictionary:
 	if picker.is_null():
 		picker = AIPlan.target_picker()
+	var pending: Dictionary = {}
 	while active():
 		var transport = provider.call()
 		var state: GameState = transport.state()
@@ -65,7 +66,8 @@ func run_automatic_attack(seat: String, picker: Callable = Callable(),
 			if exhausted.is_valid():
 				exhausted.call()
 			return await transport.submit(Intent.attack_done(seat, Intent.DONE_EXHAUSTED))
-		var target: Dictionary = await picker.call(state, seat, affordable, applier.pools(seat))
+		var target: Dictionary = pending if not pending.is_empty() else await picker.call(state, seat, affordable, applier.pools(seat))
+		pending = {}
 		if not active():
 			return _cancelled_result()
 		if target.is_empty():
@@ -83,18 +85,26 @@ func run_automatic_attack(seat: String, picker: Callable = Callable(),
 				return result
 			transport = provider.call()
 			applier = transport.applier()
-			# 连批只服从规则中的组合锁；散卡允许下一击改选其他合法目标。
-			if transport.state().winner != "" or batch == "" or applier.pool_empty(seat) \
-					or GameState.attack_lock(applier.pools(seat)) != batch:
+			if transport.state().winner != "" or batch == "" or applier.pool_empty(seat):
 				break
-			var same: Array = applier.affordable_targets(seat).filter(func(candidate): return GameState.target_batch(candidate) == batch)
-			if same.is_empty():
+			# 组合锁由真实规则过滤；散卡仍把全部合法目标交给选择器。
+			# 连续选择同一摞只演一次瞄准/收尾，换靶才开始下一批，不能锁住散卡。
+			var choices: Array = applier.affordable_targets(seat)
+			if choices.is_empty():
 				break
-			target = await picker.call(transport.state(), seat, same, applier.pools(seat))
+			var next: Dictionary = await picker.call(transport.state(), seat, choices, applier.pools(seat))
 			if not active():
 				return _cancelled_result()
-			if target.is_empty():
+			if next.is_empty():
+				if after_batch.is_valid():
+					await after_batch.call(target)
+				if not active():
+					return _cancelled_result()
+				return await provider.call().submit(Intent.attack_done(seat, Intent.DONE_FORFEIT))
+			if GameState.target_batch(next) != batch:
+				pending = next
 				break
+			target = next
 		if after_batch.is_valid():
 			await after_batch.call(target)
 	return _cancelled_result()

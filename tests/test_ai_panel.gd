@@ -226,9 +226,8 @@ func _t_slider_drives_prefs(panel: AIPanel) -> void:
 		"拖到 0.8 之后偏好就是 0.8（读回 %.2f）" % AISearch.pref_strength())
 	var high := AISearch.prefs().resolved_parameters()
 	var low := AISearch.from_model(AISearch.pref_model(), 0.0).resolved_parameters()
-	check(int(high["buy_beam"]) > int(low["buy_beam"]),
-		"0.8 档比最底档搜索更宽（购买 Beam %d > %d）" % [
-			high["buy_beam"], low["buy_beam"]])
+	check(high["buy_beam"] == low["buy_beam"] and high["search_fraction"] > low["search_fraction"],
+		"改变强度保留共同搜索规格，只提高计算比例")
 
 
 ## `_syncing` 护栏。回填每一行会触发 CheckBox.toggled / SpinBox.value_changed，

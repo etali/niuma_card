@@ -47,7 +47,7 @@ func _initialize() -> void:
 			"parameters":cfg.resolved_parameters(),"diagnostics":diag}
 		rows.append(row)
 		print(JSON.stringify({"decision":index,"ms":diag["elapsed_ms"],"compute":diag["compute_used"],
-			"nodes":diag["candidate_expansions"],"stages":diag["completed_search_stages"],"stop":diag["search_stop_reason"]}))
+			"nodes":diag["candidate_expansions"],"stages":diag["completed_search_tasks"],"stop":diag["search_stop_reason"]}))
 		var file := FileAccess.open(args[3],FileAccess.WRITE)
 		file.store_string(JSON.stringify({"schema":"ai-budget-calibration-v1","engine":Engine.get_version_info(),
 			"at":Time.get_datetime_string_from_system(true),"replay":args[0],"rows":rows},"  ",true,true)+"\n")

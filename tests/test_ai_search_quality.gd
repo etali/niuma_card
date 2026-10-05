@@ -133,6 +133,7 @@ func _test_current_financing_reply() -> void:
 	var actual:=Env.copy(leaf)
 	check(Env.replay(actual,data.actual_reply_intents),"实际强度0的单用户融资与做空热搜回应合法")
 	var p:=AISearch.from_model("ai",0.5).resolved_parameters()
+	p["rollout_capabilities"] = 0 # 明确验证未来能力开关，不依赖强度关闭它。
 	p["_context"]=AIActions.Context.new();p["_work"]=[10000]
 	Env.settle(actual,Plan._target_policy(p))
 	check(actual.winner=="ai","实际融资回应在首回合清空先手现金")

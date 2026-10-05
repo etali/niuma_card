@@ -162,6 +162,9 @@ def read_parameter_schema(source):
             raise ValueError("参数规格 %s 的 kind 与声明 helper 不匹配" % key)
         spec = {"kind": kind_match[1]}
         for field in ("min", "max", "step", "default"):
+            if field == "default" and helper == "int" and '"default":STRENGTH_TARGETS.get(key,strong)' in body:
+                spec[field] = targets.get(key, bindings["strong"])
+                continue
             match = re.search(r'"%s"\s*:\s*([A-Za-z_][A-Za-z_0-9]*|[-+0-9.eE]+)' % field, body)
             if match is None:
                 raise ValueError("参数规格 %s 缺少可解析的 %s" % (key, field))

@@ -394,7 +394,7 @@ function duelThinking(stats){
   if(!finite(n))return `<small>${side} 思考诊断：未记录</small>`;
   if(n<=0)return `<small>${side} 思考诊断：尚无决策</small>`;
   const rate=key=>finite(x[key])?duelRate(x[key]/n):'未记录';
-  return `<small>${side} 平均计算量 ${number(x.compute_used/n)} · 完成阶段 ${number(x.completed_search_stages/n)} · 平均思考 ${number(x.elapsed_ms/n/1000)} 秒 · 平均有效前推 ${number(x.future_depth/n)} 回合 · 当前评价完成 ${rate('selected_evaluation_complete')} · 未来推演中断率 ${rate('future_incomplete')} · 总计算额度耗尽率 ${rate('compute_exhausted')} · 备用方案率 ${rate('fallback_used')} · 预算导致停止率 ${rate('budget_exhausted')}</small>`;
+  return `<small>${side} 平均计算量 ${number(x.compute_used/n)} · 完成任务 ${number(x.completed_search_tasks/n)} · 平均思考 ${number(x.elapsed_ms/n/1000)} 秒 · 平均有效前推 ${number(x.future_depth/n)} 回合 · 当前评价完成 ${rate('selected_evaluation_complete')} · 宽回应评价完成 ${rate('selected_refinement_complete')} · 未来推演中断率 ${rate('future_incomplete')} · 总计算额度耗尽率 ${rate('compute_exhausted')} · 备用方案率 ${rate('fallback_used')} · 预算导致停止率 ${rate('budget_exhausted')}</small>`;
  }).join('');
 }
 function duelRecordings(run){

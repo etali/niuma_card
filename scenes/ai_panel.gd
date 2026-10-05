@@ -84,7 +84,7 @@ func _build() -> void:
 	_body.add_child(_model_choice)
 	_body.add_child(_build_slider_row())
 	_body.add_child(_build_presets())
-	_body.add_child(_label("每回合计算与单阶段节点上限可单独调整\n改变强度保留两个上限；计算使用比例只读\n修改立即生效，仅本次运行，下次启动恢复默认", 12, Color(0.72, 0.82, 0.62)))
+	_body.add_child(_label("每回合计算与单项搜索节点上限可单独调整\n改变强度保留两个上限；计算使用比例只读\n修改立即生效，仅本次运行，下次启动恢复默认", 12, Color(0.72, 0.82, 0.62)))
 	_knobs_scroll = ScrollContainer.new()
 	_knobs_scroll.custom_minimum_size = Vector2(LIST_W, KNOBS_H)
 	_knobs_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED

@@ -15,7 +15,7 @@ func _initialize() -> void:
 	for strength in [0.0,0.225,0.5]:
 		var p := AISearch.from_model("ai",strength).resolved_parameters()
 		for key in ["financing_mode","allocation_mode","formation_mode","candidate_dedup","reply_mode","rollout_capabilities","tactical_extension","resale_mode","attack_mode"]:
-			check(p[key] == 0,"强度%s保持基线%s关闭" % [strength,key])
+			check(p[key] == AISearch.from_strength(1.0).get_knob(key),"强度%s共用%s规格" % [strength,key])
 	check(AISearch.from_tier(" AI:ENHANCED ").get_knob("financing_mode")==2,"命名配置忽略大小写和两端空格")
 	var cfg := AISearch.from_strength(1.0)
 	# 此用例验证完整节点规格；计算额度另由test_ai_work_budget验证。

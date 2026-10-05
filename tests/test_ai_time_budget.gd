@@ -9,7 +9,6 @@ const Allocation = preload("res://engine/ai_resource_allocation.gd")
 func _initialize() -> void:
 	CardDB.ensure_loaded()
 	_scopes()
-	_fair_allocations()
 	_settings()
 	_partial_allocation()
 	_session()
@@ -33,20 +32,6 @@ func _scopes() -> void:
 	check(total.categories.allocation == 2 and total.categories.settlement == 8,"操作类别计入同一总账")
 	var p := {"_compute":total,"_work":[123]}
 	check(Stop.requested(p) and not AIActions.spend(p) and p._work[0] == 123,"计算额度耗尽中断候选且不伪造节点计数")
-
-func _fair_allocations() -> void:
-	var round_meter = Work.new(1200000)
-	var action = round_meter.scope(1020000,"action_planning")
-	var generation = action.scope(AITurnPlan.share_budget(action.remaining(),AITurnPlan.ROOT_GENERATION_SHARE),"root_generation")
-	check(generation.limit == 255000 and generation.spend(generation.limit),"根生成份额随总预算扩大，不再固定为2048")
-	var evaluation = action.scope(AITurnPlan.share_budget(action.remaining(),AITurnPlan.CURRENT_EVALUATION_SHARE),"current_evaluation")
-	var quota := AITurnPlan.fair_budget(evaluation.limit,4)
-	var first = evaluation.scope(quota,"candidate_evaluation")
-	check(first.spend(quota) and not first.spend(1),"单个候选不能突破同组公平额度")
-	var other = evaluation.scope(quota,"candidate_evaluation")
-	check(other.spend(quota),"首候选失败后其他候选仍有计算额度")
-	check(round_meter.used <= round_meter.limit and action.remaining() > 0,"生成和当前评价不独占后续前推的额度")
-	check(AITurnPlan.share_budget(0,0.25) == 0 and AITurnPlan.fair_budget(3,4) == 0,"极小预算不凭空发放份额")
 
 func _settings() -> void:
 	var previous := 0
@@ -88,8 +73,8 @@ func _session() -> void:
 	var meter := AIPlan.work_session(state,GameState.PLAYER,cfg)
 	var before := StateCodec.state_hash(state)
 	var result := AIPlan.choose_plan(state,GameState.PLAYER,cfg)
-	check(result.diagnostics.search_stages[0].parameters.node_budget == 5000000,"玩家提高的阶段节点上限直接生效")
-	check(result.diagnostics.budget_policy == "shared_fair_v1","决策记录公平预算策略版本")
+	check(result.diagnostics.search_tasks[0].parameters.node_budget == 5000000,"玩家提高的阶段节点上限直接生效")
+	check(result.diagnostics.budget_policy == "resumable_round_robin_v2","决策记录公平预算策略版本")
 	check(result.diagnostics.rng == state.rng_snapshot(),"决策记录精确字符串种子及随机数位置")
 	check(result.diagnostics.has("budget_failures") and result.diagnostics.has("search_stop_reason"),"中断决策保存失败位置与停止原因")
 	check(result.diagnostics.compute_used <= 85 and meter.used <= 100,"行动为实际攻击保留15%且总账有界")

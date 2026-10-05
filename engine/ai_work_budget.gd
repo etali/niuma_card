@@ -11,6 +11,7 @@ var blocked := false
 var parent: RefCounted
 var categories: Dictionary = {}
 ## 子账共享有界失败日志，不保存状态/回调引用。一个子账只记录首次失败。
+var task_gate: RefCounted
 var label := "round"
 var location: Dictionary = {}
 var failure_log: Dictionary = {"events":[],"count":0,"seen":{}}
@@ -24,6 +25,7 @@ func _init(amount: int, ancestor: RefCounted = null) -> void:
 	if parent != null:
 		failure_log = parent.failure_log
 		location = parent.location.duplicate()
+		task_gate = parent.task_gate
 
 func remaining() -> int:
 	var amount := maxi(0,limit-used)
@@ -46,6 +48,9 @@ func spend(amount := 1, category := "expansion", at: Dictionary = {}) -> bool:
 		while limiting.parent != null and not limiting.parent.can_spend(amount):
 			limiting = limiting.parent
 		limiting._record_failure(amount,category,at if not at.is_empty() else location,self)
+		blocked = true
+		return false
+	if parent == null and task_gate != null and not task_gate.charge(amount,category,at):
 		blocked = true
 		return false
 	if parent != null and not parent.spend(amount,category,at):

@@ -796,8 +796,9 @@ class ApiIntegrationTest(unittest.TestCase):
         for strength in (0,.37,.51,.75,1):
             actual=self.ai_side(strength)['ai_parameters']
             self.assertEqual(profiles[f'{strength:.2f}'],actual)
-        self.assertEqual(profiles['0.50']['generation_budget'],2560)
-        self.assertEqual(profiles['0.51']['generation_budget'],2560)
+        self.assertNotIn('generation_budget',profiles['0.50'])
+        self.assertEqual({k:v for k,v in profiles['0.50'].items() if k!='search_fraction'},
+                         {k:v for k,v in profiles['0.51'].items() if k!='search_fraction'})
 
     def test_duel_validates_and_preserves_all_manual_parameters(self):
         side=self.ai_side(.5)
@@ -908,7 +909,7 @@ class ApiIntegrationTest(unittest.TestCase):
         self.assertEqual(summary['a_decisive_win_rate'],.5)
         self.assertEqual(summary['a_score_pair_bootstrap_95'],[])
         self.assertEqual(report['a']['parameters']['financing_mode'],2)
-        self.assertEqual(report['b']['parameters']['financing_mode'],0)
+        self.assertEqual(report['b']['parameters']['financing_mode'],2)
 
     def test_export_to_selected_path(self):
         target=pathlib.Path(self.tmp.name)/'chosen-name.json'
