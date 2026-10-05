@@ -66,6 +66,7 @@ var _body: RichTextLabel
 ## 已经记下的条数（含被上限挤掉的）。标题栏报的是这个数 ——
 ## 报「现在存着几条」的话上限一到数字就不动了，而玩家读它是当计数器读的
 var _total := 0
+var embedded := false
 
 func _init() -> void:
 	layer = 12
@@ -182,6 +183,8 @@ func _toggle_body() -> void:
 ## 框子贴右下角。宽高按内容算 —— 收起态只剩标题栏，
 ## 展开态是标题栏 + BODY_H。**每次重算，不缓存**：条数变长框子会变宽
 func _relayout() -> void:
+	if embedded:
+		return
 	if _frame == null:
 		return
 	var sz: Vector2 = _frame.get_combined_minimum_size()

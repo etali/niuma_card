@@ -5,19 +5,22 @@
 class_name UIConfig
 extends RefCounted
 
-## 展示配置统一入口：启动默认值、配色、资源名称与音效。
+## 展示配置统一入口：启动默认值、配色、素材呈现、资源名称与音效。
 ## 独立于 CardDB / Palette，避免加载环；玩家偏好仍由各自的设置模块覆盖。
 const PATH := "res://data/ui.json"
 const EXTERNAL_FILE := "ui.json"
+const USER_PATH := "user://ui_preferences.json"
 const FALLBACK := {
 	"window_fraction": 0.75,
 	"perspective_angle": 80.0,
 	"icon_scale": 0.75,
+	"table_zoom": 1.0,
 }
 const RANGES := {
 	"window_fraction": Vector2(0.5, 1.0),
 	"perspective_angle": Vector2(45.0, 80.0),
 	"icon_scale": Vector2(0.5, 3.0),
+	"table_zoom": Vector2(1.0, 2.5),
 }
 
 static var _cache: Dictionary = {}
@@ -97,7 +100,24 @@ static func reset_cache() -> void:
 	_source = ""
 
 static func read_defaults(path: String = "") -> Dictionary:
-	return validated_defaults(read_section("defaults", path))
+	var values := read_section("defaults", path)
+	if path.is_empty():
+		var user: Variant = read_json(USER_PATH).get("defaults", {})
+		if user is Dictionary:
+			values = _merge(values, user)
+	return validated_defaults(values)
+
+static func save_preferences(values: Dictionary) -> bool:
+	var file := FileAccess.open(USER_PATH, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_string(JSON.stringify({"defaults": validated_defaults(values)}, "  ", false))
+	return true
+
+static func restore_preferences() -> Dictionary:
+	if FileAccess.file_exists(USER_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(USER_PATH))
+	return validated_defaults(read_section("defaults"))
 
 static func validated_defaults(source: Variant) -> Dictionary:
 	var result := FALLBACK.duplicate()

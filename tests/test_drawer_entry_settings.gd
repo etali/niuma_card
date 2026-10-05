@@ -76,7 +76,8 @@ func _check_window_ratio_buttons(presentation: Node, drawer: Node) -> void:
 		if button.text.begins_with("工作区 "):
 			buttons.append(button)
 	check(buttons.size() == WINDOW_RATIOS.size(), "窗口提供四个工作区比例按钮")
-	check(body.find_child("ResetTableView", true, false) is Button, "UI 同时提供还原全桌按钮")
+	check(body.find_child("ResetTableView", true, false) == null, "UI移除独立还原全桌按钮")
+	check(presentation._ui_footer.find_child("ResetUISettings", true, false) is Button, "UI外层提供统一还原默认")
 	for i in mini(buttons.size(), WINDOW_RATIOS.size()):
 		var button: Button = buttons[i]
 		var expected := float(WINDOW_RATIOS[i])

@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See LICENSE in the project root.
 
-"""检查仓库素材是否覆盖当前卡表，并核对 manifest 中的文件引用。
+"""检查仓库素材是否覆盖当前卡表，并核对 data/ui.json 的 art 段中的文件引用。
 
 用法：python3 tools/check_art_assets.py
 
-必需素材缺失、损坏、尺寸不符，或 manifest 无法解析、必需引用悬空时返回非零。
+必需素材缺失、损坏、尺寸不符，或展示配置无法解析、必需引用悬空时返回非零。
 桌面和 Buff 光环允许程序化绘制，可选位图缺失只提示，不阻止构建。
 旧 plate_master.png 引用仅作 legacy 兼容，不再是卡牌运行依赖。
 桌宠源图可为非方形；正式导出图 assets/app_icon.png 必须是 1024×1024 RGBA。
@@ -28,6 +28,7 @@ except ImportError as exc:
 ROOT = Path(__file__).resolve().parent.parent
 ART = ROOT / "assets" / "art"
 CARDS_JSON = ROOT / "data" / "cards.json"
+UI_JSON = ROOT / "data" / "ui.json"
 
 # 固定整卡与覆盖素材的验收尺寸；卡牌图标由当前 cards.json 动态枚举。
 REQUIRED_RASTER = {
@@ -125,29 +126,41 @@ def check_icons(card_ids: list[str], errors: list[str], warnings: list[str]) -> 
     extras = sorted(actual_names - expected_names)
     if extras:
         warnings.append("素材目录存在未被 cards.json 引用的图标：" + ", ".join(extras))
+    # 新版情景图直接覆盖旧图标，保留生成图原生尺寸与比例；卡牌按纹理宽度缩放。
+    # 旧线稿仍采用原有 1024×1024 规范，透明度与实际路径由 ui.art 检查。
+    try:
+        illustrated = load_object(UI_JSON).get("art", {}).get("illustrations", {})
+    except (ValueError, OSError, AttributeError):
+        illustrated = {}
     for card_id in card_ids:
-        check_one(icon_dir / f"icon_{card_id}.png", (1024, 1024), errors,
+        check_one(icon_dir / f"icon_{card_id}.png", None if card_id in illustrated else (1024, 1024), errors,
                   label=f"卡牌图标 {card_id}")
 
 
 def check_manifest(errors: list[str], warnings: list[str]) -> None:
-    path = ART / "art_manifest.json"
+    path = UI_JSON
     try:
-        manifest = load_object(path)
+        manifest = load_object(path).get("art")
     except ValueError as exc:
         errors.append(str(exc))
         return
 
+    if not isinstance(manifest, dict):
+        errors.append("ui.art 必须是对象")
+        return
+
     count = 0
-    for section_name in ("icons", "misc"):
+    for section_name in ("icons", "misc", "illustrations"):
+        if section_name == "illustrations" and section_name not in manifest:
+            continue
         section = manifest.get(section_name)
         if not isinstance(section, dict):
-            errors.append(f"manifest.{section_name} 必须是对象")
+            errors.append(f"ui.art.{section_name} 必须是对象")
             continue
         for name, entry in section.items():
             if name.startswith("_"):
                 continue
-            label = f"manifest.{section_name}.{name}"
+            label = f"ui.art.{section_name}.{name}"
             filename = entry.get("file") if isinstance(entry, dict) else None
             if not isinstance(filename, str) or not filename.strip():
                 errors.append(f"{label}.file 必须是非空路径字符串")
@@ -166,12 +179,19 @@ def check_manifest(errors: list[str], warnings: list[str]) -> None:
                     "卡牌框架由 shaders/ 代码生成，不要求此位图且不修改源图）")
                 continue
             if not target.is_file():
-                message = f"manifest 引用缺失：{label}.file → {rel(target)}"
+                message = f"ui.art 引用缺失：{label}.file → {rel(target)}"
                 if filename in OPTIONAL_PATHS:
                     warnings.append(message + "（可选位图，可由程序绘制）")
                 else:
                     errors.append(message)
-    print(f"manifest：已核对 {count} 个文件引用")
+            elif section_name == "illustrations":
+                if name not in load_card_ids():
+                    errors.append(f"{label} 不是当前卡表中的卡牌")
+                if check_one(target, None, errors, label="情景插画"):
+                    with Image.open(target) as illustration:
+                        if illustration.mode != "RGBA" or illustration.getchannel("A").getextrema()[0] != 0:
+                            errors.append(f"{label} 必须为保留透明底的 RGBA 插画")
+    print(f"ui.art：已核对 {count} 个文件引用")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -212,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         for error in errors:
             print(f"  - {error}")
         return 1
-    print("\n必需素材与 manifest 引用检查通过；默认程序化桌面与光环无需补位图。")
+    print("\n必需素材与 ui.art 引用检查通过；默认程序化桌面与光环无需补位图。")
     return 0
 
 

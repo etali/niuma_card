@@ -32,7 +32,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "test_image", "底板", "底板母版.png")
 OUT_DIR = os.path.join(ROOT, "assets", "art", "plate")
 OUT = os.path.join(OUT_DIR, "plate_master.png")
-MANIFEST = os.path.join(ROOT, "assets", "art", "art_manifest.json")
+UI_JSON = os.path.join(ROOT, "data", "ui.json")
 
 # 成品尺寸，与 build_art.py 打的九张底板一致（1200×1600，3:4）
 DST_W, DST_H = 1200, 1600
@@ -169,19 +169,19 @@ def main():
     mask.save(OUT)
     print("→ %s (%dx%d)" % (os.path.relpath(OUT, ROOT), DST_W, DST_H))
 
-    # 把实测几何写进 manifest：九张牌共用母版后，标题带位置只有这一份
-    if os.path.exists(MANIFEST):
-        with open(MANIFEST, encoding="utf-8") as f:
+    # 把实测几何写进 ui.art：九张牌共用母版后，标题带位置只有这一份
+    if os.path.exists(UI_JSON):
+        with open(UI_JSON, encoding="utf-8") as f:
             man = json.load(f)
-        man.setdefault("misc", {})["plate_master"] = {
+        man.setdefault("art", {}).setdefault("misc", {})["plate_master"] = {
             "file": "plate/plate_master.png",
             "band_cy": round(band_cy, 6),
             "band_frac": round(band_frac, 6),
         }
-        with open(MANIFEST, "w", encoding="utf-8") as f:
-            json.dump(man, f, ensure_ascii=False, indent=2, sort_keys=True)
+        with open(UI_JSON, "w", encoding="utf-8") as f:
+            json.dump(man, f, ensure_ascii=False, indent=2, sort_keys=False)
             f.write("\n")
-        print("→ manifest.misc.plate_master 已更新")
+        print("→ ui.art.misc.plate_master 已更新")
 
 
 if __name__ == "__main__":

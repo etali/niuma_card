@@ -217,8 +217,11 @@ func _feedback_lifecycle() -> void:
 	root.add_child(stage)
 	var trace := Feedback.trace(stage, "test", Vector3.ZERO, Vector3(3,0.1,2), Color.RED)
 	var outline := Feedback.outline(stage, "test", Vector3.ZERO, Vector2(1.2,1.6), Color.BLUE)
+	var receipt := Feedback.receipt(stage, "production", Vector3.ZERO, "+12 资金", Palette.semantic("cash"))
+	check(receipt.get_child(0) is Label3D and receipt.get_child(0).text == "+12 资金", "结算回执保留实际资源与数量，不只显示成功")
+	check(receipt.find_children("*", "CollisionObject3D", true, false).is_empty(), "回执没有碰撞，不挡拖拽或改变规则")
 	check(trace.get_children().is_empty() and outline.get_children().is_empty(), "桌面笔触没有物理碰撞或可点击控件")
-	await create_timer(Motion.ACT + Motion.SETTLE + 0.1).timeout
+	await create_timer(Motion.ANTICIPATE + Motion.STAGGER + Motion.ACT + Motion.SETTLE + 0.1).timeout
 	check(stage.get_child_count() == 0, "动作结束全部特效自行清除，不在牌桌留垃圾")
 	var before := get_processed_tweens()
 	var early := Feedback.trace(stage, "test", Vector3.ZERO, Vector3.RIGHT, Color.RED)

@@ -54,6 +54,89 @@ func _run() -> void:
 	main.drawer_presentation._open_utility(3)
 	var slider: HSlider = main.drawer_presentation._utility_body.find_child("PerspectiveAngle", true, false)
 	check(slider != null and slider.value == defaults["perspective_angle"], "UI滑块与配置初始角度一致")
+	_check_pattern_controls(main)
+	_check_shared_ui_actions(main)
 	main.queue_free()
 	await process_frame
 	finish()
+
+func _check_pattern_controls(main: Node) -> void:
+	var page: Node = main.drawer_presentation._utility_body
+	var density: SpinBox = page.find_child("PatternDensity", true, false)
+	var spacing: SpinBox = page.find_child("PatternSpacing", true, false)
+	check(density != null and spacing != null, "UI页包含配色中的纹理密度和间隔参数")
+	var popup: PopupMenu = main.drawer_presentation._menu.get_popup()
+	var standalone := false
+	for index in popup.item_count:
+		standalone = standalone or popup.get_item_text(index) == "配色"
+	check(not standalone, "配色不再占用独立选项入口")
+	if density == null or spacing == null:
+		return
+	var surface: MeshInstance3D = main.find_child("PaperDesktop", true, false)
+	var material: ShaderMaterial = surface.material_override
+	density.value = 1.75
+	spacing.value = 0.35
+	check(is_equal_approx(float(material.get_shader_parameter("pattern_density")), 1.75), "调整密度即时更新桌面材质")
+	check(is_equal_approx(float(material.get_shader_parameter("pattern_spacing")), 0.35), "调整間隔即时更新桌面材质")
+	var panel: PalettePanel = main.drawer_presentation._palette
+	var ink := Color("#735A42")
+	for picker in panel._pickers:
+		if picker["section"] == "pattern" and picker["key"] == "ink":
+			picker["btn"].color_changed.emit(ink)
+	check((material.get_shader_parameter("doodle_ink") as Color).is_equal_approx(ink), "纹理色通过原配色取色器即时生效")
+	check(Palette.save(), "纹理参数与配色共用保存入口")
+	Palette._loaded = false
+	check(is_equal_approx(Palette.get_number("pattern", "density"), 1.75)
+		and is_equal_approx(Palette.get_number("pattern", "spacing"), 0.35)
+		and Palette.get_color("pattern", "ink").is_equal_approx(ink), "重新读取配色保留纹理数值和颜色")
+	Palette.set_number("pattern", "density", -1)
+	Palette.set_number("pattern", "spacing", 8)
+	check(Palette.get_number("pattern", "density") == 0.25 and Palette.get_number("pattern", "spacing") == 1.0, "越界纹理参数限制在可调范围")
+	panel._on_reset()
+	check(density.value == 1.0 and spacing.value == 0.0, "还原默认同步纹理控件")
+	check(float(material.get_shader_parameter("pattern_density")) == 1.0
+		and float(material.get_shader_parameter("pattern_spacing")) == 0.0, "还原默认同步桌面纹理")
+	main.drawer_presentation.close_panels()
+	main.drawer_presentation._open_utility(3)
+	check(main.drawer_presentation._utility_body.find_child("PatternDensity", true, false) != null, "反复开关UI后配色控件仍存在")
+
+func _check_shared_ui_actions(main: Node) -> void:
+	var page: Node = main.drawer_presentation
+	check(not page._palette._footer.visible and page._ui_footer.visible,
+		"保存和还原位于UI外层，不再位于配色内部")
+	check(page._utility_body.find_child("ResetTableView", true, false) == null,
+		"UI没有仅还原镜头的独立按钮")
+	page.set_perspective_angle(55)
+	page.set_table_zoom(1.5)
+	main.drawer_window.set_size_fraction(0.85)
+	main.drawer_window.set_icon_scale(1.25)
+	Palette.set_number("pattern", "density", 2.0)
+	Palette.set_color("pattern", "ink", Color("#78604B"))
+	page._ui_footer.get_node("SaveUISettings").pressed.emit()
+	var saved := Config.read_defaults()
+	check(saved["perspective_angle"] == 55.0 and saved["table_zoom"] == 1.5
+		and saved["window_fraction"] == 0.85 and saved["icon_scale"] == 1.25,
+		"统一保存覆盖透视、缩放、窗口比例及入口大小")
+	var next_window := Drawer.new()
+	var next_page := Presentation.new()
+	check(next_window.get_size_ratio() == 0.85 and next_window.get_icon_scale() == 1.25
+		and next_page.perspective_angle == 55.0 and next_page.camera_view.zoom == 1.5,
+		"重新创建窗口和显示层读取全部已保存UI偏好")
+	next_window.free()
+	next_page.free()
+	Palette._loaded = false
+	check(Palette.get_number("pattern", "density") == 2.0
+		and Palette.get_color("pattern", "ink").is_equal_approx(Color("#78604B")),
+		"统一保存同时持久化背景纹理与配色")
+	page._ui_footer.get_node("ResetUISettings").pressed.emit()
+	var defaults := Config.validated_defaults(Config.read_section("defaults"))
+	check(not FileAccess.file_exists(Config.USER_PATH) and not FileAccess.file_exists(Palette.USER_PATH),
+		"统一还原清除显示和配色的玩家覆盖")
+	check(page.perspective_angle == defaults["perspective_angle"]
+		and page.camera_view.zoom == defaults["table_zoom"]
+		and main.drawer_window.get_size_ratio() == defaults["window_fraction"]
+		and main.drawer_window.get_icon_scale() == defaults["icon_scale"],
+		"统一还原即时恢复所有显示参数")
+	check(Palette.get_number("pattern", "density") == 1.0
+		and page._utility_body.find_child("PatternDensity", true, false).value == 1.0,
+		"统一还原同时恢复纹理和配色控件")

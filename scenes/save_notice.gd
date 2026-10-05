@@ -35,6 +35,7 @@ var _title: Label
 var _path_edit: LineEdit
 var _hint: Label
 var _copy_btn: Button
+var _close_btn: Button
 
 func _init() -> void:
 	# 压在终局面板（layer 10）之上、联网面板（layer 20）之下：
@@ -89,9 +90,16 @@ func _ready() -> void:
 	vb.add_child(row)
 	_copy_btn = _button("复制路径", _on_copy)
 	row.add_child(_copy_btn)
-	row.add_child(_button("知道了", _on_close))
+	_close_btn = _button("知道了", _on_close)
+	row.add_child(_close_btn)
 
 	visible = false
+
+func set_embedded(on: bool) -> void:
+	_close_btn.visible = not on
+	_path_edit.custom_minimum_size.x = 0 if on else PANEL_W - 24.0
+	_hint.custom_minimum_size.x = 0 if on else PANEL_W - 24.0
+	get_node("Frame").custom_minimum_size.x = 0 if on else PANEL_W
 
 func _label(text: String, size: int, color: Color) -> Label:
 	var l := Label.new()

@@ -37,3 +37,5 @@ __pycache__/
 # Godot 资源扫描排除；保留 .gdignore，搜索结果本体仍是临时文件。
 /reports
 !/reports/.gdignore
+assets/art/icon/prompts.json
+assets/art/overlay/prompts.json

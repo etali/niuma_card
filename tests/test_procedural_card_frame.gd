@@ -99,14 +99,14 @@ func _check_shared_geometry(world: Node3D) -> void:
 	check(text_band > 0.0 and band_center - text_band * 0.5 >= top_border - 0.0001
 		and band_center + text_band * 0.5 < band_height,
 		"标题文字区域位于程序标题带内，不占用外框或分隔线")
-	var old_manifest: Dictionary = CardArt._manifest.duplicate(true)
+	var old_art: Dictionary = CardArt._art.duplicate(true)
 	var old_loaded: bool = CardArt._loaded
-	CardArt._manifest = { "misc": { "plate_master": { "band_cy": 0.95, "band_frac": 0.90 } } }
+	CardArt._art = { "misc": { "plate_master": { "band_cy": 0.95, "band_frac": 0.90 } } }
 	CardArt._loaded = true
 	check(is_equal_approx(CardArt.band_cy(card.def_id), band_center)
 		and is_equal_approx(CardArt.band_frac(card.def_id), text_band),
 		"旧manifest母版测量值不再改变标题位置")
-	CardArt._manifest = old_manifest
+	CardArt._art = old_art
 	CardArt._loaded = old_loaded
 	card.set_face_down(true)
 	var back := _material(card)

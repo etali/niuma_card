@@ -58,6 +58,16 @@ func _run() -> void:
 		members.append(_card(world, board, 88100 + i))
 	var group: Dictionary = board.make_group(members)
 	board.groups.append(group)
+	for compact in [false, true]:
+		group["compact"] = compact
+		var hovered: CardEntity = members[0]
+		board._set_hover_card(hovered)
+		hovered._drag_visual_tween.pause()
+		hovered._drag_visual_tween.custom_step(0.2)
+		check(hovered._visual.position.is_equal_approx(Vector3.ZERO) and hovered._visual_hovered,
+			"%s多张牌悬停保留高亮状态但不上浮" % ("收拢" if compact else "摊开"))
+		board._set_hover_card(null)
+	group["compact"] = false
 	board._layout_group(group, Vector3(90.0, 0.05, 90.0))
 	await create_timer(0.3).timeout
 	check(_inside(members, board.player_bounds), "16 张长牌列重排后全部卡面在玩家区内")
@@ -108,6 +118,28 @@ func _run() -> void:
 	board._layout_group(group, Vector3(80.0, 0.05, 80.0))
 	await create_timer(0.3).timeout
 	check(_inside(members, board.player_bounds), "100 张收拢摞卡面仍在玩家区域内")
+	# 对手摞不进 groups，悬停策略仍读取真实的外部牌清单。
+	var external_a := _card(world, board, 88901)
+	var external_b := _card(world, board, 88902)
+	board.show_side_badges("hover_test", [external_a, external_b], Vector3.ZERO)
+	board._set_hover_card(external_a)
+	external_a._drag_visual_tween.pause()
+	external_a._drag_visual_tween.custom_step(0.2)
+	check(external_a._visual.position.is_equal_approx(Vector3.ZERO), "对手组合/资源摞中的单张牌也不上浮")
+	board._set_hover_card(null)
+	# 同一张牌在悬停期间被加入多牌组，也必须取消原来的抬升。
+	var single := _card(world, board, 88903)
+	board._set_hover_card(single)
+	single._drag_visual_tween.pause()
+	single._drag_visual_tween.custom_step(0.2)
+	check(single._visual.position.y > 0.0, "独立单牌仍保留悬停反馈")
+	var joined: Dictionary = board.make_group([single, external_b])
+	board.groups.append(joined)
+	board._set_hover_card(single)
+	single._drag_visual_tween.pause()
+	single._drag_visual_tween.custom_step(0.2)
+	check(single._visual.position.is_equal_approx(Vector3.ZERO), "悬停目标未改变但成组后立即取消抬升")
+	board._set_hover_card(null)
 	var highest := 0.0
 	for member in members:
 		highest = maxf(highest, member.global_position.y)

@@ -67,6 +67,11 @@ func _check_layout(drawer: bool) -> void:
 		"%s：半成品中996也同步更新产出倍数" % context)
 	# 改为摊开同一摞，再补足配方。普通牌桌的另一条摆放路径也必须写数字。
 	main.on_foe_piles({"piles": [{"uids": [63, 43, 44, 45, 64], "compact": false}]})
+	main.board._set_hover_card(core)
+	core._drag_visual_tween.pause()
+	core._drag_visual_tween.custom_step(0.2)
+	check(core._visual.position.is_equal_approx(Vector3.ZERO), "%s：真实对手摊开组合悬停不抬起单张卡" % context)
+	main.board._set_hover_card(null)
 	check(core.recipe_progress_text() == "3/%d" % need,
 		"%s：对手摊开完整组合仍显示3/N" % context)
 	_check_completed(core, true, context + "：补足配方")

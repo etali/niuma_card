@@ -28,9 +28,9 @@ class ArtAssetsTest(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.art = self.root / "assets" / "art"
         self.cards_path = self.root / "data" / "cards.json"
-        self.manifest_path = self.art / "art_manifest.json"
+        self.manifest_path = self.root / "data" / "ui.json"
         for key, value in (("ROOT", self.root), ("ART", self.art),
-                           ("CARDS_JSON", self.cards_path)):
+                           ("CARDS_JSON", self.cards_path), ("UI_JSON", self.manifest_path)):
             replacement = patch.object(checker, key, value)
             replacement.start()
             self.addCleanup(replacement.stop)
@@ -53,9 +53,10 @@ class ArtAssetsTest(unittest.TestCase):
         with Image.new("RGBA", (1024, 1024), (100, 80, 60, 255)) as image:
             image.save(self.export_icon)
 
-    @staticmethod
-    def write_json(path, data):
+    def write_json(self, path, data):
         path.parent.mkdir(parents=True, exist_ok=True)
+        if path == self.manifest_path:
+            data = {"defaults": {"icon_scale": 0.75}, "art": data}
         path.write_text(json.dumps(data), encoding="utf-8")
 
     def write_image(self, name, size):
@@ -105,13 +106,14 @@ class ArtAssetsTest(unittest.TestCase):
         cases = [
             ("{", "无法读取 JSON"),
             ("[]", "顶层必须是对象"),
-            (json.dumps({"icons": [], "misc": {}}), "manifest.icons 必须是对象"),
-            (json.dumps({"icons": {}, "misc": {"bad": {"file": ""}}}),
+            (json.dumps({"art": []}), "ui.art 必须是对象"),
+            (json.dumps({"art": {"icons": [], "misc": {}}}), "ui.art.icons 必须是对象"),
+            (json.dumps({"art": {"icons": {}, "misc": {"bad": {"file": ""}}}}),
              "必须是非空路径字符串"),
-            (json.dumps({"icons": {}, "misc": {"bad": {"file": "../outside.png"}}}),
+            (json.dumps({"art": {"icons": {}, "misc": {"bad": {"file": "../outside.png"}}}}),
              "必须是 assets/art 内的相对路径"),
-            (json.dumps({"icons": {}, "misc": {"bad": {"file": "table/missing.png"}}}),
-             "manifest 引用缺失"),
+            (json.dumps({"art": {"icons": {}, "misc": {"bad": {"file": "table/missing.png"}}}}),
+             "ui.art 引用缺失"),
         ]
         for content, message in cases:
             with self.subTest(message=message):
@@ -125,7 +127,7 @@ class ArtAssetsTest(unittest.TestCase):
         self.write_json(self.manifest_path, self.manifest)
         status, output = self.run_check()
         self.assertEqual(status, 0, output)
-        self.assertIn("manifest 引用缺失", output)
+        self.assertIn("ui.art 引用缺失", output)
         self.assertIn("可由程序绘制", output)
 
     def test_card_frame_does_not_require_a_master_texture(self):
@@ -167,6 +169,26 @@ class ArtAssetsTest(unittest.TestCase):
                 status, output = self.run_check()
                 self.assertEqual(status, 1, output)
                 self.assertIn("无法读取" if damaged else "尺寸不符", output)
+
+    def test_asset_builder_preserves_other_ui_settings(self):
+        spec = importlib.util.spec_from_file_location("build_art", SCRIPT.with_name("build_art.py"))
+        builder = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(builder)
+        original = {"defaults": {"table_zoom": 1.7}, "palette": {"ink": "#123456"},
+                    "sfx": {"custom": True}, "art": self.manifest}
+        self.manifest_path.write_text(json.dumps(original), encoding="utf-8")
+        source = self.root / "source"
+        source.mkdir()
+        with patch.object(builder, "ROOT", str(self.root)), \
+             patch.object(builder, "SRC", str(source)), \
+             patch.object(builder, "OUT", str(self.art)), \
+             patch.object(builder, "MISC_MAP", {}), \
+             patch.object(builder, "build_app_icon", return_value=True), \
+             patch.object(builder, "load_name_to_id", return_value={}), \
+             patch("sys.argv", ["build_art.py"]), contextlib.redirect_stdout(io.StringIO()):
+            builder.main()
+        self.assertEqual(json.loads(self.manifest_path.read_text()), original)
+        self.assertFalse((self.art / "art_manifest.json").exists())
 
     def test_unreadable_or_empty_card_config_fails(self):
         for data in ({}, {"cash": "invalid"}):

@@ -117,7 +117,7 @@ func _check_geometry(arena: Node) -> void:
 	check(arena.get_node("MarketFacility").position == Regions.facility_position(count, true), "典当设施位置完全对齐正式牌桌")
 	check(arena.get_node("MarketFacility/PawnshopFacilityCard").material_override.shader == load(CardEntity.PLATE_SHADER), "典当设施复用正式卡面材质")
 	for i in count:
-		check(arena.market_price_labels[i].text == "¥%d" % int(CardDB.get_def(arena.market_cards[i].def_id)["price"]), "价签只读当前卡牌价格")
+		check(arena.market_price_labels[i].text == str(int(CardDB.get_def(arena.market_cards[i].def_id)["price"])), "价签只读当前卡牌价格")
 
 func _check_demo_catalog() -> void:
 	check(not DemoData.examples("purchase").is_empty(), "规则书有购买章节和示例")

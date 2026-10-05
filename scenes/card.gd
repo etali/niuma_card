@@ -96,7 +96,8 @@ var def_id := ""
 var uid := -1
 var dragging := false
 var highlighted := false
-var draggable := true    # BOT 的牌不可拖
+var draggable := true    # AI 的牌不可拖
+var hover_stack_member := false
 var is_market := false   # 公共区的牌：拖拽用于购买，不参与堆叠
 
 var label: Label3D
@@ -116,14 +117,15 @@ var _back_mat: ShaderMaterial = null
 var _face_down := false
 var _shield_on := false               # 盾牌自身的开关（与翻面独立，见 set_face_down）
 var _void_on := false                 # 作废盖章自身的开关
+var _void_tint_override: Variant = null
 var _glow: Sprite3D = null            # Buff 生效光环
 var _glow_on := false
 static var _buff_glow_fallback: Texture2D = null
-var _recipe_label: Label3D = null     # D 位配方进度数字（无配方的卡为 null）
+var _recipe_label: Label3D = null     # 配方位配方进度数字（无配方的卡为 null）
 var _recipe_blob: Sprite3D = null
 var _recipe_blob_scale := Vector3.ONE
-## C 位效果徽标（产出 +N / 攻击 −N）。组里带翻倍 Buff 时要改写这个数，
-## 所以和 D 位一样留引用 + 记基准值。没有效果格的卡（单位/Buff/传说）全为 null
+## 效果位效果徽标（产出 +N / 攻击 −N）。组里带翻倍 Buff 时要改写这个数，
+## 所以和 配方位一样留引用 + 记基准值。没有效果格的卡（单位/Buff/传说）全为 null
 var _effect_label: Label3D = null
 var _effect_blob: Sprite3D = null
 var _effect_blob_scale := Vector3.ONE
@@ -139,17 +141,22 @@ var _badge_icons: Array[Sprite3D] = []
 ## 卡名 + 墨团内的文字，配色变更时一起刷墨色
 var _badge_labels: Array[Label3D] = []
 var _recipe_need := 0
+var _recipe_have := 0
+var _recipe_done := false
+var _illustrated := false
+var _art_tween: Tween
 ## 交互动效只移动卡面容器。刚体/碰撞保留原比例，且不读取补间中途的 scale 作基线。
 var _visual: Node3D = null
 var _drag_visual_tween: Tween = null
 var _visual_dragging := false
 var _visual_hovered := false
+var _hover_lift_allowed := true
 var _visual_retired := false
 var _feedback_tween: Tween
 var _handling_tween: Tween
 var feedback_event := ""
 const FeedbackMotion = preload("res://scenes/ui_motion.gd")
-const HOVER_LIFT := 0.015
+const HOVER_LIFT := 0.06
 const DRAG_LIFT := 0.07
 
 func _add_visual(node: Node3D) -> void:
@@ -201,17 +208,25 @@ func setup(p_uid: int, p_def_id: String) -> void:
 	_plate.rotation_degrees = Vector3(-90, 0, 0)
 	_add_visual(_plate)
 
-	# 中央图标使用纯白线稿精灵，modulate 取配置的图标色，未配置时跟随卡面墨色。
-	var icon_tex := CardArt.icon_texture(def_id)
+	# 中央插画保留原色；未登记插画时回退到随配色着色的功能图标。
+	var icon_tex := CardArt.illustration_texture(def_id)
+	_illustrated = icon_tex != null
+	if icon_tex == null:
+		icon_tex = CardArt.icon_texture(def_id)
+	_illustrated = _illustrated or CardArt.icon_preserves_color(icon_tex)
 	if icon_tex:
 		_icon = Sprite3D.new()
 		_icon.texture = icon_tex
 		# 精灵主体外接框已归一化顶满画布，故 pixel_size 直接按图标框宽换算
-		_icon.pixel_size = CARD_SIZE.x * CardArt.ICON_FRAC / float(icon_tex.get_width())
+		var icon_width := 0.86 if _illustrated else CardArt.ICON_FRAC
+		if def_id == CardDB.RES_CASH:
+			icon_width *= 0.90
+		_icon.pixel_size = CARD_SIZE.x * icon_width / float(icon_tex.get_width())
 		# 图标前景色：配置留空则跟随底板墨色（改造前的行为），填了就全卡统一
-		_icon.modulate = Palette.icon_color(_ink)
+		_icon.modulate = Color.WHITE if _illustrated else Palette.icon_color(_ink)
 		_icon.rotation_degrees = Vector3(-90, 0, 0)
-		_icon.position = Vector3(0, Y_ICON, _frac_to_z(CardArt.ICON_CY))
+		var icon_cy := CardArt.UNIT_ICON_CY if def.get("kind") == CardDB.KIND_UNIT else CardArt.ICON_CY
+		_icon.position = Vector3(0, Y_ICON, _frac_to_z(icon_cy))
 		_icon.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		# 不能用 ALPHA_CUT_DISCARD：图标在屏上只有约 60px，1024px 线稿降采样 17 倍后
 		# 边缘是软 alpha，二值化会把粉笔线切成一串点。用 alpha 混合保住线条连续
@@ -237,10 +252,12 @@ func setup(p_uid: int, p_def_id: String) -> void:
 	_add_visual(label)
 	_face_elems.append(label)
 
-	# 底部左墨团（C 位）：效果 = 资源图标 + ±数量
+	# 底部右墨团：效果 = 资源图标 + ±数量
 	_add_effect_badge(def, true)
-	# 底部右墨团（D 位）：配方进度，未成组时 0/N；无配方的卡不画
+	# 底部左墨团：配方进度，未成组时 0/N；无配方的卡不画
 	_add_recipe_badge(def, true)
+	if has_recipe_badge():
+		_add_face_note("→", CardArt.BLOB_CY, 105)
 
 	var shape := CollisionShape3D.new()
 	var box_shape := BoxShape3D.new()
@@ -252,6 +269,21 @@ func setup(p_uid: int, p_def_id: String) -> void:
 ## 卡面纵向比例（0=上边缘 1=下边缘）→ 卡牌本地 z 坐标
 func _frac_to_z(frac: float) -> float:
 	return -CARD_SIZE.z / 2.0 + frac * CARD_SIZE.z
+
+func _add_face_note(text: String, cy: float, size_px: int, cx := 0.5) -> Label3D:
+	var note := Label3D.new()
+	note.text = text
+	note.font = Fonts.zh_bold()
+	note.font_size = _raster()
+	note.pixel_size = _text_scale(size_px)
+	note.outline_size = 0
+	note.modulate = _ink
+	note.rotation_degrees = Vector3(-90, 0, 0)
+	note.position = Vector3((cx - 0.5) * CARD_SIZE.x, Y_TEXT, _frac_to_z(cy))
+	_add_visual(note)
+	_face_elems.append(note)
+	_badge_labels.append(note)
+	return note
 
 ## 墨团旁资源图标的宽度，占卡宽。定位表给的 112px（UNIT_ICON_FRAC 0.0933）是按
 ## 1200px 画布定的，可本作一张卡上屏只有约 113px 宽，112px 折算到屏上仅 10px——
@@ -297,12 +329,12 @@ func _add_blob_badge(cx: float, text: String, textured: bool,
 		_add_visual(blob)
 		_face_elems.append(blob)
 
-	# 资源图标：和数字连读成「[用户] 4/7」。着成墨色而不是白色——它在墨团外的卡面上
+	# 资源图标：和数字连读成「[用户] 4/7」，保留与资源牌主图相同的手绘色。
 	if res_icon and textured and icon_cx >= 0.0:
 		var ic := Sprite3D.new()
 		ic.texture = res_icon
 		ic.pixel_size = CARD_SIZE.x * RES_ICON_FRAC / float(res_icon.get_width())
-		ic.modulate = Palette.icon_color(_ink)
+		ic.modulate = CardArt.icon_tint(res_icon, _ink)
 		ic.rotation_degrees = Vector3(-90, 0, 0)
 		ic.position = Vector3((icon_cx - 0.5) * CARD_SIZE.x, Y_ICON, z)
 		ic.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
@@ -343,7 +375,7 @@ func _add_blob_badge(cx: float, text: String, textured: bool,
 	_badge_labels.append(badge)
 	return { "blob": blob, "label": badge }
 
-## 效果徽标（C 位）：资源图标 + 「+N」产出 /「−N」攻击。
+## 效果徽标（效果位）：资源图标 + 「+N」产出 /「−N」攻击。
 ## 不写「产7」「攻3」这类中文——图标表示资源种类、正负号表示产出还是攻击，
 ## 换语言时卡面不用改。用 U+2212 减号而不是 ASCII 连字符，宽度与 + 对齐
 func _add_effect_badge(def: Dictionary, textured: bool) -> void:
@@ -362,7 +394,7 @@ func _add_effect_badge(def: Dictionary, textured: bool) -> void:
 			mark = "−"
 			_effect_kind = "attack"
 	if n <= 0 or res == "":
-		# 没有资源增减的卡（Buff / 传说 / 单位）退回卡种符号，别让 C 位空着——
+		# 没有资源增减的卡（Buff / 传说 / 单位）退回卡种符号，别让 效果位空着——
 		# 桌面上认卡靠的就是这一格
 		_effect_kind = ""
 		_add_kind_badge(def, textured)
@@ -370,8 +402,8 @@ func _add_effect_badge(def: Dictionary, textured: bool) -> void:
 	_effect_base_n = n
 	_effect_mark = mark
 	var tex := CardArt.res_icon_texture(res)
-	var made := _add_blob_badge(CardArt.BLOB_L_CX if textured else 0.5,
-		mark + str(n), textured, tex, _res_icon_cx(CardArt.BLOB_L_CX))
+	var made := _add_blob_badge(CardArt.BLOB_R_CX if textured else 0.5,
+		mark + str(n), textured, tex, _res_icon_cx(CardArt.BLOB_R_CX))
 	_effect_blob = made["blob"]
 	_effect_label = made["label"]
 	if _effect_label:
@@ -379,11 +411,11 @@ func _add_effect_badge(def: Dictionary, textured: bool) -> void:
 	if _effect_blob:
 		_effect_blob_scale = _effect_blob.scale
 
-## 这张卡有没有 C 位效果格（产出/攻击卡才有）
+## 这张卡有没有效果徽标（产出/攻击卡才有）
 func has_effect_badge() -> bool:
 	return _effect_label != null and is_instance_valid(_effect_label)
 
-## C 位当前显示的效果文本（无效果格返回 ""）；给测试和调试读
+## 效果位当前显示的效果文本（无效果格返回 ""）；给测试和调试读
 func effect_text() -> String:
 	return _effect_label.text if has_effect_badge() else ""
 
@@ -391,7 +423,7 @@ func effect_text() -> String:
 func effect_mult() -> int:
 	return _effect_mult
 
-## 刷新 C 位效果值：组里带了翻倍 Buff 就把卡面的数一起翻。
+## 刷新 效果位效果值：组里带了翻倍 Buff 就把卡面的数一起翻。
 ## 由 Board 在成组/拆组后调用，倍数取自 ComboRules.effect_multipliers ——
 ## 卡面和结算读同一条规则，不各自数一遍（不然会「卡面 ×2、结算发一份」）。
 ##
@@ -412,13 +444,13 @@ func set_effect_mult(mult: int) -> void:
 	_effect_label.pixel_size = _effect_label_px
 	if _effect_blob:
 		_fit_label_in_disc(_effect_label, CARD_SIZE.x * CardArt.BLOB_FRAC)
-	# 翻倍生效：墨团换强调色并略微放大，和 D 位凑满同一套语汇
+	# 翻倍生效：墨团换强调色并略微放大，和 配方位凑满同一套语汇
 	# （桌上「这一格不是原值」只靠这一点区分）
 	if _effect_blob and is_instance_valid(_effect_blob):
 		_effect_blob.modulate = CardArt.accent_color(def_id) if m > 1 else Color.WHITE
 		_effect_blob.scale = _effect_blob_scale * (BADGE_DONE_SCALE if m > 1 else 1.0)
 
-## Buff / 传说卡的 C 位：这两类没有固定的资源增减，用符号 + 资源图标表示，
+## Buff / 传说卡的 效果位：这两类没有固定的资源增减，用符号 + 资源图标表示，
 ## 不写「Buff」「传说」（同样为了多语言化）。
 ## 五种 buff_type 必须各自可辨——先前一律画「×2」，等于把「保护现金」和
 ## 「用户翻倍」画成同一张卡。约定沿用效果格：+ 是给自己加，− 是往对手身上减，
@@ -433,7 +465,7 @@ func _add_kind_badge(def: Dictionary, textured: bool) -> void:
 					# 「✓/N」而不是「满[用户]」：这一格的语法是「记号 + 资源图标」＝
 					# 对那种资源做了什么（+ 给自己加、− 往对手减、◇ 保护）。裂变不动资源，
 					# 它免掉的是配方的**计数**，配了 [用户] 图标就成了「用户满了」——
-					# 指错了对象。斜杠呼应 D 位墨团的 have/need（那里就是配方进度的写法），
+					# 指错了对象。斜杠呼应 配方位墨团的 have/need（那里就是配方进度的写法），
 					# ✓ 说这一项已满足、N 说与配方量无关。故意不配资源图标
 					mark = "✓/N"
 				"output_x2":
@@ -458,7 +490,7 @@ func _add_kind_badge(def: Dictionary, textured: bool) -> void:
 	var tex := CardArt.res_icon_texture(res) if res != "" else null
 	_add_blob_badge(cx, mark, textured, tex, _res_icon_cx(cx))
 
-## 右下角配方进度徽标：资源图标 + 「have/need」。
+## 左下角配方进度徽标：资源图标 + 「have/need」。
 ## 未成组时显示 0/N；无配方的卡（单位 / Buff / 传说）不画这一格
 func _add_recipe_badge(def: Dictionary, textured: bool) -> void:
 	_recipe_need = int(def.get("recipe_n", 0))
@@ -466,31 +498,45 @@ func _add_recipe_badge(def: Dictionary, textured: bool) -> void:
 	if _recipe_need <= 0 or res == "":
 		return
 	var tex := CardArt.res_icon_texture(res)
-	var made := _add_blob_badge(CardArt.BLOB_R_CX if textured else 0.5,
-		"0/%d" % _recipe_need, textured, tex, _res_icon_cx(CardArt.BLOB_R_CX))
+	var made := _add_blob_badge(CardArt.BLOB_L_CX if textured else 0.5,
+		"0/%d" % _recipe_need, textured, tex, _res_icon_cx(CardArt.BLOB_L_CX))
 	_recipe_blob = made["blob"]
 	_recipe_label = made["label"]
 	if _recipe_blob:
 		_recipe_blob_scale = _recipe_blob.scale
 
-## 这张卡有没有 D 位配方进度格（单位 / Buff / 传说没有）
+## 这张卡有没有配方进度格（单位 / Buff / 传说没有）
 func has_recipe_badge() -> bool:
 	return _recipe_label != null and is_instance_valid(_recipe_label)
 
-## D 位当前显示的进度文本（无配方格返回 ""）；给测试和调试读
+## 配方位当前显示的进度文本（无配方格返回 ""）；给测试和调试读
 func recipe_progress_text() -> String:
 	return _recipe_label.text if has_recipe_badge() else ""
 
-## 刷新 D 位配方进度。由 Board 在成组/拆组后调用，
+## 刷新配方进度。由 Board 在成组/拆组后调用，
 ## 与组上方的进度条读同一个 _group_progress，保证两处数字一致
 func set_recipe_progress(have: int, done: bool) -> void:
 	if _recipe_label == null or not is_instance_valid(_recipe_label):
 		return
+	_recipe_have = have
+	_recipe_done = done
 	_recipe_label.text = "%d/%d" % [have, _recipe_need]
 	if _recipe_blob and is_instance_valid(_recipe_blob):
 		# 凑满：墨团换强调色并略微放大
 		_recipe_blob.modulate = CardArt.accent_color(def_id) if done else Color.WHITE
 		_recipe_blob.scale = _recipe_blob_scale * (BADGE_DONE_SCALE if done else 1.0)
+
+## 状态从 Board 的真实组合评估传入；不根据卡面数字另算一遍规则。
+func recipe_status_text() -> String:
+	if not has_recipe_badge():
+		return ""
+	if not _recipe_done:
+		var resource := CardDB.card_label(str(CardDB.get_def(def_id).get("recipe_res", "")))
+		return "还缺%d张%s" % [maxi(0, _recipe_need - _recipe_have), resource] if _recipe_have < _recipe_need else "组合无效，请检查材料"
+	var def := CardDB.get_def(def_id)
+	var n := _effect_base_n * _effect_mult
+	return "可%s：%s%d%s" % ["攻击" if def.get("kind") == CardDB.KIND_ATTACK else "生产", _effect_mark, n,
+		CardDB.res_label(str(def.get("attack_res" if def.get("kind") == CardDB.KIND_ATTACK else "output_res", "")))]
 
 ## 卡面材质不使用 mask/PNG；所有卡都走相同的圆角与标题分隔线。
 func _make_plate_material() -> ShaderMaterial:
@@ -515,9 +561,9 @@ func _make_back_material() -> ShaderMaterial:
 	return material
 
 func _push_back_colors(material: ShaderMaterial) -> void:
-	material.set_shader_parameter("face_color", CardArt.misc_color("card_back", "face", Palette.get_color("world", "background")))
+	material.set_shader_parameter("face_color", Palette.get_color("card", "back_face"))
 	material.set_shader_parameter("ink_color", CardArt.frame_color())
-	material.set_shader_parameter("artwork_ink", CardArt.misc_ink_color("card_back", Palette.get_color("world", "table_frame")))
+	material.set_shader_parameter("artwork_ink", Palette.get_color("card", "back_ink"))
 
 ## 把当前配色写进底板材质。选色面板改一下颜色，桌上每张卡都会重走这里
 func _push_plate_colors(pmat: ShaderMaterial) -> void:
@@ -528,9 +574,12 @@ func _push_plate_colors(pmat: ShaderMaterial) -> void:
 ## 墨团旁资源图标 + 墨团内文字的墨色刷新。
 ## 墨团内的字是白的（深色圆盘上），不跟墨色走；只有配方凑满的强调色要重取
 func _refresh_badge_ink() -> void:
+	for note in _badge_labels:
+		if is_instance_valid(note) and note.text == "→":
+			note.modulate = _ink
 	for ic in _badge_icons:
 		if is_instance_valid(ic):
-			ic.modulate = Palette.icon_color(_ink)
+			ic.modulate = CardArt.icon_tint(ic.texture, _ink)
 	if _recipe_blob and is_instance_valid(_recipe_blob) \
 		and _recipe_blob.modulate != Color.WHITE:
 		_recipe_blob.modulate = CardArt.accent_color(def_id)
@@ -546,11 +595,20 @@ func refresh_palette() -> void:
 	if card_mesh and card_mesh.material_override:
 		(card_mesh.material_override as StandardMaterial3D).albedo_color = Palette.get_color("card", "body")
 	if _icon:
-		_icon.modulate = Palette.icon_color(_ink)
+		_icon.modulate = Color.WHITE if _illustrated else Palette.icon_color(_ink)
 	if label:
 		label.modulate = _ink
 	_refresh_badge_ink()
+	_refresh_overlay_colors()
 	_apply_color()
+
+func _refresh_overlay_colors() -> void:
+	if is_instance_valid(_shield):
+		_shield.modulate = Color.WHITE if _shield is Sprite3D else Palette.semantic("info")
+	var tint: Color = _void_tint_override if _void_tint_override is Color else Color(Palette.semantic("danger"), 0.92)
+	for overlay in [_void_stamp, _void_label]:
+		if is_instance_valid(overlay):
+			overlay.modulate = tint
 
 ## 高亮与调暗保存在正面材质上；翻到背面改状态后，再翻回也不会丢色。
 func _apply_color() -> void:
@@ -592,16 +650,18 @@ func update_drag_motion(velocity: Vector3, delta: float) -> void:
 		clampf(-velocity.x * 0.004, -0.045, 0.045))
 	_visual.rotation = _visual.rotation.lerp(target, 1.0 - exp(-14.0 * delta))
 
-func set_hover_visual(on: bool) -> void:
-	if _visual == null or _visual_retired or _visual_dragging or _visual_hovered == on:
+func set_hover_visual(on: bool, lift_allowed := true) -> void:
+	if _visual == null or _visual_retired or _visual_dragging 			or (_visual_hovered == on and _hover_lift_allowed == lift_allowed):
 		return
 	_visual_hovered = on
+	_hover_lift_allowed = lift_allowed
+	_set_market_price_hover(on)
 	_set_handling_light(0.35 if on else 0.0)
 	_stop_visual_tween()
 	_drag_visual_tween = create_tween().set_parallel(true) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	_drag_visual_tween.tween_property(_visual, "position", \
-		Vector3(0, HOVER_LIFT if on else 0.0, 0), 0.12)
+		Vector3(0, HOVER_LIFT if on and lift_allowed else 0.0, 0), 0.12)
 	_drag_visual_tween.tween_property(_visual, "rotation", Vector3.ZERO, 0.12)
 
 func pulse_landed() -> void:
@@ -620,6 +680,8 @@ func pulse_landed() -> void:
 
 ## 飞走/撕开前清空交互通道。子元素位置始终是卡面局部坐标，撕片分配接口不变。
 func reset_interaction_visual() -> void:
+	_set_market_price_hover(false)
+	_reset_art_motion()
 	_stop_visual_tween()
 	if _feedback_tween and _feedback_tween.is_valid():
 		_feedback_tween.kill()
@@ -643,13 +705,13 @@ func set_highlight(on: bool, color := Color(1.2, 1.2, 0.6)) -> void:
 func set_shield(on: bool) -> void:
 	var newly_protected := on and not _shield_on
 	if on and _shield == null:
-		var pos := Vector3(CARD_SIZE.x / 2 - 0.22, Y_OVERLAY, -CARD_SIZE.z / 2 + 0.22)
+		var pos := Vector3(CARD_SIZE.x / 2 - 0.22, Y_OVERLAY, -CARD_SIZE.z / 2 + 0.44)
 		var tex := CardArt.overlay_texture("overlay_shield")
 		if tex:
 			var sp := Sprite3D.new()
 			sp.texture = tex
 			sp.pixel_size = CARD_SIZE.x * 0.24 / float(tex.get_width())
-			sp.modulate = Color(0.42, 0.66, 0.95)   # 护盾蓝（素材是白盾，引擎着色）
+			sp.modulate = Color.WHITE   # 简笔护盾保留自己的纸色、蓝色与墨线
 			sp.rotation_degrees = Vector3(-90, 0, 0)
 			sp.position = pos
 			sp.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
@@ -662,7 +724,7 @@ func set_shield(on: bool) -> void:
 			lb.font_size = 30
 			lb.outline_size = 8
 			lb.outline_modulate = Color(1, 0.98, 0.92, 0.9)
-			lb.modulate = Color(0.2, 0.35, 0.75)
+			lb.modulate = Palette.semantic("info")
 			lb.rotation_degrees = Vector3(-90, 0, 0)
 			lb.position = pos
 			lb.text = "盾"
@@ -728,9 +790,10 @@ static func _make_buff_glow_fallback() -> Texture2D:
 
 
 ## 组合失效时在核心盖章。素材只含空框，“作废”保留为独立文字层。
-func set_void_stamp(on: bool, tint := Color(0.9, 0.25, 0.25, 0.92)) -> void:
+func set_void_stamp(on: bool, tint: Variant = null) -> void:
 	var newly_broken := on and not _void_on
 	_void_on = on
+	_void_tint_override = tint
 	if newly_broken:
 		pulse_feedback("broken")
 	if on and _void_stamp == null:
@@ -740,7 +803,7 @@ func set_void_stamp(on: bool, tint := Color(0.9, 0.25, 0.25, 0.92)) -> void:
 			var sp := Sprite3D.new()
 			sp.texture = tex
 			sp.pixel_size = CARD_SIZE.x * 0.62 / float(tex.get_width())
-			sp.rotation_degrees = Vector3(-90, 0, 0)
+			sp.rotation_degrees = Vector3(-90, -10, 0)
 			sp.position = pos
 			sp.render_priority = 3
 			sp.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
@@ -753,7 +816,7 @@ func set_void_stamp(on: bool, tint := Color(0.9, 0.25, 0.25, 0.92)) -> void:
 		lb.font_size = _raster()
 		lb.pixel_size = _text_scale(170)
 		lb.outline_size = 0
-		lb.rotation_degrees = Vector3(-90, 0, 0)
+		lb.rotation_degrees = Vector3(-90, -10, 0)
 		lb.position = pos
 		lb.render_priority = 4
 		_add_visual(lb)
@@ -761,9 +824,9 @@ func set_void_stamp(on: bool, tint := Color(0.9, 0.25, 0.25, 0.92)) -> void:
 			_void_label = lb
 		else:
 			_void_stamp = lb
+	_refresh_overlay_colors()
 	for overlay in [_void_stamp, _void_label]:
 		if is_instance_valid(overlay):
-			overlay.modulate = tint
 			overlay.visible = on and not _face_down
 
 ## 横向撕成上下两片。外框/标题带使用共享程序轮廓，只有撕口保留锯齿纹理。
@@ -813,7 +876,7 @@ func tear_apart() -> Array:
 	return halves
 
 ## 把卡面图标喂给撕开着色器：贴图 + 它在卡面 UV 里占的矩形 + 颜色。
-## 矩形按 CardArt 的定位比例算（ICON_CX/CY 是中心，ICON_FRAC 是宽占卡宽），
+## 矩形从主图实际位置和显示尺寸换算，资源牌下移后撕片也保持相同位置。
 ## 高度要按贴图自己的长宽比折算成「占卡高」——卡不是正方形（1.2×1.6），
 ## 直接拿宽度那个比例当高度用，图标会被压扁
 func _feed_icon(mat: ShaderMaterial) -> void:
@@ -821,14 +884,15 @@ func _feed_icon(mat: ShaderMaterial) -> void:
 		mat.set_shader_parameter("has_icon", 0.0)
 		return
 	var tex: Texture2D = _icon.texture
-	var half_w: float = CardArt.ICON_FRAC / 2.0
-	var w_world: float = CARD_SIZE.x * CardArt.ICON_FRAC
+	var w_world: float = _icon.pixel_size * float(tex.get_width())
+	var half_w: float = w_world / CARD_SIZE.x / 2.0
 	var h_world: float = w_world * float(tex.get_height()) / float(tex.get_width())
 	var half_h: float = (h_world / CARD_SIZE.z) / 2.0
 	mat.set_shader_parameter("icon", tex)
 	mat.set_shader_parameter("icon_rect",
-		Vector4(CardArt.ICON_CX, CardArt.ICON_CY, half_w, half_h))
+		Vector4(_icon.position.x / CARD_SIZE.x + 0.5, _icon.position.z / CARD_SIZE.z + 0.5, half_w, half_h))
 	mat.set_shader_parameter("icon_color", _icon.modulate)
+	mat.set_shader_parameter("icon_full_color", _illustrated)
 	mat.set_shader_parameter("has_icon", 1.0)
 
 ## 卡面上切不了的独立元素（卡名、墨团、角标等；图标不在内，它已合进着色器）。
@@ -929,3 +993,37 @@ func pulse_feedback(event: String, tint: Color = Color.TRANSPARENT, delay := 0.0
 	if delay > 0.0:
 		_feedback_tween.tween_interval(delay)
 	_feedback_tween.tween_method(_set_feedback_phase, 0.0, 1.0, FeedbackMotion.ACT + FeedbackMotion.SETTLE)
+	if _illustrated and event in ["produce", "attack", "upgrade", "ready"]:
+		_play_art_motion(event, delay)
+
+## 插画单独响应经营事件，不抢卡身拖拽、飞入或拾取通道。没有常驻摇摆。
+func _reset_art_motion() -> void:
+	if _art_tween and _art_tween.is_valid():
+		_art_tween.kill()
+	if _icon:
+		_icon.scale = Vector3.ONE
+		_icon.rotation_degrees = Vector3(-90, 0, 0)
+
+func _play_art_motion(event: String, delay: float) -> void:
+	if _icon == null or _face_down:
+		return
+	_reset_art_motion()
+	_art_tween = create_tween().bind_node(self)
+	if delay > 0.0:
+		_art_tween.tween_interval(delay)
+	var tilt := -0.065 if event == "attack" else 0.035
+	_art_tween.tween_property(_icon, "rotation:z", tilt, FeedbackMotion.ANTICIPATE)
+	_art_tween.parallel().tween_property(_icon, "scale", Vector3.ONE * 0.94, FeedbackMotion.ANTICIPATE)
+	_art_tween.tween_property(_icon, "rotation:z", -tilt * 0.5, FeedbackMotion.ACT * 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_art_tween.parallel().tween_property(_icon, "scale", Vector3.ONE * 1.045, FeedbackMotion.ACT * 0.45)
+	_art_tween.tween_property(_icon, "rotation:z", 0.0, FeedbackMotion.SETTLE)
+	_art_tween.parallel().tween_property(_icon, "scale", Vector3.ONE, FeedbackMotion.SETTLE)
+
+func _set_market_price_hover(on: bool) -> void:
+	if not has_meta("price_tag"):
+		return
+	var tag_ref: Variant = get_meta("price_tag", null)
+	if tag_ref is WeakRef:
+		var tag: Variant = tag_ref.get_ref()
+		if is_instance_valid(tag):
+			tag.set_hovered(on)

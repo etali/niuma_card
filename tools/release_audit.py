@@ -48,7 +48,7 @@ def audit(app, *, require_clean=True):
     entries = pck_files(packs[0])
     unwanted = [e['path'] for e in entries if e['path'].startswith(DEVELOPMENT_PREFIXES)]
     required = {'project.binary', 'scenes/main.tscn.remap', 'data/cards.json', 'data/ui.json',
-                'data/bot.json', 'assets/art/art_manifest.json', 'shaders/card_face.gdshader',
+                'data/bot.json', 'shaders/card_face.gdshader',
                 'scenes/debug_shot.gdc', 'assets/fonts/NotoSansSC.ttf.import'}
     names = {entry['path'] for entry in entries}
     missing = sorted(required - names)

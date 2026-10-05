@@ -356,6 +356,24 @@ func _action(spec: String) -> void:
 		m.drawer_presentation.set_perspective_angle(float(bits[1]))
 		await m.get_tree().create_timer(0.3).timeout
 		return
+	if bits[0] == "tagdetail":
+		var presentation: Node = m.drawer_presentation
+		var camera: Camera3D = m.board.camera
+		var card: CardEntity = m.market_cards[3]
+		var pixel := camera.unproject_position(card.global_position)
+		presentation.camera_view.change(2.5, pixel, presentation.content_rect().get_center())
+		if bits[1] == "hover":
+			m.board.set_process(false)
+			card.set_hover_visual(true)
+			await m.get_tree().create_timer(0.2).timeout
+		return
+	if bits[0] == "recordsave":
+		await _expand_panel("Record")
+		m._save_replay()
+		for i in 3:
+			await m.get_tree().process_frame
+		m.drawer_presentation._relayout_utility()
+		return
 	if bits[0] == "panel":
 		await _expand_panel(bits[1])
 		return
@@ -734,7 +752,7 @@ func _build_group(core: CardEntity):
 ## 要等一帧让子控件结算尺寸再重算高度），所以这里也 await 到它做完
 func _expand_panel(which: String) -> void:
 	if m.drawer_presentation != null:
-		var panels := { "PalettePanel": 0, "BOTPanel": 1, "MsgLog": 2, "UI": 3, "WindowRatio": 3, "EntrySize": 4, "Record": 5, "Rulebook": 7 }
+		var panels := { "PalettePanel": 3, "BOTPanel": 1, "MsgLog": 2, "UI": 3, "WindowRatio": 3, "EntrySize": 4, "Record": 5, "Rulebook": 7 }
 		if which == "JoinPanel":
 			m._open_join_panel()
 		elif panels.has(which):

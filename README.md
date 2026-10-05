@@ -323,6 +323,20 @@ Web 使用常驻完整牌桌，复用规则书、选项、静音和录像入口�
 
 维护素材时可继续使用 `tools/build_art.py` 和 `tools/build_android_icons.py` 等生成工具。修改后的素材、清单与对应 `.import` 导入设置一起提交到 Git，游戏构建和发布会使用仓库中的素材。
 
+新版卡牌直接覆盖 `assets/art/icon/icon_*.png`，通过 `data/ui.json` 的 `art.illustrations` 登记。29 张功能卡使用透明手绘简笔画；现金牌用没有表情的单枚硬币与 ¥ 符号，用户牌用呆萌圆头、豆形身体和线条四肢的全身小人；两者均采用不规则墨线和奶油色填充。资源牌主图、配方和产出图标共用 `assets/art/icon/icon_cash.png` 与 `icon_user.png`，仅显示尺寸不同；对应 SVG 仅作为可编辑源稿；资源牌没有底部配方和产出，主图向下居中平衡留白。插画中的金币和用户统一参考这两份资源图标，人物姿势和情绪随场景变化；运行时没有另一套旧卡牌素材。素材由内置 ImageGen 生成，风格参考《Stacklands》的简洁手绘感觉，插画以关键物件和动作为主体，需要人物时使用无身份特征的圆头小人，完整生成提示词保存在 `assets/art/icon/prompts.json`。`tools/build_art.py` 重建素材时会保留新版图标和插画登记，不会将新版覆盖回旧线稿。
+
+底板按功能分色：现金为黄、用户为蓝、变现为草绿、拉新为较深的蓝、传奇为白金、攻击为橙、增强为紫、防御为灰绿。卡面、卡背及典当行的全部运行时颜色均由 `data/ui.json.palette` 提供，通过现有 `Palette` 取色、保存、恢复和广播刷新；素材清单不再保存这些颜色。
+
+牌桌使用暖灰绿再生纸纤维、低对比折痕，以及用户追钱、摸头、抱金币、被现金砸哭和被张嘴金币追赶等简笔画的较密的无缝重复墨线纹理（`assets/art/table/user_cash_pattern.svg`）；配合带折角的手绘理牌垫；理牌垫保持空净，双方身份由顶栏说明。购牌区采用纸板长条和固定手绘卡槽，典当行以短线分隔。价格以一端收尖、带圆孔与细绳的五边形长吊牌挂在卡牌右下角，金币图标共用现金牌贴图，图标与数字按实际绘制尺寸组成紧凑居中的价格行，统一留白。商品悬停时卡牌和吊牌一起轻抬，足额现金拖入时价签边缘反馈，成交时吊牌轻弹淡出；装饰不参与碰撞或购买规则。所有颜色仍由现有 `Palette` 配置及取色逻辑提供。
+
+选项菜单中的“UI”统一收纳显示与配色设置。“UI → 配色 → 背景纹理”可实时调整密度、图案间隔及纹理颜色；密度越大则重复次数越多，间隔控制平铺单元的额外留白。默认值在 `data/ui.json.palette.pattern`，与现有配色共用保存和还原逻辑，保存至 `user://palette.json`。
+
+状态覆盖图直接维护在 `assets/art/overlay/overlay_shield.png` 与 `overlay_void_stamp.png`：护盾使用粗墨线浅蓝盾牌及奶油色勾，位于标题带下方；作废框中心透明，与独立文字一起倾斜，颜色跟随 `Palette.semantic("danger")`。两张图由内置 ImageGen 重绘，提示词记录在 `assets/art/overlay/prompts.json`，旧素材重建会保留已登记的新版。
+
+游戏图标使用用户牌同款全身小人，姿势为无辜地抬手摸头。可编辑源稿为 `assets/art/app_icon.svg`；运行 `Godot --headless --path . --script tools/export_app_icon.gd` 导出 `assets/art/app_icon.png`、`assets/app_icon.png` 及现金/用户共享 PNG，再运行 `python3 tools/build_android_icons.py` 更新 Android 图标和启动图。游戏标题、抽屉角色、结算界面与各平台应用图标共用这套形象。
+
+用 `Godot -s tools/visual_preview.gd -- --render /绝对路径/cards.png` 查看正式卡面的七卡样张；末尾加 `--all` 可查看全套卡牌。卡面仅保留卡名、插画与资源数值，按“配方 → 结果”排列；用途和消耗规则放在悬停说明，显示当前材料缺口、有效产出及资源消耗时机。插画事件动作和生产、升级、攻击回执共用真实对局结果，仅作用于表现层。
+
 ### 4.4 联机专服
 
 ```bash
@@ -410,3 +424,7 @@ python3 tools/verify_release.py build/牛马牌.app
 ```
 
 本许可仅适用于维护者有权授权的项目内容。Godot 引擎、Noto 字体及其他第三方代码或素材继续适用各自的许可证；其中 `assets/fonts/NotoSansSC.ttf` 适用 SIL Open Font License 1.1。
+
+选项面板统一位于顶部横条下方的右上角，并限制在上下横条之间；长内容使用内部滚动（读入录像与局域网对战保留独立流程）。保存录像后的结果与可复制路径留在原“存录像”页。
+
+UI 页底部统一提供“保存”和“还原默认”，作用于窗口比例、透视、牌桌缩放、入口大小、配色与背景纹理。显示偏好写入 `user://ui_preferences.json`，配色沿用 `user://palette.json`；下次启动读取。独立的“还原全桌”按钮已移除。价签与牌角分开留白，绳环连接卡角绳结和吊牌圆孔。

@@ -6,10 +6,10 @@ class_name CardArt
 extends RefCounted
 
 ## 卡牌插画与配色登记表。边框/标题带由共享 Shader 绘制，不读取底板 PNG。
-## manifest 只提供保留插画的元数据；缺少插画时卡面、文字和碰撞仍正常。
+## data/ui.json 的 art 段提供保留插画的元数据；缺少插画时卡面、文字和碰撞仍正常。
 
 const ART_DIR := "res://assets/art/"
-const MANIFEST := ART_DIR + "art_manifest.json"
+const UIConfig = preload("res://engine/ui_config.gd")
 
 ## 卡牌配色槽位，对应 data/ui.json 的 palette.plates；卡框由 Shader 绘制。
 const PLATE_CASH := "plate_cash"
@@ -26,6 +26,7 @@ const PLATE_BUFF_DEF := "plate_buff_def"
 ## 换算成比例而不是写死像素，卡牌 mesh 尺寸变化时不用改这里
 const ICON_CX := 0.5           # 图标框中心 x：(240+720/2)/1200
 const ICON_CY := 0.488750      # 图标框中心 y：(422+720/2)/1600
+const UNIT_ICON_CY := 0.58     # 资源牌没有配方和产出，主图下移以平衡留白
 const ICON_FRAC := 0.6         # 图标框宽占卡宽：720/1200
 const BAND_CY := 0.106875      # 标题带中心 y：(46+250/2)/1600
 const BAND_FRAC := 0.15625     # 标题带高占卡高：250/1600
@@ -39,7 +40,7 @@ const UNIT_ICON_FRAC := 0.093333  # 单位类型图标宽占卡宽：112/1200
 ## 卡面四色（face/band/accent/ink）的兜底值不在这里，见 Palette.DEFAULTS ——
 ## 颜色由配置说话，几何由程序控制，这里保留插画贴图与尺寸。
 
-static var _manifest: Dictionary = {}
+static var _art: Dictionary = {}
 static var _tex_cache: Dictionary = {}
 static var _loaded := false
 
@@ -47,8 +48,8 @@ static func _ensure_loaded() -> void:
 	if _loaded:
 		return
 	_loaded = true
-	# 读表借 Palette 那份：两边都是「缺文件就静默降级成 {}」的同一套口径
-	_manifest = Palette.read_json(MANIFEST)
+	# 素材与其他展示配置共用入口，外置 ui.json 也遵循相同的合并规则。
+	_art = UIConfig.read_section("art")
 
 ## def_id → 配色槽位。按 cards.json 的类别、资源、产出和 Buff 类型推导，
 ## 同类卡牌共用配色，无需为每张卡单独维护映射。
@@ -89,17 +90,42 @@ static func configure_frame(material: ShaderMaterial, scale_factor := 1.0) -> vo
 	material.set_shader_parameter("stroke_wobble", FRAME_WOBBLE * scale_factor)
 	material.set_shader_parameter("stroke_pressure", FRAME_PRESSURE)
 
-## 图标贴图（纯白线稿 + 透明底，用 modulate 着成墨色）；缺失返回 null
+## 功能图标通常是可着色白色线稿；资源图标自带手绘墨色与纸色，缺失返回 null
 static func icon_texture(def_id: String) -> Texture2D:
-	return _load_tex(ART_DIR + "icon/icon_" + def_id + ".png")
+	# 两种资源只维护一份简笔符号，资源牌和所有配方/产出标记共用。
+	_ensure_loaded()
+	var entry: Dictionary = _art.get("icons", {}).get(def_id, {})
+	return _load_tex(ART_DIR + str(entry.get("file", "icon/icon_" + def_id + ".png")))
+
+## 情景插画保留原色；仅登记过的卡使用插画，其他卡继续使用功能图标。
+static func illustration_texture(def_id: String) -> Texture2D:
+	_ensure_loaded()
+	var entry: Dictionary = _art.get("illustrations", {}).get(def_id, {})
+	var path := str(entry.get("file", ""))
+	return _load_tex(ART_DIR + path) if path != "" else null
 
 ## 资源图标（cash / user）：卡面底部用它表示产出、攻击、配方需求的资源种类，
 ## 替掉「产7」「攻3」这类中文，便于多语言化。
-## 现金卡和用户卡的 def_id 恰好就是资源名，故直接复用单位卡的图标
+## 同一资源的卡牌主图、配方和产出直接复用同一份符号贴图。
 static func res_icon_texture(res: String) -> Texture2D:
 	if res != CardDB.RES_CASH and res != CardDB.RES_USER:
 		return null
 	return icon_texture(res)
+
+## 共享资源简笔画含纸色填充与表情，主图和小徽标都保留原色。
+static func icon_preserves_color(texture: Texture2D) -> bool:
+	if texture == null:
+		return false
+	if texture == res_icon_texture(CardDB.RES_CASH) or texture == res_icon_texture(CardDB.RES_USER):
+		return true
+	_ensure_loaded()
+	for id in _art.get("illustrations", {}):
+		if texture == icon_texture(str(id)):
+			return true
+	return false
+
+static func icon_tint(texture: Texture2D, ink: Color) -> Color:
+	return Color.WHITE if icon_preserves_color(texture) else Palette.icon_color(ink)
 
 ## 牌桌素材：table_felt / zone_tray / market_slot / pawnshop / card_back / log_panel / badge_base
 ## 先尝试支持透明度的 .png，再尝试用于不透明台面等素材的 .jpg。
@@ -113,7 +139,7 @@ static func table_texture(name: String) -> Texture2D:
 static func overlay_texture(name: String) -> Texture2D:
 	return _load_tex(ART_DIR + "overlay/" + name + ".png")
 
-## 以下四色一律走 Palette（data/ui.json 的 palette 段 + 游戏内选色面板），不读 manifest：
+## 以下四色一律走 Palette（data/ui.json 的 palette 段 + 游戏内选色面板），不读 art：
 ## 卡面填充与轮廓都在 Shader 中绘制，插画不会改变配置色。
 
 ## 墨色：卡名/图标/数字的颜色
@@ -152,19 +178,9 @@ static func misc_band_cy(name: String) -> float:
 static func misc_band_frac(name: String) -> float:
 	return _num(_misc_entry(name), "band_frac", BAND_FRAC)
 
-## 已有设施插画的配色元数据，不参与程序卡框几何。
-static func misc_color(name: String, key: String, fallback: Color) -> Color:
-	var value: Variant = _field(_misc_entry(name), key)
-	return Color(str(value)) if value != null else fallback
-
-## 整卡素材的墨色（实测卡面色决定用暗墨还是米白）
-static func misc_ink_color(name: String, fallback := Color(0.13, 0.13, 0.13)) -> Color:
-	var v: Variant = _field(_misc_entry(name), "ink")
-	return Color(str(v)) if v != null else fallback
-
 static func _misc_entry(name: String) -> Dictionary:
 	_ensure_loaded()
-	var misc: Dictionary = _manifest.get("misc", {})
+	var misc: Dictionary = _art.get("misc", {})
 	var entry: Variant = misc.get(name, {})
 	return entry if typeof(entry) == TYPE_DICTIONARY else {}
 

@@ -1,9 +1,10 @@
 {
-  "_说明": "游戏展示配置：defaults=启动默认值；palette=配色；resource_labels=资源计量名；sfx=音效与动作映射。规则和卡牌见 cards.json，BOT 参数见 bot.json。",
+  "_说明": "游戏展示配置：defaults=启动默认值；palette=配色；art=图标、插画与卡面呈现；resource_labels=资源计量名；sfx=音效与动作映射。规则和卡牌见 cards.json，BOT 参数见 bot.json。",
   "defaults": {
     "window_fraction": 0.75,
     "perspective_angle": 80.0,
-    "icon_scale": 0.75
+    "icon_scale": 0.75,
+    "table_zoom": 1.0
   },
   "palette": {
     "_说明": "全局配色。卡牌用程序化圆角框架，卡面、标题带、边框颜色由这里决定。改这个文件或用游戏内右上角选色面板即可换色；面板保存时写 user://palette.json 覆盖本文件，不动仓库。",
@@ -31,16 +32,21 @@
     },
     "world": {
       "_说明": "牌桌之外的环境与台面",
-      "background": "#617861",
-      "table_felt": "#809978",
-      "table_felt_lit": "#8C998F",
-      "table_frame": "#F0E8D4",
+      "background": "#42544B",
+      "table_felt": "#52655B",
+      "table_felt_lit": "#52655B",
+      "table_frame": "#EFE5CE",
       "market_floor": "#4C4038"
     },
     "card": {
-      "_说明": "所有卡牌共用：frame=程序边框与标题分隔线，body=卡牌本体侧壁",
-      "frame": "#141414",
-      "body": "#1F1F1F"
+      "_说明": "所有卡牌共用：frame=程序边框与标题分隔线，body=本体侧壁；back_face/back_ink=卡背底色/图案；facility_face/facility_band/facility_ink=典当行卡面/标题带/文字。",
+      "frame": "#302B25",
+      "body": "#302B25",
+      "back_face": "#406058",
+      "back_ink": "#F5F5F5",
+      "facility_face": "#C0B0A0",
+      "facility_band": "#C0A080",
+      "facility_ink": "#222222"
     },
     "icon": {
       "_说明": "图标前景色。留空字符串 = 跟随各底板的 ink；填了颜色则全卡统一用它",
@@ -49,28 +55,28 @@
     "plates": {
       "_说明": "底板按卡牌功能分色。plate_t1_money 为用户→现金，plate_t1_growth 为现金→用户，所有等级生产卡共用对应方向的配色；plate_t2 仅保留旧配色数据，不再用于卡牌。face=卡面填充，band=标题带填充，accent=配方凑满的墨团色，ink=卡名/图标/数字墨色。",
       "plate_cash": {
-        "face": "#E9D28E",
-        "band": "#E2BD52",
-        "accent": "#E5BC52",
-        "ink": "#222222"
+        "face": "#F5E6B9",
+        "band": "#E3BE60",
+        "accent": "#A37325",
+        "ink": "#302B25"
       },
       "plate_user": {
-        "face": "#E1C99B",
-        "band": "#D5AD65",
-        "accent": "#D5AC62",
-        "ink": "#222222"
+        "face": "#E5EDF3",
+        "band": "#9FBFD3",
+        "accent": "#3B789D",
+        "ink": "#302B25"
       },
       "plate_t1_money": {
-        "face": "#93C6CA",
-        "band": "#57B5BF",
-        "accent": "#52B5BD",
-        "ink": "#222222"
+        "face": "#D6E9BF",
+        "band": "#88B566",
+        "accent": "#487C31",
+        "ink": "#302B25"
       },
       "plate_t1_growth": {
-        "face": "#99ACD6",
-        "band": "#6384C7",
-        "accent": "#6283CD",
-        "ink": "#222222"
+        "face": "#C2D5F3",
+        "band": "#6D91CC",
+        "accent": "#3D61A0",
+        "ink": "#302B25"
       },
       "plate_t2": {
         "face": "#C297CC",
@@ -79,29 +85,35 @@
         "ink": "#222222"
       },
       "plate_t3": {
-        "face": "#EDEAE5",
-        "band": "#FCF9F2",
-        "accent": "#FDFDF5",
-        "ink": "#222222"
+        "face": "#FFFDF5",
+        "band": "#F2E6B8",
+        "accent": "#BD9135",
+        "ink": "#302B25"
       },
       "plate_attack": {
-        "face": "#E9A49D",
-        "band": "#E06A60",
-        "accent": "#E56A62",
-        "ink": "#222222"
+        "face": "#F4E3DA",
+        "band": "#D9967E",
+        "accent": "#AC4E3A",
+        "ink": "#302B25"
       },
       "plate_buff_up": {
-        "face": "#A4B4C3",
-        "band": "#7094B8",
-        "accent": "#7394BD",
-        "ink": "#222222"
+        "face": "#EEE6F0",
+        "band": "#B8A0C7",
+        "accent": "#785191",
+        "ink": "#302B25"
       },
       "plate_buff_def": {
-        "face": "#DB9ABC",
-        "band": "#D36D9C",
-        "accent": "#D56B9C",
-        "ink": "#222222"
+        "face": "#E6EBDF",
+        "band": "#AABB94",
+        "accent": "#56773C",
+        "ink": "#302B25"
       }
+    },
+    "pattern": {
+      "_说明": "背景重复纹理：density 为相对密度，spacing 为每个平铺单元的额外留白比例，ink 为纹理墨色。",
+      "density": 1.0,
+      "spacing": 0.0,
+      "ink": "#302B25"
     }
   },
   "resource_labels": {
@@ -198,6 +210,293 @@
       },
       "lose": {
         "sound": "lose"
+      }
+    }
+  },
+  "art": {
+    "_说明": "素材呈现配置。icons=卡牌图标；illustrations=保留原色的情景插画；misc=覆盖标记及其他素材。file 均相对于 assets/art/，颜色统一由 palette 定义。",
+    "icons": {
+      "baiyibutie": {
+        "file": "icon/icon_baiyibutie.png",
+        "zh": "百亿补贴",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "banxiaoshi": {
+        "file": "icon/icon_banxiaoshi.png",
+        "zh": "半小时生活圈",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "baoyue": {
+        "file": "icon/icon_baoyue.png",
+        "zh": "连续包月",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "butie": {
+        "file": "icon/icon_butie.png",
+        "zh": "补贴大战",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "cash": {
+        "file": "icon/icon_cash.png",
+        "zh": "现金",
+        "style": "奶油色诙谐手绘资源图标，主卡与徽标共用"
+      },
+      "chaping": {
+        "file": "icon/icon_chaping.png",
+        "zh": "差评轰炸",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "chunwan": {
+        "file": "icon/icon_chunwan.png",
+        "zh": "春晚冠名",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "ditui": {
+        "file": "icon/icon_ditui.png",
+        "zh": "地推扫码",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "dujiaoshou": {
+        "file": "icon/icon_dujiaoshou.png",
+        "zh": "独角兽",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "eryouxuan": {
+        "file": "icon/icon_eryouxuan.png",
+        "zh": "二选一",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "guomin": {
+        "file": "icon/icon_guomin.png",
+        "zh": "国民应用",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "heigongguan": {
+        "file": "icon/icon_heigongguan.png",
+        "zh": "黑公关通稿",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "jiangjia": {
+        "file": "icon/icon_jiangjia.png",
+        "zh": "降价促销",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "jiaolv": {
+        "file": "icon/icon_jiaolv.png",
+        "zh": "焦虑贩卖机",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "liebian": {
+        "file": "icon/icon_liebian.png",
+        "zh": "裂变鬼才",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "liulianghe": {
+        "file": "icon/icon_liulianghe.png",
+        "zh": "流量黑洞",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "pinshaoshao": {
+        "file": "icon/icon_pinshaoshao.png",
+        "zh": "拼少少",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "resou": {
+        "file": "icon/icon_resou.png",
+        "zh": "热搜包年",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "shangshi": {
+        "file": "icon/icon_shangshi.png",
+        "zh": "上市敲钟",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "shanzhai": {
+        "file": "icon/icon_shanzhai.png",
+        "zh": "山寨围剿",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "shuabuting": {
+        "file": "icon/icon_shuabuting.png",
+        "zh": "刷不停",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "touliu": {
+        "file": "icon/icon_touliu.png",
+        "zh": "广告投流",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "tuanzhang": {
+        "file": "icon/icon_tuanzhang.png",
+        "zh": "团长帝国",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "tuisong": {
+        "file": "icon/icon_tuisong.png",
+        "zh": "推送弹窗",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "user": {
+        "file": "icon/icon_user.png",
+        "zh": "用户",
+        "style": "奶油色诙谐手绘资源图标，主卡与徽标共用"
+      },
+      "waimai": {
+        "file": "icon/icon_waimai.png",
+        "zh": "外卖补贴",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "xinxijianfang": {
+        "file": "icon/icon_xinxijianfang.png",
+        "zh": "信息茧房",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "xufei": {
+        "file": "icon/icon_xufei.png",
+        "zh": "自动续费矩阵",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "yinqing996": {
+        "file": "icon/icon_yinqing996.png",
+        "zh": "996引擎",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "yunketang": {
+        "file": "icon/icon_yunketang.png",
+        "zh": "云课堂",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "zuokong": {
+        "file": "icon/icon_zuokong.png",
+        "zh": "做空报告",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      }
+    },
+    "misc": {
+      "badge_base": {
+        "file": "table/badge_base.png"
+      },
+      "card_back": {
+        "file": "table/card_back.png"
+      },
+      "overlay_shield": {
+        "file": "overlay/overlay_shield.png",
+        "hand_drawn": true,
+        "style": "粗墨线、平涂、手绘简笔覆盖标记"
+      },
+      "overlay_void_stamp": {
+        "file": "overlay/overlay_void_stamp.png",
+        "hand_drawn": true,
+        "style": "粗墨线、平涂、手绘简笔覆盖标记"
+      },
+      "pawnshop": {
+        "band_cy": 0.094329,
+        "band_frac": 0.137153,
+        "file": "table/pawnshop.png"
+      },
+      "plate_master": {
+        "band_cy": 0.095197,
+        "band_frac": 0.14294,
+        "file": "plate/plate_master.png"
+      }
+    },
+    "illustrations": {
+      "baoyue": {
+        "file": "icon/icon_baoyue.png",
+        "zh": "连续包月",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "ditui": {
+        "file": "icon/icon_ditui.png",
+        "zh": "地推扫码",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "heigongguan": {
+        "file": "icon/icon_heigongguan.png",
+        "zh": "黑公关通稿",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "yinqing996": {
+        "file": "icon/icon_yinqing996.png",
+        "zh": "996引擎",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "shangshi": {
+        "file": "icon/icon_shangshi.png",
+        "zh": "上市敲钟",
+        "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "yunketang": {
+        "file": "icon/icon_yunketang.png"
+      },
+      "pinshaoshao": {
+        "file": "icon/icon_pinshaoshao.png"
+      },
+      "shuabuting": {
+        "file": "icon/icon_shuabuting.png"
+      },
+      "waimai": {
+        "file": "icon/icon_waimai.png"
+      },
+      "touliu": {
+        "file": "icon/icon_touliu.png"
+      },
+      "chunwan": {
+        "file": "icon/icon_chunwan.png"
+      },
+      "xinxijianfang": {
+        "file": "icon/icon_xinxijianfang.png"
+      },
+      "baiyibutie": {
+        "file": "icon/icon_baiyibutie.png"
+      },
+      "banxiaoshi": {
+        "file": "icon/icon_banxiaoshi.png"
+      },
+      "tuanzhang": {
+        "file": "icon/icon_tuanzhang.png"
+      },
+      "liulianghe": {
+        "file": "icon/icon_liulianghe.png"
+      },
+      "jiaolv": {
+        "file": "icon/icon_jiaolv.png"
+      },
+      "xufei": {
+        "file": "icon/icon_xufei.png"
+      },
+      "dujiaoshou": {
+        "file": "icon/icon_dujiaoshou.png"
+      },
+      "guomin": {
+        "file": "icon/icon_guomin.png"
+      },
+      "butie": {
+        "file": "icon/icon_butie.png"
+      },
+      "zuokong": {
+        "file": "icon/icon_zuokong.png"
+      },
+      "eryouxuan": {
+        "file": "icon/icon_eryouxuan.png"
+      },
+      "chaping": {
+        "file": "icon/icon_chaping.png"
+      },
+      "shanzhai": {
+        "file": "icon/icon_shanzhai.png"
+      },
+      "liebian": {
+        "file": "icon/icon_liebian.png"
+      },
+      "resou": {
+        "file": "icon/icon_resou.png"
+      },
+      "tuisong": {
+        "file": "icon/icon_tuisong.png"
+      },
+      "jiangjia": {
+        "file": "icon/icon_jiangjia.png"
       }
     }
   }

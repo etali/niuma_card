@@ -453,7 +453,7 @@ func _ready() -> void:
 	_debug_shot = DebugShot.new()
 	_debug_shot.run(self)
 	if drawer_window and not mobile_mode and DisplayServer.get_name() != "headless" and OS.get_environment("CARD_SHOT") == "":
-		drawer_window.start_collapsed()
+		drawer_window.start_collapsed(true)
 
 # ---------- 场景搭建 ----------
 
@@ -565,6 +565,9 @@ func _drawer_can_collapse() -> bool:
 		and not (is_instance_valid(_replay_picker) and _replay_picker.visible)
 
 func _on_drawer_expanded_changed(expanded: bool) -> void:
+	# 展开开始就切换入口与桌面 UI，不能等动画结束才隐藏入口。
+	if drawer_presentation:
+		drawer_presentation.set_collapsed(not expanded)
 	if sfx:
 		# 抽屉收起时暂时停止播放，展开后恢复玩家在喇叭按钮选择的状态。
 		# 不能直接改 user_muted，否则每次收起都会覆盖玩家偏好。
@@ -1041,18 +1044,21 @@ func _save_replay() -> void:
 	if web_mode:
 		_flush_record_view()
 		var record: Tape = replay_session.record if replay_session != null else tape
-		if web_files.download_json(record.to_dict(), record.default_name()):
+		var downloaded: bool = web_files.download_json(record.to_dict(), record.default_name())
+		if drawer_presentation != null:
+			drawer_presentation.show_record_download(downloaded)
+		if downloaded:
 			_show_message("已发起录像下载，请在浏览器下载列表查看。", Palette.semantic("success"))
 		else:
 			_show_message("浏览器下载不可用，请允许此页面下载文件后重试。", Palette.semantic("danger"))
 		return
 	if replay_session != null:
-		save_notice.show_saved(replay_session.path, replay_session.record.size())
+		_present_save_result(replay_session.path, replay_session.record.size())
 		return
 	_flush_record_view()
 	var path := tape.save()
 	if path == "":
-		save_notice.show_failed(Tape.path_dir())
+		_present_save_result(Tape.path_dir(), 0, true)
 		return
 	# 路径进的是 save_notice 那块面板，**不是 lbl_msg**：一条要拿去 Finder 用的
 	# 绝对路径在提示条里抄不走，而且 440 宽装不下会折成三四行
@@ -1062,8 +1068,16 @@ func _save_replay() -> void:
 	# globalize_path 留着：Tape.save 现在回的已经是绝对路径（~/.niumapai_record/…）,
 	# 这一步是个 no-op，但退路那一支回的还是 user:// 底下的（见 Tape.path_dir）
 	var abs_path := ProjectSettings.globalize_path(path)
-	save_notice.show_saved(abs_path, tape.size())
+	_present_save_result(abs_path, tape.size())
 	print("[录像] %s（%d 步）" % [abs_path, tape.size()])
+
+func _present_save_result(path: String, steps: int, failed := false) -> void:
+	if drawer_presentation != null:
+		drawer_presentation.show_record_result(path, steps, failed)
+	elif failed:
+		save_notice.show_failed(path)
+	else:
+		save_notice.show_saved(path, steps)
 
 func _drawer_timer(seconds: float) -> SceneTreeTimer:
 	# 演出计时器遵守场景暂停；联网时不暂停场景，网络仍正常轮询。
@@ -1411,7 +1425,10 @@ func _drop_price_label(idx: int) -> void:
 		return
 	var lb = market_price_labels[idx]
 	if is_instance_valid(lb):
-		lb.queue_free()
+		if lb.has_method("retire"):
+			lb.retire()
+		else:
+			lb.queue_free()
 	market_price_labels.remove_at(idx)
 
 # ---------- 抽卡阶段：购买 ----------

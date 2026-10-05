@@ -16,8 +16,8 @@ run/main_scene="res://scenes/main.tscn"
 boot_splash/show_image=false
 ; macOS 原生窗口在场景脚本运行前就会创建；透明清屏可避免启动瞬间闪出黑色矩形。
 boot_splash/bg_color=Color(0, 0, 0, 0)
-; 应用图标由桌宠原图透明补方后生成，1024×1024，独立于美术包且由 Git 管理。
-; assets/art/app_icon.png 保持原始比例，仅用于桌宠/界面角色。
+; 应用图标沿用用户牌小人，SVG 源稿为 assets/art/app_icon.svg，导出为 1024×1024 透明 PNG。
+; assets/art/app_icon.png 与应用导出图同源，用于桌宠/界面角色。
 config/icon="res://assets/app_icon.png"
 config/features=PackedStringArray("4.7")
 

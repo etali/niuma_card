@@ -52,4 +52,7 @@ static func _style(fill: Color, border: Color, factor: float, margin: float, rad
 	style.set_border_width_all(maxi(1, roundi(factor)))
 	style.set_corner_radius_all(roundi(radius * factor))
 	style.set_content_margin_all(roundi(margin * factor))
+	style.shadow_color = Color(border, 0.13)
+	style.shadow_size = maxi(1, roundi(2.0 * factor))
+	style.shadow_offset = Vector2(0, 2.0 * factor)
 	return style

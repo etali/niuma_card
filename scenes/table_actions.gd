@@ -147,17 +147,20 @@ func combo_feedback(effect: Dictionary, at: Vector3, combo: Dictionary = {}) -> 
 	var members := _members(combo.get("uids", []))
 	if not members.is_empty():
 		for card in members:
-			if card.def_id == effect.get("leader", ""):
+			if card.def_id == effect.get("leader", "") or (effect["type"] == "production" and card.def_id == "yinqing996"):
 				card.pulse_feedback("produce" if effect["type"] == "production" else "upgrade")
 	match effect["type"]:
 		"production":
 			var color := Palette.semantic("cash" if effect["output_res"] == CardDB.RES_CASH else "user")
 			host._event_feedback("production", at, color, 12)
+			if _visible():
+				Feedback.receipt(host, "production", at, "+%d %s" % [int(effect["output_n"]), CardDB.res_label(effect["output_res"])], color)
 		"upgrade":
 			host.sfx.play("upgrade")
 			host._event_feedback("upgrade", at, Palette.plate_color("plate_t3", "band"))
 			if _visible():
 				Feedback.outline(host, "upgrade", at, Vector2(CardEntity.CARD_SIZE.x, CardEntity.CARD_SIZE.z), Palette.semantic("cash"))
+				Feedback.receipt(host, "upgrade", at, "升级完成", Palette.semantic("cash"))
 		"attack":
 			host.sfx.play("attack")
 
@@ -169,6 +172,7 @@ func attack_feedback(at: Vector3, attacker := "", resource := "") -> void:
 	if not _visible():
 		return
 	Feedback.outline(host, "impact", at, Vector2(CardEntity.CARD_SIZE.x, CardEntity.CARD_SIZE.z), Palette.semantic("danger"), Motion.TEAR)
+	Feedback.receipt(host, "attack", at, "竞争打击", Palette.semantic("danger"))
 	# 点数可能由多组武器汇合，每张真实的对应武器响应，不能凭空造一个攻击起点。
 	for combo in host.state.combos:
 		var effect: Dictionary = combo["eval"]
@@ -273,7 +277,10 @@ func _drop_price(index: int) -> void:
 		return
 	var label: Node = host.market_price_labels[index]
 	if is_instance_valid(label):
-		label.queue_free()
+		if label.has_method("retire"):
+			label.retire()
+		else:
+			label.queue_free()
 	host.market_price_labels.remove_at(index)
 
 func _motion() -> Node:

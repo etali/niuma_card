@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="768" height="512" viewBox="0 0 768 512">
+  <defs>
+    <!-- 与用户牌共用的圆脑袋、豆豆眼、呆萌笑脸；纹理只保留墨线。 -->
+    <g id="head" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M-1-19 C11-21 20-13 20-1 C21 11 12 19 1 19 C-12 20-20 12-20-1 C-21-12-12-19-1-19Z"/>
+      <circle cx="-7" cy="-1" r="1.4" fill="#000" stroke="none"/>
+      <circle cx="8" cy="-2" r="1.4" fill="#000" stroke="none"/>
+      <path d="M-4 7 Q1 12 6 7" stroke-width="2"/>
+    </g>
+    <g id="body" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M-5 19 Q-10 28-8 34 Q0 39 8 34 Q9 26 5 19"/>
+    </g>
+    <!-- 现金牌同一不规则圆币与双横线人民币符号。 -->
+    <g id="coin" fill="none" stroke="#000" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M0-16 C11-17 17-9 17 0 C18 11 9 17 0 16 C-11 18-17 9-16 0 C-18-10-8-17 0-16Z"/>
+      <path d="M-7-8 L0 0 L7-8 M0 0 V10 M-7 2 H7 M-7 6 H7"/>
+    </g>
+    <!-- 哭脸保留同一圆脑袋；弯眼、眼泪和扁嘴表达被砸后的委屈。 -->
+    <g id="cry-head" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M-1-19 C11-21 20-13 20-1 C21 11 12 19 1 19 C-12 20-20 12-20-1 C-21-12-12-19-1-19Z"/>
+      <path d="M-12-4 L-6-1 L-12 2 M12-4 L6-1 L12 2 M-6 11 Q0 5 6 11"/>
+      <path d="M-13 5 Q-20 14-14 17 Q-8 17-13 5Z M13 5 Q20 14 14 17 Q8 17 13 5Z" stroke-width="1.8"/>
+    </g>
+    <g id="bonked" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <use href="#cry-head"/><use href="#body"/>
+      <path d="M-8 24 L-24 13 M8 24 L24 13 M-8 34 L-17 45 H-24 M8 34 L17 45 H24"/>
+      <use href="#coin" transform="translate(0 -37) rotate(-13) scale(1.15)"/>
+      <path d="M-9-66 L-8-57 M4-69 L4-59 M16-62 L13-54 M-23-21 L-32-26 M23-21 L32-26" stroke-width="1.8"/>
+      <path d="M-29-13 L-35-9 L-29-6 M29-13 L35-9 L29-6" stroke-width="1.8"/>
+    </g>
+    <!-- 人民币硬币张开锯齿小嘴追人，仍保留双横线货币符号。 -->
+    <g id="chase" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <g transform="translate(-29 18) rotate(-8)">
+        <path d="M24-13 C15-29-9-30-23-13 C-36 4-25 28-6 29 C9 32 23 22 26 12 L1 1Z"/>
+        <path d="M24-13 L19-4 L15-9 M26 12 L17 9 L21 5" stroke-width="1.8"/>
+        <path d="M-23-10 L-15-1 L-7-10 M-15-1 V14 M-23 2 H-7 M-23 8 H-7" stroke-width="2.2"/>
+        <path d="M9-15 L16-18 M11-12 L13-12"/>
+        <path d="M-43-5 H-34 M-46 5 H-36 M-40 15 H-33" stroke-width="1.8"/>
+      </g>
+      <g transform="translate(40 -4) rotate(18)">
+        <path d="M-1-19 C11-21 20-13 20-1 C21 11 12 19 1 19 C-12 20-20 12-20-1 C-21-12-12-19-1-19Z"/>
+        <circle cx="-7" cy="-2" r="1.6" fill="#000" stroke="none"/><circle cx="8" cy="-2" r="1.6" fill="#000" stroke="none"/>
+        <ellipse cx="2" cy="9" rx="3" ry="5" stroke-width="1.8"/>
+        <use href="#body"/>
+        <path d="M-8 24 L-23 12 M8 24 L24 15 L28 8 M-8 34 L-24 42 L-31 33 M8 34 L20 47 H31"/>
+        <path d="M-25-22 Q-33-15-27-12 Q-21-12-25-22Z" stroke-width="1.8"/>
+      </g>
+    </g>
+  </defs>
+  <g fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 摸头：钱去哪了？ -->
+    <g transform="translate(83 93) rotate(-9)">
+      <use href="#head"/><use href="#body"/>
+      <path d="M-8 34 L-9 46 H-14 M8 34 L10 46 H15 M-8 24 L-22 30 M8 25 L27 9 L19-8"/>
+      <use href="#coin" transform="translate(-43 31) rotate(-18) scale(.8)"/>
+      <path d="M28-29 Q36-36 39-28 Q40-22 33-20 V-16 M33-11 V-10" stroke-width="2"/>
+    </g>
+    <!-- 追着滚走的金币跑。 -->
+    <g transform="translate(322 96) rotate(14)">
+      <use href="#head"/><use href="#body"/>
+      <path d="M-8 34 L-22 42 L-31 35 M8 34 L17 48 L27 48 M-8 24 L-22 15 M8 25 L25 20"/>
+      <use href="#coin" transform="translate(59 42) rotate(27)"/>
+      <path d="M32 41 L42 42 M36 48 L44 48 M-37 21 H-27" stroke-width="1.8"/>
+    </g>
+    <!-- 举着金币，像举一个小奖杯。 -->
+    <g transform="translate(616 79) rotate(-5)">
+      <use href="#head"/><use href="#body"/>
+      <path d="M-8 34 L-10 46 H-16 M8 34 L10 46 H16 M-8 24 L-26 8 L-30-6 M8 24 L26 9 L31-5"/>
+      <use href="#coin" transform="translate(1 -47) scale(.8)"/>
+      <path d="M-24-49 L-31-53 M25-49 L31-54 M0-70 V-76" stroke-width="1.8"/>
+    </g>
+    <!-- 两手摊开：兜里空空。 -->
+    <g transform="translate(185 333) rotate(7)">
+      <use href="#head"/><use href="#body"/>
+      <path d="M-8 34 L-8 46 H-14 M8 34 L9 46 H15 M-8 25 L-23 20 L-32 24 M8 25 L23 20 L32 24"/>
+      <use href="#coin" transform="translate(46 -15) rotate(-12) scale(.65)"/>
+      <path d="M-40 14 L-36 10 M38 14 L42 10" stroke-width="1.8"/>
+    </g>
+    <!-- 抱紧一枚大金币。 -->
+    <g transform="translate(441 303) rotate(-12)">
+      <use href="#head"/><use href="#body"/>
+      <use href="#coin" transform="translate(0 32) scale(1.05)"/>
+      <path d="M-8 21 L-23 27 L-14 37 M8 21 L23 27 L14 37 M-8 46 L-12 54 H-18 M8 46 L12 54 H18"/>
+    </g>
+    <!-- 小人望着两枚零钱发呆。 -->
+    <g transform="translate(692 371) rotate(10)">
+      <use href="#head"/><use href="#body"/>
+      <path d="M-8 24 L-22 30 M8 24 L22 30 M-8 34 L-18 43 H-27 M8 34 L18 43 H27"/>
+      <use href="#coin" transform="translate(-46 49) rotate(-8) scale(.65)"/>
+      <use href="#coin" transform="translate(-67 36) rotate(19) scale(.5)"/>
+      <path d="M-31-8 Q-36-12-39-7" stroke-width="1.8"/>
+    </g>
+    <use href="#coin" transform="translate(63 249) rotate(21) scale(.55)"/>
+    <use href="#coin" transform="translate(520 192) rotate(-17) scale(.55)"/>
+    <use href="#bonked" transform="translate(222 223) rotate(-7) scale(.9)"/>
+    <use href="#chase" transform="translate(605 238) rotate(-5) scale(.9)"/>
+    <use href="#chase" transform="translate(371 441) rotate(6) scale(.7)"/>
+    <use href="#bonked" transform="translate(55 440) rotate(10) scale(.65)"/>
+  </g>
+</svg>

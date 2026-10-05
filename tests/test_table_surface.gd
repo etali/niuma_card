@@ -16,6 +16,8 @@ func _run() -> void:
 		finish()
 		return
 	var first: Node3D = before[0]
+	_check_paper_interaction(main)
+	await _check_tag_ink_bounds(main)
 	var first_pos := first.global_position
 	var other_positions: Array = main.market_cards.slice(1).map(func(c): return c.global_position)
 	var purchase: Dictionary = await main._try_buy(0)
@@ -42,3 +44,109 @@ func _run() -> void:
 	check(main._table_mat.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED,
 		"台面按色板平涂，光照不再将底色推亮")
 	finish()
+
+func _check_paper_interaction(main: Node) -> void:
+	var card: CardEntity = main.market_cards[0]
+	var tag: Node3D = main.market_price_labels[0]
+	check(tag.text == str(int(CardDB.get_def(card.def_id)["price"]))
+			and tag._coin.texture == CardArt.res_icon_texture(CardDB.RES_CASH),
+		"纸价签使用真实价格数字和现金牌同一贴图")
+	var rope: MeshInstance3D = tag._presentation.get_node("TagString")
+	var front: PackedVector3Array = rope.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var back: PackedVector3Array = rope.mesh.surface_get_arrays(1)[Mesh.ARRAY_VERTEX]
+	var corner := (front[0] + front[1]) * 0.5
+	var hole := (front[-2] + front[-1]) * 0.5
+	var expected_corner := card.global_position + Vector3(0.48, CardEntity.Y_PLATE + 0.004, 0.735)
+	check(tag._presentation.to_global(corner).distance_to(expected_corner) < 0.001,
+		"绳头穿进售卖卡右下角内侧纸面的孔心")
+	check(hole.distance_to(tag._hanging.transform * Vector3(-0.325, 0.018, 0)) < 0.001
+		and ((back[0] + back[1]) * 0.5).distance_to(hole) < 0.001
+		and ((back[-2] + back[-1]) * 0.5).distance_to(corner) < 0.001,
+		"两股挂绳穿过吊牌圆孔并回到卡面穿孔")
+	# 从镜头投射卡角到吊牌平面，确保纸面不能再遮住实际连接点。
+	var camera: Camera3D = main.board.camera
+	var pixel := camera.unproject_position(expected_corner)
+	var origin := camera.project_ray_origin(pixel)
+	var ray := camera.project_ray_normal(pixel)
+	var plane_y: float = tag._paper.global_position.y
+	var projected: Vector3 = origin + ray * ((plane_y - origin.y) / ray.y)
+	var local: Vector3 = tag._hanging.to_local(projected)
+	var tag_distance := maxf(maxf(absf(local.z) - 0.265, local.x - 0.495),
+		(-local.x - 0.495 + absf(local.z) * 0.85) / 1.3124)
+	check(tag_distance > 0.03, "镜头下卡面穿孔与吊牌纸面分离，连接点清晰可见")
+	var eyelet: MeshInstance3D = tag._presentation.get_node("CardStringHole")
+	check(eyelet.global_position.distance_to(expected_corner) < 0.002,
+		"可见穿孔与挂绳的实际连接点一致")
+	if card._effect_blob:
+		var blob: Sprite3D = card._effect_blob
+		var radius := float(blob.texture.get_width()) * blob.pixel_size * card.BADGE_DONE_SCALE * 0.5
+		var flat_gap := Vector2(eyelet.global_position.x - blob.global_position.x,
+			eyelet.global_position.z - blob.global_position.z).length()
+		check(flat_gap > radius + tag.CARD_HOLE_RADIUS + 0.015,
+			"卡面穿孔与放大后的产出墨团保留间隔")
+	var tag_position := tag.global_position
+	var card_position := card.global_position
+	card.set_hover_visual(true)
+	tag._motion.pause()
+	tag._motion.custom_step(0.15)
+	check(tag._presentation.position.y > 0.0 and tag.global_position == tag_position
+			and card.global_position == card_position,
+		"悬停轻抬价签绘制层，不改变商品或价签锚点")
+	card.set_hover_visual(false)
+	var cash: Array[CardEntity] = []
+	var user: CardEntity
+	for entity in main.board.cards:
+		if entity.draggable and entity.def_id == CardDB.RES_CASH:
+			cash.append(entity)
+		if entity.draggable and entity.def_id == CardDB.RES_USER:
+			user = entity
+	if not need(not cash.is_empty() and user != null, "存在可测试购买反馈的资源实体"):
+		return
+	var cash_position := cash[0].global_position
+	var user_position := user.global_position
+	main.board._drag_cards.assign(cash)
+	cash[0].global_position = card.global_position
+	tag._process(0.0)
+	check(tag._paper._feedback_target == 1.0, "足额现金拖到商品上时价签提供有效目标反馈")
+	var tray: Node3D = main.get_node("PlayerZoneTray")
+	cash[0].global_position = cash_position
+	tray._process(0.02)
+	check(tray._feedback_target == 1.0, "拖到可落桌位置时理牌垫边缘亮起")
+	main.board._drag_cards.assign([user])
+	user.global_position = card.global_position
+	tag._process(0.0)
+	check(tag._paper._feedback_target == 0.0, "用户牌不能付款，不显示可购买反馈")
+	user.global_position = user_position
+	main.board._drag_cards.clear()
+	tag._process(0.0)
+	tray._process(0.02)
+	check(tray._feedback_target == 0.0 and not tag._presented, "拖拽结束清除分区和价签反馈")
+	var material := tag._paper.material_override as ShaderMaterial
+	var old_paper: Color = material.get_shader_parameter("fill_color")
+	Palette.set_color("world", "table_frame", Color("#E2D4B2"))
+	check(not (material.get_shader_parameter("fill_color") as Color).is_equal_approx(old_paper),
+		"吊牌纸色跟随公共配色实时更新")
+	Palette.restore_defaults()
+
+func _check_tag_ink_bounds(main: Node) -> void:
+	var tags: Array[Node3D] = []
+	for price in [1, 10, 100, 1000]:
+		var tag := preload("res://scenes/market_price_tag.gd").new()
+		main.add_child(tag)
+		tag.configure(price, main.market_cards[0], main.board)
+		tag.position = Vector3(40, 0.15, 40)
+		tags.append(tag)
+	await process_frame
+	await process_frame
+	await process_frame
+	var safe := Rect2(Vector2(-0.21, -0.21), Vector2(0.65, 0.42))
+	for tag in tags:
+		for item in [tag._label, tag._coin]:
+			var bounds: AABB = item.get_aabb()
+			var contained := bounds.size.x > 0.0 and bounds.size.y > 0.0
+			for x in [bounds.position.x, bounds.end.x]:
+				for y in [bounds.position.y, bounds.end.y]:
+					var point: Vector3 = item.transform * Vector3(x, y, 0)
+					contained = contained and safe.has_point(Vector2(point.x, point.z))
+			check(contained, "%s 的%s完整位于吊牌留白范围内" % [tag.text, "数字" if item == tag._label else "金币"])
+		tag.queue_free()
