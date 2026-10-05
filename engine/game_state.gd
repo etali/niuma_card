@@ -541,7 +541,13 @@ func combo_survivors(who: String, combo: Dictionary) -> Array:
 ## 超出配方的富余投料被啃掉几张，配方还满着，产出就不该作废；
 ## 真要废掉整组，得咬穿配方需要的那几张（它们正好是防御 Buff 的保护额度）
 func combo_intact(who: String, combo: Dictionary) -> bool:
+	return combo_intact_without(who, combo, {})
+
+## AI 的拆组收益预判共用齐整检查，不另写配方/裂变/升级规则，也不修改实局。
+func combo_intact_without(who: String, combo: Dictionary, removed: Dictionary) -> bool:
 	var alive := combo_survivors(who, combo)
+	if not removed.is_empty():
+		alive = alive.filter(func(c): return not removed.has(c["uid"]))
 	if alive.size() < combo["uids"].size():
 		var eval := ComboRules.evaluate(alive)
 		if not eval["valid"]:

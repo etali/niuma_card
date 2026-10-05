@@ -795,35 +795,55 @@ static func _rollout(state: GameState, rounds: int, context: Dictionary) -> Dict
 		if Cancellation.requested(context): return {"complete":false}
 	return {"complete":true}
 
-## 攻击排序只读实际配方/产出/成本及当前目标。
+## 按剩余点数可造成的实际能力损失排序；必须打完一摞的成本也计入收益。
 static func greedy_target(state: GameState, attacker: String, targets: Array, pools: Dictionary,
 		parameters: Dictionary = {}) -> Dictionary:
+	var ordered := _ordered_attack_targets(state,attacker,targets,pools,parameters)
+	return ordered[0] if not ordered.is_empty() else {}
+
+static func _ordered_attack_targets(state: GameState, attacker: String, targets: Array,
+		pools: Dictionary, parameters: Dictionary = {}, metered := false) -> Array:
 	var p := parameters if not parameters.is_empty() else profile(0.0)
-	var best := -INF
-	var picked := {}
 	var victim := GameState.opponent(attacker)
+	var all_targets := state.attack_targets(victim)
+	var ranked: Array = []
 	for t in distinct_targets(targets):
+		# 搜索排序计入计算账本；额度耗尽后的必需合法 fallback 保持有界只读判断。
+		if metered and not Work.charge(p,Work.state_cost(state),"attack_ordering"): break
 		var res := str(t["res"])
 		var remaining := state.resource_count(victim, res)
 		var cost := maxf(float(t["cost"]), 1.0)
 		var score := 1.0 / maxf(remaining, 1)
 		if remaining * cost <= float(pools.get(res, 0)):
 			score += float(CardDB.game_rules()["win_cash"])
-		if t.get("kind") == "combo" and bool(t.get("intact", false)):
+		if GameState.batch_locks(t):
 			for combo in state.combos:
 				if combo["owner"] != victim or not combo["uids"].has(t["uids"][0]):
 					continue
+				if not state.combo_intact(victim,combo): break
+				# 同摞、同资源的合法靶由实际攻击规则提供。扣掉首击，再模拟
+				# 剩余点数可移除的单位；保护卡仍不在可攻击列表中。
+				var removed := {}
+				for uid in t["uids"]: removed[uid] = true
+				var spent := int(t["cost"])
+				for candidate in all_targets:
+					if GameState.target_batch(candidate) != GameState.target_batch(t) or candidate["res"] != res: continue
+					if candidate["uids"].any(func(uid): return removed.has(uid)): continue
+					if spent+int(candidate["cost"]) > int(pools.get(res,0)): continue
+					spent += int(candidate["cost"])
+					for uid in candidate["uids"]: removed[uid] = true
+				if state.combo_intact_without(victim,combo,removed): break
 				var ev: Dictionary = combo["eval"]
 				var value := Actions._combo_value(state, victim, ev) - int(ev.get("recipe_pay_n", 0))
 				# 后手的未开火攻击组被拆会失去还击，先手已开过火则只剩远期能力。
 				if ev["type"] == "attack" and attacker != state.action_first():
 					value *= float(p["spent_attack_discount"])
-				score += maxf(0.0, value)
+				score += maxf(0.0, value) / maxf(spent,1)
 				break
-		if score > best:
-			best = score
-			picked = t
-	return picked
+		ranked.append({"target":t,"score":score,"order":ranked.size()})
+	# 同分保留原始规则顺序，避免排序实现影响确定性与低/高预算搜索前缀。
+	ranked.sort_custom(func(a,b): return a["score"] > b["score"] if a["score"] != b["score"] else a["order"] < b["order"])
+	return ranked.map(func(row): return row["target"])
 
 static func distinct_targets(targets: Array) -> Array:
 	var out: Array = []
@@ -873,6 +893,7 @@ static func _choose_target(state: GameState, attacker: String, targets: Array, p
 		return picked if not picked.is_empty() else policy.call(state,attacker,targets,pools)
 	var best := -INF
 	var picked: Dictionary = policy.call(state,attacker,targets,pools)
+	choices = _ordered_attack_targets(state,attacker,choices,pools,p,true)
 	for target in choices:
 		if int(budget[0]) <= 0 or Cancellation.requested(p): break
 		if not Work.charge(p,Work.state_cost(state),"attack"): break
@@ -959,6 +980,8 @@ static func _attack_sequence(state: GameState, attacker: String, pools: Dictiona
 	if state.winner != "" or targets.is_empty() or depth <= 0 or int(budget[0]) <= 0:
 		return incumbent if not incumbent.is_empty() else _finish_attack(Env.copy(state),attacker,pools.duplicate(true),p,policy)
 	var best := incumbent if not incumbent.is_empty() else _attack_baseline(state,attacker,pools,p,budget)
+	if int(budget[0]) <= 0 or Cancellation.requested(p): return best
+	targets = _ordered_attack_targets(state,attacker,targets,pools,p,true)
 	var branches: Array = []
 	for target in targets:
 		if int(budget[0]) <= 0 or Cancellation.requested(p): break
@@ -973,6 +996,8 @@ static func _attack_sequence(state: GameState, attacker: String, pools: Dictiona
 		branches.append({"state":next,"pools":remaining,"target":target,"outcome":outcome})
 		if not Cancellation.requested(p) and float(outcome["score"]) > float(best["score"]):
 			best = {"target":target,"targets":[target.duplicate(true)]+outcome["targets"],"score":outcome["score"]}
+	for i in branches.size(): branches[i]["order"] = i
+	branches.sort_custom(func(a,b): return a["outcome"]["score"] > b["outcome"]["score"] if a["outcome"]["score"] != b["outcome"]["score"] else a["order"] < b["order"])
 	for branch in branches:
 		if int(budget[0]) <= 0 or Cancellation.requested(p): break
 		var outcome := _attack_sequence(branch["state"],attacker,branch["pools"],p,budget,depth-1,branch["outcome"])
