@@ -21,12 +21,12 @@ extends RefCounted
 ## 一条意图**落地了**。参数就是 apply() 的返回值（同一个 Dictionary 实例）。
 ##
 ## 为什么公告点在这里而不是只在 Transport：并非每条落地的意图都经过 submit()。
-## AIAgent 持有 applier 并逐条重放搜索计划，这些意图也必须通知表现层；原先
+## BOTAgent 持有 applier 并逐条重放搜索计划，这些意图也必须通知表现层；原先
 ## **完全不可见** —— 于是 scenes/main.gd 只能靠「驱动对手的那段代码」顺手画对手，
 ## 而联网局里没有那段代码在跑（对手是人），对手侧就什么都不画。
 ##
 ## 所以规矩是：**意图在哪儿落地，就在哪儿公告**。谁想看都连这个信号，
-## 不必关心这条意图是自己 submit 的、AI 内部 apply 的、还是服务器推进阶段发的。
+## 不必关心这条意图是自己 submit 的、BOT 内部 apply 的、还是服务器推进阶段发的。
 ## 只在成功时发 —— 被拒的意图没有「落地」，它走 Transport.rejected
 signal landed(result: Dictionary)
 

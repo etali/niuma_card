@@ -6,11 +6,11 @@ extends "res://tests/harness.gd"
 
 ## 思考计时器（`engine/think_clock.gd` + 顶部回合状态）的判据。
 ##
-## 用户要的原话是「外显的实时计数器显示 AI 每次搜索花掉的时间，
+## 用户要的原话是「外显的实时计数器显示 BOT 每次搜索花掉的时间，
 ## 如果是局域网对战则显示对手花掉的时间」。所以要钉三件事：
 ##   1. 那个数随实际墙钟增长，并与最终实测耗时一致
 ##   2. 计时**真的裹在搜索外面** —— 这条最容易假绿：秒表自己 start/stop
-##      一定对得上，而它到底有没有装在 AI 那条路上是另一件事
+##      一定对得上，而它到底有没有装在 BOT 那条路上是另一件事
 ##   3. 单机与联网都在顶部显示当前计时，面板不重复，结束后收起
 ##
 ## 第 2 条的判法是**真跑一个行动阶段**，然后看趟数涨了没有 ——
@@ -25,8 +25,8 @@ func _initialize() -> void:
 	await _t_reset()
 	await _t_idempotent_stop()
 	await _t_live_text()
-	await _t_wired_into_ai_path()
-	await _t_ai_single_search()
+	await _t_wired_into_bot_path()
+	await _t_bot_single_search()
 	finish()
 
 
@@ -36,9 +36,9 @@ func _initialize() -> void:
 ## 短长两次测量都比较真实墙钟，固定读数无法同时满足。
 func _t_measures_wall_clock() -> void:
 	ThinkClock.reset()
-	ThinkClock.start(ThinkClock.SRC_AI)
+	ThinkClock.start(ThinkClock.SRC_BOT)
 	check(ThinkClock.running(), "start 之后 running() 是真")
-	check(ThinkClock.source() == ThinkClock.SRC_AI, "记下了是谁在想（ai）")
+	check(ThinkClock.source() == ThinkClock.SRC_BOT, "记下了是谁在想（bot）")
 	var t0 := Time.get_ticks_msec()
 	while Time.get_ticks_msec() - t0 < 150:
 		await process_frame
@@ -52,7 +52,7 @@ func _t_measures_wall_clock() -> void:
 	check(absi(ThinkClock.last_ms() - real) <= 60,
 		"停表之后 last_ms 是真花掉的时间（%d，实际 %d）" % [ThinkClock.last_ms(), real])
 	var first_ms := ThinkClock.last_ms()
-	ThinkClock.start(ThinkClock.SRC_AI)
+	ThinkClock.start(ThinkClock.SRC_BOT)
 	var second_start := Time.get_ticks_msec()
 	while Time.get_ticks_msec() - second_start < real + 120:
 		await process_frame
@@ -71,7 +71,7 @@ func _t_stats() -> void:
 	check(ThinkClock.avg_ms() == -1, "从没跑过时 avg_ms 是 -1")
 
 	for i in 3:
-		ThinkClock.start(ThinkClock.SRC_AI)
+		ThinkClock.start(ThinkClock.SRC_BOT)
 		var t0 := Time.get_ticks_msec()
 		while Time.get_ticks_msec() - t0 < 40:
 			await process_frame
@@ -98,7 +98,7 @@ func _t_reset() -> void:
 ## 换局或掉线会让那行代码走不到，而别处可能已经调过一次
 func _t_idempotent_stop() -> void:
 	ThinkClock.reset()
-	ThinkClock.start(ThinkClock.SRC_AI)
+	ThinkClock.start(ThinkClock.SRC_BOT)
 	ThinkClock.stop()
 	var n := ThinkClock.count()
 	ThinkClock.stop()
@@ -113,13 +113,13 @@ func _t_live_text() -> void:
 	main._update_thinking_hint(true)
 	var idle: String = main.lbl_round.text
 	check(not idle.contains("思考") and not idle.contains("秒"), "未思考时顶部不显示旧耗时")
-	var panels := main.find_children("AIPanel", "", true, false)
+	var panels := main.find_children("BOTPanel", "", true, false)
 	var panel_has_clock := false
 	for panel: Node in panels:
 		for label: Node in panel.find_children("*", "Label", true, false):
 			panel_has_clock = panel_has_clock or label.text.contains("⏱") or label.text.contains("思考")
-	check(panels.size() == 1 and not panel_has_clock, "AI 强度面板不再重复显示计时行")
-	ThinkClock.start(ThinkClock.SRC_AI)
+	check(panels.size() == 1 and not panel_has_clock, "BOT 强度面板不再重复显示计时行")
+	ThinkClock.start(ThinkClock.SRC_BOT)
 	main._update_thinking_hint()
 	check(main.lbl_round.text.ends_with("对手思考中… 0.0秒"), "顶部在思考开始立即显示零秒")
 	main.lbl_player_res.text = "计时刷新不重算资源"
@@ -136,8 +136,8 @@ func _t_live_text() -> void:
 	ThinkClock.start(ThinkClock.SRC_FOE)
 	main._update_thinking_hint()
 	var foe_run: String = main.lbl_round.text
-	check(foe_run.contains("对手") and not foe_run.contains("AI"),
-		"联网局在想的时候念「对手」而**不**念 AI（%s）" % foe_run)
+	check(foe_run.contains("对手") and not foe_run.contains("BOT"),
+		"联网局在想的时候念「对手」而**不**念 BOT（%s）" % foe_run)
 	check(foe_run.ends_with("0.0秒"), "下一次思考从零开始，不显示上一次耗时")
 	ThinkClock.stop()
 	main._update_thinking_hint()
@@ -151,45 +151,45 @@ func _displayed_seconds(text: String) -> float:
 	return text.get_slice("对手思考中… ", 1).trim_suffix("秒").to_float()
 
 
-## 六、**最要紧的一条**：秒表真的装在 AI 那条路上。
+## 六、**最要紧的一条**：秒表真的装在 BOT 那条路上。
 ##
 ## 前五条全是自证 —— 自己 start、自己 stop，读数当然对。
 ## 这条不碰 ThinkClock 的任何写接口，只跑一个真的行动阶段，
 ## 然后看趟数涨了没有。装漏了（`_think_off_thread` 里少那两行）这条就红，
 ## 而上面五条照旧全绿
-func _t_wired_into_ai_path() -> void:
+func _t_wired_into_bot_path() -> void:
 	var main: Node = await boot_main()
 	if not need(main != null, "开局成功"):
 		return
 	# 强度调到最低档：这条判据要的是「计过没有」，不是「花了多久」，
 	# 满档一次 1.7 秒会让这条测试自己变慢
-	AISearch.clear_overrides()
-	AISearch.set_pref_strength(float(AISearch.PRESETS["min"]))
+	BOTSearch.clear_overrides()
+	BOTSearch.set_pref_strength(float(BOTSearch.PRESETS["min"]))
 
 	# 连跑两个行动阶段，beat 数真实搜索次数，再与同一个屏幕思考钩子的计时记录对账。
 	ThinkClock.reset()
 	var asked := [0]
 	# 两个行动阶段分别触发当前策略搜索，验证每次搜索独立计时。
-	var agent := AIAgent.new(main.pipe, main.foe_seat, AISearch.from_model("ai", AISearch.pref_strength()))
+	var agent := BOTAgent.new(main.pipe, main.foe_seat, BOTSearch.from_model("bot", BOTSearch.pref_strength()))
 	agent.think = main._think_off_thread
 	# 阶段墙钟：下面那条占比判据要拿它当分母。beat 返回 null，
 	# 所以这段墙钟里没有演出节拍，几乎全是搜索本身
 	var t0 := Time.get_ticks_msec()
 	await agent.run_action_phase(func(step: String):
-		if step == AIAgent.STEP_THINK:
+		if step == BOTAgent.STEP_THINK:
 			asked[0] += 1
 		return null)
-	var second := AIAgent.new(main.pipe, main.foe_seat, AISearch.from_model("ai", AISearch.pref_strength()))
+	var second := BOTAgent.new(main.pipe, main.foe_seat, BOTSearch.from_model("bot", BOTSearch.pref_strength()))
 	second.think = main._think_off_thread
 	await second.run_action_phase(func(step: String):
-		if step == AIAgent.STEP_THINK:
+		if step == BOTAgent.STEP_THINK:
 			asked[0] += 1
 		return null)
 	var wall := Time.get_ticks_msec() - t0
 	var n := ThinkClock.count()
 	check(n > 0, "跑完两个行动阶段，计时器记下了 %d 次搜索（0 = 秒表没装上）" % n)
-	check(ThinkClock.last_source() == ThinkClock.SRC_AI,
-		"记的来源是本地 AI（%s）" % ThinkClock.last_source())
+	check(ThinkClock.last_source() == ThinkClock.SRC_BOT,
+		"记的来源是本地 BOT（%s）" % ThinkClock.last_source())
 	check(asked[0] == 2 and n == asked[0],
 		"两个行动阶段各搜索一次，计时器逐次记录（搜索 %d / 记录 %d）" % [asked[0], n])
 
@@ -227,9 +227,9 @@ func _t_wired_into_ai_path() -> void:
 	main.free()
 
 
-## 联网那一路的秒表。**这一路压根不经过 `AIThink`** ——
+## 联网那一路的秒表。**这一路压根不经过 `BOTThink`** ——
 ## 对手在他自己那台机器上想，这边只是在 `_await_foe_action` 里等一条 action_done。
-## 也就是说本地 AI 那些判据一条都覆盖不到它（这也是秒表不能挂在 AIThink 上的理由）。
+## 也就是说本地 BOT 那些判据一条都覆盖不到它（这也是秒表不能挂在 BOTThink 上的理由）。
 ##
 ## 这里不起真连接：`_await_foe_action` 等的是 `_foe_action_done` 这个标志位，
 ## 而那个标志位由 `_on_intent_applied` 之外那条分支置起来。
@@ -251,7 +251,7 @@ func _foe_side(main: Node) -> void:
 
 	check(ThinkClock.count() == 1, "等了一次对手行动，计时器记了 %d 趟" % ThinkClock.count())
 	check(ThinkClock.last_source() == ThinkClock.SRC_FOE,
-		"记的来源是**对手**而不是本地 AI（%s）" % ThinkClock.last_source())
+		"记的来源是**对手**而不是本地 BOT（%s）" % ThinkClock.last_source())
 	# 量到的是真等的那一段。±60 同前：无头帧长本身有抖动
 	check(absi(ThinkClock.last_ms() - wall) <= 60,
 		"读数就是真等的那段墙钟（%d，实际 %d）" % [ThinkClock.last_ms(), wall])
@@ -259,21 +259,21 @@ func _foe_side(main: Node) -> void:
 	ThinkClock.reset()
 
 
-## AI 一次搜索生成整段行动，计时不能误按典当/购买/编组的意图条数累计。
-func _t_ai_single_search() -> void:
+## BOT 一次搜索生成整段行动，计时不能误按典当/购买/编组的意图条数累计。
+func _t_bot_single_search() -> void:
 	var main: Node = await boot_main()
-	if not need(main != null, "AI计时测试启动场景"):
+	if not need(main != null, "BOT计时测试启动场景"):
 		return
 	ThinkClock.reset()
 	var asked := [0]
-	var agent := AIAgent.new(main.pipe, main.foe_seat, AISearch.from_model("ai",0))
+	var agent := BOTAgent.new(main.pipe, main.foe_seat, BOTSearch.from_model("bot",0))
 	agent.think = main._think_off_thread
 	await agent.run_action_phase(func(step: String):
-		if step == AIAgent.STEP_THINK:
+		if step == BOTAgent.STEP_THINK:
 			asked[0] += 1
 		return null)
 	check(asked[0] == 1 and ThinkClock.count() == 1,
-		"AI完整方案搜索一次，计时器恰好记一次，不因逐条重放而增加")
-	check(ThinkClock.last_source() == ThinkClock.SRC_AI and ThinkClock.last_ms() >= 0,
-		"AI复用实际屏幕思考钩子，报告本地AI耗时")
+		"BOT完整方案搜索一次，计时器恰好记一次，不因逐条重放而增加")
+	check(ThinkClock.last_source() == ThinkClock.SRC_BOT and ThinkClock.last_ms() >= 0,
+		"BOT复用实际屏幕思考钩子，报告本地BOT耗时")
 	main.free()

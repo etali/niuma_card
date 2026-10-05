@@ -11,7 +11,7 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	AISearch.set_pref_strength(0.0)
+	BOTSearch.set_pref_strength(0.0)
 	var main := await boot_main()
 	var state: GameState = main.state
 	state.combos.clear()
@@ -30,7 +30,7 @@ func _run() -> void:
 	main.tape.start(main.pipe.applier(), "典当冲线画面回归")
 	main.tape.update_view()
 	var before: Dictionary = Snapshot.capture(main)["positions"]
-	# 真实 AI 选择确定获胜的典当，经过落地广播及正常终局入口。
+	# 真实 BOT 选择确定获胜的典当，经过落地广播及正常终局入口。
 	main._run_foe_action()
 	var deadline := Time.get_ticks_msec() + 5000
 	while state.winner == "" and Time.get_ticks_msec() < deadline:
@@ -45,7 +45,7 @@ func _run() -> void:
 	check(state.winner == main.foe_seat and state.resource_count(main.foe_seat, CardDB.RES_CASH) == expected,
 		"两张 996 典当后现金从 %d 到 %d，按真实规则获胜" % [threshold - 5, expected])
 	check(main.phase == PhaseMachine.OVER and is_instance_valid(main.game_over_panel),
-		"真实 AI 典当冲线后正常进入结局")
+		"真实 BOT 典当冲线后正常进入结局")
 	_check_cash(main, expected, "实时典当获胜")
 	check(pawned.all(func(uid): return not main.entities.has(uid)), "已典当的卡全部从牌桌撤下")
 	check(main.lbl_msg.text.contains(str(expected)) and not main.lbl_msg.text.contains("在即"),
@@ -89,7 +89,7 @@ func _run() -> void:
 	await settle()
 	check(jumped.get("ok", false), "旧录像直接跳转到获胜步")
 	_check_cash(main, expected, "旧录像直接跳转末态")
-	AISearch.restore_defaults()
+	BOTSearch.restore_defaults()
 	finish()
 
 func _check_cash(main: Node, expected: int, label: String) -> void:
@@ -101,9 +101,9 @@ func _check_cash(main: Node, expected: int, label: String) -> void:
 		var uid: int = card["uid"]
 		if main.entities.has(uid) and is_instance_valid(main.entities[uid]):
 			displayed += 1
-			if main.entities[uid].position.z < 0 and main.layout._ai_pile_of_uid.has(uid):
+			if main.entities[uid].position.z < 0 and main.layout._bot_pile_of_uid.has(uid):
 				piled += 1
 	check(displayed == expected and piled == expected,
 		"%s：%d 张现金均有实体并归入对手资源摞（实际 %d / %d）" % [label, expected, displayed, piled])
-	check(main.lbl_ai_res.text.contains("%s %d" % [CardDB.res_label(CardDB.RES_CASH), expected])
-		and main.hud_ai_card.cash_value.text == str(expected), "%s：两种 HUD 的现金读数与牌桌一致" % label)
+	check(main.lbl_bot_res.text.contains("%s %d" % [CardDB.res_label(CardDB.RES_CASH), expected])
+		and main.hud_bot_card.cash_value.text == str(expected), "%s：两种 HUD 的现金读数与牌桌一致" % label)

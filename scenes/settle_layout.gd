@@ -4,7 +4,7 @@
 
 extends Node
 
-## 牌该摆哪儿：AI 区摆放、玩家闲置区整理、结算到货摞牌、摞的落位与高度。
+## 牌该摆哪儿：BOT 区摆放、玩家闲置区整理、结算到货摞牌、摞的落位与高度。
 ##
 ## 从 main.gd 切出来的一段。切的是「摆放」这一层：
 ## main.gd 管回合流程（谁该行动、买了什么、什么时候进攻），这里只管
@@ -34,79 +34,79 @@ func bind(main: Node) -> void:
 	board = main.board
 	entities = main.entities
 
-## AI 理牌：组合与闲置单位卡一律收拢成摞（沿高度摞起来，见 Board.COMPACT_GAP），
-## 再在 AI 区排成均匀的两行。摊开摆法下一个 6 张的组合要吃掉 z 向 2.6，
-## 三个组合加两堆闲置卡就把整个 AI 区填满、还会互相压边；收拢后每摞只占一张卡，
+## BOT 理牌：组合与闲置单位卡一律收拢成摞（沿高度摞起来，见 Board.COMPACT_GAP），
+## 再在 BOT 区排成均匀的两行。摊开摆法下一个 6 张的组合要吃掉 z 向 2.6，
+## 三个组合加两堆闲置卡就把整个 BOT 区填满、还会互相压边；收拢后每摞只占一张卡，
 ## 位置可以按固定节距算出来，多少张牌摆出来都是齐的
 ## 闲置摞的席位与玩家侧镜像对称：现金在左、用户在右，两边读起来是同一句话。
-## x 对着玩家侧那一片牌的**中线**，不是它的左边缘：AI 一种资源是一摞（一列），
+## x 对着玩家侧那一片牌的**中线**，不是它的左边缘：BOT 一种资源是一摞（一列），
 ## 玩家那边是切成好几列的一片，两边对齐要按中线看才读得出「对称」。
 ## 中线 = 玩家侧锚点 x + PLAYER_PILE_COL_PITCH×(列数-1)/2，列数按开局张数
 ## （`_game.start_cash` / `_game.start_user`）每 PLAYER_PILE_PER_COL 张一列算出来；
-## z 落在后行（AI_ROW_Z 的后者）。
+## z 落在后行（BOT_ROW_Z 的后者）。
 ## 贴着玩家侧那一片的左边缘摆会把侧边清单顶到左上角的 HUD 文字上，数字压着数字
-const AI_PILE_BENCH_X := -2.0   # 杂项（非资源）闲置摞：两个资源席位之间
-const AI_COMBO_MAX_Z := -2.0    # AI 组合 z 上限：不得越过购牌区（MARKET_Z=-1.6）
+const BOT_PILE_BENCH_X := -2.0   # 杂项（非资源）闲置摞：两个资源席位之间
+const BOT_COMBO_MAX_Z := -2.0    # BOT 组合 z 上限：不得越过购牌区（MARKET_Z=-1.6）
 
 ## 均匀摆放的网格：两行。分行看的是「是什么」不是「第几个」——
 ## 组合一律前行（靠购牌区，是这回合要看的东西），闲置摞一律后行（固定席位，
 ## 开局就该在自己家里）。早先按序号分行，开局零组合时两堆闲置卡被排进前行、
 ## 贴着购牌区挤在中间，第一次上手的人分不清那是谁的牌。
 ## 节距 2.5 = 卡宽 1.2 + 侧边清单约 0.7 + 间隙，相邻两摞的清单不会叠在一起
-const AI_ROW_Z := [-4.1, -6.5]  # 前行 / 后行；后行不越过 -7.6（AI 区北缘）
+const BOT_ROW_Z := [-4.1, -6.5]  # 前行 / 后行；后行不越过 -7.6（BOT 区北缘）
 ## 后行闲置摞的席位节距。**前行（组合）不用这个数** —— 组合的横向节距按
 ## 「这一行里最宽的那个组合有多宽」现算，见 plan_combo_row。
 ##
-## 为什么前行不能用固定节距（报上来的症状是「每次 AI 理完牌，组合卡都叠在一起」）：
+## 为什么前行不能用固定节距（报上来的症状是「每次 BOT 理完牌，组合卡都叠在一起」）：
 ## 一个分了 2 列的组合横着占 COMBO_COL_PITCH + 卡宽 = 1.3 + 1.2 = 2.50，
 ## **正好等于这个节距**。于是相邻两个 2 列组合边挨边、中间一丝空当都没有 ——
 ## 实测一局第 6 回合，5 张那组的右列在 x=-0.60、6 张那组的左列在 x=+0.60，
 ## 两列相距 1.20 = 整整一张卡宽，屏幕上就是连成一片、分不出哪几张是一组
-const AI_SLOT_PITCH := 2.5
-const AI_SLOTS_PER_ROW := 6
+const BOT_SLOT_PITCH := 2.5
+const BOT_SLOTS_PER_ROW := 6
 ## 摞沿 +z 长（每张 Board.COMPACT_GAP.z），所以后行的落点要按张数往北退，
-## 让摞的远端停在行线上而不是越过行线去顶前行。退到 -7.2 为止（AI 区北缘
+## 让摞的远端停在行线上而不是越过行线去顶前行。退到 -7.2 为止（BOT 区北缘
 ## -7.6 之内）：退到底时后行有 0.7 的退让 + 两行之间本来的 0.7 空档，
 ## 29 张以内的摞都碰不到前行 —— 这个 29 现在由 back_pile_cap() 算出来并**执行**，
 ## 原先只是这句注释里的一个观察，摞照旧一张一级台阶地往南爬（实测 100 张
 ## 爬到 y=4.5、南缘压在货架上）
-const AI_BACK_Z_MIN := -7.2
+const BOT_BACK_Z_MIN := -7.2
 const PILE_CHUNK := 10          # 结算产出按每份这么多张摞成一组（见 _stack_arrivals）
 
 ## 开局这一片摊开的牌：形态要和玩家侧一模一样 —— 玩家开局是摊开的（每列
-## PLAYER_PILE_PER_COL 张，见 _group_pile），AI 也就得是摊开的，不能一边摊开
+## PLAYER_PILE_PER_COL 张，见 _group_pile），BOT 也就得是摊开的，不能一边摊开
 ## 一边收拢成一坨。列的 x 直接用玩家侧那两个锚点，一列对一列地对上。
 ##
-## z 是「同一片牌摆进 AI 区」，不是把玩家那一片按 z 翻过来：翻过来会让台阶
+## z 是「同一片牌摆进 BOT 区」，不是把玩家那一片按 z 翻过来：翻过来会让台阶
 ## 反着长，后一张盖住前一张的标题带（带在卡的远端，见 Board._stack_offset），
-## AI 那片就成了看不出张数的一堵墙。所以照样沿 +z 长，只是整片挪到 AI 区。
+## BOT 那片就成了看不出张数的一堵墙。所以照样沿 +z 长，只是整片挪到 BOT 区。
 ##
-## 起点按最长一列（PLAYER_PILE_PER_COL 张）算，让整片的远端贴着 AI 区北缘：
+## 起点按最长一列（PLAYER_PILE_PER_COL 张）算，让整片的远端贴着 BOT 区北缘：
 ## 各列按自己的张数居中会让 8 张那列和 4 张那列错开，读不出「一片」
-const AI_SPREAD_Z0 := -7.4
+const BOT_SPREAD_Z0 := -7.4
 ## 摊开这一片的右缘上限。超了就退回收拢：一种资源上百张时摊开要十几列，
 ## 横着能铺满整张桌子、盖掉对面 —— 收拢加侧边清单才读得出张数。
 ##
 ## 注意这条**只挡住出桌**，挡不住「摊得太开」：实测现金要到 7 列（56 张）
-## 才撞上它、用户 5 列（40 张），那时整片已经占掉大半个 AI 区。
+## 才撞上它、用户 5 列（40 张），那时整片已经占掉大半个 BOT 区。
 ## 「摊到几列就该收拢」由 spread_max_cols() 定，这条是它之外的兜底
-const AI_SPREAD_MAX_X := 12.4
+const BOT_SPREAD_MAX_X := 12.4
 
 ## 摊开的组合最南那张的 z 上限：让它的**南缘**贴着货架牌的北缘。
 ##
-## 不能直接用 AI_COMBO_MAX_Z（-2.0，AI 托盘的南缘）：那是「卡心不出托盘」，
+## 不能直接用 BOT_COMBO_MAX_Z（-2.0，BOT 托盘的南缘）：那是「卡心不出托盘」，
 ## 而货架牌卡心在 MARKET_Z=-1.6、占地 CARD_SIZE.z=1.7，北缘在 -2.45 ——
 ## 卡心摆到 -2.0 的牌南缘已经到 -1.15，整整 0.45 压在货架牌底下
-## （两者 y 差着 0.15，不会 z-fight，但屏幕上就是「AI 的牌钻进货架里」）。
+## （两者 y 差着 0.15，不会 z-fight，但屏幕上就是「BOT 的牌钻进货架里」）。
 ## 收拢那条路离这条线还有一截（8 张组合最南那张在 -3.75），所以这个数
 ## 是摊开这条路自己要守的，不是把原来那条改严。
 ##
 ## 算出来而不是写死：两个数都是常量，写死等于同一件事有两份，
 ## 改了 MARKET_Z 或卡的纵深就悄悄错开（实测 -1.6 - 1.7 = -3.30）。
 ##
-## 也不能借 _ai_spread_step 的那条线（南端和玩家侧一样远 → -4.2）：那条管的是
+## 也不能借 _bot_spread_step 的那条线（南端和玩家侧一样远 → -4.2）：那条管的是
 ## **资源堆**，玩家侧有一片对应的堆才比得出「一样远」。组合是**故意**摆得比它近的
-## （AI_ROW_Z[0] = -4.1 已经在 -4.2 南边，见 AI_ROW_Z 的说明：组合一律前行、
+## （BOT_ROW_Z[0] = -4.1 已经在 -4.2 南边，见 BOT_ROW_Z 的说明：组合一律前行、
 ## 靠购牌区，是这回合要看的东西）。所以组合这条只能按几何取
 func combo_south_limit() -> float:
 	return _main.MARKET_Z - CardEntity.CARD_SIZE.z
@@ -127,7 +127,7 @@ const COMBO_COL_PITCH := 1.3
 ## 算出来而不是写死 4：改了 MARKET_Z、卡的纵深或 BAND_FRAC 这个数就该跟着变，
 ## 写死的话表现是「组合又开始摞成一块」，而那正是这次要修的症状
 func combo_per_col() -> int:
-	var budget: float = combo_south_limit() - AI_ROW_Z[0]
+	var budget: float = combo_south_limit() - BOT_ROW_Z[0]
 	return 1 + int(floor(budget / combo_band_step() + 0.0001))
 
 ## 一个 n 张的组合**想**分几列（不看整行挤不挤，见下）。
@@ -135,11 +135,11 @@ func combo_per_col() -> int:
 ## 为什么组合要分列（这是这次改的核心）：z 向的预算只有 0.80，
 ## 加上「每张至少露出标题带」那条下限 0.2656，**一列最多摊得开 4 张**。
 ## 而 21 个配方里有 17 个是 5 张以上（最大 10 张）—— 于是绝大多数组合
-## 一律走收拢，屏幕上就是「AI 整理后的组合牌全摞在一块儿看不清」。
+## 一律走收拢，屏幕上就是「BOT 整理后的组合牌全摞在一块儿看不清」。
 ##
 ## z 向没得加：北边是后行的资源摞（组合朝北长到 -4.55 就压上它的占地），
 ## 南边是货架牌的北缘（combo_south_limit 那条）。所以地方只能从 x 上拿 ——
-## 资源那一片本来就是这么摊的（_spread_ai_pile 按 PLAYER_PILE_PER_COL 切列）。
+## 资源那一片本来就是这么摊的（_spread_bot_pile 按 PLAYER_PILE_PER_COL 切列）。
 ##
 ## 这里**不收「一行摆不下」这个约束**：它归 plan_combo_row 的降列那一段。
 ## 原先这个函数收一个 room 参数、自己把列数掐到 room 放得下为止，
@@ -159,21 +159,21 @@ func combo_cols(n: int) -> int:
 ## 传进来的是**一列里有几张**（per_col），不是整组的张数 —— 组合会分列，
 ## 见 combo_cols。分列之前这里传的是整组张数，于是 5 张以上一律返回 0。
 ##
-## 预算是「行线（AI_ROW_Z[0]）到 combo_south_limit()」这一段，实测 0.80。
-## 组合沿 +z 长（和玩家侧同向，见 AI_SPREAD_Z0 的说明），所以北端钉在行线上、
+## 预算是「行线（BOT_ROW_Z[0]）到 combo_south_limit()」这一段，实测 0.80。
+## 组合沿 +z 长（和玩家侧同向，见 BOT_SPREAD_Z0 的说明），所以北端钉在行线上、
 ## 往南长 —— 北端钉住是为了让「前行在哪」这件事不随张数变。
 ##
 ## 步长取玩家侧那个（Board.STACK_GAP.z=0.52）和预算摊下来那个的小者：
-## 玩家侧从不压缩，但 AI 区纵深只有 5.6 还要塞两行，8 张按 0.52 要 3.64、
+## 玩家侧从不压缩，但 BOT 区纵深只有 5.6 还要塞两行，8 张按 0.52 要 3.64、
 ## 预算只有 0.80，不压缩的话连 3 张都摊不开（要 1.04）。压到标题带那条线为止
-## 是 _ai_spread_step 对资源堆已经在做的取舍 —— 挤到看不出张数就该收拢，
+## 是 _bot_spread_step 对资源堆已经在做的取舍 —— 挤到看不出张数就该收拢，
 ## 收拢有侧边清单，反而读得出来
 func combo_spread_step(per_col: int) -> float:
 	if per_col < 2:
 		return 0.0
 	# 行线在北（-4.1），南界在南（-3.30），沿 +z 长 —— 减法的方向别写反了：
 	# 反过来是 -0.80，负预算会让 minf 挑到负步长，组合朝北长进后排里
-	var budget: float = combo_south_limit() - AI_ROW_Z[0]
+	var budget: float = combo_south_limit() - BOT_ROW_Z[0]
 	var step: float = minf(Board.STACK_GAP.z, budget / float(per_col - 1))
 	return step if step >= combo_band_step() - 0.0001 else 0.0
 
@@ -185,11 +185,11 @@ const COMBO_ROW_GAP := 0.6
 
 ## 前行能用的宽度（整行，以 x=0 居中 → 左右各一半）。
 ##
-## 借 AI_SPREAD_MAX_X 那条右缘线，不新起一个常量：那条线本来的意思就是
-## 「AI 这半边的牌摆到哪儿为止」（见它的说明），前行后行守同一条边才对得齐。
+## 借 BOT_SPREAD_MAX_X 那条右缘线，不新起一个常量：那条线本来的意思就是
+## 「BOT 这半边的牌摆到哪儿为止」（见它的说明），前行后行守同一条边才对得齐。
 ## 托盘本身宽 26（±13），所以这条线左右还各剩 0.6 的余量
 func combo_row_width() -> float:
-	return AI_SPREAD_MAX_X * 2.0
+	return BOT_SPREAD_MAX_X * 2.0
 
 ## 一个组合从**卡心**往左 / 往右各伸出多远。返回 Vector2(左, 右)，都是正数。
 ##
@@ -210,7 +210,7 @@ func combo_reach(n: int, cols: int, compact: bool) -> Vector2:
 		if n >= 2:
 			right = half + Board.SIDE_GAP + Board.SIDE_W
 		return Vector2(half, right)
-	# 摊开的组合：列以 at.x 居中（_spread_ai_combo 里那句 dx），
+	# 摊开的组合：列以 at.x 居中（_spread_bot_combo 里那句 dx），
 	# 两侧各伸出 (cols-1)/2 个列距，再加卡自己的半宽。摊开的不挂清单
 	var side: float = float(cols - 1) / 2.0 * COMBO_COL_PITCH + half
 	return Vector2(side, side)
@@ -218,7 +218,7 @@ func combo_reach(n: int, cols: int, compact: bool) -> Vector2:
 ## 排前行：定下每个组合分几列、摊开的步长、以及卡心的 x。
 ##
 ## 这是修「组合卡都叠在一起」的那一步。原先前行是**固定节距 2.5 的格子**，
-## 而一个 2 列组合横着正好占 2.50 —— 相邻两组边挨边，零空当（见 AI_SLOT_PITCH）。
+## 而一个 2 列组合横着正好占 2.50 —— 相邻两组边挨边，零空当（见 BOT_SLOT_PITCH）。
 ## 现在反过来：先让每个组合按自己的张数摊开（要几列给几列），
 ## 再按「最宽的那个 + COMBO_ROW_GAP」算出整行统一的节距。
 ##
@@ -227,7 +227,7 @@ func combo_reach(n: int, cols: int, compact: bool) -> Vector2:
 ## 而前行本来有富余 —— 托盘宽 26，原先的 6 格网格只用了 15。
 ##
 ## piles 只要每项的 n（张数）和 compact（Variant：true/false/null，
-## 对手声明的形态，见 _layout_ai_zone），不需要真的卡 —— 这样这个函数是纯的，
+## 对手声明的形态，见 _layout_bot_zone），不需要真的卡 —— 这样这个函数是纯的，
 ## 判据能直接拿几个张数问它，不必先在桌上摆出一局
 func plan_combo_row(piles: Array) -> Array:
 	var k: int = piles.size()
@@ -240,7 +240,7 @@ func plan_combo_row(piles: Array) -> Array:
 		#
 		# 这是联网局里玩家最直观的一个动作：他双击把一摞收起来 / 摊开来，
 		# 我这边也该看见同一件事。两个方向都要治：
-		#   - 他说收拢 → step 归零，走 _place_ai_pile
+		#   - 他说收拢 → step 归零，走 _place_bot_pile
 		#   - 他说摊开 → 换一份朝北的预算（declared_spread_step），
 		#     否则 8 张的摞按前行那 0.80 会被压成收拢，
 		#     于是收拢和摊开在我屏幕上长得一模一样
@@ -253,10 +253,10 @@ func plan_combo_row(piles: Array) -> Array:
 		# 拿整组张数去问会得出「摊不开」（5 张以上一律 0），那正是要修的
 		var cols: int = combo_cols(n)
 		var step: float = combo_spread_step(ceili(float(n) / float(maxi(cols, 1))))
-		# 「他说摊开」和「几何自己摊开」要分开记：钉南端那一步（见 _layout_ai_zone）
+		# 「他说摊开」和「几何自己摊开」要分开记：钉南端那一步（见 _layout_bot_zone）
 		# **只属于前者**。declared_spread_step 是一份朝北的预算（见那个函数），
 		# 而 combo_spread_step 那份本来就是从行线往南长的 ——
-		# 两者都往北挪的话，单机局的 AI 组合会整片偏出行线
+		# 两者都往北挪的话，单机局的 BOT 组合会整片偏出行线
 		var declared_spread := false
 		if want is bool:
 			if bool(want):
@@ -336,7 +336,7 @@ func plan_combo_row(piles: Array) -> Array:
 	#
 	# 压掉的是清单那份宽度：右邻的牌会盖住一部分侧边清单，读得出「这是几组」、
 	# 张数可能被挡。而不压的话整行会长到 ±15.7（实测 11 个组合），
-	# 那已经出了 AI 托盘（±13）—— 牌摆到别人半场去，比清单被挡严重得多。
+	# 那已经出了 BOT 托盘（±13）—— 牌摆到别人半场去，比清单被挡严重得多。
 	#
 	# 底线取卡宽：到这个数相邻两张正好边挨边，再压就是**牌压牌**，
 	# 也就回到「组合卡都叠在一起」那个症状本身了。
@@ -345,7 +345,7 @@ func plan_combo_row(piles: Array) -> Array:
 	if k > 1 and _row_span(out, pitch) > avail:
 		var over: float = _row_span(out, pitch) - avail
 		pitch = maxf(pitch - over / float(k - 1), CardEntity.CARD_SIZE.x)
-	# 一行空得慌的时候把节距**撑开**到 AI_SLOT_PITCH。
+	# 一行空得慌的时候把节距**撑开**到 BOT_SLOT_PITCH。
 	#
 	# 上面算出来的节距只保证「不重叠」，没保证「不显得挤」：节距是按
 	# 最宽那组的伸出算的，而组合小的时候那个数很小 —— 两个 2 张的组合
@@ -353,7 +353,7 @@ func plan_combo_row(piles: Array) -> Array:
 	# 而前行有 24.80 的地方、这两组一共只用了 3.00。原先的固定网格给的是
 	# 2.50，所以这一版**比改之前还挤**，虽然没重叠。
 	#
-	# 撑到 AI_SLOT_PITCH（2.5）为止：那就是原先那个网格的节距，
+	# 撑到 BOT_SLOT_PITCH（2.5）为止：那就是原先那个网格的节距，
 	# 也就是这一行「本来该有多松」的既有口径 —— 另起一个数的话，
 	# 同一件事就有了两个出处（memory: number-lives-in-five-places）。
 	# 撑开只会把空当变大，不会造成重叠，所以不必再判一次不重叠。
@@ -361,15 +361,15 @@ func plan_combo_row(piles: Array) -> Array:
 	# 只在**撑得下**的时候撑：能撑到多宽由 avail 反解 —— 占地对节距线性、
 	# 斜率 k-1，所以最多能加 (avail - 现在的占地)/(k-1)。
 	# 反解而不是「撑完再判超没超」：判了超再退回去就是同一个数算两遍
-	if k > 1 and pitch < AI_SLOT_PITCH:
+	if k > 1 and pitch < BOT_SLOT_PITCH:
 		var room: float = (avail - _row_span(out, pitch)) / float(k - 1)
-		pitch = minf(AI_SLOT_PITCH, pitch + maxf(room, 0.0))
+		pitch = minf(BOT_SLOT_PITCH, pitch + maxf(room, 0.0))
 	# 整行居中：居中的是**整片牌的占地**（含收拢摞右边那份侧边清单），
 	# 不是卡心那一串。
 	#
 	# 按卡心居中不行：清单只往右长，于是「有几摞是收拢的」会让整片牌
 	# 整体偏右 —— 实测 9 个组合时占地是 [-11.84, 12.96]，右边那 0.56 出了桌
-	# （AI_SPREAD_MAX_X=12.4），而卡心那一串明明是对称的。
+	# （BOT_SPREAD_MAX_X=12.4），而卡心那一串明明是对称的。
 	# 代价是组合的形态一变，卡心会跟着挪一点；而形态本来每回合就在变
 	for i in out.size():
 		out[i]["x"] = float(i) * pitch
@@ -424,13 +424,13 @@ func _row_span(plan: Array, pitch: float) -> float:
 ##
 ## 为什么不共用 combo_spread_step：那一份的预算是「行线往南到货架北缘」，
 ## 实测只有 0.80 —— 8 张要 3.64，于是**摊开的摞会被压成收拢**。
-## 单机局那样没问题（收方不知道 AI 想怎么摆，收拢加侧边清单是保守的选择），
+## 单机局那样没问题（收方不知道 BOT 想怎么摆，收拢加侧边清单是保守的选择），
 ## 联网局不行：发送端明说了这一摞是摊开的，压成收拢就等于收拢和摊开
 ## 在对手屏幕上长得一模一样 —— 而那正是玩家双击时唯一能看见的反馈。
 ##
 ## 预算换个方向拿：**南端钉在行线上，往北长**（行线 -4.1 → 后行退让线 -7.2，
 ## 实测 3.10，8 张够摊到 0.443）。台阶方向照旧沿 +z 长，只是整列往北挪 ——
-## 所以台阶不会反着长（AI_SPREAD_Z0 那段警告的是把玩家那片按 z 翻过来，
+## 所以台阶不会反着长（BOT_SPREAD_Z0 那段警告的是把玩家那片按 z 翻过来，
 ## 那才会让后一张盖住前一张的标题带）。
 ##
 ## 钉南端而不是北端：南端是靠货架、靠玩家的那一边，钉住它整片牌的
@@ -439,19 +439,19 @@ func _row_span(plan: Array, pitch: float) -> float:
 func declared_spread_step(n: int) -> float:
 	if n < 2:
 		return 0.0
-	var budget: float = AI_ROW_Z[0] - AI_BACK_Z_MIN
+	var budget: float = BOT_ROW_Z[0] - BOT_BACK_Z_MIN
 	var step: float = minf(Board.STACK_GAP.z, budget / float(n - 1))
 	return step if step >= combo_band_step() - 0.0001 else 0.0
 
 ## 后行那几摞收拢时台阶最多长几级（= 一摞里有几张露得出自己那一级）。
 ##
-## 预算是「摞退到底（AI_BACK_Z_MIN）时，最南那张的卡心还能往南走多远」：
+## 预算是「摞退到底（BOT_BACK_Z_MIN）时，最南那张的卡心还能往南走多远」：
 ## 摞沿 +z 往南长，最南那张的**南缘**（卡心 + 纵深/2）不许越过前行那片牌的
-## **北缘**（AI_ROW_Z[0] − 纵深/2）—— 越过就是压在组合的占地上。
+## **北缘**（BOT_ROW_Z[0] − 纵深/2）—— 越过就是压在组合的占地上。
 ## 两边各让半个纵深，合起来正好是一整个纵深：
 ##   (行线 − 纵深/2) − 纵深/2 − 退让线 = 行线 − 退让线 − 纵深
 ## 实测 -4.1 − (-7.2) − 1.7 = 1.40，按 COMPACT_GAP.z=0.05 一级 → 29 级，
-## 正是 AI_BACK_Z_MIN 那句注释一直写着、却从来没人执行的那个数。
+## 正是 BOT_BACK_Z_MIN 那句注释一直写着、却从来没人执行的那个数。
 ##
 ## 纵深只减一次（别减两次）：减两次剩 0.55、只有 12 级，摞看着更矮更紧，
 ## 可那是把「不碰前行」偷偷换成一条更严的、没人说出口的规矩 ——
@@ -466,7 +466,7 @@ func declared_spread_step(n: int) -> float:
 ## 29 张真牌叠起来是 0.87 厚，抬得比实物高是因为台阶得跨过 FACE_SPAN_Y 那条
 ## 防穿模的线（0.045 > 0.020），不是因为摞得虚
 func back_pile_cap() -> int:
-	var budget: float = AI_ROW_Z[0] - AI_BACK_Z_MIN - CardEntity.CARD_SIZE.z
+	var budget: float = BOT_ROW_Z[0] - BOT_BACK_Z_MIN - CardEntity.CARD_SIZE.z
 	if budget <= 0.0:
 		return 1
 	return 1 + int(floor(budget / Board.COMPACT_GAP.z + 0.0001))
@@ -486,7 +486,7 @@ func _pile_z_span(n: int, step: float) -> float:
 ## 对手声明的归一化位置 → 摆放函数要的那个 at（= 摞的**北端**）。
 ##
 ## 两处口径要对上：发送端发的是整摞 z 向的**中点**（见 main.my_pile_lists），
-## 而 _spread_ai_combo / _place_ai_pile 要的是北端 —— 所以往北退半个跨度。
+## 而 _spread_bot_combo / _place_bot_pile 要的是北端 —— 所以往北退半个跨度。
 ## 直接把中点当北端的话，摞越长越往南偏，长摞会整个压到货架上。
 ##
 ## z 钳在对手半区内（和 _free_spot 那对边界同一个数）：他那边可以把一摞
@@ -497,14 +497,14 @@ func _pile_z_span(n: int, step: float) -> float:
 func _pile_anchor_at(uv: Vector2, span: float) -> Vector3:
 	var p: Vector3 = _main.foe_pile_point(uv.x, uv.y)
 	p.z -= span / 2.0
-	p.z = minf(p.z, AI_FAR_Z_MAX - span)
-	p.z = maxf(p.z, AI_FAR_Z_MIN)
+	p.z = minf(p.z, BOT_FAR_Z_MAX - span)
+	p.z = maxf(p.z, BOT_FAR_Z_MIN)
 	return p
 
 ## 对手半区的 z 边界。和 _free_spot 里那对数字是同一件事 ——
 ## 那边写在函数里（is_near 分叉），这里要的是常量形式
-const AI_FAR_Z_MIN := -7.6
-const AI_FAR_Z_MAX := -1.8
+const BOT_FAR_Z_MIN := -7.6
+const BOT_FAR_Z_MAX := -1.8
 
 ## 一摞在**我这一侧**该按什么次序摆。declared 是发方声明的收拢位
 ## （true 收拢 / false 摊开 / null 没说）。
@@ -523,7 +523,7 @@ const AI_FAR_Z_MAX := -1.8
 ##      我这边首张牌当场换人。照他的次序摆就没有这个洞：
 ##      剔掉几张，余下的相对次序不变
 ##
-## null 走核心卡优先（单机局的 AI、老形状的包）：那一侧没有「他双击过」这回事，
+## null 走核心卡优先（单机局的 BOT、老形状的包）：那一侧没有「他双击过」这回事，
 ## 形态由几何定，而几何定出来的多是收拢 —— 也就是这条改动之前的行为
 func _order_as_declared(cards: Array, declared: Variant) -> Array:
 	if declared is bool and not bool(declared):
@@ -532,7 +532,7 @@ func _order_as_declared(cards: Array, declared: Variant) -> Array:
 
 ## 对手声明但还没编成组合的摞（见 Protocol.PILES / main.foe_piles）。
 ## claimed 是已经被组合收走的 uid，进来时只读、出去时**记上这几摞收了谁** ——
-## 调用方拿它去剔资源摞（见 _ai_piles 那一句）。
+## 调用方拿它去剔资源摞（见 _bot_piles 那一句）。
 ##
 ## 三道过滤，都在读的这一侧（发的那一侧只管说「我摆成这样」）：
 ##   - 不是对手名下的牌：忽略。发方编造 uid 或者牌刚被打掉都走这条
@@ -579,11 +579,11 @@ func _declared_piles(claimed: Dictionary) -> Array:
 			# 余下的相对次序不变
 			var rec := { "cards": _order_as_declared(cs,
 					bool((g as Dictionary).get("compact", false))),
-				"key": "ai_group_%d" % i,
-				# 发送端说的收拢位，一路带到 _layout_ai_zone
+				"key": "bot_group_%d" % i,
+				# 发送端说的收拢位，一路带到 _layout_bot_zone
 				"compact": bool((g as Dictionary).get("compact", false)) }
 			# 发送端说的位置（可选，见 Protocol.pile_lists）。没说就不放这个键 ——
-			# _layout_ai_zone 靠「有没有这个键」决定照他说的摆还是整行居中
+			# _layout_bot_zone 靠「有没有这个键」决定照他说的摆还是整行居中
 			if (g as Dictionary).has("u") and (g as Dictionary).has("v"):
 				rec["anchor"] = Vector2(float((g as Dictionary)["u"]),
 					float((g as Dictionary)["v"]))
@@ -595,7 +595,7 @@ func _declared_piles(claimed: Dictionary) -> Array:
 				claimed.erase(int(e.uid))
 	return out
 
-## 收集某方未编组的闲置单位卡实体 → [现金实体, 用户实体]（玩家/AI 共用这一份判定）。
+## 收集某方未编组的闲置单位卡实体 → [现金实体, 用户实体]（玩家/BOT 共用这一份判定）。
 ##
 ## extra_grouped 是「已经被别的摞收走」的 uid（对手声明的摞，见 _declared_piles）。
 ## 单独一个参数而不是并进 grouped：grouped 是**这里自己算**的那份
@@ -616,12 +616,12 @@ func _collect_idle_units(who: String, extra_grouped: Dictionary = {}) -> Array:
 				grouped[c.uid] = true
 	var idle_cash: Array = []
 	var idle_user: Array = []
-	var idle_other: Array = []   # 没编进组合的核心/Buff 卡（第三格，只有 AI 侧在用）
+	var idle_other: Array = []   # 没编进组合的核心/Buff 卡（第三格，只有 BOT 侧在用）
 	for c in _main.state.players[who]["cards"]:
 		if grouped.has(c["uid"]) or not entities.has(c["uid"]):
 			continue
 		# 正被远端拖着的牌不参与摆放（scenes/main.gd 的拖拽广播与租约处理的租约）。
-		# 不挡的话每一步之后的 _layout_ai_idle 都会抢着把牌摆回摞里，
+		# 不挡的话每一步之后的 _layout_bot_idle 都会抢着把牌摆回摞里，
 		# 而网络那头每 50ms 写一次新位置 —— 两边打架的样子是牌在抽搐
 		if _main.is_drag_leased(int(c["uid"])):
 			continue
@@ -748,15 +748,15 @@ func _drawer_bounds_enabled() -> bool:
 ## （见 _rest_pos），第二次搜索里那儿已经不空。两条修法缺一条都还会重合
 func _free_spot(anchor: Vector3, who: String, claimed: Array = [],
 		ignore: Dictionary = {}) -> Vector3:
-	## 近侧 / 远侧，不是「人 / 电脑」：联网时远端客户端的 my_seat 是 GameState.AI，
+	## 近侧 / 远侧，不是「人 / 电脑」：联网时远端客户端的 my_seat 是 GameState.BOT，
 	## 它的牌照样摆在屏幕下半边（近侧）
 	var is_near: bool = who == _main.my_seat
 	var z_dir := 1.0 if is_near else -1.0
 	# 远侧那对边界和 _pile_anchor_at 钳位用的是同一份常量：
 	# 两处各写一个数的话，「找空位」和「摆声明的摞」会对不同的桌沿负责，
 	# 而症状是某一种摆法的牌伸出桌外
-	var z_min := 0.6 if is_near else AI_FAR_Z_MIN
-	var z_max := 5.2 if is_near else AI_FAR_Z_MAX
+	var z_min := 0.6 if is_near else BOT_FAR_Z_MIN
+	var z_max := 5.2 if is_near else BOT_FAR_Z_MAX
 	var x_min := -INF
 	var x_max := INF
 	var safe := _center_bounds(who)
@@ -793,32 +793,32 @@ func _unit_anchor(who: String, def_id: String) -> Vector3:
 	var def: Dictionary = CardDB.get_def(def_id)
 	if who == _main.foe_seat:
 		if def.get("kind") == CardDB.KIND_UNIT:
-			return _ai_resource_anchor(str(def.get("res")))
-		return Vector3(0, 0.05, _main.AI_ZONE_Z - 1.5)
+			return _bot_resource_anchor(str(def.get("res")))
+		return Vector3(0, 0.05, _main.BOT_ZONE_Z - 1.5)
 	if def.get("kind") == CardDB.KIND_UNIT:
 		return PLAYER_PILE_CASH_ANCHOR if def.get("res") == CardDB.RES_CASH else PLAYER_PILE_USER_ANCHOR
 	return Vector3(0, 0.05, _main.PLAYER_ZONE_Z + 1.6)
 
-## AI 每步（典当/买卡/编组/结算/回合开始）结束后都调这一个入口：
+## BOT 每步（典当/买卡/编组/结算/回合开始）结束后都调这一个入口：
 ## 把组合和闲置卡各自收拢成摞，然后整片重排。分成两个函数的时候
 ## 「买完卡只理闲置、不动组合」会让组合和新的闲置摞挤在一起
-func _layout_ai_idle() -> void:
-	_layout_ai_zone()
+func _layout_bot_idle() -> void:
+	_layout_bot_zone()
 
 ## 这个 key 是不是「前行的摞」= 对手自己摆出来的分组。
-## 两种：编成了的组合（ai_combo_*）和还只是摞在一起的（ai_group_*，
+## 两种：编成了的组合（bot_combo_*）和还只是摞在一起的（bot_group_*，
 ## 见 Protocol.PILES）。后行是三个固定席位的资源/备牌摞。
 ##
 ## 一处定义：判前行的地方有四五处（分行、摊开预算、测试的分行断言），
 ## 各写一遍 begins_with 的话，新加一种摞会**只在其中几处**被当成前行 ——
 ## 症状是那一摞摆在后行的资源席位上，跟资源摞互相压边
 static func is_front_pile(key: String) -> bool:
-	return key.begins_with("ai_combo_") or key.begins_with("ai_group_")
+	return key.begins_with("bot_combo_") or key.begins_with("bot_group_")
 
-## AI 区的全部摞：[{cards: Array[CardEntity], key: String, compact: Variant}]，
+## BOT 区的全部摞：[{cards: Array[CardEntity], key: String, compact: Variant}]，
 ## 组合在前、闲置在后。compact 是对手声明的收拢位（true/false），
-## null = 他没说，形态照几何定（单机局的 AI 摞、闲置资源摞都是 null）
-func _ai_piles() -> Array:
+## null = 他没说，形态照几何定（单机局的 BOT 摞、闲置资源摞都是 null）
+func _bot_piles() -> Array:
 	var out: Array = []
 	var claimed := {}   # 已经被前面的摞收走的 uid，一张牌只进一摞
 	var i := 0
@@ -835,7 +835,7 @@ func _ai_piles() -> Array:
 				cs.append(entities[u])
 		if not cs.is_empty():
 			# 收拢位从**对手的声明**里继承（按 uid 查，见 main.foe_compact_of）：
-			# 他收手那一刻这一摞从 ai_group_* 变成 ai_combo_*，而声明里那一位
+			# 他收手那一刻这一摞从 bot_group_* 变成 bot_combo_*，而声明里那一位
 			# 还在。不继承的话玩家看见的是「收手一瞬间对面的摞自己摊开了」——
 			# 而他那边一直是收拢的。查不着（单机局、或者组合不是从摞来的）返回
 			# null，形态照几何定，也就是这条改动之前的行为
@@ -846,11 +846,11 @@ func _ai_piles() -> Array:
 			# GameState.create_combo 原样 duplicate 存下）。同 _declared_piles
 			# 那条：只在收拢态提核心卡，摊开态照原样摆
 			var rec := { "cards": _order_as_declared(cs, declared),
-				"key": "ai_combo_%d" % i, "compact": declared }
+				"key": "bot_combo_%d" % i, "compact": declared }
 			# 位置也从声明里继承，同 compact 那一条（见 main.foe_anchor_of）：
-			# 他收手那一刻这一摞从 ai_group_* 变成 ai_combo_*，不继承的话
+			# 他收手那一刻这一摞从 bot_group_* 变成 bot_combo_*，不继承的话
 			# 玩家看见的是「收手一瞬间对面那一摞自己跳回行中间了」。
-			# 查不着（单机局的 AI、或者组合不是从摞来的）就不放这个键
+			# 查不着（单机局的 BOT、或者组合不是从摞来的）就不放这个键
 			if not (combo["uids"] as Array).is_empty():
 				var uv: Variant = _main.foe_anchor_of(int(combo["uids"][0]))
 				if uv != null:
@@ -860,7 +860,7 @@ func _ai_piles() -> Array:
 	# 对手**声明**的摞（还没编成组合的那些，见 Protocol.PILES）。
 	# 排在组合之后、闲置摞之前：它们和组合同属「他自己摆出来的分组」，
 	# 该摆在同一行；等他收手时那几摞会变成真组合（_register_player_combos），
-	# 位置不跳 —— 从 ai_group_* 换成 ai_combo_* 而已。
+	# 位置不跳 —— 从 bot_group_* 换成 bot_combo_* 而已。
 	#
 	# 组合**优先**：已经在 state.combos 里的 uid 从声明里剔掉。
 	# 反过来（声明盖过组合）的话，对手收手那一刻同一批牌会既属于组合、
@@ -868,7 +868,7 @@ func _ai_piles() -> Array:
 	for p in _declared_piles(claimed):
 		out.append(p)
 	# 声明摞收走的牌不能再进资源摞：不剔的话同一张牌会被摆两次
-	# （先摆进声明摞、又摆进 ai_cash），后摆的赢 —— 症状是声明的摞里
+	# （先摆进声明摞、又摆进 bot_cash），后摆的赢 —— 症状是声明的摞里
 	# 缺牌，而缺的那几张躺在资源堆上
 	var idle := _collect_idle_units(_main.foe_seat, claimed)
 	# 闲置卡按资源各摞一摞：同一种资源只出现一摞，**不按张数切块**。
@@ -876,9 +876,9 @@ func _ai_piles() -> Array:
 	# 摞的意义是把一类东西收成一个对象，切块反而把这个意义拆没了。
 	# 张数在侧边清单里写着，一摞多高都读得出来。
 	# 第三摞是没编进组合的核心/Buff 卡（买来还凑不齐配方的生产卡、攻击卡、
-	# 没贴上的加成卡）：不收进来的话它们不在任何摞里，_layout_ai_zone 就不管它们，
+	# 没贴上的加成卡）：不收进来的话它们不在任何摞里，_layout_bot_zone 就不管它们，
 	# 只能留在 _free_spot 当初随手找的空位上，跟摞好的组合互相压边
-	var names := ["ai_cash", "ai_user", "ai_bench"]
+	var names := ["bot_cash", "bot_user", "bot_bench"]
 	for k in 3:
 		var pile: Array = idle[k]
 		if pile.is_empty():
@@ -892,7 +892,7 @@ func _ai_piles() -> Array:
 			# 最上面那一张，侧边那个 ×6 说得出「有六张」，说不出「是哪六张」。
 			# 实测 6 张不同的核心卡全落在同一个 x 上、z 只铺开 0.25，
 			# 而牌的纵深是 1.7 —— 85% 互相盖住，屏幕上就是一张牌。
-			# 这正是报上来的「AI 整理后把组合牌都摞在一块儿看不清」。
+			# 这正是报上来的「BOT 整理后把组合牌都摞在一块儿看不清」。
 			#
 			# 分摞的口径是 def_id：**同一张卡**摞在一起（两张裂变收成一摞、
 			# 侧边 ×2，跟资源摞同一个道理），**不同的卡**各占一摞。
@@ -900,7 +900,7 @@ func _ai_piles() -> Array:
 			#
 			# 次序按 def_id 排，不按手里的先后：不排的话同一批卡在两趟理牌之间
 			# 会换位置（idle 的次序跟着 state.players 的增删走），
-			# 屏幕上就是「什么都没做，AI 的备牌却自己重排了一遍」。
+			# 屏幕上就是「什么都没做，BOT 的备牌却自己重排了一遍」。
 			# 摞内仍然核心卡提到摞顶（同一张卡的那几份，露哪一份都一样，
 			# 但 Board.core_first_order 那条口径就在这儿，别另起一套）
 			var by_def := {}
@@ -915,21 +915,21 @@ func _ai_piles() -> Array:
 				var sub: Array = by_def[defs[bi]]
 				if sub.size() >= 2:
 					sub = Board.core_first_order(sub)
-				out.append({ "cards": sub, "key": "ai_bench_%d" % bi })
+				out.append({ "cards": sub, "key": "bot_bench_%d" % bi })
 			continue
 		out.append({ "cards": pile, "key": "%s_0" % names[k] })
 	return out
 
-## 把所有摞收拢好铺在 AI 区：组合排前行（整行居中），闲置摞坐后行的固定席位。
+## 把所有摞收拢好铺在 BOT 区：组合排前行（整行居中），闲置摞坐后行的固定席位。
 ## 席位与玩家侧镜像对称 —— 现金左、用户右，两边看过去是同一个布局
-func _layout_ai_zone() -> void:
+func _layout_bot_zone() -> void:
 	board.clear_side_badges()   # 摞的数量/内容每步都在变，先全清再按当前情况重挂
-	_ai_pile_of_uid.clear()
-	_ai_pile_uids.clear()
-	_ai_pile_compact.clear()
+	_bot_pile_of_uid.clear()
+	_bot_pile_uids.clear()
+	_bot_pile_compact.clear()
 	var combos: Array = []
 	var idles: Array = []
-	for p in _ai_piles():
+	for p in _bot_piles():
 		if is_front_pile(p["key"]):
 			combos.append(p)
 		else:
@@ -937,21 +937,21 @@ func _layout_ai_zone() -> void:
 	# 前行：组合。先让每组按自己的张数摊开，再按「最宽那组 + 空当」定统一节距，
 	# 整行居中；摆不下就降列（降到收拢），压到挤在一起也留在一行 ——
 	# 换行会把第二行摆到闲置摞的席位上，两片牌互相压边比挤一点更难读。
-	# 节距不再是固定的 AI_SLOT_PITCH：固定 2.5 时 2 列组合正好占满一格，
-	# 相邻两组零空当地连成一片（见 AI_SLOT_PITCH / plan_combo_row）
+	# 节距不再是固定的 BOT_SLOT_PITCH：固定 2.5 时 2 列组合正好占满一格，
+	# 相邻两组零空当地连成一片（见 BOT_SLOT_PITCH / plan_combo_row）
 	var plan: Array = plan_combo_row(combos.map(
 		func(p: Dictionary) -> Dictionary:
 			return { "n": (p["cards"] as Array).size(), "compact": p.get("compact", null) }))
 	for i in combos.size():
 		# 没有声明位置时的落点：整行居中的第 i 个位置（下面若有 anchor 就不用它）
-		var at := Vector3(float(plan[i]["x"]), 0.05, AI_ROW_Z[0])
+		var at := Vector3(float(plan[i]["x"]), 0.05, BOT_ROW_Z[0])
 		# 摊开还是收拢**一组一组地判**，不是整行统一。
 		#
 		# 玩家侧就是这样的：同一片桌面上他可以让一组摊开、另一组双击收拢
 		# （board.toggle_compact 是按组的）。整行统一的话，一个 8 张的组合
 		# 摊不开就把同行 3 张的那几个也一起按成收拢 —— 明明摊得下。
 		# 两种形态混在一行也读得出来：收拢的那几摞有侧边清单写着张数
-		# （board.show_side_badges，摊开的不挂，见 _spread_ai_combo）
+		# （board.show_side_badges，摊开的不挂，见 _spread_bot_combo）
 		var n: int = combos[i]["cards"].size()
 		# 分几列、步长多少、以及「对手明说摊开」那一位，都由 plan_combo_row
 		# 一次算好 —— 它要按整行最宽的那组定节距，所以只能整行一起算。
@@ -962,7 +962,7 @@ func _layout_ai_zone() -> void:
 		var declared_spread: bool = bool(plan[i]["declared_spread"])
 		# 对手**说了**这一摞摆在哪，就摆在那儿（镜像到我这半边）——
 		# 不再按「第几摞」现算格子。见 main.my_pile_lists / foe_pile_point。
-		# 他没说（单机局的 AI、老形状的包）就还是整行居中，一如从前
+		# 他没说（单机局的 BOT、老形状的包）就还是整行居中，一如从前
 		var uv: Variant = combos[i].get("anchor", null)
 		# 量 z 跨度按**一列里有几张**：分列之后整摞的 z 跨度就是一列的跨度，
 		# 拿 n 去量会多算好几倍，那一摞会缩着摆（见 _pile_z_span 那段）
@@ -974,50 +974,50 @@ func _layout_ai_zone() -> void:
 			# 台阶方向不变（沿 +z），所以最南那张正好落回行线
 			at.z -= step * float(n - 1)
 		if step > 0.0:
-			_spread_ai_combo(combos[i], at, step, cols)
+			_spread_bot_combo(combos[i], at, step, cols)
 		else:
-			_place_ai_pile(combos[i], at)
+			_place_bot_pile(combos[i], at)
 	# 后行：闲置摞的固定席位。key 决定 x，不看是第几摞 —— 现金永远在左边那个位置。
-	# 备牌摞是例外：它按卡面分成了好几摞（见 _ai_piles），几摞就得占几个 x，
-	# 全落在 AI_PILE_BENCH_X 上的话分摞白分（那正是分摞之前的样子）
-	var spread: bool = _spread_ai_res(idles, combos.is_empty())
+	# 备牌摞是例外：它按卡面分成了好几摞（见 _bot_piles），几摞就得占几个 x，
+	# 全落在 BOT_PILE_BENCH_X 上的话分摞白分（那正是分摞之前的样子）
+	var spread: bool = _spread_bot_res(idles, combos.is_empty())
 	idles = _merge_bench_overflow(idles, spread)
 	var bench_x: Dictionary = _bench_seats(idles, spread)
 	for p in idles:
 		var key: String = p["key"]
-		var x: float = AI_PILE_BENCH_X
-		if key.begins_with("ai_cash"):
-			x = _ai_resource_anchor(CardDB.RES_CASH).x
-		elif key.begins_with("ai_user"):
-			x = _ai_resource_anchor(CardDB.RES_USER).x
+		var x: float = BOT_PILE_BENCH_X
+		if key.begins_with("bot_cash"):
+			x = _bot_resource_anchor(CardDB.RES_CASH).x
+		elif key.begins_with("bot_user"):
+			x = _bot_resource_anchor(CardDB.RES_USER).x
 		elif bench_x.has(key):
 			x = float(bench_x[key])
 		# 摊开这一片时资源牌照玩家侧的列摆，其余（备牌摞）照旧收拢
-		if spread and key.begins_with("ai_cash"):
-			_spread_ai_pile(p, PLAYER_PILE_CASH_ANCHOR.x)
-		elif spread and key.begins_with("ai_user"):
-			_spread_ai_pile(p, PLAYER_PILE_USER_ANCHOR.x)
+		if spread and key.begins_with("bot_cash"):
+			_spread_bot_pile(p, PLAYER_PILE_CASH_ANCHOR.x)
+		elif spread and key.begins_with("bot_user"):
+			_spread_bot_pile(p, PLAYER_PILE_USER_ANCHOR.x)
 		else:
-			_place_ai_pile(p, Vector3(x, 0.05, _ai_back_z(p["cards"].size())))
-	# 三个摆放函数只是把请求攒进 _ai_pending，到这里才按落点高低一次发出去。
+			_place_bot_pile(p, Vector3(x, 0.05, _bot_back_z(p["cards"].size())))
+	# 三个摆放函数只是把请求攒进 _bot_pending，到这里才按落点高低一次发出去。
 	# **必须在整趟的末尾**：次序要看整桌的落点，一摞一摞地发就只在摞内排得对，
 	# 跨摞那几对（正是探针里越线最狠的那几对）照旧对调
-	_flush_ai_moves()
+	_flush_bot_moves()
 
 ## 一种资源摊开到几列就该改收拢。
 ##
 ## 取「开局那种资源摊出来的列数」：开局是两边形态必须一致的那一刻
-## （玩家摊开、AI 也摊开，见 AI_SPREAD_Z0），那时的列数就是这一片
+## （玩家摊开、BOT 也摊开，见 BOT_SPREAD_Z0），那时的列数就是这一片
 ## **本来该占多宽**。牌比开局多出来的部分不该让这一片跟着横向长 ——
 ## 长下去就是「资源牌多的时候反而不怎么摞」：实测现金能摊到 7 列 56 张、
-## 用户 5 列 40 张，横着占掉大半个 AI 区，一眼看不出是几张。
+## 用户 5 列 40 张，横着占掉大半个 BOT 区，一眼看不出是几张。
 ## 到顶就收拢，张数交给侧边清单说。
 ##
 ## 按资源分别算，不取一个统一的数：开局现金 20 张（3 列）、用户 10 张（2 列），
 ## 两片本来就不一样宽，统一成一个数必有一边对不上开局的形态。
 ##
 ## 从规则表算而不是读玩家侧的实时列数：实时列数要看玩家有没有理牌、
-## 这一刻理到哪一步了，AI 的形态会跟着玩家的操作抖。规则表那两个数
+## 这一刻理到哪一步了，BOT 的形态会跟着玩家的操作抖。规则表那两个数
 ## （start_cash / start_user）是常量
 func spread_max_cols(res: String) -> int:
 	var rules: Dictionary = CardDB.game_rules()
@@ -1026,48 +1026,48 @@ func spread_max_cols(res: String) -> int:
 
 ## 收拢席位与当前卡表的开局资源片中线对齐。切换卡表时重新计算，
 ## 不缓存旧配置的中线，也不跟随玩家回合中的资源增减来回移动。
-func _ai_resource_anchor(res: String) -> Vector3:
+func _bot_resource_anchor(res: String) -> Vector3:
 	var anchor := PLAYER_PILE_CASH_ANCHOR if res == CardDB.RES_CASH else PLAYER_PILE_USER_ANCHOR
 	anchor.x += float(spread_max_cols(res) - 1) * PLAYER_PILE_COL_PITCH / 2.0
-	anchor.z = AI_ROW_Z[-1]
+	anchor.z = BOT_ROW_Z[-1]
 	return anchor
 
-## 这一轮 AI 的资源该摊开还是收拢。三条都过才摊开：
-##   1. 没有组合 —— 有组合时前行要让给组合，摊开那一片会横穿 AI 区压在组合上
+## 这一轮 BOT 的资源该摊开还是收拢。三条都过才摊开：
+##   1. 没有组合 —— 有组合时前行要让给组合，摊开那一片会横穿 BOT 区压在组合上
 ##   2. 不比开局那一片更宽 —— 见 spread_max_cols，这条治的是
 ##      「资源牌多的时候也不怎么摞」
-##   3. 不出桌 —— AI_SPREAD_MAX_X 那条兜底
-## 开局正是三条都过的时候，于是开局两边形态一致：玩家摊开，AI 也摊开
-func _spread_ai_res(idles: Array, no_combos: bool) -> bool:
+##   3. 不出桌 —— BOT_SPREAD_MAX_X 那条兜底
+## 开局正是三条都过的时候，于是开局两边形态一致：玩家摊开，BOT 也摊开
+func _spread_bot_res(idles: Array, no_combos: bool) -> bool:
 	if not no_combos:
 		return false
 	for p in idles:
 		var key: String = p["key"]
 		var x0: float = PLAYER_PILE_CASH_ANCHOR.x
 		var res: String = CardDB.RES_CASH
-		if key.begins_with("ai_user"):
+		if key.begins_with("bot_user"):
 			x0 = PLAYER_PILE_USER_ANCHOR.x
 			res = CardDB.RES_USER
-		elif not key.begins_with("ai_cash"):
+		elif not key.begins_with("bot_cash"):
 			continue      # 备牌摞不摊开：杂项卡在玩家侧本来就没有对照的一片
 		var cols: int = ceili(float(p["cards"].size()) / float(PLAYER_PILE_PER_COL))
 		if cols > spread_max_cols(res):
 			return false
 		var right: float = x0 + float(cols - 1) * PLAYER_PILE_COL_PITCH \
 			+ CardEntity.CARD_SIZE.x / 2.0
-		if right > AI_SPREAD_MAX_X:
+		if right > BOT_SPREAD_MAX_X:
 			return false
 		# 现金那一片不许长到用户那一片的头上：中间至少留得下一列
-		if key.begins_with("ai_cash") \
+		if key.begins_with("bot_cash") \
 				and right > PLAYER_PILE_USER_ANCHOR.x - PLAYER_PILE_COL_PITCH:
 			return false
 	return true
 
 ## 备牌摞多到摆不下时，把超出 bench_seat_cap() 的那几摞并成一摞收拢。
 ##
-## 为什么在这儿并、不在 _ai_piles 里并：摆得下几摞要看窗口，而窗口要看资源
-## 摊开没摊开（_spread_ai_res），那个判断的输入正是 _ai_piles 的输出 ——
-## 在 _ai_piles 里并就得先知道自己的结果。这儿两样都齐了。
+## 为什么在这儿并、不在 _bot_piles 里并：摆得下几摞要看窗口，而窗口要看资源
+## 摊开没摊开（_spread_bot_res），那个判断的输入正是 _bot_piles 的输出 ——
+## 在 _bot_piles 里并就得先知道自己的结果。这儿两样都齐了。
 ##
 ## 并的是**末尾那几摞**（def_id 排序后的），不是随便几摞：次序稳定，
 ## 同一批卡不会在两趟理牌之间换人并进去。留在外面的那几种也就不会跳位置
@@ -1075,7 +1075,7 @@ func _merge_bench_overflow(idles: Array, spread: bool) -> Array:
 	var bench: Array = []
 	var rest: Array = []
 	for p in idles:
-		if str(p["key"]).begins_with("ai_bench"):
+		if str(p["key"]).begins_with("bot_bench"):
 			bench.append(p)
 		else:
 			rest.append(p)
@@ -1090,14 +1090,14 @@ func _merge_bench_overflow(idles: Array, spread: bool) -> Array:
 	var out: Array = []
 	# 前 cap-1 摞照旧一种一摞，第 cap 个席位坐并起来的那一摞
 	for i in cap - 1:
-		out.append({ "cards": bench[i]["cards"], "key": "ai_bench_%d" % i })
+		out.append({ "cards": bench[i]["cards"], "key": "bot_bench_%d" % i })
 	var merged: Array = []
 	for i in range(cap - 1, bench.size()):
 		for e in bench[i]["cards"]:
 			merged.append(e)
 	if merged.size() >= 2:
 		merged = Board.core_first_order(merged)
-	out.append({ "cards": merged, "key": "ai_bench_%d" % (cap - 1) })
+	out.append({ "cards": merged, "key": "bot_bench_%d" % (cap - 1) })
 	return out + rest
 
 ## 备牌这一片能用的 x 窗口 [lo, hi]。
@@ -1109,32 +1109,32 @@ func _merge_bench_overflow(idles: Array, spread: bool) -> Array:
 ## 一处定义：席位表和 bench_seat_cap 都得按同一个窗口算，各写一遍的话
 ## 「算得下」和「摆得下」会对不上（memory: number-lives-in-five-places）
 func bench_window(idles: Array, spread: bool) -> Vector2:
-	var left: float = _ai_resource_anchor(CardDB.RES_CASH).x
-	var right: float = _ai_resource_anchor(CardDB.RES_USER).x
+	var left: float = _bot_resource_anchor(CardDB.RES_CASH).x
+	var right: float = _bot_resource_anchor(CardDB.RES_USER).x
 	if spread:
 		for p in idles:
 			var k2: String = str(p["key"])
 			var n2: int = (p["cards"] as Array).size()
 			var cols: int = ceili(float(n2) / float(PLAYER_PILE_PER_COL))
-			if k2.begins_with("ai_cash"):
+			if k2.begins_with("bot_cash"):
 				left = PLAYER_PILE_CASH_ANCHOR.x \
 					+ float(cols - 1) * PLAYER_PILE_COL_PITCH
-			elif k2.begins_with("ai_user"):
+			elif k2.begins_with("bot_user"):
 				right = PLAYER_PILE_USER_ANCHOR.x
 	# 两边各让开一张卡加一点空当，剩下的就是备牌这一片能用的宽
 	var edge: float = CardEntity.CARD_SIZE.x + 0.2
 	return Vector2(left + edge, right - edge)
 
-## 备牌各摞的 x 席位：key → x。以 AI_PILE_BENCH_X 为中心一字排开。
+## 备牌各摞的 x 席位：key → x。以 BOT_PILE_BENCH_X 为中心一字排开。
 ##
-## 为什么要算而不是写死一串常量：备牌摞有几摞看的是「AI 手里有几种还没编组的卡」，
+## 为什么要算而不是写死一串常量：备牌摞有几摞看的是「BOT 手里有几种还没编组的卡」，
 ## 从 0 到二十几都可能（卡表里非资源卡 29 种），写死席位表要么不够用、
 ## 要么留一大片空位。能用多宽见 bench_window，摆得下几摞见 bench_seat_cap ——
 ## 进到这儿的 k 已经是摆得下的数了（超出的在 _merge_bench_overflow 那头并掉）
 func _bench_seats(idles: Array, spread: bool) -> Dictionary:
 	var keys: Array = []
 	for p in idles:
-		if str(p["key"]).begins_with("ai_bench"):
+		if str(p["key"]).begins_with("bot_bench"):
 			keys.append(str(p["key"]))
 	var out := {}
 	if keys.is_empty():
@@ -1145,13 +1145,13 @@ func _bench_seats(idles: Array, spread: bool) -> Dictionary:
 	var hi: float = win.y
 	var k: int = keys.size()
 	if k == 1:
-		out[keys[0]] = AI_PILE_BENCH_X
+		out[keys[0]] = BOT_PILE_BENCH_X
 		return out
 	var pitch: float = minf(PLAYER_PILE_COL_PITCH,
 		(hi - lo) / float(k - 1))
 	pitch = maxf(pitch, CardEntity.CARD_SIZE.x)
-	# 以 AI_PILE_BENCH_X 为中心排：整片居中，跟前行组合那一行同一个口径
-	var x0: float = AI_PILE_BENCH_X - pitch * float(k - 1) / 2.0
+	# 以 BOT_PILE_BENCH_X 为中心排：整片居中，跟前行组合那一行同一个口径
+	var x0: float = BOT_PILE_BENCH_X - pitch * float(k - 1) / 2.0
 	# 但**要落回窗口里**。节距是从窗口宽反解的，居中的位置却是按 BENCH_X 算的，
 	# 而 BENCH_X（-2.0）不是窗口的中点 —— 两个基准不是一个数，居中完就可能
 	# 探到窗口外面去。实测 6 摞时最左那摞落在 -5.00，而摊开的现金片右缘在
@@ -1160,7 +1160,7 @@ func _bench_seats(idles: Array, spread: bool) -> Dictionary:
 	var span: float = pitch * float(k - 1)
 	# 整片必须落在窗口里。摆不下的时候**不许把片撑出窗口** —— 试过，
 	# 29 种卡时最外那几摞落到 x = -18.80 / -17.60 / 12.40 / 13.60 / 14.80
-	#（AI_SPREAD_MAX_X 是 12.4，直接出桌），
+	#（BOT_SPREAD_MAX_X 是 12.4，直接出桌），
 	# 而且照旧压在现金片上，比不分摞还糟。摆不下由 bench_seat_cap()
 	# 那头削摞数解决（多出来的并成一摞收拢），到这里 k 已经是摆得下的数了
 	x0 = clampf(x0, lo, hi - span)
@@ -1168,7 +1168,7 @@ func _bench_seats(idles: Array, spread: bool) -> Dictionary:
 		out[keys[i]] = x0 + pitch * float(i)
 	return out
 
-## 备牌这一片摆得下几摞。超出的那些并成一摞收拢（见 _layout_ai_zone）。
+## 备牌这一片摆得下几摞。超出的那些并成一摞收拢（见 _layout_bot_zone）。
 ##
 ## 为什么要削而不是把节距压到卡宽以下：压下去就是让牌互相盖住，
 ## 而「不许互相盖住」是整个后行的口径（tests/test_tidy.gd 盯着）。
@@ -1188,34 +1188,34 @@ func bench_seat_cap(lo: float, hi: float) -> int:
 	return maxi(1, floori((hi - lo) / CardEntity.CARD_SIZE.x) + 1)
 
 ## 同一列内的台阶步长。想要的是照抄玩家侧的 Board.STACK_GAP.z，
-## 但双方初始资源列从不同的远近边缘出发：直接照抄时 AI 最南端卡心到市场
+## 但双方初始资源列从不同的远近边缘出发：直接照抄时 BOT 最南端卡心到市场
 ## 只有 2.16，玩家最近卡心到市场为 3.10，会破坏双方资源与购牌区的间距关系。
 ## 所以按「南端和玩家侧一样远」反解步长，再以玩家侧的步长收口：
 ## 地方够就和玩家一模一样，不够才压，压也只压这一处
-func _ai_spread_step(n: int) -> float:
+func _bot_spread_step(n: int) -> float:
 	if n <= 1:
 		return Board.STACK_GAP.z
 	var keep: float = absf(PLAYER_PILE_CASH_ANCHOR.z - _main.MARKET_Z)
 	var south: float = _main.MARKET_Z - keep      # 最南那张的 z 上限
-	return minf(Board.STACK_GAP.z, (south - AI_SPREAD_Z0) / float(n - 1))
+	return minf(Board.STACK_GAP.z, (south - BOT_SPREAD_Z0) / float(n - 1))
 
 ## 对手侧那几张牌正在跑的归位补间，uid → Tween。
 ##
 ## 为什么要记：租约（scenes/main.gd 的拖拽广播与租约处理）只挡住「之后」的摆放 —— _collect_idle_units
-## 和 _ai_piles 里那两条 is_drag_leased 让被拖的牌不再进入摆放清单。但**已经在跑**
+## 和 _bot_piles 里那两条 is_drag_leased 让被拖的牌不再进入摆放清单。但**已经在跑**
 ## 的补间挡不住，它会在接下来的 0.3 秒里逐帧把 position 写回摞里，
 ## 而网络那头每 50ms 写一次新位置。两边打架的样子是牌抽搐着往摞里缩回去。
 ##
 ## 为什么不用 fly_tw 那个 meta：tests/harness.gd 的 arrivals_landed 拿它当
 ## 「到货飞完了没」的判据，摆放补间挂上去会让测试等一堆无关的补间
 ## （memory: settle-runs-mid-flight 里等错东西的那个坑）
-var _ai_tw := {}
+var _bot_tw := {}
 
-## 归位补间的时长。开成常量是为了让 tests/harness.gd 的 ai_moves_landed
+## 归位补间的时长。开成常量是为了让 tests/harness.gd 的 bot_moves_landed
 ## 能按它折算兜底上限 —— 等多久由补间自己说，不写死在测试里
-const AI_MOVE_TIME := 0.3
+const BOT_MOVE_TIME := 0.3
 
-## 一趟理牌从发出到最后一张落地要多久。tests/harness.gd 的 ai_moves_landed
+## 一趟理牌从发出到最后一张落地要多久。tests/harness.gd 的 bot_moves_landed
 ## 按它折算兜底上限。
 ##
 ## 等于单条补间的时长，因为**一趟里所有牌同时出发、同时落地**。
@@ -1226,8 +1226,8 @@ const AI_MOVE_TIME := 0.3
 ##             实测治不了 —— 撞的那一对里有一张**已经停住**了（见 foot_gate
 ##             那段末尾），错开出发对停着的牌没有意义。变异到 0 之后判据一条不红，
 ##             那就是一段不干活的机制，删掉；每趟少 0.24 秒
-static func ai_pass_time() -> float:
-	return AI_MOVE_TIME
+static func bot_pass_time() -> float:
+	return BOT_MOVE_TIME
 
 ## 飞行途中抬起来的余量：越过被飞过的那些摞的顶。
 ##
@@ -1237,7 +1237,7 @@ static func ai_pass_time() -> float:
 ## 一张从 20 张厚的摞上下来的牌（y≈1.5）飞去另一摞的底座（y≈0.05），
 ## 半路正好穿过第三摞的中间高度，而那一摞的占地就在航线上。
 ## 实测一趟重排里有 5 对牌的最小 y 差落到 0.003~0.020（探针 probe_flight）
-const AI_LIFT_MARGIN := 0.12
+const BOT_LIFT_MARGIN := 0.12
 
 ## 这一趟里牌能飞到的最高处：桌上最高那张卡的顶 + 余量。
 ## 按**这一趟出发前**的实际高度算，不写死：摞多厚由张数决定，
@@ -1248,7 +1248,7 @@ func _lift_ceiling() -> float:
 		var e: CardEntity = entities[uid]
 		if is_instance_valid(e):
 			top = maxf(top, e.position.y)
-	return top + AI_LIFT_MARGIN
+	return top + BOT_LIFT_MARGIN
 
 ## 航迹上「已经脱开出发那片占地」的那个进度（0~1），按**这条航迹自己的方向**算。
 ##
@@ -1272,9 +1272,9 @@ func _lift_ceiling() -> float:
 ##
 ## 剩下的 7 对是**摆放本身**的账，不是航迹的账：牌要滑进的座位离邻摞不足一张卡，
 ## 落点高度又都是 0.05，横着进座位就一定从邻摞上面过。要清零得让座位之间
-## 留出一整张卡的空当（改的是 AI_SLOT_PITCH / COMBO_COL_PITCH 那一层），
-## 或者给降落留一条空走廊 —— 两行之间现在没有这样的走廊（AI_ROW_Z 相距 2.4，
-## 一张卡的纵深 1.7，两边各让半张就只剩 0.7）。没做，因为那是重排整个 AI 区。
+## 留出一整张卡的空当（改的是 BOT_SLOT_PITCH / COMBO_COL_PITCH 那一层），
+## 或者给降落留一条空走廊 —— 两行之间现在没有这样的走廊（BOT_ROW_Z 相距 2.4，
+## 一张卡的纵深 1.7，两边各让半张就只剩 0.7）。没做，因为那是重排整个 BOT 区。
 ## tests/test_tidy.gd 第 3 节盯着这个残留值不许变大
 ##
 ## 返回值 ≥ 0.5 表示「整条航迹都在两片占地里」（短程），调用处走平飞
@@ -1288,35 +1288,35 @@ static func foot_gate(from: Vector3, at: Vector3) -> float:
 	return minf(fx, fz)
 
 ## 本趟攒下的搬牌请求：[[实体, 落点], ...]。
-## 攒起来而不是当场发，是因为**发出的次序要按落点高低排**（见 _flush_ai_moves）
-var _ai_pending: Array = []
+## 攒起来而不是当场发，是因为**发出的次序要按落点高低排**（见 _flush_bot_moves）
+var _bot_pending: Array = []
 
 ## 「落点就是现在站的地方」的判定余量。比台阶高（STACK_GAP.y = 0.024）小一个量级：
 ## 摆放函数算出来的落点是同一套算式的输出，没动的牌两边逐位相同，
 ## 这个余量只是防浮点尾数，不该把「挪了半个台阶」也算成没动
-const AI_STILL_EPS := 0.001
+const BOT_STILL_EPS := 0.001
 
-## 攒一条对手侧的归位请求。真正发补间在 _flush_ai_moves。
+## 攒一条对手侧的归位请求。真正发补间在 _flush_bot_moves。
 ##
 ## **落点等于现在的位置就直接返回**，不排队也不发补间。理牌每趟都对全桌每张牌
 ## 调一次本函数，而一趟里真正换地方的只有个别几张（实测 76 张里 11 张）。
 ##
-## 守穿模那条不变量**不靠这一句**：原地不动的牌 span=0，进 _ai_arc 也走
+## 守穿模那条不变量**不靠这一句**：原地不动的牌 span=0，进 _bot_arc 也走
 ## 「短程平飞」那一支，y 一动不动（试过删掉这句，判据全绿 —— 别再把这句
 ## 当成不变量的防线写注释了）。它管的是另一件事：一趟里不该有几十条
-## 什么都不干的补间在跑。ai_moving() 是测试和 main 的同步条件，
-## 空跑的补间会让「摆完了没有」在整个 AI_MOVE_TIME 里一直答「没有」
-func _ai_move(e: CardEntity, at: Vector3) -> void:
-	if e.position.distance_to(at) < AI_STILL_EPS:
-		kill_ai_move(e.uid)
+## 什么都不干的补间在跑。bot_moving() 是测试和 main 的同步条件，
+## 空跑的补间会让「摆完了没有」在整个 BOT_MOVE_TIME 里一直答「没有」
+func _bot_move(e: CardEntity, at: Vector3) -> void:
+	if e.position.distance_to(at) < BOT_STILL_EPS:
+		kill_bot_move(e.uid)
 		e.position = at
 		return
-	_ai_pending.append([e, at])
+	_bot_pending.append([e, at])
 
 ## 把本趟攒下的请求一次发出去，**整趟共用同一个抬升量**。
 ##
 ## 为什么必须是「同一个抬升量」而不是「同一个飞行高度」（这条是实跑探针改出来的）：
-## 一趟里最常见的动作是**一整摞平移**（AI 区多了一摞、整行重新居中，
+## 一趟里最常见的动作是**一整摞平移**（BOT 区多了一摞、整行重新居中，
 ## 摞里每张牌的落点都只是原位 +Δxz，y 一点不变）。摞里两张牌的 y 差
 ## 靠的是台阶高（0.024~0.045），只比 FACE_SPAN_Y 大一点点。
 ## 抬到同一个高度 = 底下那张抬得多、上面那张抬得少，飞到半途整摞压成一个平面，
@@ -1325,10 +1325,10 @@ func _ai_move(e: CardEntity, at: Vector3) -> void:
 ##
 ## 抬升量按**本趟最低的那张**折算，让每张都至少越过桌上最高的摞顶：
 ## 抬得比这个少就有牌从摞中间穿过去，多则纯粹是飞得夸张
-func _flush_ai_moves() -> void:
-	var moves: Array = _ai_pending
-	_ai_pending = []
-	_ai_flight.clear()
+func _flush_bot_moves() -> void:
+	var moves: Array = _bot_pending
+	_bot_pending = []
+	_bot_flight.clear()
 	if moves.is_empty():
 		return
 	var low: float = INF
@@ -1337,8 +1337,8 @@ func _flush_ai_moves() -> void:
 	var lift: float = maxf(0.0, _lift_ceiling() - low)
 	for m in moves:
 		var e: CardEntity = m[0]
-		_ai_flight[e.uid] = {"from": e.position, "at": m[1] as Vector3, "lift": lift}
-		_ai_fly(e, m[1], lift)
+		_bot_flight[e.uid] = {"from": e.position, "at": m[1] as Vector3, "lift": lift}
+		_bot_fly(e, m[1], lift)
 
 ## 发一条对手侧的归位补间，替掉这张牌上一条还没跑完的。
 ##
@@ -1356,8 +1356,8 @@ func _flush_ai_moves() -> void:
 ## y 绝不用 TRANS_BACK 之类会过冲的曲线：向下那一段过冲会把牌按到落点**以下**，
 ## 扎进底下那张牌里（过冲量约位移的 10%，而台阶高只有 0.024）
 ##
-func _ai_fly(e: CardEntity, at: Vector3, lift: float) -> void:
-	kill_ai_move(e.uid)
+func _bot_fly(e: CardEntity, at: Vector3, lift: float) -> void:
+	kill_bot_move(e.uid)
 	# 连续收到交易时，归位接管尚未结束的到货飞行，避免两条补间争写位置。
 	_main._cancel_fly(e)
 	var from: Vector3 = e.position
@@ -1367,9 +1367,9 @@ func _ai_fly(e: CardEntity, at: Vector3, lift: float) -> void:
 	tw.tween_method(
 		func(f: float) -> void:
 			if is_instance_valid(e):
-				e.position = _ai_arc(from, at, span, gate, lift, f),
-		0.0, 1.0, AI_MOVE_TIME)
-	_ai_tw[e.uid] = tw
+				e.position = _bot_arc(from, at, span, gate, lift, f),
+		0.0, 1.0, BOT_MOVE_TIME)
+	_bot_tw[e.uid] = tw
 
 ## 航迹上 f∈[0,1] 处的坐标。抽成独立函数是为了让测试能直接采样整条航迹，
 ## 不必真跑补间去逐帧读（补间的采样点由帧率决定，短程的牌可能只被采到两三帧）。
@@ -1377,12 +1377,12 @@ func _ai_fly(e: CardEntity, at: Vector3, lift: float) -> void:
 ## 缓动写在函数里、补间那头喂线性的 f：横向进度和 y 的分段判据必须是**同一个数**。
 ## 交给补间去缓动的话，函数里拿到的 f 是缓动后的，而 t0/t1 是按「横向走了多远」
 ## 算的 —— 两者差一层曲线，闸门就开在错的地方
-static func _ai_arc(from: Vector3, at: Vector3, span: float, gate: float,
+static func _bot_arc(from: Vector3, at: Vector3, span: float, gate: float,
 		lift: float, f: float) -> Vector3:
 	# 两头**照原样返回端点**，不走下面的插值。
 	# lerp(from, at, 1.0) 算的是 from + (at - from) * 1.0，浮点下不保证等于 at ——
 	# 差一个 ulp。而摆放算出来的落点常常正好压在判据的分桶边界上
-	# （比如 x=6.25，tests/test_ai_pile.gd 按 snappedf(x, 0.1) 分列），
+	# （比如 x=6.25，tests/test_bot_pile.gd 按 snappedf(x, 0.1) 分列），
 	# 差一个 ulp 就把一摞牌记成「跨 2 列」
 	if f >= 1.0:
 		return at
@@ -1419,54 +1419,54 @@ static func _ai_arc(from: Vector3, at: Vector3, span: float, gate: float,
 
 ## 还有对手侧的归位补间在跑吗。测试拿它当「摆完了没有」的同步条件：
 ## 按墙钟等在 CPU 被抢的时候会读到出发点（memory: flaky-baseline-kills-mutation-run）
-func ai_moving() -> bool:
-	for uid in _ai_tw:
-		var tw: Tween = _ai_tw[uid]
+func bot_moving() -> bool:
+	for uid in _bot_tw:
+		var tw: Tween = _bot_tw[uid]
 		if tw != null and tw.is_valid() and tw.is_running():
 			return true
 	return false
 
 ## 掐掉这张牌的归位补间。租约开始时由 main._lease_foe_cards 调
-func kill_ai_move(uid: int) -> void:
-	if _ai_tw.has(uid):
-		var tw: Tween = _ai_tw[uid]
+func kill_bot_move(uid: int) -> void:
+	if _bot_tw.has(uid):
+		var tw: Tween = _bot_tw[uid]
 		if tw != null and tw.is_valid():
 			tw.kill()
-		_ai_tw.erase(uid)
+		_bot_tw.erase(uid)
 
 ## 一片摊开的资源牌：列的 x 和每列张数照玩家侧（见 _group_pile），
-## 同一列内沿 +z 长台阶（照 Board._stack_offset），整片摆进 AI 区。
-## 不建 board.groups：那是玩家能拖能典当的东西，AI 的牌只是给人看的
-func _spread_ai_pile(pile: Dictionary, x0: float) -> void:
+## 同一列内沿 +z 长台阶（照 Board._stack_offset），整片摆进 BOT 区。
+## 不建 board.groups：那是玩家能拖能典当的东西，BOT 的牌只是给人看的
+func _spread_bot_pile(pile: Dictionary, x0: float) -> void:
 	var cards: Array = pile["cards"]
 	var key: String = pile["key"]
-	var step: float = _ai_spread_step(mini(cards.size(), PLAYER_PILE_PER_COL))
+	var step: float = _bot_spread_step(mini(cards.size(), PLAYER_PILE_PER_COL))
 	for i in cards.size():
 		var e: CardEntity = cards[i]
 		var seat: int = i % PLAYER_PILE_PER_COL
 		var at := Vector3(x0 + float(i / PLAYER_PILE_PER_COL) * PLAYER_PILE_COL_PITCH,
 			0.05 + Board.ladder_y(seat),
-			AI_SPREAD_Z0 + step * float(seat))
+			BOT_SPREAD_Z0 + step * float(seat))
 		e.freeze = true
-		_ai_move(e, at)
-		_ai_pile_of_uid[e.uid] = key
-	_ai_pile_uids[key] = cards.map(func(c: CardEntity) -> int: return c.uid)
-	_ai_pile_compact[key] = false
+		_bot_move(e, at)
+		_bot_pile_of_uid[e.uid] = key
+	_bot_pile_uids[key] = cards.map(func(c: CardEntity) -> int: return c.uid)
+	_bot_pile_compact[key] = false
 
 ## 一组摊开的组合：按 cols 列切开，同一列内沿 +z 长台阶，北端钉在前行的行线上。
-## 步长由 combo_spread_step 定（0 表示摊不开，调用方走 _place_ai_pile 收拢）。
+## 步长由 combo_spread_step 定（0 表示摊不开，调用方走 _place_bot_pile 收拢）。
 ##
-## 和 _spread_ai_pile 同一个形状（照 Board._stack_offset 的摊开分支），
+## 和 _spread_bot_pile 同一个形状（照 Board._stack_offset 的摊开分支），
 ## 也一样按列切。原先组合只摆**一列**，理由是「切列会把一个阵型拆成两坨」——
 ## 那个取舍是反的：z 向一列最多摊得开 4 张（见 combo_per_col），
 ## 而 21 个配方里 17 个在 5 张以上，于是它们全部退回收拢、摞成一块，
 ## 屏幕上只看得见最南那一张。拆成两列读得出张数也读得出内容，所以宁可拆。
 ##
-## 不建 board.groups：那是玩家能拖能典当的东西，AI 的牌只是给人看的
-## （同 _spread_ai_pile）。也不挂侧边清单 —— 摊开态每张自己露着标题带，
+## 不建 board.groups：那是玩家能拖能典当的东西，BOT 的牌只是给人看的
+## （同 _spread_bot_pile）。也不挂侧边清单 —— 摊开态每张自己露着标题带，
 ## 清单是收拢态才需要的替代品（board._sync_side 对玩家侧的摊开组同样不挂）
-func _spread_ai_combo(pile: Dictionary, at: Vector3, step: float, cols: int) -> void:
-	_refresh_ai_pile_progress(pile)
+func _spread_bot_combo(pile: Dictionary, at: Vector3, step: float, cols: int) -> void:
+	_refresh_bot_pile_progress(pile)
 	var cards: Array = pile["cards"]
 	var key: String = pile["key"]
 	var n: int = cards.size()
@@ -1491,27 +1491,27 @@ func _spread_ai_combo(pile: Dictionary, at: Vector3, step: float, cols: int) -> 
 		# （整行居中算出来的，或者对手声明的锚点），从它往右长的话
 		# 一个两列的组合整片偏右 1.3/2，屏幕上就是「组合没对准自己那一格」
 		var dx: float = (float(col) - float(cols - 1) / 2.0) * COMBO_COL_PITCH
-		_ai_move(e, at + Vector3(dx, Board.ladder_y(seat), step * float(seat)))
+		_bot_move(e, at + Vector3(dx, Board.ladder_y(seat), step * float(seat)))
 		e.freeze = true
-		_ai_pile_of_uid[e.uid] = key
-	_ai_pile_uids[key] = cards.map(func(c: CardEntity) -> int: return c.uid)
-	_ai_pile_compact[key] = false
+		_bot_pile_of_uid[e.uid] = key
+	_bot_pile_uids[key] = cards.map(func(c: CardEntity) -> int: return c.uid)
+	_bot_pile_compact[key] = false
 
 ## 后行摞的落点 z：摞的远端（index 0，偏移最大的那张）停在行线上。
 ## 张数多到退不下去就贴着北缘 —— 而台阶封顶之后「退不下去」有了尽头：
-## 满 back_pile_cap() 级的摞退到 AI_BACK_Z_MIN 刚好把南缘顶在前行北缘上，
+## 满 back_pile_cap() 级的摞退到 BOT_BACK_Z_MIN 刚好把南缘顶在前行北缘上，
 ## 再多的牌不再加台阶，所以后行的摞**不可能**伸进前行（见 back_pile_cap）
-func _ai_back_z(n: int) -> float:
+func _bot_back_z(n: int) -> float:
 	var span: float = Board.capped_offset(n, 0, back_pile_cap()).z
-	return maxf(AI_ROW_Z[1] - span, AI_BACK_Z_MIN)
+	return maxf(BOT_ROW_Z[1] - span, BOT_BACK_Z_MIN)
 
 ## 一摞收拢到 at：逐张发补间、记 uid→key、挂侧边清单。
 ##
 ## 台阶封顶在 back_pile_cap() 级（Board.capped_offset）：超出的那几张停在摞底
 ## 那一级上，所以**这一摞的占地不随张数变**。不封顶的话 100 张现金（胜利线）
 ## 会摞成一条爬到 y=4.5 的斜坡，南缘压在货架牌上
-func _place_ai_pile(pile: Dictionary, at: Vector3) -> void:
-	_refresh_ai_pile_progress(pile)
+func _place_bot_pile(pile: Dictionary, at: Vector3) -> void:
+	_refresh_bot_pile_progress(pile)
 	var cards: Array = pile["cards"]
 	var key: String = pile["key"]
 	var n: int = cards.size()
@@ -1519,27 +1519,27 @@ func _place_ai_pile(pile: Dictionary, at: Vector3) -> void:
 	for j in n:
 		var e: CardEntity = cards[j]
 		e.freeze = true
-		_ai_move(e, at + Board.capped_offset(n, j, cap))
-		_ai_pile_of_uid[e.uid] = key
+		_bot_move(e, at + Board.capped_offset(n, j, cap))
+		_bot_pile_of_uid[e.uid] = key
 	# 侧边清单挂在摞顶（index 0）的目标位置上，不读实时坐标：tween 还没跑完
 	if n >= 2:
 		board.show_side_badges(key, cards, at + Board.capped_offset(n, 0, cap))
-	_ai_pile_uids[key] = cards.map(func(c: CardEntity) -> int: return c.uid)
-	_ai_pile_compact[key] = true
+	_bot_pile_uids[key] = cards.map(func(c: CardEntity) -> int: return c.uid)
+	_bot_pile_compact[key] = true
 
 ## 对手摞不在 board.groups 中，摆放时也要刷新核心卡的配方与效果墨点。
 ## 复用玩家侧计算，覆盖尚未提交的半成品、裂变补满以及离组回备牌区；
 ## 不能只读 state.combos 的旧 eval，否则缺料或移除 Buff 后仍会残留完成态。
-func _refresh_ai_pile_progress(pile: Dictionary) -> void:
+func _refresh_bot_pile_progress(pile: Dictionary) -> void:
 	var cards: Array = pile["cards"]
 	var data: Array = []
 	for c: CardEntity in cards:
 		data.append({ "uid": c.uid, "def_id": c.def_id })
 	board._update_group_progress(pile, ComboRules.evaluate(data))
 
-## uid → 所在 AI 摞的 key；摞里全部 uid（攻击阶段点摞顶时用来找摞内的合法靶）
-var _ai_pile_of_uid := {}
-var _ai_pile_uids := {}
+## uid → 所在 BOT 摞的 key；摞里全部 uid（攻击阶段点摞顶时用来找摞内的合法靶）
+var _bot_pile_of_uid := {}
+var _bot_pile_uids := {}
 ## key → 这一摞是不是**收拢**的。
 ##
 ## 攻击阶段的红光要照这个分叉：收拢摞只露摞顶那一张，把每个靶都点红等于
@@ -1547,20 +1547,20 @@ var _ai_pile_uids := {}
 ## 摊开的摞每张都露着，就该每个点得起的靶各自变红 ——
 ## 否则玩家看到一整排组合里只有一张红的（而且那张还是核心卡，压根点不了）。
 ## 三个摆放函数各自登记，别在 main 那边靠坐标反推「这一摞叠没叠」
-var _ai_pile_compact := {}
+var _bot_pile_compact := {}
 
 ## 这一趟的航迹计划：uid → {from, at, lift}。只有**真在飞**的牌在里面
-## （落点等于原位的那些在 _ai_move 就被挡掉了，见那段注释）。
+## （落点等于原位的那些在 _bot_move 就被挡掉了，见那段注释）。
 ##
 ## 记下来是给判据用的：防穿模那条不变量要问「一趟里有没有两张牌被安排成
 ## 互相穿过去」，而这件事按物理帧采样问不准 —— 一趟 0.3 秒只落到十几帧上，
 ## 掠过一瞬的那种会不会被采到取决于帧的相位。实测同一条判据在同一台机器上
 ## 时而 2 对时而 4 对（memory: sampling-cannot-see-jumps）。
-## 有了这份计划，判据能拿 _ai_arc 把整条航迹密采一遍，结果不再看帧率。
+## 有了这份计划，判据能拿 _bot_arc 把整条航迹密采一遍，结果不再看帧率。
 ##
-## lift 整趟一个值（见 _flush_ai_moves 为什么不能各飞各的高度），所以逐条都记
+## lift 整趟一个值（见 _flush_bot_moves 为什么不能各飞各的高度），所以逐条都记
 ## 同一个数，为的是让判据不必自己复算一遍 _lift_ceiling
-var _ai_flight := {}
+var _bot_flight := {}
 
 ## 玩家理牌：把未编组的零散现金/用户卡整理成真实摞（进 board.groups，可整摞拖动/典当）
 ## 先解散上轮理牌生成的纯资源摞（有核心的真组合不动），再按每摞 PLAYER_PILE_PER_COL 张重新分组；
@@ -1570,7 +1570,7 @@ var _ai_flight := {}
 const PLAYER_PILE_PER_COL := 8
 const PLAYER_PILE_CASH_ANCHOR := Vector3(-8.0, 0.05, 1.5)
 const PLAYER_PILE_USER_ANCHOR := Vector3(4.0, 0.05, 1.5)
-## 列与列的节距。AI 侧摊开那一片共用这一份（见 _spread_ai_pile）：
+## 列与列的节距。BOT 侧摊开那一片共用这一份（见 _spread_bot_pile）：
 ## 两边的列要能一列对一列地对上，节距各写一个数就对不上了
 const PLAYER_PILE_COL_PITCH := 1.6
 
@@ -1584,7 +1584,7 @@ func _tidy_player_idle() -> void:
 				break
 		if pure:
 			board._remove_group(g)
-	# 2. 收集散单位卡（与 AI 共用同一份收集判定）
+	# 2. 收集散单位卡（与 BOT 共用同一份收集判定）
 	var piles := _collect_idle_units(_main.my_seat)
 	_group_pile(piles[0], PLAYER_PILE_CASH_ANCHOR)
 	_group_pile(piles[1], PLAYER_PILE_USER_ANCHOR)
@@ -1600,7 +1600,7 @@ func _tidy_player_idle() -> void:
 # 所以开一个窗口，把「已经许诺出去但牌还在飞」的落点记成台账：
 #   begin_arrivals() → 每张新牌 arrival_spot() → end_arrivals()
 # 玩家侧的资源卡直接按每 PILE_CHUNK 张分组落进左侧资源带（一组的落点算一次、
-# 缓存起来，组内逐张沿收拢偏移码上去），AI 侧的仍走 _free_spot，只是把台账
+# 缓存起来，组内逐张沿收拢偏移码上去），BOT 侧的仍走 _free_spot，只是把台账
 # 当作已占用传进去，同一批不会再挤在一个点上。
 #
 # 落地后仍然要跑结算末尾那一趟 _stack_settled：那一趟才是「同资源每 PILE_CHUNK

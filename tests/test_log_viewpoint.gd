@@ -29,7 +29,7 @@ const SEEDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 ## 日志种类。扫完要确认每一类都真的取到了，否则「违规 0 条」可能只是
 ## 那类日志压根没出现（真空为真）。
 ##
-## 「资金不足」不在表里：那是装弹付不起钱的分支，AI 会预判结算护栏所以从不尝试，
+## 「资金不足」不在表里：那是装弹付不起钱的分支，BOT 会预判结算护栏所以从不尝试，
 ## 实测 40 局一次都没出现。它由第 4 段的静态检查兜着
 const LOG_KINDS := ["购入", "产出", "典当", "装弹", "攻击", "已被拆散", "受防御 Buff", "作废"]
 
@@ -50,15 +50,15 @@ func _test_render_symmetry() -> void:
 		"round": 1,
 		"fmt": "%s 购入「%s」，%s 的组合被拆散",
 		"args": [GameState.seat_arg(GameState.PLAYER), "测试卡",
-			GameState.seat_arg(GameState.AI)],
+			GameState.seat_arg(GameState.BOT)],
 	}
 	var as_player := GameState.render_entry(entry, GameState.PLAYER)
-	var as_ai := GameState.render_entry(entry, GameState.AI)
+	var as_bot := GameState.render_entry(entry, GameState.BOT)
 
 	check(as_player == "你的公司 购入「测试卡」，对手公司 的组合被拆散",
 		"PLAYER 视角（%s）" % as_player)
-	check(as_ai == "对手公司 购入「测试卡」，你的公司 的组合被拆散",
-		"AI 视角：同一条日志念反（%s）" % as_ai)
+	check(as_bot == "对手公司 购入「测试卡」，你的公司 的组合被拆散",
+		"BOT 视角：同一条日志念反（%s）" % as_bot)
 
 	# 镜像性单独验：上面两条各自只钉住一个视角，这条要的是
 	# 「两个视角除了称呼对调以外完全一致」。
@@ -66,10 +66,10 @@ func _test_render_symmetry() -> void:
 	var sentinel := "MINE"
 	var mirrored := as_player.replace("你的公司", sentinel) \
 		.replace("对手公司", "你的公司").replace(sentinel, "对手公司")
-	check(mirrored == as_ai, "两个视角严格互为镜像（%s）" % mirrored)
+	check(mirrored == as_bot, "两个视角严格互为镜像（%s）" % mirrored)
 
 	# 非座位参数不该被动过
-	check("测试卡" in as_player and "测试卡" in as_ai, "普通参数两个视角都原样代入")
+	check("测试卡" in as_player and "测试卡" in as_bot, "普通参数两个视角都原样代入")
 
 
 ## --- 2. 条目结构合法 + 没有一处把公司名拼进 fmt ---
@@ -143,7 +143,7 @@ func _test_render_bounds() -> void:
 	var entries := _collect_entries()
 	var bad: Array[String] = []
 	for e in entries:
-		for seat in [GameState.PLAYER, GameState.AI]:
+		for seat in [GameState.PLAYER, GameState.BOT]:
 			var out := GameState.render_entry(e, seat)
 			# 占位符没被吃掉（args 少了会留下 %s）
 			if "%s" in out or "%d" in out:
@@ -162,7 +162,7 @@ func _test_render_bounds() -> void:
 	for e in entries:
 		var sp := GameState.render_entry(e, GameState.PLAYER) \
 			.replace("你的公司", "").replace("对手公司", "")
-		var sa := GameState.render_entry(e, GameState.AI) \
+		var sa := GameState.render_entry(e, GameState.BOT) \
 			.replace("你的公司", "").replace("对手公司", "")
 		if sp != sa:
 			drift.append("%s\n        vs %s" % [sp, sa])
@@ -177,7 +177,7 @@ func _test_render_bounds() -> void:
 ## 静态检查保证不会被改回去。公司名是**视角量**，只该出现在场景层
 func _test_static_no_literal() -> void:
 	var files := ["res://engine/game_state.gd", "res://engine/settle.gd",
-		"res://engine/combo_rules.gd", "res://engine/ai_actions.gd",
+		"res://engine/combo_rules.gd", "res://engine/bot_actions.gd",
 		"res://engine/match_simulator.gd"]
 	var bad: Array[String] = []
 	var scanned := 0
@@ -223,12 +223,13 @@ func _collect_entries() -> Array[Dictionary]:
 		for e in summary["log"]:
 			_cache.append(e)
 	_cache.append_array(_protected_production_log())
+	_cache.append_array(_armed_attack_log())
 	return _cache
 
 ## 防御日志在入组当回合就产生，显式夹具避免依赖某个策略恰好买到防御卡。
 func _protected_production_log() -> Array:
 	var s := GameState.new()
-	s.players = {GameState.PLAYER: {"cards": []}, GameState.AI: {"cards": []}}
+	s.players = {GameState.PLAYER: {"cards": []}, GameState.BOT: {"cards": []}}
 	var core := ""
 	var buff := ""
 	for id in CardDB.all_cards():
@@ -245,4 +246,27 @@ func _protected_production_log() -> Array:
 	s.add_card(GameState.PLAYER, CardDB.unit_id(CardDB.RES_CASH))
 	check(s.create_combo(GameState.PLAYER, ids)["ok"], "防御日志夹具合法编组")
 	Settle.produce(s)
+	return s.log
+
+## 现金配方攻击才会写装弹日志；用真实编组和付款保证覆盖，不依赖BOT购买偏好。
+func _armed_attack_log() -> Array:
+	var s := GameState.new()
+	s.players = {GameState.PLAYER:{"cards":[]},GameState.BOT:{"cards":[]}}
+	var core := ""
+	for id in CardDB.all_cards():
+		var d := CardDB.get_def(id)
+		if d.get("kind") == CardDB.KIND_ATTACK and d.get("recipe_res") == CardDB.RES_CASH and int(d.get("recipe_n",0)) > 0:
+			core = id
+			break
+	if not need(core != "","装弹日志夹具存在现金配方攻击卡"): return []
+	var ids: Array = [s.add_card(GameState.PLAYER,core).uid]
+	var cost := int(CardDB.get_def(core).recipe_n)
+	for i in cost: ids.append(s.add_card(GameState.PLAYER,CardDB.unit_id(CardDB.RES_CASH)).uid)
+	s.add_card(GameState.PLAYER,CardDB.unit_id(CardDB.RES_CASH))
+	s.add_card(GameState.PLAYER,CardDB.unit_id(CardDB.RES_USER))
+	check(s.create_combo(GameState.PLAYER,ids).ok,"装弹日志夹具合法编组")
+	var before := s.resource_count(GameState.PLAYER,CardDB.RES_CASH)
+	var pool := s.arm_attacks(GameState.PLAYER)
+	check(int(pool.values().reduce(func(a,b):return a+b,0)) > 0 and s.resource_count(GameState.PLAYER,CardDB.RES_CASH)==before-cost,
+		"实际装弹产生攻击点并扣除配置规定的现金")
 	return s.log

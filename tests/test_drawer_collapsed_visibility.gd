@@ -20,7 +20,7 @@ func _run() -> void:
 		_check_late_panels(main, prefix)
 		_check_transitions(main, prefix)
 		await _dispose(main)
-	await _check_real_ai_attack()
+	await _check_real_bot_attack()
 	finish()
 
 func _check_attack_updates(main: Node, prefix: String) -> void:
@@ -158,7 +158,7 @@ func _check_transitions(main: Node, prefix: String) -> void:
 	main.drawer_presentation.close_panels()
 	main._hide_attack_label()
 
-func _check_real_ai_attack() -> void:
+func _check_real_bot_attack() -> void:
 	var main := await _boot_drawer()
 	var core := ""
 	var cost := 2147483647
@@ -170,7 +170,7 @@ func _check_real_ai_attack() -> void:
 				and int(definition.get("recipe_n", 0)) < cost):
 			core = str(id)
 			cost = int(definition["recipe_n"])
-	if not need(core != "", "真实 AI 攻击夹具从配置找到攻击现金的组合"):
+	if not need(core != "", "真实 BOT 攻击夹具从配置找到攻击现金的组合"):
 		await _dispose(main)
 		return
 	var damage := int(CardDB.get_def(core)["attack_n"])
@@ -193,12 +193,12 @@ func _check_real_ai_attack() -> void:
 	while Time.get_ticks_msec() < deadline and not (main.board.attack_mode and paused):
 		leaked = leaked or _renders(main.lbl_attack) or _renders(main.attack_panel)
 		await process_frame
-	check(main.board.attack_mode and paused, "AI真实攻击完毕并交棒给收起状态的玩家")
+	check(main.board.attack_mode and paused, "BOT真实攻击完毕并交棒给收起状态的玩家")
 	check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == 2,
 		"收起期间真实攻击按配置扣除了现金")
 	check(not leaked and not _renders(main.lbl_attack) and not _renders(main.attack_panel),
-		"AI攻击到玩家攻击的后台协程全程没有泄漏攻击提示")
-	_check_entry_only(main, "真实AI交棒")
+		"BOT攻击到玩家攻击的后台协程全程没有泄漏攻击提示")
+	_check_entry_only(main, "真实BOT交棒")
 	main.drawer_window.pin()
 	check(_renders(main.lbl_attack) and _renders(main.attack_panel)
 		and main.TXT_ATTACK_MINE in main.lbl_attack.text,

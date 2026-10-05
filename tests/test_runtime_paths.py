@@ -63,12 +63,12 @@ class RuntimePathsTest(unittest.TestCase):
         play = self.remap(['--path', '.', '--', '--cards-config=data/cards.json'])
         self.assertEqual(play[-1], '--cards-config=' + str(self.root / 'data/cards.json'))
         (self.root / 'input-without-extension').write_text('{}')
-        args = self.remap(['-s', '../external/ai_decision_probe.gd', '--', 'fixed',
-                           'input-without-extension', 'reports/new.json', '40', '1.0', 'ai:1'])
-        self.assertEqual(args[1], str(self.root.parent / 'external/ai_decision_probe.gd'))
+        args = self.remap(['-s', '../external/bot_decision_probe.gd', '--', 'fixed',
+                           'input-without-extension', 'reports/new.json', '40', '1.0', 'bot:1'])
+        self.assertEqual(args[1], str(self.root.parent / 'external/bot_decision_probe.gd'))
         self.assertEqual(args[3], 'fixed')
         self.assertEqual(args[4:6], [str(self.root / 'input-without-extension'), str(self.root / 'reports/new.json')])
-        self.assertEqual(args[-3:], ['40', '1.0', 'ai:1'])
+        self.assertEqual(args[-3:], ['40', '1.0', 'bot:1'])
 
     def test_invalid_request_is_left_for_engine_validation(self):
         source = self.root / 'request.json'; source.write_text('{invalid')

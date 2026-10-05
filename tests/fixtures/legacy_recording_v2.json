@@ -1,0 +1,1615 @@
+{
+  "version": 2,
+  "table": "db44ce42fca2d8d57e8ab79fb0b97fc0",
+  "meta": {
+    "note": "历史格式读取回归",
+    "round": 1
+  },
+  "head": {
+    "players": {
+      "player": {
+        "cards": [
+          {
+            "uid": 0,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 1,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 2,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 3,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 4,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 5,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 6,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 7,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 8,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 9,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 10,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 11,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 12,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 13,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 14,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 15,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 16,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 17,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 18,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 19,
+            "def_id": "user",
+            "locked": false
+          }
+        ]
+      },
+      "ai": {
+        "cards": [
+          {
+            "uid": 20,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 21,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 22,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 23,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 24,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 25,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 26,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 27,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 28,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 29,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 30,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 31,
+            "def_id": "cash",
+            "locked": false
+          },
+          {
+            "uid": 32,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 33,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 34,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 35,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 36,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 37,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 38,
+            "def_id": "user",
+            "locked": false
+          },
+          {
+            "uid": 39,
+            "def_id": "user",
+            "locked": false
+          }
+        ]
+      }
+    },
+    "market": [
+      "waimai",
+      "pinshaoshao",
+      "butie",
+      "pinshaoshao",
+      "pinshaoshao",
+      "waimai",
+      "shuabuting",
+      "touliu"
+    ],
+    "combos": [],
+    "round_num": 1,
+    "draw_first": "player",
+    "winner": "",
+    "win_reason": "",
+    "log": [
+      {
+        "round": 1,
+        "fmt": "开局！双方各有 现金×12 + 用户×8。没有回合补给，全靠经营。公共区每回合刷新，先到 100 资金者胜。",
+        "args": []
+      },
+      {
+        "round": 1,
+        "fmt": "—— 第 1 回合 —— 公共区刷新",
+        "args": []
+      }
+    ],
+    "uid": 40,
+    "rng": {
+      "seed": "1001",
+      "state": "-2717097341534364017"
+    }
+  },
+  "head_pools": {},
+  "configuration": {
+    "rules": {
+      "cards": {
+        "cash": {
+          "name": "现金",
+          "kind": "unit",
+          "tier": 0.0,
+          "price": -1.0,
+          "weight": 0.0,
+          "res": "cash",
+          "flavor": "投资人的钱，烧起来不心疼"
+        },
+        "user": {
+          "name": "用户",
+          "kind": "unit",
+          "tier": 0.0,
+          "price": -1.0,
+          "weight": 0.0,
+          "res": "user",
+          "flavor": "官方称呼\"家人\"，内部称呼\"韭菜\""
+        },
+        "yunketang": {
+          "name": "云课堂",
+          "kind": "product",
+          "tier": 1.0,
+          "price": 4.0,
+          "weight": 9.0,
+          "recipe_res": "user",
+          "recipe_n": 3.0,
+          "output_res": "cash",
+          "output_n": 4.0,
+          "flavor": "在线教育：知识改变命运，也改变财报"
+        },
+        "baoyue": {
+          "name": "连续包月",
+          "kind": "product",
+          "tier": 1.0,
+          "price": 5.0,
+          "weight": 8.0,
+          "recipe_res": "user",
+          "recipe_n": 4.0,
+          "output_res": "cash",
+          "output_n": 6.0,
+          "flavor": "会员订阅：用户根本不知道自己在续费"
+        },
+        "pinshaoshao": {
+          "name": "拼少少",
+          "kind": "product",
+          "tier": 1.0,
+          "price": 4.0,
+          "weight": 8.0,
+          "recipe_res": "cash",
+          "recipe_n": 3.0,
+          "output_res": "user",
+          "output_n": 4.0,
+          "flavor": "社交电商：亲，在吗？帮我砍一刀"
+        },
+        "shuabuting": {
+          "name": "刷不停",
+          "kind": "product",
+          "tier": 1.0,
+          "price": 6.0,
+          "weight": 7.0,
+          "recipe_res": "user",
+          "recipe_n": 5.0,
+          "output_res": "cash",
+          "output_n": 8.0,
+          "flavor": "短视频App：我就刷五分钟。三小时后：天亮了啊？"
+        },
+        "ditui": {
+          "name": "地推扫码",
+          "kind": "product",
+          "tier": 1.0,
+          "price": 3.0,
+          "weight": 9.0,
+          "recipe_res": "cash",
+          "recipe_n": 2.0,
+          "output_res": "user",
+          "output_n": 2.0,
+          "flavor": "扫码送鸡蛋，菜市场才是流量洼地"
+        },
+        "waimai": {
+          "name": "外卖补贴",
+          "kind": "product",
+          "tier": 1.0,
+          "price": 5.0,
+          "weight": 7.0,
+          "recipe_res": "cash",
+          "recipe_n": 4.0,
+          "output_res": "user",
+          "output_n": 6.0,
+          "flavor": "首单立减20，薅完记得再来"
+        },
+        "touliu": {
+          "name": "广告投流",
+          "kind": "product",
+          "tier": 1.0,
+          "price": 6.0,
+          "weight": 7.0,
+          "recipe_res": "cash",
+          "recipe_n": 5.0,
+          "output_res": "user",
+          "output_n": 8.0,
+          "flavor": "精准投放：你刚搜过什么，我就出现在哪"
+        },
+        "chunwan": {
+          "name": "春晚冠名",
+          "kind": "product",
+          "tier": 1.0,
+          "price": 7.0,
+          "weight": 3.0,
+          "recipe_res": "cash",
+          "recipe_n": 6.0,
+          "output_res": "user",
+          "output_n": 10.0,
+          "flavor": "广告一响，全国人民都知道你融到钱了"
+        },
+        "xinxijianfang": {
+          "name": "信息茧房",
+          "kind": "product",
+          "tier": 2.0,
+          "price": -1.0,
+          "weight": 0.0,
+          "upgrade_from": "shuabuting",
+          "upgrade_dup_n": 2.0,
+          "recipe_res": "user",
+          "recipe_n": 7.0,
+          "output_res": "cash",
+          "output_n": 18.0,
+          "flavor": "算法帝国：你喜欢什么，我就让你只看什么"
+        },
+        "baiyibutie": {
+          "name": "百亿补贴",
+          "kind": "product",
+          "tier": 2.0,
+          "price": -1.0,
+          "weight": 0.0,
+          "upgrade_from": "pinshaoshao",
+          "upgrade_dup_n": 2.0,
+          "recipe_res": "cash",
+          "recipe_n": 5.0,
+          "output_res": "user",
+          "output_n": 7.0,
+          "flavor": "电商巨头：烧钱烧出了信仰"
+        },
+        "banxiaoshi": {
+          "name": "半价生活圈",
+          "kind": "product",
+          "tier": 2.0,
+          "price": -1.0,
+          "weight": 0.0,
+          "upgrade_from": "waimai",
+          "upgrade_dup_n": 2.0,
+          "recipe_res": "cash",
+          "recipe_n": 6.0,
+          "output_res": "user",
+          "output_n": 10.0,
+          "flavor": "即时零售：你懒到什么程度，我就送到什么程度"
+        },
+        "tuanzhang": {
+          "name": "地推冲锋队",
+          "kind": "product",
+          "tier": 2.0,
+          "price": -1.0,
+          "weight": 0.0,
+          "upgrade_from": "ditui",
+          "upgrade_dup_n": 2.0,
+          "recipe_res": "cash",
+          "recipe_n": 3.0,
+          "output_res": "user",
+          "output_n": 4.0,
+          "flavor": "社区团购：一个团长管8个群，群群都在接龙"
+        },
+        "liulianghe": {
+          "name": "流量黑洞",
+          "kind": "product",
+          "tier": 2.0,
+          "price": -1.0,
+          "weight": 0.0,
+          "upgrade_from": "touliu",
+          "upgrade_dup_n": 2.0,
+          "recipe_res": "cash",
+          "recipe_n": 6.0,
+          "output_res": "user",
+          "output_n": 12.0,
+          "flavor": "投流投到最后，平台开始给你造数据"
+        },
+        "jiaolv": {
+          "name": "焦虑贩卖机",
+          "kind": "product",
+          "tier": 2.0,
+          "price": -1.0,
+          "weight": 0.0,
+          "upgrade_from": "yunketang",
+          "upgrade_dup_n": 2.0,
+          "recipe_res": "user",
+          "recipe_n": 4.0,
+          "output_res": "cash",
+          "output_n": 9.0,
+          "flavor": "知识付费：你买的不是课，是缓解焦虑"
+        },
+        "xufei": {
+          "name": "自动续费矩阵",
+          "kind": "product",
+          "tier": 2.0,
+          "price": -1.0,
+          "weight": 0.0,
+          "upgrade_from": "baoyue",
+          "upgrade_dup_n": 2.0,
+          "recipe_res": "user",
+          "recipe_n": 5.0,
+          "output_res": "cash",
+          "output_n": 14.0,
+          "flavor": "订阅帝国：取消入口藏在第7级菜单"
+        },
+        "dujiaoshou": {
+          "name": "独角兽",
+          "kind": "legend",
+          "tier": 3.0,
+          "price": -1.0,
+          "weight": 0.0,
+          "upgrade_from": "dup_t2",
+          "upgrade_dup_n": 2.0,
+          "flavor": "PPT里的饼，成真了",
+          "pawn": 30.0
+        },
+        "guomin": {
+          "name": "国民应用",
+          "kind": "legend",
+          "tier": 3.0,
+          "price": -1.0,
+          "weight": 0.0,
+          "upgrade_from": "dup_t2",
+          "upgrade_dup_n": 3.0,
+          "flavor": "上至八十下至八岁，人手一个",
+          "pawn": 70.0
+        },
+        "shangshi": {
+          "name": "上市敲钟",
+          "kind": "legend",
+          "tier": 3.0,
+          "price": -1.0,
+          "weight": 0.0,
+          "upgrade_from": "dup_t2",
+          "upgrade_dup_n": 4.0,
+          "flavor": "今晚全公司加餐，加了根鸡腿",
+          "pawn": 100.0
+        },
+        "butie": {
+          "name": "补贴大战",
+          "kind": "attack",
+          "tier": 1.0,
+          "price": 5.0,
+          "weight": 3.0,
+          "recipe_res": "cash",
+          "recipe_n": 6.0,
+          "attack_res": "user",
+          "attack_n": 4.0,
+          "flavor": "价格战就是拿钱砸钱，你补10块我补20"
+        },
+        "heigongguan": {
+          "name": "黑公关通稿",
+          "kind": "attack",
+          "tier": 1.0,
+          "price": 3.0,
+          "weight": 6.0,
+          "recipe_res": "cash",
+          "recipe_n": 4.0,
+          "attack_res": "user",
+          "attack_n": 2.0,
+          "flavor": "花钱雇的水军，竞对的瓜周一十点见"
+        },
+        "zuokong": {
+          "name": "做空报告",
+          "kind": "attack",
+          "tier": 1.0,
+          "price": 4.0,
+          "weight": 4.0,
+          "recipe_res": "user",
+          "recipe_n": 6.0,
+          "attack_res": "cash",
+          "attack_n": 3.0,
+          "flavor": "一页PPT，百亿市值灰飞烟灭"
+        },
+        "eryouxuan": {
+          "name": "二选一",
+          "kind": "attack",
+          "tier": 1.0,
+          "price": 10.0,
+          "weight": 1.0,
+          "recipe_res": "cash",
+          "recipe_n": 8.0,
+          "attack_res": "user",
+          "attack_n": 6.0,
+          "flavor": "商家只能站一边：有他没我，有我没他"
+        },
+        "chaping": {
+          "name": "差评轰炸",
+          "kind": "attack",
+          "tier": 1.0,
+          "price": 6.0,
+          "weight": 2.0,
+          "recipe_res": "user",
+          "recipe_n": 6.0,
+          "attack_res": "user",
+          "attack_n": 3.0,
+          "flavor": "一星保护协会已抵达战场"
+        },
+        "shanzhai": {
+          "name": "山寨围剿",
+          "kind": "attack",
+          "tier": 1.0,
+          "price": 4.0,
+          "weight": 3.0,
+          "recipe_res": "user",
+          "recipe_n": 6.0,
+          "attack_res": "user",
+          "attack_n": 2.0,
+          "flavor": "你上线新功能，我下周就有同款"
+        },
+        "liebian": {
+          "name": "裂变鬼才",
+          "kind": "buff",
+          "tier": 1.0,
+          "price": 6.0,
+          "weight": 3.0,
+          "buff_type": "user_fill",
+          "flavor": "增长黑客：1个用户能裂变出8个群"
+        },
+        "yinqing996": {
+          "name": "996引擎",
+          "kind": "buff",
+          "tier": 1.0,
+          "price": 6.0,
+          "weight": 4.0,
+          "buff_type": "output_x2",
+          "flavor": "狼性团队：只要头发掉得够快，需求就追不上我"
+        },
+        "resou": {
+          "name": "热搜包年",
+          "kind": "buff",
+          "tier": 1.0,
+          "price": 8.0,
+          "weight": 3.0,
+          "buff_type": "attack_x2",
+          "flavor": "热搜第一，给你挂一整天"
+        },
+        "tuisong": {
+          "name": "推送弹窗",
+          "kind": "buff",
+          "tier": 1.0,
+          "price": 4.0,
+          "weight": 3.0,
+          "buff_type": "protect_user",
+          "flavor": "UG手段召回流失用户：再卸载我一次试试？"
+        },
+        "jiangjia": {
+          "name": "降价促销",
+          "kind": "buff",
+          "tier": 1.0,
+          "price": 4.0,
+          "weight": 3.0,
+          "buff_type": "protect_cash",
+          "flavor": "你打价格战？我跟，全场五折还送券"
+        }
+      },
+      "game": {
+        "_note": "全局规则数值：market_size=每回合公共区卡位数；start_cash/start_user=开局资源；win_cash=资金胜利线；res_labels=资源的计量名（卡名取自各资源卡自己的 name）；buff_mult=各 buff_type 的倍率（键必须是 CardDB.KNOWN_BUFF_TYPES 里的值，缺一项就等于那张 Buff 不生效，所以 ComboRules 和卡面记号都从这里取，不各写一份 2）；attack_cost_per_card=点掉一张单位卡要几点攻击（组内组外同价，掩体由防御 Buff 提供；抬它等于全线削弱攻击射程，攻击量上限的判据会跟着放宽，见 test_simulator 那条一回合斩护栏）；pawn_rate=典当折价的除数（标价÷它、T2 材料购牌价之和也÷它；这个数原先在 CardDB.pawn_value 里写两遍、balance.md 和 README.md 里各抄了一份「÷2」，是纯经济旋钮，抬它等于全线削弱典当这条救命通道）；pawn_user=一张用户卡当掉给几块（现金卡不可当，恒为 0，那不是旋钮而是规则）。注意这两个只管**公式**：三张传说卡不走公式，价钱写在各自的 pawn 字段上",
+        "market_size": 8.0,
+        "start_cash": 12.0,
+        "start_user": 8.0,
+        "win_cash": 100.0,
+        "attack_cost_per_card": 1.0,
+        "buff_mult": {
+          "output_x2": 2.0,
+          "attack_x2": 2.0
+        },
+        "pawn_rate": 2.0,
+        "pawn_user": 1.0,
+        "res_labels": {
+          "cash": "资金",
+          "user": "用户"
+        }
+      },
+      "upgrade": {
+        "_note": "生产卡纯卡面升级路线表。具体来源 self 要求材料全部同名，保留两张同名 T1 升对应 T2；dup_key 沿用历史键 dup_t2，表示任意同档生产卡合成传说，允许同名或不同名，T1/T2 不能混用。routes 按 kind+tier 匹配，按表中顺序查找；key=self 使用具体卡面 id，key=dup_key 使用占位键并且只返回 legend 产物；per 为材料档位的折算率。实际材料张数必须精确等于产物 upgrade_dup_n×per，不足、超出或除不尽均无效，旧 require_multiple 字段保留兼容但 false 也不允许截断材料。当前 T1 的三个传说档位为 4/6/8，T2 为 2/3/4，产物和门槛仍从各卡 upgrade_from/upgrade_dup_n 与本表 per 派生，不在代码复制数字。升级组合只接受同档生产卡，不能夹带其他类型；最长路线由 max_upgrade_dup_n×max_per 派生。",
+        "dup_key": "dup_t2",
+        "routes": [
+          {
+            "kind": "product",
+            "tier": 2.0,
+            "key": "dup_key",
+            "per": 1.0,
+            "require_multiple": true
+          },
+          {
+            "kind": "product",
+            "tier": 1.0,
+            "key": "self",
+            "per": 1.0,
+            "require_multiple": true
+          },
+          {
+            "kind": "product",
+            "tier": 1.0,
+            "key": "dup_key",
+            "per": 2.0,
+            "require_multiple": true
+          },
+          {
+            "key": "self",
+            "per": 1.0,
+            "require_multiple": true
+          }
+        ]
+      }
+    },
+    "cards_json": {
+      "_comment": "牛马牌 · 卡牌配置。kind: unit/product/attack/buff/legend；price=-1 不进公共区；weight=公共区权重；recipe_*=生产或攻击配方；output_*=产出；attack_*=攻击；upgrade_from=升级来源：具体卡面 id 表示同名 T1 升对应 T2，历史占位键 dup_t2 表示同档生产卡升传说（允许同名或异名，T1/T2 不混用）；upgrade_dup_n=来源侧所需张数，实际材料数由 _upgrade.routes.per 折算，必须精确相等；升级只放生产卡，不夹资源、Buff、攻击、传说或未知卡，不吃现金和用户；buff_type=user_fill（组内有≥1张用户卡即视为用户配方补满）/output_x2/attack_x2/protect_user/protect_cash；pawn=可选固定出售价格，缺省按公式计算",
+      "_game": {
+        "_note": "全局规则数值：market_size=每回合公共区卡位数；start_cash/start_user=开局资源；win_cash=资金胜利线；res_labels=资源的计量名（卡名取自各资源卡自己的 name）；buff_mult=各 buff_type 的倍率（键必须是 CardDB.KNOWN_BUFF_TYPES 里的值，缺一项就等于那张 Buff 不生效，所以 ComboRules 和卡面记号都从这里取，不各写一份 2）；attack_cost_per_card=点掉一张单位卡要几点攻击（组内组外同价，掩体由防御 Buff 提供；抬它等于全线削弱攻击射程，攻击量上限的判据会跟着放宽，见 test_simulator 那条一回合斩护栏）；pawn_rate=典当折价的除数（标价÷它、T2 材料购牌价之和也÷它；这个数原先在 CardDB.pawn_value 里写两遍、balance.md 和 README.md 里各抄了一份「÷2」，是纯经济旋钮，抬它等于全线削弱典当这条救命通道）；pawn_user=一张用户卡当掉给几块（现金卡不可当，恒为 0，那不是旋钮而是规则）。注意这两个只管**公式**：三张传说卡不走公式，价钱写在各自的 pawn 字段上",
+        "market_size": 8.0,
+        "start_cash": 12.0,
+        "start_user": 8.0,
+        "win_cash": 100.0,
+        "attack_cost_per_card": 1.0,
+        "buff_mult": {
+          "output_x2": 2.0,
+          "attack_x2": 2.0
+        },
+        "pawn_rate": 2.0,
+        "pawn_user": 1.0
+      },
+      "_upgrade": {
+        "_note": "生产卡纯卡面升级路线表。具体来源 self 要求材料全部同名，保留两张同名 T1 升对应 T2；dup_key 沿用历史键 dup_t2，表示任意同档生产卡合成传说，允许同名或不同名，T1/T2 不能混用。routes 按 kind+tier 匹配，按表中顺序查找；key=self 使用具体卡面 id，key=dup_key 使用占位键并且只返回 legend 产物；per 为材料档位的折算率。实际材料张数必须精确等于产物 upgrade_dup_n×per，不足、超出或除不尽均无效，旧 require_multiple 字段保留兼容但 false 也不允许截断材料。当前 T1 的三个传说档位为 4/6/8，T2 为 2/3/4，产物和门槛仍从各卡 upgrade_from/upgrade_dup_n 与本表 per 派生，不在代码复制数字。升级组合只接受同档生产卡，不能夹带其他类型；最长路线由 max_upgrade_dup_n×max_per 派生。",
+        "dup_key": "dup_t2",
+        "routes": [
+          {
+            "kind": "product",
+            "tier": 2.0,
+            "key": "dup_key",
+            "per": 1.0,
+            "require_multiple": true
+          },
+          {
+            "kind": "product",
+            "tier": 1.0,
+            "key": "self",
+            "per": 1.0,
+            "require_multiple": true
+          },
+          {
+            "kind": "product",
+            "tier": 1.0,
+            "key": "dup_key",
+            "per": 2.0,
+            "require_multiple": true
+          },
+          {
+            "key": "self",
+            "per": 1.0,
+            "require_multiple": true
+          }
+        ]
+      },
+      "cash": {
+        "name": "现金",
+        "kind": "unit",
+        "tier": 0.0,
+        "price": -1.0,
+        "weight": 0.0,
+        "res": "cash",
+        "flavor": "投资人的钱，烧起来不心疼"
+      },
+      "user": {
+        "name": "用户",
+        "kind": "unit",
+        "tier": 0.0,
+        "price": -1.0,
+        "weight": 0.0,
+        "res": "user",
+        "flavor": "官方称呼\"家人\"，内部称呼\"韭菜\""
+      },
+      "yunketang": {
+        "name": "云课堂",
+        "kind": "product",
+        "tier": 1.0,
+        "price": 4.0,
+        "weight": 9.0,
+        "recipe_res": "user",
+        "recipe_n": 3.0,
+        "output_res": "cash",
+        "output_n": 4.0,
+        "flavor": "在线教育：知识改变命运，也改变财报"
+      },
+      "baoyue": {
+        "name": "连续包月",
+        "kind": "product",
+        "tier": 1.0,
+        "price": 5.0,
+        "weight": 8.0,
+        "recipe_res": "user",
+        "recipe_n": 4.0,
+        "output_res": "cash",
+        "output_n": 6.0,
+        "flavor": "会员订阅：用户根本不知道自己在续费"
+      },
+      "pinshaoshao": {
+        "name": "拼少少",
+        "kind": "product",
+        "tier": 1.0,
+        "price": 4.0,
+        "weight": 8.0,
+        "recipe_res": "cash",
+        "recipe_n": 3.0,
+        "output_res": "user",
+        "output_n": 4.0,
+        "flavor": "社交电商：亲，在吗？帮我砍一刀"
+      },
+      "shuabuting": {
+        "name": "刷不停",
+        "kind": "product",
+        "tier": 1.0,
+        "price": 6.0,
+        "weight": 7.0,
+        "recipe_res": "user",
+        "recipe_n": 5.0,
+        "output_res": "cash",
+        "output_n": 8.0,
+        "flavor": "短视频App：我就刷五分钟。三小时后：天亮了啊？"
+      },
+      "ditui": {
+        "name": "地推扫码",
+        "kind": "product",
+        "tier": 1.0,
+        "price": 3.0,
+        "weight": 9.0,
+        "recipe_res": "cash",
+        "recipe_n": 2.0,
+        "output_res": "user",
+        "output_n": 2.0,
+        "flavor": "扫码送鸡蛋，菜市场才是流量洼地"
+      },
+      "waimai": {
+        "name": "外卖补贴",
+        "kind": "product",
+        "tier": 1.0,
+        "price": 5.0,
+        "weight": 7.0,
+        "recipe_res": "cash",
+        "recipe_n": 4.0,
+        "output_res": "user",
+        "output_n": 6.0,
+        "flavor": "首单立减20，薅完记得再来"
+      },
+      "touliu": {
+        "name": "广告投流",
+        "kind": "product",
+        "tier": 1.0,
+        "price": 6.0,
+        "weight": 7.0,
+        "recipe_res": "cash",
+        "recipe_n": 5.0,
+        "output_res": "user",
+        "output_n": 8.0,
+        "flavor": "精准投放：你刚搜过什么，我就出现在哪"
+      },
+      "chunwan": {
+        "name": "春晚冠名",
+        "kind": "product",
+        "tier": 1.0,
+        "price": 7.0,
+        "weight": 3.0,
+        "recipe_res": "cash",
+        "recipe_n": 6.0,
+        "output_res": "user",
+        "output_n": 10.0,
+        "flavor": "广告一响，全国人民都知道你融到钱了"
+      },
+      "xinxijianfang": {
+        "name": "信息茧房",
+        "kind": "product",
+        "tier": 2.0,
+        "price": -1.0,
+        "weight": 0.0,
+        "upgrade_from": "shuabuting",
+        "upgrade_dup_n": 2.0,
+        "recipe_res": "user",
+        "recipe_n": 7.0,
+        "output_res": "cash",
+        "output_n": 18.0,
+        "flavor": "算法帝国：你喜欢什么，我就让你只看什么"
+      },
+      "baiyibutie": {
+        "name": "百亿补贴",
+        "kind": "product",
+        "tier": 2.0,
+        "price": -1.0,
+        "weight": 0.0,
+        "upgrade_from": "pinshaoshao",
+        "upgrade_dup_n": 2.0,
+        "recipe_res": "cash",
+        "recipe_n": 5.0,
+        "output_res": "user",
+        "output_n": 7.0,
+        "flavor": "电商巨头：烧钱烧出了信仰"
+      },
+      "banxiaoshi": {
+        "name": "半价生活圈",
+        "kind": "product",
+        "tier": 2.0,
+        "price": -1.0,
+        "weight": 0.0,
+        "upgrade_from": "waimai",
+        "upgrade_dup_n": 2.0,
+        "recipe_res": "cash",
+        "recipe_n": 6.0,
+        "output_res": "user",
+        "output_n": 10.0,
+        "flavor": "即时零售：你懒到什么程度，我就送到什么程度"
+      },
+      "tuanzhang": {
+        "name": "地推冲锋队",
+        "kind": "product",
+        "tier": 2.0,
+        "price": -1.0,
+        "weight": 0.0,
+        "upgrade_from": "ditui",
+        "upgrade_dup_n": 2.0,
+        "recipe_res": "cash",
+        "recipe_n": 3.0,
+        "output_res": "user",
+        "output_n": 4.0,
+        "flavor": "社区团购：一个团长管8个群，群群都在接龙"
+      },
+      "liulianghe": {
+        "name": "流量黑洞",
+        "kind": "product",
+        "tier": 2.0,
+        "price": -1.0,
+        "weight": 0.0,
+        "upgrade_from": "touliu",
+        "upgrade_dup_n": 2.0,
+        "recipe_res": "cash",
+        "recipe_n": 6.0,
+        "output_res": "user",
+        "output_n": 12.0,
+        "flavor": "投流投到最后，平台开始给你造数据"
+      },
+      "jiaolv": {
+        "name": "焦虑贩卖机",
+        "kind": "product",
+        "tier": 2.0,
+        "price": -1.0,
+        "weight": 0.0,
+        "upgrade_from": "yunketang",
+        "upgrade_dup_n": 2.0,
+        "recipe_res": "user",
+        "recipe_n": 4.0,
+        "output_res": "cash",
+        "output_n": 9.0,
+        "flavor": "知识付费：你买的不是课，是缓解焦虑"
+      },
+      "xufei": {
+        "name": "自动续费矩阵",
+        "kind": "product",
+        "tier": 2.0,
+        "price": -1.0,
+        "weight": 0.0,
+        "upgrade_from": "baoyue",
+        "upgrade_dup_n": 2.0,
+        "recipe_res": "user",
+        "recipe_n": 5.0,
+        "output_res": "cash",
+        "output_n": 14.0,
+        "flavor": "订阅帝国：取消入口藏在第7级菜单"
+      },
+      "dujiaoshou": {
+        "name": "独角兽",
+        "kind": "legend",
+        "tier": 3.0,
+        "price": -1.0,
+        "weight": 0.0,
+        "upgrade_from": "dup_t2",
+        "upgrade_dup_n": 2.0,
+        "flavor": "PPT里的饼，成真了",
+        "pawn": 30.0
+      },
+      "guomin": {
+        "name": "国民应用",
+        "kind": "legend",
+        "tier": 3.0,
+        "price": -1.0,
+        "weight": 0.0,
+        "upgrade_from": "dup_t2",
+        "upgrade_dup_n": 3.0,
+        "flavor": "上至八十下至八岁，人手一个",
+        "pawn": 70.0
+      },
+      "shangshi": {
+        "name": "上市敲钟",
+        "kind": "legend",
+        "tier": 3.0,
+        "price": -1.0,
+        "weight": 0.0,
+        "upgrade_from": "dup_t2",
+        "upgrade_dup_n": 4.0,
+        "flavor": "今晚全公司加餐，加了根鸡腿",
+        "pawn": 100.0
+      },
+      "butie": {
+        "name": "补贴大战",
+        "kind": "attack",
+        "tier": 1.0,
+        "price": 5.0,
+        "weight": 3.0,
+        "recipe_res": "cash",
+        "recipe_n": 6.0,
+        "attack_res": "user",
+        "attack_n": 4.0,
+        "flavor": "价格战就是拿钱砸钱，你补10块我补20"
+      },
+      "heigongguan": {
+        "name": "黑公关通稿",
+        "kind": "attack",
+        "tier": 1.0,
+        "price": 3.0,
+        "weight": 6.0,
+        "recipe_res": "cash",
+        "recipe_n": 4.0,
+        "attack_res": "user",
+        "attack_n": 2.0,
+        "flavor": "花钱雇的水军，竞对的瓜周一十点见"
+      },
+      "zuokong": {
+        "name": "做空报告",
+        "kind": "attack",
+        "tier": 1.0,
+        "price": 4.0,
+        "weight": 4.0,
+        "recipe_res": "user",
+        "recipe_n": 6.0,
+        "attack_res": "cash",
+        "attack_n": 3.0,
+        "flavor": "一页PPT，百亿市值灰飞烟灭"
+      },
+      "eryouxuan": {
+        "name": "二选一",
+        "kind": "attack",
+        "tier": 1.0,
+        "price": 10.0,
+        "weight": 1.0,
+        "recipe_res": "cash",
+        "recipe_n": 8.0,
+        "attack_res": "user",
+        "attack_n": 6.0,
+        "flavor": "商家只能站一边：有他没我，有我没他"
+      },
+      "chaping": {
+        "name": "差评轰炸",
+        "kind": "attack",
+        "tier": 1.0,
+        "price": 6.0,
+        "weight": 2.0,
+        "recipe_res": "user",
+        "recipe_n": 6.0,
+        "attack_res": "user",
+        "attack_n": 3.0,
+        "flavor": "一星保护协会已抵达战场"
+      },
+      "shanzhai": {
+        "name": "山寨围剿",
+        "kind": "attack",
+        "tier": 1.0,
+        "price": 4.0,
+        "weight": 3.0,
+        "recipe_res": "user",
+        "recipe_n": 6.0,
+        "attack_res": "user",
+        "attack_n": 2.0,
+        "flavor": "你上线新功能，我下周就有同款"
+      },
+      "liebian": {
+        "name": "裂变鬼才",
+        "kind": "buff",
+        "tier": 1.0,
+        "price": 6.0,
+        "weight": 3.0,
+        "buff_type": "user_fill",
+        "flavor": "增长黑客：1个用户能裂变出8个群"
+      },
+      "yinqing996": {
+        "name": "996引擎",
+        "kind": "buff",
+        "tier": 1.0,
+        "price": 6.0,
+        "weight": 4.0,
+        "buff_type": "output_x2",
+        "flavor": "狼性团队：只要头发掉得够快，需求就追不上我"
+      },
+      "resou": {
+        "name": "热搜包年",
+        "kind": "buff",
+        "tier": 1.0,
+        "price": 8.0,
+        "weight": 3.0,
+        "buff_type": "attack_x2",
+        "flavor": "热搜第一，给你挂一整天"
+      },
+      "tuisong": {
+        "name": "推送弹窗",
+        "kind": "buff",
+        "tier": 1.0,
+        "price": 4.0,
+        "weight": 3.0,
+        "buff_type": "protect_user",
+        "flavor": "UG手段召回流失用户：再卸载我一次试试？"
+      },
+      "jiangjia": {
+        "name": "降价促销",
+        "kind": "buff",
+        "tier": 1.0,
+        "price": 4.0,
+        "weight": 3.0,
+        "buff_type": "protect_cash",
+        "flavor": "你打价格战？我跟，全场五折还送券"
+      }
+    },
+    "settings": {
+      "ai_model": "ai",
+      "ai_strength": 0.24,
+      "ai_parameters": {
+        "profile_version": "6.0",
+        "compute_budget": 3000000,
+        "search_fraction": 0.015796,
+        "financing_mode": 2,
+        "resale_mode": 1,
+        "resale_budget": 512,
+        "allocation_mode": 1,
+        "formation_mode": 1,
+        "candidate_dedup": 1,
+        "attack_mode": 1,
+        "attack_depth": 3,
+        "reply_mode": 1,
+        "rollout_capabilities": 1,
+        "tactical_extension": 1,
+        "financing_choices": 8,
+        "financing_beam": 128,
+        "allocation_budget": 128,
+        "future_reply_limit": 3,
+        "rollout_buy_beam": 3,
+        "rollout_build_beam": 2,
+        "rollout_plans": 2,
+        "buy_beam": 20,
+        "build_beam": 12,
+        "plans": 16,
+        "replies": 16,
+        "sales": 2,
+        "finalists": 8,
+        "samples": 3,
+        "future_rounds": 2,
+        "target_trials": 36,
+        "node_budget": 2500000,
+        "engine_horizon": 3.0,
+        "upgrade_weight": 0.65,
+        "risk_weight": 1.0,
+        "attack_discount": 0.75,
+        "protection_bonus": 0.15,
+        "spent_attack_discount": 0.25
+      },
+      "ui_defaults": {
+        "window_fraction": 0.75,
+        "perspective_angle": 80.0,
+        "icon_scale": 0.75
+      },
+      "sfx": {
+        "_note": "音效表。sounds=每个音效名对应的 wav（音效名只在这里和文件名之间对一次）。actions=**游戏动作 → 用哪个音效、多响、什么音高**：代码只写动作名（sfx.play(\"combo_complete\")），响度和音高一个字面量都不写在代码里。sound=sounds 里的键，db=音量（省略=0.0），pitch=音高倍率（省略=1.0，实际播放还会叠 ±4% 随机，见 Sfx.play）。同一个音效可以被好几个动作用不同响度引用（deny 的四档、buy 的三档就是这么来的），所以动作名比音效名多。加动作只改这里；动作名代码里认不出会 push_error 而不是静默沉默（见 Sfx.action）",
+        "sounds": {
+          "pickup": "res://assets/sfx/pickup.wav",
+          "drop": "res://assets/sfx/drop.wav",
+          "stack": "res://assets/sfx/stack.wav",
+          "complete": "res://assets/sfx/complete.wav",
+          "confirm": "res://assets/sfx/confirm.wav",
+          "buy": "res://assets/sfx/buy.wav",
+          "deny": "res://assets/sfx/deny.wav",
+          "upgrade": "res://assets/sfx/upgrade.wav",
+          "attack": "res://assets/sfx/attack.wav",
+          "broken": "res://assets/sfx/broken.wav",
+          "win": "res://assets/sfx/win.wav",
+          "lose": "res://assets/sfx/lose.wav"
+        },
+        "actions": {
+          "_note_actions": "产出没有自己的音效：produce_land 复用 drop，每张产出的牌落地各响一声（整组一声说不出产出了几张，见 main._fly_from 和 test_arrivals T11）。所以它的 sound/db 必须和 card_drop 一样",
+          "card_pickup": {
+            "sound": "pickup",
+            "db": -8.0
+          },
+          "card_drop": {
+            "sound": "drop",
+            "db": -8.0
+          },
+          "produce_land": {
+            "sound": "drop",
+            "db": -8.0
+          },
+          "pile_toggle": {
+            "sound": "stack",
+            "db": -4.0
+          },
+          "combo_complete": {
+            "sound": "complete",
+            "db": -2.0
+          },
+          "confirm_turn": {
+            "sound": "confirm",
+            "db": -3.0
+          },
+          "foe_action_done": {
+            "sound": "confirm",
+            "db": -3.0,
+            "notification": true
+          },
+          "buy": {
+            "sound": "buy",
+            "db": -4.0
+          },
+          "pay": {
+            "sound": "buy",
+            "db": -6.0
+          },
+          "pawn": {
+            "sound": "buy",
+            "db": -3.0,
+            "pitch": 0.9
+          },
+          "deny": {
+            "sound": "deny",
+            "db": -4.0
+          },
+          "deny_quiet": {
+            "sound": "deny",
+            "db": -6.0
+          },
+          "upgrade": {
+            "sound": "upgrade",
+            "db": -2.0
+          },
+          "attack": {
+            "sound": "attack",
+            "db": -1.0
+          },
+          "attack_tear": {
+            "sound": "attack",
+            "db": -8.0,
+            "pitch": 1.3
+          },
+          "combo_broken": {
+            "sound": "broken",
+            "db": -2.0
+          },
+          "win": {
+            "sound": "win"
+          },
+          "lose": {
+            "sound": "lose"
+          }
+        }
+      },
+      "palette": {
+        "_说明": "全局配色。卡牌用程序化圆角框架，卡面、标题带、边框颜色由这里决定。改这个文件或用游戏内右上角选色面板即可换色；面板保存时写 user://palette.json 覆盖本文件，不动仓库。",
+        "_版本": 1.0,
+        "hud": {
+          "_说明": "双方资源卡的身份强调色；正文使用语义墨色保持可读性",
+          "player": "#F2CC66",
+          "ai": "#5599FF"
+        },
+        "semantic": {
+          "surface": "#F4EBD8",
+          "ink": "#24211D",
+          "muted": "#6E675D",
+          "cash": "#B88620",
+          "user": "#3B78A8",
+          "pending": "#D27A2A",
+          "warning": "#B56B20",
+          "success": "#4F8A58",
+          "danger": "#B8493E",
+          "focus": "#D9A441",
+          "info": "#4E82AD",
+          "disabled": "#9A9388",
+          "_说明": "交互状态与控件共用：资源类别、文字/表面、主操作、警告、成功、危险、焦点、信息与禁用。",
+          "primary": "#D9A441"
+        },
+        "world": {
+          "_说明": "牌桌之外的环境与台面",
+          "background": "#617861",
+          "table_felt": "#809978",
+          "table_felt_lit": "#8C998F",
+          "table_frame": "#F0E8D4",
+          "market_floor": "#4C4038"
+        },
+        "card": {
+          "_说明": "所有卡牌共用：frame=程序边框与标题分隔线，body=卡牌本体侧壁",
+          "frame": "#141414",
+          "body": "#1F1F1F"
+        },
+        "icon": {
+          "_说明": "图标前景色。留空字符串 = 跟随各底板的 ink；填了颜色则全卡统一用它",
+          "foreground": ""
+        },
+        "plates": {
+          "_说明": "底板按卡牌功能分色。plate_t1_money 为用户→现金，plate_t1_growth 为现金→用户，所有等级生产卡共用对应方向的配色；plate_t2 仅保留旧配色数据，不再用于卡牌。face=卡面填充，band=标题带填充，accent=配方凑满的墨团色，ink=卡名/图标/数字墨色。",
+          "plate_cash": {
+            "face": "#E9D28E",
+            "band": "#E2BD52",
+            "accent": "#E5BC52",
+            "ink": "#222222"
+          },
+          "plate_user": {
+            "face": "#E1C99B",
+            "band": "#D5AD65",
+            "accent": "#D5AC62",
+            "ink": "#222222"
+          },
+          "plate_t1_money": {
+            "face": "#93C6CA",
+            "band": "#57B5BF",
+            "accent": "#52B5BD",
+            "ink": "#222222"
+          },
+          "plate_t1_growth": {
+            "face": "#99ACD6",
+            "band": "#6384C7",
+            "accent": "#6283CD",
+            "ink": "#222222"
+          },
+          "plate_t2": {
+            "face": "#C297CC",
+            "band": "#AA65C0",
+            "accent": "#AC63C5",
+            "ink": "#222222"
+          },
+          "plate_t3": {
+            "face": "#EDEAE5",
+            "band": "#FCF9F2",
+            "accent": "#FDFDF5",
+            "ink": "#222222"
+          },
+          "plate_attack": {
+            "face": "#E9A49D",
+            "band": "#E06A60",
+            "accent": "#E56A62",
+            "ink": "#222222"
+          },
+          "plate_buff_up": {
+            "face": "#A4B4C3",
+            "band": "#7094B8",
+            "accent": "#7394BD",
+            "ink": "#222222"
+          },
+          "plate_buff_def": {
+            "face": "#DB9ABC",
+            "band": "#D36D9C",
+            "accent": "#D56B9C",
+            "ink": "#222222"
+          }
+        }
+      },
+      "ai_seats": {
+        "player": {
+          "side": "A",
+          "model": "ai",
+          "strength": 0.24,
+          "parameters": {
+            "profile_version": "6.0",
+            "compute_budget": 3000000,
+            "search_fraction": 0.015796,
+            "financing_mode": 2,
+            "resale_mode": 1,
+            "resale_budget": 512,
+            "allocation_mode": 1,
+            "formation_mode": 1,
+            "candidate_dedup": 1,
+            "attack_mode": 1,
+            "attack_depth": 3,
+            "reply_mode": 1,
+            "rollout_capabilities": 1,
+            "tactical_extension": 1,
+            "financing_choices": 8,
+            "financing_beam": 128,
+            "allocation_budget": 128,
+            "future_reply_limit": 3,
+            "rollout_buy_beam": 3,
+            "rollout_build_beam": 2,
+            "rollout_plans": 2,
+            "buy_beam": 20,
+            "build_beam": 12,
+            "plans": 16,
+            "replies": 16,
+            "sales": 2,
+            "finalists": 8,
+            "samples": 3,
+            "future_rounds": 2,
+            "target_trials": 36,
+            "node_budget": 2500000,
+            "engine_horizon": 3.0,
+            "upgrade_weight": 0.65,
+            "risk_weight": 1.0,
+            "attack_discount": 0.75,
+            "protection_bonus": 0.15,
+            "spent_attack_discount": 0.25
+          }
+        },
+        "ai": {
+          "side": "B",
+          "model": "ai",
+          "strength": 0.76,
+          "parameters": {
+            "profile_version": "6.0",
+            "compute_budget": 3000000,
+            "search_fraction": 0.440098,
+            "financing_mode": 2,
+            "resale_mode": 1,
+            "resale_budget": 512,
+            "allocation_mode": 1,
+            "formation_mode": 1,
+            "candidate_dedup": 1,
+            "attack_mode": 1,
+            "attack_depth": 3,
+            "reply_mode": 1,
+            "rollout_capabilities": 1,
+            "tactical_extension": 1,
+            "financing_choices": 8,
+            "financing_beam": 128,
+            "allocation_budget": 128,
+            "future_reply_limit": 3,
+            "rollout_buy_beam": 3,
+            "rollout_build_beam": 2,
+            "rollout_plans": 2,
+            "buy_beam": 20,
+            "build_beam": 12,
+            "plans": 16,
+            "replies": 16,
+            "sales": 2,
+            "finalists": 8,
+            "samples": 3,
+            "future_rounds": 2,
+            "target_trials": 36,
+            "node_budget": 2500000,
+            "engine_horizon": 3.0,
+            "upgrade_weight": 0.65,
+            "risk_weight": 1.0,
+            "attack_discount": 0.75,
+            "protection_bonus": 0.15,
+            "spent_attack_discount": 0.25
+          }
+        }
+      }
+    }
+  },
+  "head_view": {},
+  "steps": [
+    {
+      "kind": "intent",
+      "intent": {
+        "op": "buy",
+        "seat": "player",
+        "market_idx": 1,
+        "pay_uids": []
+      },
+      "result": {
+        "ok": true,
+        "removed_uids": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "new_uid": 40,
+        "market_idx": 1,
+        "def_id": "pinshaoshao",
+        "op": "buy",
+        "seat": "player"
+      },
+      "from": "",
+      "hash": "b4fc23fc5af6a606e11631ffb70909c9",
+      "at_ms": 643,
+      "before_view": {},
+      "gesture": {}
+    },
+    {
+      "kind": "intent",
+      "intent": {
+        "op": "buy",
+        "seat": "player",
+        "market_idx": 5,
+        "pay_uids": []
+      },
+      "result": {
+        "ok": true,
+        "removed_uids": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "new_uid": 41,
+        "market_idx": 5,
+        "def_id": "shuabuting",
+        "op": "buy",
+        "seat": "player"
+      },
+      "from": "",
+      "hash": "f8b8c17be20ed6c20df4649b398330b9",
+      "at_ms": 643,
+      "before_view": {},
+      "gesture": {}
+    },
+    {
+      "kind": "intent",
+      "intent": {
+        "op": "create_combo",
+        "seat": "player",
+        "uids": [
+          41,
+          12,
+          13,
+          14,
+          15,
+          16
+        ]
+      },
+      "result": {
+        "ok": true,
+        "eval": {
+          "valid": true,
+          "type": "production",
+          "leader": "shuabuting",
+          "reason": "",
+          "output_res": "cash",
+          "output_n": 8.0,
+          "output_card": "",
+          "attack_res": "",
+          "attack_n": 0,
+          "protect_user": false,
+          "protect_cash": false,
+          "recipe_res": "user",
+          "recipe_pay_n": 0,
+          "filled_by_fission": false
+        },
+        "uids": [
+          41,
+          12,
+          13,
+          14,
+          15,
+          16
+        ],
+        "op": "create_combo",
+        "seat": "player"
+      },
+      "from": "",
+      "hash": "4fd6d94ea76276169970c00500604fc6",
+      "at_ms": 643,
+      "before_view": {},
+      "gesture": {}
+    },
+    {
+      "kind": "intent",
+      "intent": {
+        "op": "pawn",
+        "seat": "ai",
+        "uids": [
+          32,
+          33,
+          34,
+          35,
+          36,
+          37
+        ]
+      },
+      "result": {
+        "ok": true,
+        "total": 6,
+        "uids": [
+          32,
+          33,
+          34,
+          35,
+          36,
+          37
+        ],
+        "op": "pawn",
+        "seat": "ai"
+      },
+      "from": "",
+      "hash": "cfe245c1b61025810de1426ee710df20",
+      "at_ms": 11423,
+      "before_view": {},
+      "gesture": {}
+    },
+    {
+      "kind": "intent",
+      "intent": {
+        "op": "buy",
+        "seat": "ai",
+        "market_idx": 1,
+        "pay_uids": []
+      },
+      "result": {
+        "ok": true,
+        "removed_uids": [
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "new_uid": 48,
+        "market_idx": 1,
+        "def_id": "butie",
+        "op": "buy",
+        "seat": "ai"
+      },
+      "from": "",
+      "hash": "16307dbe7f136d8f2cdd462f7c11408b",
+      "at_ms": 11424,
+      "before_view": {},
+      "gesture": {}
+    },
+    {
+      "kind": "intent",
+      "intent": {
+        "op": "buy",
+        "seat": "ai",
+        "market_idx": 4,
+        "pay_uids": []
+      },
+      "result": {
+        "ok": true,
+        "removed_uids": [
+          25,
+          26,
+          27,
+          28,
+          29,
+          30
+        ],
+        "new_uid": 49,
+        "market_idx": 4,
+        "def_id": "touliu",
+        "op": "buy",
+        "seat": "ai"
+      },
+      "from": "",
+      "hash": "cabab6c93fbcfa67f8a73e7adbbc39d6",
+      "at_ms": 11424,
+      "before_view": {},
+      "gesture": {}
+    }
+  ]
+}

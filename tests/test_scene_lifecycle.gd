@@ -171,8 +171,8 @@ func _detached_rematch() -> void:
 	main._show_game_over()
 	var panel: Control = main.game_over_panel
 	var fingerprint := StateCodec.state_hash(main.state)
-	old.rematch_started.emit(GameState.AI, GameState.PLAYER)
-	main._on_rematch_started(GameState.AI, GameState.PLAYER)
+	old.rematch_started.emit(GameState.BOT, GameState.PLAYER)
+	main._on_rematch_started(GameState.BOT, GameState.PLAYER)
 	check(main.game_over_panel == panel and StateCodec.state_hash(main.state) == fingerprint,
 		"旧连接的迟到重开不会拆掉当前单机终局或改牌局")
 	await _close(main)

@@ -185,7 +185,7 @@ func _check_rulebook(main: Node, context: String) -> void:
 	check(menu.get_meta("drawer_icon_button", false) and menu.get_theme_stylebox("normal") is StyleBoxEmpty, "%s：齿轮按钮无外边框" % context)
 	check(popup.get_item_index(7) == -1 and popup.get_item_index(8) >= 0,
 		"%s：选项提供读入录像，规则书移到主操作旁" % context)
-	var existing := {0: "配色", 1: "AI 强度", 2: "提示记录", 3: "UI",
+	var existing := {0: "配色", 1: "BOT 强度", 2: "提示记录", 3: "UI",
 		4: "入口大小", 5: "存录像", 6: "局域网对战", 8: "读入录像", 9: "卡牌配置"}
 	var old_routes_intact := popup.get_item_count() == existing.size()
 	for id in existing:

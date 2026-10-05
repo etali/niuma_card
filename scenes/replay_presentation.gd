@@ -82,12 +82,12 @@ func play(advanced: Dictionary, before: GameState, finish_action := true) -> voi
 			await host._await_removed(result.get("removed", []), seat == host.foe_seat)
 			if finish_action and seat == host.my_seat:
 				# 与正式对局的攻击收尾一致：整摞撕完后收拢空层并刷新侧边张数。
-				host.layout._layout_ai_zone()
+				host.layout._layout_bot_zone()
 		Intent.OP_PRODUCE:
 			await host._resolve_combo_visual(int(result.get("combo_idx", intent.get("combo_idx", 0))), result)
 		Intent.OP_NEXT_ROUND:
 			host._respawn_market()
-			host.layout._layout_ai_idle()
+			host.layout._layout_bot_idle()
 		Intent.OP_ACTION_DONE:
 			host.sfx.play("confirm_turn")
 		Intent.OP_FINALIZE, Intent.OP_ATTACK_DONE, Intent.OP_RESIGN:
@@ -114,7 +114,7 @@ func _wait_for_cards() -> void:
 			var tween: Tween = rec["tw"]
 			if tween != null and tween.is_valid() and tween.is_running():
 				busy = true
-		busy = busy or host.layout.ai_moving()
+		busy = busy or host.layout.bot_moving()
 		if not busy:
 			break
 		await get_tree().process_frame

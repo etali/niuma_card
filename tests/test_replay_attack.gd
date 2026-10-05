@@ -14,7 +14,7 @@ class ObservedSound extends Sfx:
 	func play(action: String, _pitch := 1.0) -> void:
 		if action == "attack_tear":
 			hits.append({"points": int(host.pipe.applier().pools(host.my_seat)[CardDB.RES_CASH]),
-				"cash": host.state.resource_count(host.foe_seat, CardDB.RES_CASH), "hud": host.lbl_ai_res.text})
+				"cash": host.state.resource_count(host.foe_seat, CardDB.RES_CASH), "hud": host.lbl_bot_res.text})
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -39,7 +39,7 @@ func _run() -> void:
 	var attack_start := 1
 	var hits := record.size() - 2  # 装弹、攻击阶段结束分别独立计步。
 	var points := int(session.applier.pools(GameState.PLAYER)[CardDB.RES_CASH])
-	var cash: int = session.state.resource_count(GameState.AI, CardDB.RES_CASH)
+	var cash: int = session.state.resource_count(GameState.BOT, CardDB.RES_CASH)
 	var cost := int(CardDB.game_rules()["attack_cost_per_card"])
 	var sources: Array = session.state.players[GameState.PLAYER]["cards"].filter(
 		func(card): return int(card.get("fired_round", -1)) == session.state.round_num).map(func(card): return card["uid"])
@@ -53,7 +53,7 @@ func _run() -> void:
 		var frame: Dictionary = action["frames"][i]
 		var state: GameState = frame["state"]
 		check(frame["applier"].pools(GameState.PLAYER)[CardDB.RES_CASH] == points - cost * (i + 1)
-			and state.resource_count(GameState.AI, CardDB.RES_CASH) == cash - i - 1, "第%d击的独立状态与攻击点一致" % (i + 1))
+			and state.resource_count(GameState.BOT, CardDB.RES_CASH) == cash - i - 1, "第%d击的独立状态与攻击点一致" % (i + 1))
 		check(sources.all(func(uid): return int(state.find_card(GameState.PLAYER, uid).get("fired_round", -1)) == state.round_num),
 			"逐击克隆状态后保留真实攻击来源")
 	var previous: Dictionary = session.previous_action()
@@ -62,7 +62,7 @@ func _run() -> void:
 	check(sources.all(func(uid): return int(session.state.find_card(GameState.PLAYER, uid).get("fired_round", -1)) == session.state.round_num),
 		"后退再播放仍可复原攻击来源")
 	check(session.seek_action(2).get("ok", false) and session.cursor == attack_start + hits
-			and session.state.resource_count(GameState.AI, CardDB.RES_CASH) == cash - hits,
+			and session.state.resource_count(GameState.BOT, CardDB.RES_CASH) == cash - hits,
 		"输入行动步2直达整摞攻击结束，不落到原始第2条意图的第一击")
 	check(session.seek_action(1).get("ok", false) and session.cursor == attack_start,
 		"输入行动步1完整恢复攻击前状态")
@@ -113,9 +113,9 @@ func _run() -> void:
 	check(main.pipe.applier().pools(main.my_seat)[CardDB.RES_CASH] == points - cost * hits and not main.btn_pass.disabled,
 		"当前行动消耗正确点数，下一步等待新输入")
 	var shown_cash := 0
-	for key in main.layout._ai_pile_uids:
-		if str(key).begins_with("ai_cash"):
-			shown_cash += main.layout._ai_pile_uids[key].size()
+	for key in main.layout._bot_pile_uids:
+		if str(key).begins_with("bot_cash"):
+			shown_cash += main.layout._bot_pile_uids[key].size()
 	check(shown_cash == cash - hits, "对手现金摞及侧边张数同步更新")
 	check(not "同一组合" in main.lbl_msg.text, "提示不把现金堆误称为规则组合")
 	main._replay_previous_button.pressed.emit()
@@ -143,8 +143,8 @@ func _record() -> Tape:
 	var count := int(definition["attack_n"]) / int(CardDB.game_rules()["attack_cost_per_card"])
 	if not need(count >= 2, "当前卡表提供足够点数验证连续攻击"):
 		return null
-	while state.resource_count(GameState.AI, CardDB.RES_CASH) <= count:
-		state.add_card(GameState.AI, CardDB.unit_id(CardDB.RES_CASH))
+	while state.resource_count(GameState.BOT, CardDB.RES_CASH) <= count:
+		state.add_card(GameState.BOT, CardDB.unit_id(CardDB.RES_CASH))
 	var record := Tape.new()
 	record.start(ap)
 	if not need(ap.apply(Intent.arm_attacks(GameState.PLAYER)).get("ok", false), "通过真实裁决器装弹"):

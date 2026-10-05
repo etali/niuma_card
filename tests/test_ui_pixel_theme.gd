@@ -68,7 +68,7 @@ func _check_main_theme(main: Node, dpi: float, prefix: String) -> void:
 
 func _check_utility_pages(main: Node, dpi: float, prefix: String) -> void:
 	var presentation: Node = main.drawer_presentation
-	for entry in [[1, "AI强度"], [3, "UI"], [4, "入口大小"], [5, "存录像"]]:
+	for entry in [[1, "BOT强度"], [3, "UI"], [4, "入口大小"], [5, "存录像"]]:
 		presentation._open_utility(int(entry[0]))
 		await process_frame
 		presentation._relayout_utility()

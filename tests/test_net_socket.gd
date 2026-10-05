@@ -64,7 +64,7 @@ extends "res://tests/harness.gd"
 
 const PORT_BASE := 47100
 const A := GameState.PLAYER
-const B := GameState.AI
+const B := GameState.BOT
 
 func _initialize() -> void:
 	print("=== 真 socket 联机测试 ===")

@@ -1,0 +1,212 @@
+{
+  "source": {
+    "seed": 161003,
+    "round": 3,
+    "swap": false
+  },
+  "state": {
+    "combos": [
+      {
+        "eval": {
+          "attack_n": 0,
+          "attack_res": "",
+          "filled_by_fission": false,
+          "leader": "shuabuting",
+          "output_card": "",
+          "output_n": 8.0,
+          "output_res": "cash",
+          "protect_cash": false,
+          "protect_user": false,
+          "reason": "",
+          "recipe_pay_n": 0,
+          "recipe_res": "user",
+          "type": "production",
+          "valid": true
+        },
+        "owner": "player",
+        "uids": [
+          41,
+          14,
+          15,
+          16,
+          17,
+          18
+        ]
+      }
+    ],
+    "draw_first": "player",
+    "log": [],
+    "market": [
+      "tuisong",
+      "baoyue",
+      "yinqing996",
+      "ditui",
+      "zuokong",
+      "baoyue",
+      "ditui",
+      "chaping"
+    ],
+    "players": {
+      "bot": {
+        "cards": [
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 38
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 39
+          },
+          {
+            "def_id": "baoyue",
+            "locked": false,
+            "uid": 46
+          },
+          {
+            "def_id": "yinqing996",
+            "locked": false,
+            "uid": 47
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 57
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 58
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 59
+          },
+          {
+            "def_id": "pinshaoshao",
+            "locked": false,
+            "uid": 60
+          },
+          {
+            "def_id": "pinshaoshao",
+            "locked": false,
+            "uid": 61
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 66
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 67
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 68
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 69
+          }
+        ]
+      },
+      "player": {
+        "cards": [
+          {
+            "def_id": "user",
+            "locked": true,
+            "uid": 14
+          },
+          {
+            "def_id": "user",
+            "locked": true,
+            "uid": 15
+          },
+          {
+            "def_id": "user",
+            "locked": true,
+            "uid": 16
+          },
+          {
+            "def_id": "user",
+            "locked": true,
+            "uid": 17
+          },
+          {
+            "def_id": "user",
+            "locked": true,
+            "uid": 18
+          },
+          {
+            "def_id": "user",
+            "locked": false,
+            "uid": 19
+          },
+          {
+            "def_id": "shuabuting",
+            "locked": true,
+            "uid": 41
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 64
+          },
+          {
+            "def_id": "shanzhai",
+            "fired_round": 2,
+            "locked": false,
+            "uid": 65
+          },
+          {
+            "def_id": "cash",
+            "locked": false,
+            "uid": 70
+          }
+        ]
+      }
+    },
+    "rng": {
+      "seed": "161003",
+      "state": "5519687687637622969"
+    },
+    "round_num": 3,
+    "uid": 71,
+    "win_reason": "",
+    "winner": ""
+  },
+  "reply_intents": [
+    {
+      "op": "pawn",
+      "seat": "bot",
+      "uids": [
+        60
+      ]
+    },
+    {
+      "market_idx": 4,
+      "op": "buy",
+      "pay_uids": [],
+      "seat": "bot"
+    },
+    {
+      "op": "create_combo",
+      "seat": "bot",
+      "uids": [
+        73,
+        38,
+        39,
+        66,
+        67,
+        68,
+        69
+      ]
+    }
+  ]
+}

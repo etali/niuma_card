@@ -5,7 +5,7 @@
 
 """检查 balance.md 的配置引用与字段覆盖，不要求它复制当前卡牌数值。
 
-C=data/cards.json，A=data/ai.json。所有显式路径必须存在；
+C=data/cards.json，A=data/bot.json。所有显式路径必须存在；
 卡牌表须覆盖全部当前卡定义及其可调字段。改数值仍通过，错字段/漏卡仍失败。
 """
 import json
@@ -21,7 +21,7 @@ TUNABLE_FIELDS = ("price", "weight", "recipe_res", "recipe_n", "output_res", "ou
 
 def documents(root):
     return {"C": json.loads((root / "data/cards.json").read_text()),
-            "A": json.loads((root / "data/ai.json").read_text())}
+            "A": json.loads((root / "data/bot.json").read_text())}
 
 
 def resolve(data, path):

@@ -42,7 +42,7 @@ func _initialize() -> void:
 	ap.pools_restore(t.head_pools)
 
 	var prev := _pair(s)
-	print("起点：玩家 %d 张 / AI %d 张（第 %d 回合）" % [prev[0], prev[1], s.round_num])
+	print("起点：玩家 %d 张 / BOT %d 张（第 %d 回合）" % [prev[0], prev[1], s.round_num])
 
 	var dirty := 0        # 第一处哈希分叉的步号（1 基），0 = 还没分叉
 	var peak := prev.duplicate()
@@ -67,17 +67,17 @@ func _initialize() -> void:
 
 		var now := _pair(s)
 		if now != prev:
-			print("第 %d 步%s：玩家 %d 张 / AI %d 张 ← %s" % [
+			print("第 %d 步%s：玩家 %d 张 / BOT %d 张 ← %s" % [
 				no, "（污）" if dirty > 0 else "", now[0], now[1], tag])
 			prev = now
 		peak[0] = maxi(peak[0], now[0])
 		peak[1] = maxi(peak[1], now[1])
 		if str(it.get("op", "")) == "next_round":
-			print("  ↳ 进第 %d 回合，此刻 玩家 %d / AI %d" % [s.round_num, now[0], now[1]])
+			print("  ↳ 进第 %d 回合，此刻 玩家 %d / BOT %d" % [s.round_num, now[0], now[1]])
 
 	print("")
-	print("峰值：玩家 %d 张 / AI %d 张" % [peak[0], peak[1]])
-	print("终局：玩家 %d 张 / AI %d 张（第 %d 回合）" % [prev[0], prev[1], s.round_num])
+	print("峰值：玩家 %d 张 / BOT %d 张" % [peak[0], peak[1]])
+	print("终局：玩家 %d 张 / BOT %d 张（第 %d 回合）" % [prev[0], prev[1], s.round_num])
 	if dirty > 0:
 		print("注意：第 %d 步起哈希就和录像对不上了" % dirty)
 	quit()
@@ -105,7 +105,7 @@ func _note_upgrade(s: GameState, no: int, tag: String, it: Dictionary) -> void:
 		no, tag, str(names), str(ev.get("output_card", "?"))])
 
 func _pair(s: GameState) -> Array:
-	return [_count(s, GameState.PLAYER), _count(s, GameState.AI)]
+	return [_count(s, GameState.PLAYER), _count(s, GameState.BOT)]
 
 func _count(s: GameState, who: String) -> int:
 	var n := 0

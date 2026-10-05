@@ -11,8 +11,8 @@ static func capture(host: Node) -> Dictionary:
 		var card: CardEntity = host.entities[uid]
 		if is_instance_valid(card):
 			var at: Vector3 = host.board.rest_pos(card)
-			if host.layout._ai_flight.has(int(uid)) and host.layout._ai_tw.has(int(uid)):
-				at = host.layout._ai_flight[int(uid)]["at"]
+			if host.layout._bot_flight.has(int(uid)) and host.layout._bot_tw.has(int(uid)):
+				at = host.layout._bot_flight[int(uid)]["at"]
 			positions[str(uid)] = [at.x, at.y, at.z]
 	var groups: Array = []
 	for group in host.board.groups:
@@ -52,7 +52,7 @@ static func restore(host: Node, view: Dictionary, animated := false) -> void:
 			continue
 		var card: CardEntity = host.entities[int(uid)]
 		var at := Vector3(float(pos[0]), float(pos[1]), float(pos[2]))
-		host.layout.kill_ai_move(card.uid)
+		host.layout.kill_bot_move(card.uid)
 		host.board._stop_move(card, false)
 		host._card_motion._cancel_fly(card)
 		card.freeze = true

@@ -46,7 +46,7 @@ const EXTERNAL_FILE := "cards.json"
 
 ## 运行时段名保留旧格式，供引擎、旧录像和旧外置 cards.json 兼容使用。
 ## 配置中的唯一来源：cards.json 的 _game / _upgrade；ui.json 的 sfx /
-## resource_labels；ai.json 的 simulation。缺键从各自内置文件补齐。
+## resource_labels；bot.json 的 simulation。缺键从各自内置文件补齐。
 const SECTION_GAME := "_game"
 const SECTION_UPGRADE := "_upgrade"
 const SECTION_SFX := "_sfx"
@@ -115,11 +115,11 @@ static func load_from(path: String) -> bool:
 	loaded_from = path
 	return true
 
-## 兼容旧配置，不再要求新 cards.json 重复保存展示或 AI 参数。
+## 兼容旧配置，不再要求新 cards.json 重复保存展示或 BOT 参数。
 static func _runtime_sections(parsed: Dictionary) -> Dictionary:
 	var sections := parsed.duplicate(true)
 	sections[SECTION_SFX] = _overlay_section(UIConfig.read_section("sfx"), parsed.get(SECTION_SFX))
-	sections[SECTION_SIM] = _overlay_section(AIConfig.read_section("simulation"), parsed.get(SECTION_SIM))
+	sections[SECTION_SIM] = _overlay_section(BOTConfig.read_section("simulation"), parsed.get(SECTION_SIM))
 	var game := _overlay_section({}, parsed.get(SECTION_GAME))
 	game["res_labels"] = _overlay_section(UIConfig.read_section("resource_labels"), game.get("res_labels"))
 	sections[SECTION_GAME] = game
@@ -143,7 +143,7 @@ static func _builtin_section(key: String) -> Dictionary:
 	if key == SECTION_SFX:
 		return UIConfig.builtin_section("sfx")
 	if key == SECTION_SIM:
-		return AIConfig.builtin_section("simulation")
+		return BOTConfig.builtin_section("simulation")
 	if _builtin.is_empty():
 		var f := FileAccess.open(BUILTIN_PATH, FileAccess.READ)
 		if f != null:
@@ -246,7 +246,7 @@ static func _check_sfx_actions(path: String) -> void:
 
 ## 读一个配置段，缺的键从内置配置那份补齐，并把缺了哪些点名警告。
 ## 兜底值照用（改坏一个字段就开不了局太脆），但不能不响：
-## 这些是开局资源、胜利线、AI 阈值，静默按另一套数值开局比直接崩更难查 ——
+## 这些是开局资源、胜利线、BOT 阈值，静默按另一套数值开局比直接崩更难查 ——
 ## 玩家只会觉得「这版怎么变难了」
 ##
 ## 嵌套字典（buff_mult / buff_value / res_labels）逐键补，不整块覆盖：
@@ -287,7 +287,7 @@ static func _merge_section(parsed: Dictionary, key: String, path: String) -> Dic
 ## 清空当前逻辑表及配置来源缓存（测试 / 热重载用）。
 static func reset() -> void:
 	UIConfig.reset_cache()
-	AIConfig.reset_cache()
+	BOTConfig.reset_cache()
 	CARDS = {}
 	GAME = {}
 	UPGRADE = {}
@@ -301,7 +301,7 @@ static func game_rules() -> Dictionary:
 	ensure_loaded()
 	return GAME
 
-## 无头模拟器的旋钮（键见 data/ai.json 的 simulation 段 _note）
+## 无头模拟器的旋钮（键见 data/bot.json 的 simulation 段 _note）
 static func sim_rules() -> Dictionary:
 	ensure_loaded()
 	return SIM
@@ -348,7 +348,7 @@ static func dup_key() -> String:
 ## 最长升级路线的来源张数（卡表里 upgrade_dup_n 的最大值）。
 ##
 ## 不写死：卡表调了那三档张数，这里跟着变。两处要用 ——
-## ComboRules 报「这张卡认哪些张数」的搜索上界、AI 判「同名 T1 攒到几张算富余」
+## ComboRules 报「这张卡认哪些张数」的搜索上界、BOT 判「同名 T1 攒到几张算富余」
 static func max_upgrade_dup_n() -> int:
 	ensure_loaded()
 	var mx := 2
@@ -362,7 +362,7 @@ static func max_upgrade_dup_n() -> int:
 ## 是 dup_key 各档张数乘以折算率（只用于档位查询，实际组合不允许混入 T1/T2）。
 ##
 ## 单独开一个函数是因为这个 2 原先散在六处（combo_rules 的搜索上界、board 的
-## 升级清单上界、AI 的富余判定、三个测试的堆量），改折算率要同时改六处 ——
+## 升级清单上界、BOT 的富余判定、三个测试的堆量），改折算率要同时改六处 ——
 ## 漏一处的形态是「最高那档试不出来」，而它不报错，只是清单上少一行
 static func max_upgrade_per() -> int:
 	ensure_loaded()
@@ -402,7 +402,7 @@ static func res_label(res: String) -> String:
 	return str(GAME.get("res_labels", {}).get(res, res))
 
 ## 该资源对应的防御 Buff 的 buff_type（protect_cash / protect_user）。
-## 四个地方要用（引擎的保护额度、AI 的两处选牌、场景的盾牌标记），
+## 四个地方要用（引擎的保护额度、BOT 的两处选牌、场景的盾牌标记），
 ## 各写一遍 `"protect_cash" if res == RES_CASH else "protect_user"` 就是四份同样的推导
 static func protect_key(res: String) -> String:
 	return "protect_%s" % res

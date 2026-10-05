@@ -25,7 +25,7 @@ extends "res://tests/harness.gd"
 
 const PORT_BASE := 47320
 const A := GameState.PLAYER
-const B := GameState.AI
+const B := GameState.BOT
 
 ## 协程完成标志。**必须是成员变量，不能是局部量** —— GDScript 的 lambda
 ## 按**值**捕获外层局部量，`var done := false` + `func(): done = true` 里那次
@@ -144,7 +144,7 @@ func _t1_attack_turn_advances() -> void:
 	# 场景层跑它自己的攻击回合。不 await —— 它会一路挂在
 	# `await attack_turn_finished` 上等玩家点选
 	main._sync_entities()
-	main.layout._layout_ai_zone()
+	main.layout._layout_bot_zone()
 	_run_attacks_bg(main)
 	if not await net_until([a, b], func(): return main.board.attack_mode):
 		check(false, "场景层开出了点选模式（客户端取到了那条 arm）")
@@ -224,7 +224,7 @@ func _foe_pile_card(main: Node) -> CardEntity:
 ## （board.groups），不过网 —— 所以对手侧看得见的时刻是「我点了完成行动」。
 ##
 ## 这一条钉的是那一刻**真的看得见**：create_combo 落地 → 对手侧
-## _render_foe_combo → _layout_ai_zone 把那一组摆成一摞。
+## _render_foe_combo → _layout_bot_zone 把那一组摆成一摞。
 ## 少了这条链的任何一环，症状都是「对手编了组，我这边什么都没变」
 func _t2_foe_sees_my_combos() -> void:
 	print("\n-- T2 对手编成的组合看得见 --")
@@ -273,7 +273,7 @@ func _t2_foe_sees_my_combos() -> void:
 			mine_view += 1
 	check(mine_view >= 1, "对手那一组到了我这份状态里（%d 组）" % mine_view)
 
-	# 画面那一侧：**这才是「看得见」**。_ai_piles 认出一摞正好由那几个 uid 组成
+	# 画面那一侧：**这才是「看得见」**。_bot_piles 认出一摞正好由那几个 uid 组成
 	var after := _foe_combo_piles(main)
 	check(after > before, "对手区多出了一摞组合（%d → %d）" % [before, after])
 	check(_pile_for(main, uids), "而且那一摞正好是他刚编的那几张")
@@ -283,11 +283,11 @@ func _t2_foe_sees_my_combos() -> void:
 	b.close()
 	await physics_frame
 
-## 对手区现在有几摞组合（settle_layout._ai_piles 的前半段）
+## 对手区现在有几摞组合（settle_layout._bot_piles 的前半段）
 func _foe_combo_piles(main: Node) -> int:
 	var n := 0
-	for p in main.layout._ai_piles():
-		if (p["key"] as String).begins_with("ai_combo_"):
+	for p in main.layout._bot_piles():
+		if (p["key"] as String).begins_with("bot_combo_"):
 			n += 1
 	return n
 
@@ -297,7 +297,7 @@ func _pile_for(main: Node, uids: Array) -> bool:
 	var want := {}
 	for u in uids:
 		want[int(u)] = true
-	for p in main.layout._ai_piles():
+	for p in main.layout._bot_piles():
 		var got := {}
 		for c in (p["cards"] as Array):
 			got[int((c as CardEntity).uid)] = true

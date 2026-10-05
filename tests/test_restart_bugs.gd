@@ -86,7 +86,7 @@ func _t1_pipe_follows_state(main: Node) -> void:
 	# —— 协议里没有 rematch（net/room.gd 的 rematch 投票与重开），没人通知他
 	var fake := FakeNet.new()
 	main.attach_net(fake)
-	check(not main._foe_is_ai(), "重开前对手是远端的人")
+	check(not main._foe_is_bot(), "重开前对手是远端的人")
 
 	# 直接把上一局判成结束，走真的重开路径
 	old_state.winner = GameState.PLAYER
@@ -97,9 +97,9 @@ func _t1_pipe_follows_state(main: Node) -> void:
 	# 连接不许活过重开。带着它进新局的话，新局第一个对手回合会停在
 	# _await_foe_action 里等一条永远不来的 action_done —— 不报错、不崩，
 	# 就是**再也不动了**（比 bug 2 更难查：bug 2 至少崩了一下）。
-	# 判据取「对手回到本地 AI」而不是「_net 是 null」：前者是症状
-	check(main._foe_is_ai(),
-		"重开退回单机局，对手由本地 AI 驱动（否则新局会卡在等对手行动）")
+	# 判据取「对手回到本地 BOT」而不是「_net 是 null」：前者是症状
+	check(main._foe_is_bot(),
+		"重开退回单机局，对手由本地 BOT 驱动（否则新局会卡在等对手行动）")
 	# 信号也得摘掉。留着的话上一局那条连接还能往新局的桌面上塞拖拽帧
 	check(not fake.foe_drag.is_connected(main.on_foe_drag),
 		"上一局那条连接的 foe_drag 摘掉了（否则它还能往新局桌面塞牌）")
@@ -114,8 +114,8 @@ func _t1_pipe_follows_state(main: Node) -> void:
 		check(not main.is_drag_leased(foe_uid),
 			"上一局的连接发帧过来，新局的牌不受影响（uid %d）" % foe_uid)
 
-	# 发的那头也不许漏。上面那条「对手回到本地 AI」只管 _foe_remote ——
-	# 光把它置回 false、_net 还留着的话，卡不会卡（本地 AI 接手了），
+	# 发的那头也不许漏。上面那条「对手回到本地 BOT」只管 _foe_remote ——
+	# 光把它置回 false、_net 还留着的话，卡不会卡（本地 BOT 接手了），
 	# 但我在新局里每拖一下牌都往那条**已经没人听**的连接上发一帧。
 	# 真 socket 上是往关掉的连接写，联网局里那是「玩了半局才发现对面早走了」
 	fake.sent.clear()

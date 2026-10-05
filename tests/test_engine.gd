@@ -50,7 +50,7 @@ func _blank_state(draw_first: String) -> GameState:
 	var s := GameState.new()
 	s.players = {
 		GameState.PLAYER: { "cards": [] },
-		GameState.AI: { "cards": [] },
+		GameState.BOT: { "cards": [] },
 	}
 	s.draw_first = draw_first
 	return s
@@ -92,7 +92,7 @@ func _attack_hitting(res: String) -> String:
 # 牌桌（每张吃几张、产几点全从卡表现读，下面只写角色）：
 # 玩家先手：「云课堂+用户×配方量」（产资金）「做空报告+用户×配方量」（现金攻击池）
 #           + 少量散现金、散用户
-# AI 后手：「外卖补贴+现金×配方量」（产用户）「补贴大战+现金×配方量」（用户攻击池）
+# BOT 后手：「外卖补贴+现金×配方量」（产用户）「补贴大战+现金×配方量」（用户攻击池）
 #           + 少量散现金、散用户
 #
 # **玩家那张攻击卡这一轮换人了**：要的是「配方吃用户、打击目标是现金」那个职能，
@@ -104,7 +104,7 @@ func _attack_hitting(res: String) -> String:
 #       第一份点数点掉外卖的一张配方现金 → 配方告破 —— 但**这一组还没打完，
 #       余下的点数就得留在这儿**（见 GameState.ATTACK_LOCK），一路啃外卖的席位。
 #       补贴大战因此一张没掉 → 装得上弹（付自己那份配方现金），用户池开火；
-#       夹具固定选中云课堂，用户池恰好打完那一组的席位；这条路线不依赖 AI 偏好。
+#       夹具固定选中云课堂，用户池恰好打完那一组的席位；这条路线不依赖 BOT 偏好。
 #       结算：外卖整组作废、云课堂也整组作废（那 +7 没产），做空报告一张没掉。
 #
 # 这一例演的规则：分池、核心逐张计价、**选中一个组合就得把它打完**、
@@ -114,7 +114,7 @@ func _attack_hitting(res: String) -> String:
 # - 原先「第二份点数转向另一个组合、顺手把补贴大战也打破」→ 现在办不到。
 #   先攻不再能靠一池点数同时废掉对手的产出组合和攻击组合，攻击阶段也就剥不掉了
 #   （这一例原来演的正是那个更强的结论）。
-# - 反过来，锁也在替被打的一方兜着：AI 的点数被按在云课堂一个组里，
+# - 反过来，锁也在替被打的一方兜着：BOT 的点数被按在云课堂一个组里，
 #   玩家的做空报告毫发无伤。攻方选一个组押上全部点数，是这条规则的两面。
 #
 # **这一例原先还演「用户配方不付弹药」**（README.md §「2.6 组合与结算」 的不对称，recipe_pay_n 只在
@@ -124,11 +124,11 @@ func _attack_hitting(res: String) -> String:
 # 余点作废挪去测试6（那边靠「保护=不可点」演，不需要掐死对手的散牌数量）。
 #
 # 几处刻意留的散牌（张数按卡表算，见下面 SPARE 那几个量）：
-# - AI 留散现金：补贴大战付完弹药还得剩至少 1 张
+# - BOT 留散现金：补贴大战付完弹药还得剩至少 1 张
 #   （付到 0 等于自尽，护栏会拦下整组，攻击池归零，这一例就全废了）。
-#   玩家那一池全花在外卖的核心上，AI 手上剩的配方 + 散牌付得起。
-# - AI 留散用户：验「玩家的现金池打不到用户」，也防清零即胜提前结束。
-# - 玩家留散用户：AI 那一池啃穿云课堂那几席之后不至于把用户打到 0
+#   玩家那一池全花在外卖的核心上，BOT 手上剩的配方 + 散牌付得起。
+# - BOT 留散用户：验「玩家的现金池打不到用户」，也防清零即胜提前结束。
+# - 玩家留散用户：BOT 那一池啃穿云课堂那几席之后不至于把用户打到 0
 #   （这是本例避免提前终局的夹具条件，并非限制可配置攻击力）。
 # - 玩家留散现金：做空报告不吃现金，这几张纯粹是防清零即胜误触发。
 func test_settle_example_4_3() -> void:
@@ -154,18 +154,18 @@ func test_settle_example_4_3() -> void:
 	check(int(hei["attack_n"]) / per_card <= int(wai["recipe_n"]),
 		"牌桌前提：%s 的攻击量 %d 点不穿 %s 的 %d 张席位" % [
 			hei["name"], int(hei["attack_n"]), wai["name"], int(wai["recipe_n"])])
-	# 二、用不同规模的两组区分目标；下面的固定 picker 选择生产组，不依赖 AI 偏好。
+	# 二、用不同规模的两组区分目标；下面的固定 picker 选择生产组，不依赖 BOT 偏好。
 	var atk_seats := int(bu["attack_n"]) / per_card
 	check(int(yun["recipe_n"]) > int(hei["recipe_n"]),
 		"夹具前提：%s 的 %d 席比 %s 的 %d 席多，两个目标组可区分" % [
 			yun["name"], int(yun["recipe_n"]), hei["name"], int(hei["recipe_n"])])
 	# 三、用户池恰好打完整组；多余点数会合法转向下一组，不能再断言另一组毫发无伤。
 	check(atk_seats == int(yun["recipe_n"]),
-		"夹具前提：AI 那 %d 点恰好打完 %s 的 %d 张席位" % [
+		"夹具前提：BOT 那 %d 点恰好打完 %s 的 %d 张席位" % [
 			atk_seats, yun["name"], int(yun["recipe_n"])])
 	# 四、玩家的用户总量要撑得住这一池，否则清零即胜当场结束、结算一步都跑不到
 	check(int(yun["recipe_n"]) + int(hei["recipe_n"]) + spare > atk_seats,
-		"牌桌前提：玩家用户垫得住 AI 那 %d 点（不触发清零即胜）" % atk_seats)
+		"牌桌前提：玩家用户垫得住 BOT 那 %d 点（不触发清零即胜）" % atk_seats)
 
 	# 玩家手牌：云课堂（产资金）+ 做空报告（现金攻击池）
 	var p_core1 := s.add_card(GameState.PLAYER, "yunketang")
@@ -175,15 +175,15 @@ func test_settle_example_4_3() -> void:
 	var p_atk_users: Array = []
 	for i in int(hei["recipe_n"]): p_atk_users.append(s.add_card(GameState.PLAYER, "user"))
 
-	# AI 手牌：外卖补贴（产用户）+ 补贴大战（用户攻击池）
-	var a_core1 := s.add_card(GameState.AI, "waimai")
+	# BOT 手牌：外卖补贴（产用户）+ 补贴大战（用户攻击池）
+	var a_core1 := s.add_card(GameState.BOT, "waimai")
 	var a_cash1: Array = []
-	for i in int(wai["recipe_n"]): a_cash1.append(s.add_card(GameState.AI, "cash"))
-	var a_core2 := s.add_card(GameState.AI, "butie")
+	for i in int(wai["recipe_n"]): a_cash1.append(s.add_card(GameState.BOT, "cash"))
+	var a_core2 := s.add_card(GameState.BOT, "butie")
 	var a_cash2: Array = []
-	for i in int(bu["recipe_n"]): a_cash2.append(s.add_card(GameState.AI, "cash"))
-	for i in spare: s.add_card(GameState.AI, "cash")   # 散现金：补贴大战付完弹药还得剩
-	for i in spare + 1: s.add_card(GameState.AI, "user")   # 散用户（验现金池打不到用户）
+	for i in int(bu["recipe_n"]): a_cash2.append(s.add_card(GameState.BOT, "cash"))
+	for i in spare: s.add_card(GameState.BOT, "cash")   # 散现金：补贴大战付完弹药还得剩
+	for i in spare + 1: s.add_card(GameState.BOT, "user")   # 散用户（验现金池打不到用户）
 	for i in spare: s.add_card(GameState.PLAYER, "cash")  # 散现金：防自身清零即胜误触发
 	for i in spare: s.add_card(GameState.PLAYER, "user")  # 见上：不留就被清零，结算跑不到
 
@@ -198,19 +198,19 @@ func test_settle_example_4_3() -> void:
 	var p_pool: Dictionary = s.attack_pool(GameState.PLAYER)
 	check(p_pool["cash"] == int(hei["attack_n"]) and p_pool["user"] == 0,
 		"玩家攻击池：现金×%d 用户×0（分池）" % int(hei["attack_n"]))
-	var r3 := s.create_combo(GameState.AI, [a_core1["uid"]] + _uids(a_cash1))
-	check(r3["ok"], "AI「%s+现金×%d」编组成立" % [wai["name"], int(wai["recipe_n"])])
-	var r4 := s.create_combo(GameState.AI, [a_core2["uid"]] + _uids(a_cash2))
-	check(r4["ok"], "AI「%s+现金×%d」编组成立" % [bu["name"], int(bu["recipe_n"])])
-	var a_pool: Dictionary = s.attack_pool(GameState.AI)
+	var r3 := s.create_combo(GameState.BOT, [a_core1["uid"]] + _uids(a_cash1))
+	check(r3["ok"], "BOT「%s+现金×%d」编组成立" % [wai["name"], int(wai["recipe_n"])])
+	var r4 := s.create_combo(GameState.BOT, [a_core2["uid"]] + _uids(a_cash2))
+	check(r4["ok"], "BOT「%s+现金×%d」编组成立" % [bu["name"], int(bu["recipe_n"])])
+	var a_pool: Dictionary = s.attack_pool(GameState.BOT)
 	check(a_pool["cash"] == 0 and a_pool["user"] == int(bu["attack_n"]),
-		"AI 攻击池：现金×0 用户×%d（分池）" % int(bu["attack_n"]))
+		"BOT 攻击池：现金×0 用户×%d（分池）" % int(bu["attack_n"]))
 
-	var ai_cash_before := s.resource_count(GameState.AI, CardDB.RES_CASH)
+	var bot_cash_before := s.resource_count(GameState.BOT, CardDB.RES_CASH)
 	var p_cash_before := s.resource_count(GameState.PLAYER, CardDB.RES_CASH)
 	var p_user_before := s.resource_count(GameState.PLAYER, CardDB.RES_USER)
 	# 固定本例要展示的两条攻击路线，规则断言不依赖当前策略的目标偏好。
-	var preferred := {GameState.PLAYER: _uids(a_cash1), GameState.AI: _uids(p_users)}
+	var preferred := {GameState.PLAYER: _uids(a_cash1), GameState.BOT: _uids(p_users)}
 	var picker := func(_state: GameState, attacker: String, targets: Array, _pools: Dictionary) -> Dictionary:
 		for target in targets:
 			for uid in target.get("uids", []):
@@ -222,27 +222,27 @@ func test_settle_example_4_3() -> void:
 	Settle.produce(s)
 	Settle.finalize(s)
 
-	# AI 少的现金 = 玩家那一池（逐张点，全砸在外卖一个组里）+ 补贴大战的弹药。
+	# BOT 少的现金 = 玩家那一池（逐张点，全砸在外卖一个组里）+ 补贴大战的弹药。
 	# 锁把余点按在外卖组里，补贴大战一张没掉 → 装得上弹，那几张才付得出去
-	var ai_loss := int(hei["attack_n"]) / per_card + int(bu["recipe_n"])
-	check(s.resource_count(GameState.AI, CardDB.RES_CASH) == ai_cash_before - ai_loss,
-		"AI 现金 %d → %d（%d 点全啃 %s 的席位 + %s 付 %d 张弹药）" % [
-			ai_cash_before, s.resource_count(GameState.AI, CardDB.RES_CASH),
+	var bot_loss := int(hei["attack_n"]) / per_card + int(bu["recipe_n"])
+	check(s.resource_count(GameState.BOT, CardDB.RES_CASH) == bot_cash_before - bot_loss,
+		"BOT 现金 %d → %d（%d 点全啃 %s 的席位 + %s 付 %d 张弹药）" % [
+			bot_cash_before, s.resource_count(GameState.BOT, CardDB.RES_CASH),
 			int(hei["attack_n"]), wai["name"], bu["name"], int(bu["recipe_n"])])
-	# 玩家现金不增不减：做空报告吃用户配方不付弹药，AI 打的是用户
-	# 玩家现金一分没动：做空报告吃用户配方不付弹药，AI 打的是用户，
+	# 玩家现金不增不减：做空报告吃用户配方不付弹药，BOT 打的是用户
+	# 玩家现金一分没动：做空报告吃用户配方不付弹药，BOT 打的是用户，
 	# 而云课堂被啃穿之后整组作废、那 +7 没产出来。
 	check(s.resource_count(GameState.PLAYER, CardDB.RES_CASH) == p_cash_before,
 		"玩家现金 %d → %d（不付弹药；云课堂被啃穿，那 +%d 没产）" % [
 			p_cash_before, s.resource_count(GameState.PLAYER, CardDB.RES_CASH),
 			int(yun["output_n"])])
-	# 玩家少的用户 = AI 那一池，全砸在云课堂一个组里
+	# 玩家少的用户 = BOT 那一池，全砸在云课堂一个组里
 	var p_loss := int(bu["attack_n"]) / per_card
 	check(s.resource_count(GameState.PLAYER, CardDB.RES_USER) == p_user_before - p_loss,
-		"玩家用户 %d → %d（AI 那 %d 点全按在 %s 一个组里）" % [
+		"玩家用户 %d → %d（BOT 那 %d 点全按在 %s 一个组里）" % [
 			p_user_before, s.resource_count(GameState.PLAYER, CardDB.RES_USER),
 			int(bu["attack_n"]), yun["name"]])
-	# 锁的另一面：AI 的点数被按在云课堂身上，做空报告那几席一张没掉。
+	# 锁的另一面：BOT 的点数被按在云课堂身上，做空报告那几席一张没掉。
 	# 按 uid 查而不是数总量 —— 总量对不出「掉的是哪个组的」
 	var atk_alive := 0
 	for c in p_atk_users:
@@ -255,13 +255,13 @@ func test_settle_example_4_3() -> void:
 	for entry in s.log:
 		if "整组作废" in GameState.entry_text(entry):
 			fizzle_count += 1
-	# 两个产出组合都作废：AI 的外卖（玩家啃的）+ 玩家的云课堂（AI 啃的）。
+	# 两个产出组合都作废：BOT 的外卖（玩家啃的）+ 玩家的云课堂（BOT 啃的）。
 	# 补贴大战和做空报告是攻击组合，被拆散只是不贡献点数，
 	# 没有「作废」这句战报（它们没有产出可作废）——
 	# 所以这个数是 2 而不是 4，两边各废掉对方一个**产出**组
 	check(fizzle_count == 2, "两边的产出组合各被拆散作废（实际 %d 个）" % fizzle_count)
-	check(s.resource_count(GameState.AI, CardDB.RES_USER) == spare + 1,
-		"AI 散用户未被移除（现金攻击池不能打用户）")
+	check(s.resource_count(GameState.BOT, CardDB.RES_USER) == spare + 1,
+		"BOT 散用户未被移除（现金攻击池不能打用户）")
 	var armed := 0
 	for entry in s.log:
 		if "装弹" in GameState.entry_text(entry):
@@ -271,25 +271,25 @@ func test_settle_example_4_3() -> void:
 	check(armed == 1,
 		"装弹恰好一次（补贴大战付、做空报告免费，实际 %d 次）" % armed)
 	# 先攻能破坏牌型 —— 但只破坏得了**一个**组合。锁把整池点数按在外卖身上，
-	# 补贴大战活到了装弹，AI 的攻击阶段照常开场。
-	# 这一条原先断的是反面（「AI 连攻击阶段那行战报都没有」），
+	# 补贴大战活到了装弹，BOT 的攻击阶段照常开场。
+	# 这一条原先断的是反面（「BOT 连攻击阶段那行战报都没有」），
 	# 是锁把结论翻过来的，不是回归
 	var fired := false
 	for entry in s.log:
 		if "攻击阶段" in GameState.entry_text(entry) and "对手公司" in GameState.entry_text(entry):
 			fired = true
-	check(fired, "AI 的攻击阶段照常开场（先攻只废掉了产出组合，攻击组合没碰到）")
+	check(fired, "BOT 的攻击阶段照常开场（先攻只废掉了产出组合，攻击组合没碰到）")
 
 # ---------- 清零即胜：攻击把对方现金打到 0，当场获胜，不进结算 ----------
 func test_attack_zero_cash_win() -> void:
-	print("【测试7】清零即胜：现金攻击把 AI 现金打到 0 → 立即获胜")
+	print("【测试7】清零即胜：现金攻击把 BOT 现金打到 0 → 立即获胜")
 	var s := _blank_state(GameState.PLAYER)  # 玩家先手
 
 	# 打现金的攻击卡（补贴大战本轮改成打用户了，balance.md §「攻击卡」）
 	var atk_id := _attack_hitting(CardDB.RES_CASH)
 	var atk_def: Dictionary = CardDB.get_def(atk_id)
 	var atk_n := int(atk_def["recipe_n"])
-	# AI 的生产核心：吃现金、且配方量不超过攻击点数 —— 它全部身家就是那几张配方现金，
+	# BOT 的生产核心：吃现金、且配方量不超过攻击点数 —— 它全部身家就是那几张配方现金，
 	# 核心按 `_game.attack_cost_per_card` 逐张计价，点数够把它们逐张点完就正好清零。
 	# 两个数都从卡表取，谁配谁由数值决定
 	var per_card := int(CardDB.game_rules()["attack_cost_per_card"])
@@ -309,30 +309,30 @@ func test_attack_zero_cash_win() -> void:
 	s.add_card(GameState.PLAYER, "cash")  # 防自身清零即胜误触发
 	s.add_card(GameState.PLAYER, "user")  # 同上
 
-	# AI 的现金全在生产组合里：逐张点掉配方核心 = 现金归零
-	var a_core := s.add_card(GameState.AI, a_id)
+	# BOT 的现金全在生产组合里：逐张点掉配方核心 = 现金归零
+	var a_core := s.add_card(GameState.BOT, a_id)
 	var a_cash: Array = []
-	for i in a_n: a_cash.append(s.add_card(GameState.AI, "cash"))
-	for i in 3: s.add_card(GameState.AI, "user")  # 散用户：判据自己的规模，只防清零即胜误触发
+	for i in a_n: a_cash.append(s.add_card(GameState.BOT, "cash"))
+	for i in 3: s.add_card(GameState.BOT, "user")  # 散用户：判据自己的规模，只防清零即胜误触发
 
 	var r1 := s.create_combo(GameState.PLAYER, [p_core["uid"]] + _uids(p_cash))
 	check(r1["ok"], "玩家「%s+%s×%d」编组成立（现金攻击池 %d）" % [
 		atk_def["name"], CardDB.card_name(atk_def["recipe_res"]), atk_n,
 		int(atk_def["attack_n"])])
-	var r2 := s.create_combo(GameState.AI, [a_core["uid"]] + _uids(a_cash))
-	check(r2["ok"], "AI「%s+现金×%d」编组成立（这是它全部的现金）" % [a_def["name"], a_n])
+	var r2 := s.create_combo(GameState.BOT, [a_core["uid"]] + _uids(a_cash))
+	check(r2["ok"], "BOT「%s+现金×%d」编组成立（这是它全部的现金）" % [a_def["name"], a_n])
 
-	var a_user_before := s.resource_count(GameState.AI, CardDB.RES_USER)
+	var a_user_before := s.resource_count(GameState.BOT, CardDB.RES_USER)
 	Settle.run(s)
-	check(s.winner == GameState.PLAYER, "AI 现金被清零 → 玩家立即获胜（不等回合末）")
-	check(s.resource_count(GameState.AI, CardDB.RES_USER) == a_user_before,
-		"清零即胜后不再结算：AI 的%s组合未产出用户（%d → %d）" % [
-			a_def["name"], a_user_before, s.resource_count(GameState.AI, CardDB.RES_USER)])
+	check(s.winner == GameState.PLAYER, "BOT 现金被清零 → 玩家立即获胜（不等回合末）")
+	check(s.resource_count(GameState.BOT, CardDB.RES_USER) == a_user_before,
+		"清零即胜后不再结算：BOT 的%s组合未产出用户（%d → %d）" % [
+			a_def["name"], a_user_before, s.resource_count(GameState.BOT, CardDB.RES_USER)])
 
 # ---------- 防御 Buff：推送弹窗保护用户 ----------
 func test_protect_buff() -> void:
 	print("【测试2】推送弹窗：附着组合的用户不可被移除")
-	var s := _blank_state(GameState.AI)  # 玩家先结算
+	var s := _blank_state(GameState.BOT)  # 玩家先结算
 
 	var p_def: Dictionary = CardDB.get_def("yunketang")
 	var p_core := s.add_card(GameState.PLAYER, "yunketang")
@@ -346,15 +346,15 @@ func test_protect_buff() -> void:
 	# 配方张数也从卡表取，同理
 	var a_id := _attack_hitting(CardDB.RES_USER)
 	var a_def: Dictionary = CardDB.get_def(a_id)
-	var a_core := s.add_card(GameState.AI, a_id)
+	var a_core := s.add_card(GameState.BOT, a_id)
 	var a_recipe: Array = []
 	for i in int(a_def["recipe_n"]):
-		a_recipe.append(s.add_card(GameState.AI, CardDB.unit_id(a_def["recipe_res"])))
+		a_recipe.append(s.add_card(GameState.BOT, CardDB.unit_id(a_def["recipe_res"])))
 	# 吃现金配方的话还得多留 1 张散现金：装弹付完归零会被自尽护栏拦下，攻击池归零
 	if a_def["recipe_res"] == CardDB.RES_CASH:
-		s.add_card(GameState.AI, "cash")
-	for i in 2: s.add_card(GameState.AI, "user")  # 防清零即胜误触发
-	s.add_card(GameState.AI, "cash")              # 同上，防自身现金归零
+		s.add_card(GameState.BOT, "cash")
+	for i in 2: s.add_card(GameState.BOT, "user")  # 防清零即胜误触发
+	s.add_card(GameState.BOT, "cash")              # 同上，防自身现金归零
 
 	var r1 := s.create_combo(GameState.PLAYER,
 		[p_core["uid"], p_buff["uid"]] + _uids(p_users))
@@ -362,12 +362,12 @@ func test_protect_buff() -> void:
 		p_def["name"], CardDB.card_name(p_def["recipe_res"]),
 		int(p_def["recipe_n"]), CardDB.card_name("tuisong")])
 	check(r1["eval"].get("protect_user", false), "组合带用户保护标记")
-	var r2 := s.create_combo(GameState.AI, [a_core["uid"]] + _uids(a_recipe))
-	check(r2["ok"], "AI「%s」编组成立（%s×%d → 打用户 %d）" % [
+	var r2 := s.create_combo(GameState.BOT, [a_core["uid"]] + _uids(a_recipe))
+	check(r2["ok"], "BOT「%s」编组成立（%s×%d → 打用户 %d）" % [
 		a_def["name"], CardDB.card_name(a_def["recipe_res"]),
 		int(a_def["recipe_n"]), int(a_def["attack_n"])])
-	check(int(s.attack_pool(GameState.AI)[CardDB.RES_USER]) > 0,
-		"AI 手上真有打用户的点数（否则「保护住了」会因为没人开火而假通过）")
+	check(int(s.attack_pool(GameState.BOT)[CardDB.RES_USER]) > 0,
+		"BOT 手上真有打用户的点数（否则「保护住了」会因为没人开火而假通过）")
 
 	check(s.buff_armed(GameState.PLAYER, p_buff["uid"]), "推送弹窗编组当回合立即生效")
 
@@ -381,7 +381,7 @@ func test_protect_buff() -> void:
 # ---------- 升级组合：同名 T1×2 → T2（纯卡面，不吃资源） ----------
 func test_upgrade_combo() -> void:
 	print("【测试3】升级组合：同名 T1 攒够 upgrade_dup_n 张 → T2")
-	var s := _blank_state(GameState.AI)
+	var s := _blank_state(GameState.BOT)
 
 	# 要发几张同名卡读 T2 的 `upgrade_dup_n`：升级门槛是数值，调它不该回来改这里
 	var t2: Dictionary = CardDB.get_def("xinxijianfang")
@@ -439,7 +439,7 @@ func test_market_and_buy() -> void:
 	check(has_card, "购买的「%s」进入玩家区域" % CardDB.card_name("zuokong"))
 
 	# 自杀护栏：付完这笔现金归零 = 回合结束判负（见 check_victory 的 p_cash <= 0）。
-	# 护栏在引擎里，玩家拖现金、AI、无头模拟器三条路共用一份
+	# 护栏在引擎里，玩家拖现金、BOT、无头模拟器三条路共用一份
 	var cash_now := s.resource_count(GameState.PLAYER, CardDB.RES_CASH)
 	s.market[0] = "zuokong"
 	var keep: Array = s.players[GameState.PLAYER]["cards"].duplicate(true)
@@ -509,25 +509,25 @@ func test_attack_core_vs_spare() -> void:
 	for i in butie_n: p_cash.append(s.add_card(GameState.PLAYER, "cash"))
 	for i in 2: s.add_card(GameState.PLAYER, "user")  # 防自身清零即胜误触发
 
-	# AI：生产组合里压了「配方量 + 富余」张现金 —— 多出来的就是富余投料。
+	# BOT：生产组合里压了「配方量 + 富余」张现金 —— 多出来的就是富余投料。
 	# 配方量从卡表取，富余张数是判据自己的规模：这一节量的是「核心与富余同价、各自成靶」，
 	# 外卖吃几张现金无关，硬写总数会让每轮调数值都在这儿红一次
 	var waimai_n := int(CardDB.get_def("waimai")["recipe_n"])
 	var spare_want := 8
-	var a_core := s.add_card(GameState.AI, "waimai")
+	var a_core := s.add_card(GameState.BOT, "waimai")
 	var a_combo_cash: Array = []
-	for i in waimai_n + spare_want: a_combo_cash.append(s.add_card(GameState.AI, "cash"))
-	for i in 2: s.add_card(GameState.AI, "user")
+	for i in waimai_n + spare_want: a_combo_cash.append(s.add_card(GameState.BOT, "cash"))
+	for i in 2: s.add_card(GameState.BOT, "user")
 
 	check(s.create_combo(GameState.PLAYER, [p_core["uid"]] + _uids(p_cash))["ok"],
 		"玩家「%s+现金×%d」编组成立" % [CardDB.card_name("butie"), butie_n])
-	check(s.create_combo(GameState.AI, [a_core["uid"]] + _uids(a_combo_cash))["ok"],
-		"AI「%s+现金×%d」编组成立" % [CardDB.card_name("waimai"), waimai_n + spare_want])
+	check(s.create_combo(GameState.BOT, [a_core["uid"]] + _uids(a_combo_cash))["ok"],
+		"BOT「%s+现金×%d」编组成立" % [CardDB.card_name("waimai"), waimai_n + spare_want])
 
 	var core_n := 0
 	var core_all_one := true
 	var spare_n := 0
-	for t in s.attack_targets(GameState.AI):
+	for t in s.attack_targets(GameState.BOT):
 		if t["kind"] == "combo":
 			core_n += 1
 			if int(t["cost"]) != per_card:
@@ -543,29 +543,29 @@ func test_attack_core_vs_spare() -> void:
 	# 只啃富余卡：配方没破，组合照常产出
 	var s2 := _blank_state(GameState.PLAYER)
 	var total_cash := waimai_n + spare_want
-	var b_core := s2.add_card(GameState.AI, "waimai")
+	var b_core := s2.add_card(GameState.BOT, "waimai")
 	var b_cash: Array = []
-	for i in total_cash: b_cash.append(s2.add_card(GameState.AI, "cash"))
-	for i in 2: s2.add_card(GameState.AI, "user")
-	s2.create_combo(GameState.AI, [b_core["uid"]] + _uids(b_cash))
+	for i in total_cash: b_cash.append(s2.add_card(GameState.BOT, "cash"))
+	for i in 2: s2.add_card(GameState.BOT, "user")
+	s2.create_combo(GameState.BOT, [b_core["uid"]] + _uids(b_cash))
 	# 啃几张是判据自己的规模，只要少于富余张数（啃不到核心）就够
 	var kill := 3
 	check(kill < spare_want, "夹具前提：只啃 %d 张，够不着 %d 张富余外的核心" % [kill, spare_want])
 	var pools := { "cash": kill * per_card, "user": 0 }
 	var hit := 0
-	for t in s2.attack_targets(GameState.AI):
+	for t in s2.attack_targets(GameState.BOT):
 		if t["kind"] == "spare" and hit < kill:
 			s2.apply_attack(GameState.PLAYER, t, pools)
 			hit += 1
-	check(s2.resource_count(GameState.AI, CardDB.RES_CASH) == total_cash - kill,
+	check(s2.resource_count(GameState.BOT, CardDB.RES_CASH) == total_cash - kill,
 		"%d 点啃掉 %d 张富余现金：%d → %d" % [
 			kill * per_card, kill, total_cash, total_cash - kill])
-	check(s2.combo_intact(GameState.AI, s2.combos[0]),
+	check(s2.combo_intact(GameState.BOT, s2.combos[0]),
 		"配方（现金×%d）仍满足 → 组合未作废" % waimai_n)
 	var waimai_out := int(CardDB.get_def("waimai")["output_n"])
-	var users_before := s2.resource_count(GameState.AI, CardDB.RES_USER)
+	var users_before := s2.resource_count(GameState.BOT, CardDB.RES_USER)
 	Settle.produce(s2)
-	check(s2.resource_count(GameState.AI, CardDB.RES_USER) == users_before + waimai_out,
+	check(s2.resource_count(GameState.BOT, CardDB.RES_USER) == users_before + waimai_out,
 		"组合照常产出 用户+%d" % waimai_out)
 
 	# 已经被打散的组合（配方不齐、结算时要作废），残余那几张同样逐张计价。
@@ -575,17 +575,17 @@ func test_attack_core_vs_spare() -> void:
 	# 所以残余的全在额度内、无一富余，只是各自一份 attack_cost_per_card
 	var s3 := _blank_state(GameState.PLAYER)
 	var shua_n := int(CardDB.get_def("shuabuting")["recipe_n"])
-	var c_core := s3.add_card(GameState.AI, "shuabuting")
+	var c_core := s3.add_card(GameState.BOT, "shuabuting")
 	var c_users: Array = []
-	for i in shua_n: c_users.append(s3.add_card(GameState.AI, "user"))
-	s3.add_card(GameState.AI, "cash")   # 防清零即胜误触发
-	s3.create_combo(GameState.AI, [c_core["uid"]] + _uids(c_users))
-	s3.remove_card(GameState.AI, c_users[0]["uid"])   # 抽掉一张 → 配方不齐
-	check(not s3.combo_intact(GameState.AI, s3.combos[0]), "抽掉一张后配方不齐")
+	for i in shua_n: c_users.append(s3.add_card(GameState.BOT, "user"))
+	s3.add_card(GameState.BOT, "cash")   # 防清零即胜误触发
+	s3.create_combo(GameState.BOT, [c_core["uid"]] + _uids(c_users))
+	s3.remove_card(GameState.BOT, c_users[0]["uid"])   # 抽掉一张 → 配方不齐
+	check(not s3.combo_intact(GameState.BOT, s3.combos[0]), "抽掉一张后配方不齐")
 	var broke_n := 0
 	var broke_all_one := true
 	var broke_spare := 0
-	for t in s3.attack_targets(GameState.AI):
+	for t in s3.attack_targets(GameState.BOT):
 		if t["kind"] == "combo":
 			broke_n += 1
 			if int(t["cost"]) != per_card:
@@ -617,29 +617,29 @@ func test_attack_protection_hint() -> void:
 	s.add_card(GameState.PLAYER, "cash")  # 防自身清零即胜误触发
 	s.add_card(GameState.PLAYER, "user")  # 同上
 
-	# AI：外卖补贴 + 配方现金 + 降价促销（防御卡在组合中即永久保护组内现金）
+	# BOT：外卖补贴 + 配方现金 + 降价促销（防御卡在组合中即永久保护组内现金）
 	var waimai_n := int(CardDB.get_def("waimai")["recipe_n"])
-	var a_core := s.add_card(GameState.AI, "waimai")
+	var a_core := s.add_card(GameState.BOT, "waimai")
 	var a_cash: Array = []
-	for i in waimai_n: a_cash.append(s.add_card(GameState.AI, "cash"))
-	var a_buff := s.add_card(GameState.AI, "jiangjia")
-	s.add_card(GameState.AI, "user")  # 防清零即胜误触发
+	for i in waimai_n: a_cash.append(s.add_card(GameState.BOT, "cash"))
+	var a_buff := s.add_card(GameState.BOT, "jiangjia")
+	s.add_card(GameState.BOT, "user")  # 防清零即胜误触发
 
 	var r1 := s.create_combo(GameState.PLAYER, [p_core["uid"]] + _uids(p_cash))
 	check(r1["ok"], "玩家「%s+%s×%d」编组成立" % [
 		atk_def["name"], CardDB.card_name(atk_def["recipe_res"]), atk_n])
-	var r2 := s.create_combo(GameState.AI, [a_core["uid"], a_buff["uid"]] + _uids(a_cash))
-	check(r2["ok"], "AI「外卖补贴+现金×%d+降价促销」编组成立" % waimai_n)
-	check(r2["eval"].get("protect_cash", false), "AI 组合带现金保护标记")
+	var r2 := s.create_combo(GameState.BOT, [a_core["uid"], a_buff["uid"]] + _uids(a_cash))
+	check(r2["ok"], "BOT「外卖补贴+现金×%d+降价促销」编组成立" % waimai_n)
+	check(r2["eval"].get("protect_cash", false), "BOT 组合带现金保护标记")
 
-	check(s.buff_armed(GameState.AI, a_buff["uid"]), "降价促销编组当回合立即生效")
-	# 用 affordable_targets 而不是 attack_targets：AI 那张散用户也是个目标，
+	check(s.buff_armed(GameState.BOT, a_buff["uid"]), "降价促销编组当回合立即生效")
+	# 用 affordable_targets 而不是 attack_targets：BOT 那张散用户也是个目标，
 	# 只是玩家手里是现金池、点不起它。这一条问的是「现金池有没有靶子」
-	check(s.affordable_targets(GameState.AI, s.attack_pool(GameState.PLAYER)).is_empty(),
-		"AI 那 %d 张现金全被保护 → 玩家现金池一个可点目标都没有" % waimai_n)
+	check(s.affordable_targets(GameState.BOT, s.attack_pool(GameState.PLAYER)).is_empty(),
+		"BOT 那 %d 张现金全被保护 → 玩家现金池一个可点目标都没有" % waimai_n)
 
 	Settle.run(s)
-	check(s.resource_count(GameState.AI, CardDB.RES_CASH) == waimai_n,
+	check(s.resource_count(GameState.BOT, CardDB.RES_CASH) == waimai_n,
 		"被保护的现金一张不少（仍为 %d）" % waimai_n)
 	var hint := false
 	for entry in s.log:
@@ -657,7 +657,7 @@ func test_attack_protection_hint() -> void:
 ##
 ## 为什么这一节摆在引擎测试里而不是场景测试里：原先这条规则**根本不在引擎里**，
 ## 它是 scenes/main.gd 两条驱动各自的副产品（`_attack_pile` 按界面上的一摞连点、
-## `_drive_ai_attack` 自己按 batch 分组）。无头的 Settle.attack_phase、
+## `_drive_bot_attack` 自己按 batch 分组）。无头的 Settle.attack_phase、
 ## 联网的 Transport.run_attack_phase、以及任何直接发 Intent.apply_attack 的
 ## 客户端都各打各的 —— 同一份阵型能打出 A 花 1 点 B 花 2 点的结果
 func test_attack_one_combo_at_a_time() -> void:
@@ -681,7 +681,7 @@ func test_attack_one_combo_at_a_time() -> void:
 	check(a_users.size() == a, "A 组露 %d 张用户（实际 %d）" % [a, a_users.size()])
 	check(b_users.size() == b, "B 组露 %d 张用户（实际 %d）" % [b, b_users.size()])
 	var batches := {}
-	for t in s.attack_targets(GameState.AI):
+	for t in s.attack_targets(GameState.BOT):
 		batches[GameState.target_batch(t)] = true
 	check(batches.size() >= 3,
 		"A / B / 散卡各自成一批（实际 %d 批：%s）" % [batches.size(), str(batches.keys())])
@@ -718,7 +718,7 @@ func test_attack_one_combo_at_a_time() -> void:
 	check(GameState.attack_lock(p3) != "", "打完这一下，池子里记下了「在打 A」（%s）" % [
 		GameState.attack_lock(p3)])
 	var lock3 := GameState.attack_lock(p3)
-	var narrowed: Array = s3.affordable_targets(GameState.AI, p3)
+	var narrowed: Array = s3.affordable_targets(GameState.BOT, p3)
 	var only_a := true
 	for t in narrowed:
 		if GameState.target_batch(t) != lock3:
@@ -820,51 +820,51 @@ func _lock_table() -> GameState:
 	for i in 2: s.add_card(GameState.PLAYER, "user")
 	s.create_combo(GameState.PLAYER, [p_core["uid"]] + _uids(p_cash))
 
-	# AI 的 A 组：外卖补贴（吃现金）+ 现金×配方量 + 用户×a。
+	# BOT 的 A 组：外卖补贴（吃现金）+ 现金×配方量 + 用户×a。
 	# 那几张用户不是配方料 → 全算富余（kind=spare），就是算例里的「A 含 a 张用户」
 	var n := _lock_nums()
 	var waimai_n := int(CardDB.get_def("waimai")["recipe_n"])
-	var a_core := s.add_card(GameState.AI, "waimai")
+	var a_core := s.add_card(GameState.BOT, "waimai")
 	var a_ids: Array = [a_core["uid"]]
-	for i in waimai_n: a_ids.append(s.add_card(GameState.AI, "cash")["uid"])
-	for i in int(n["a"]): a_ids.append(s.add_card(GameState.AI, "user")["uid"])
-	s.create_combo(GameState.AI, a_ids)
+	for i in waimai_n: a_ids.append(s.add_card(GameState.BOT, "cash")["uid"])
+	for i in int(n["a"]): a_ids.append(s.add_card(GameState.BOT, "user")["uid"])
+	s.create_combo(GameState.BOT, a_ids)
 
-	# AI 的 B 组：云课堂（吃用户×配方量）+ 用户×配方量 → 那几张是配方核心（kind=combo）
-	var b_core := s.add_card(GameState.AI, "yunketang")
+	# BOT 的 B 组：云课堂（吃用户×配方量）+ 用户×配方量 → 那几张是配方核心（kind=combo）
+	var b_core := s.add_card(GameState.BOT, "yunketang")
 	var b_ids: Array = [b_core["uid"]]
-	for i in int(n["b"]): b_ids.append(s.add_card(GameState.AI, "user")["uid"])
-	s.create_combo(GameState.AI, b_ids)
+	for i in int(n["b"]): b_ids.append(s.add_card(GameState.BOT, "user")["uid"])
+	s.create_combo(GameState.BOT, b_ids)
 
 	# 散牌：吊命 + 给「散卡不上锁」那两段用
-	for i in 4: s.add_card(GameState.AI, "user")
-	for i in 4: s.add_card(GameState.AI, "cash")
+	for i in 4: s.add_card(GameState.BOT, "user")
+	for i in 4: s.add_card(GameState.BOT, "cash")
 	return s
 
-## 第 idx 个 AI 组合里的用户卡 uid，按 attack_targets 给出的顺序
+## 第 idx 个 BOT 组合里的用户卡 uid，按 attack_targets 给出的顺序
 func _combo_user_uids(s: GameState, idx: int) -> Array:
-	var ai_combos: Array = s.combos.filter(func(c): return c["owner"] == GameState.AI)
-	if idx >= ai_combos.size():
+	var bot_combos: Array = s.combos.filter(func(c): return c["owner"] == GameState.BOT)
+	if idx >= bot_combos.size():
 		return []
 	var out: Array = []
-	for u in ai_combos[idx]["uids"]:
-		var c := s.find_card(GameState.AI, u)
+	for u in bot_combos[idx]["uids"]:
+		var c := s.find_card(GameState.BOT, u)
 		if c.is_empty():
 			continue
 		if CardDB.get_def(c["def_id"]).get("res", "") == CardDB.RES_USER:
 			out.append(u)
 	return out
 
-## 不在任何组合里的 AI 用户卡
+## 不在任何组合里的 BOT 用户卡
 func _loose_user_uids(s: GameState) -> Array:
 	var inside := {}
 	for combo in s.combos:
-		if combo["owner"] != GameState.AI:
+		if combo["owner"] != GameState.BOT:
 			continue
 		for u in combo["uids"]:
 			inside[u] = true
 	var out: Array = []
-	for c in s.players[GameState.AI]["cards"]:
+	for c in s.players[GameState.BOT]["cards"]:
 		if inside.has(c["uid"]):
 			continue
 		if CardDB.get_def(c["def_id"]).get("res", "") == CardDB.RES_USER:
@@ -873,7 +873,7 @@ func _loose_user_uids(s: GameState) -> Array:
 
 ## uid 对应的攻击目标（attack_targets 里那一条）
 func _target_of(s: GameState, uid: int) -> Dictionary:
-	for t in s.attack_targets(GameState.AI):
+	for t in s.attack_targets(GameState.BOT):
 		if t["uids"].has(uid):
 			return t
 	return {}
@@ -889,7 +889,7 @@ func _hit(s: GameState, uid: int, pools: Dictionary) -> Dictionary:
 func _alive(s: GameState, uids: Array) -> int:
 	var n := 0
 	for u in uids:
-		if not s.find_card(GameState.AI, u).is_empty():
+		if not s.find_card(GameState.BOT, u).is_empty():
 			n += 1
 	return n
 
@@ -911,7 +911,7 @@ func _picker_prefer(want: Array, spent: Array) -> Callable:
 			spent.append(pick)
 		return pick
 
-## 【测试9】已经打破的组不再是首选：AI 第一下该挑还活着的那个组
+## 【测试9】已经打破的组不再是首选：BOT 第一下该挑还活着的那个组
 ##
 ## 为什么单独测这一条：「一次只打一个组合」（GameState.ATTACK_LOCK）之后，
 ## 攻击目标继续携带完好/已破状态，实际攻击只影响选中的组合。
@@ -925,26 +925,26 @@ func test_targets_distinguish_broken_combo() -> void:
 	# 尸体组：刷不停（吃用户）—— 席位最多的那张。建组后抽掉一张核心，
 	# protect_quota 冻在 recipe_n 不会缩，剩下的核心因此是 intact=false 的「已破组」
 	var dead_n := int(CardDB.get_def("shuabuting")["recipe_n"])
-	var dead_core := s.add_card(GameState.AI, "shuabuting")
+	var dead_core := s.add_card(GameState.BOT, "shuabuting")
 	var dead_ids: Array = [dead_core["uid"]]
-	for i in dead_n: dead_ids.append(s.add_card(GameState.AI, "user")["uid"])
-	s.create_combo(GameState.AI, dead_ids)
-	s.remove_card(GameState.AI, dead_ids[1])   # 抽走一张核心 → 这一组作废
+	for i in dead_n: dead_ids.append(s.add_card(GameState.BOT, "user")["uid"])
+	s.create_combo(GameState.BOT, dead_ids)
+	s.remove_card(GameState.BOT, dead_ids[1])   # 抽走一张核心 → 这一组作废
 	var dead_rest: Array = dead_ids.slice(2)
 
 	# 活组：云课堂（吃用户）—— 席位比尸体少，靠 intact 那一支才赢得过
 	var live_n := int(CardDB.get_def("yunketang")["recipe_n"])
-	var live_core := s.add_card(GameState.AI, "yunketang")
+	var live_core := s.add_card(GameState.BOT, "yunketang")
 	var live_ids: Array = [live_core["uid"]]
-	for i in live_n: live_ids.append(s.add_card(GameState.AI, "user")["uid"])
-	s.create_combo(GameState.AI, live_ids)
-	for i in 3: s.add_card(GameState.AI, "cash")
+	for i in live_n: live_ids.append(s.add_card(GameState.BOT, "user")["uid"])
+	s.create_combo(GameState.BOT, live_ids)
+	for i in 3: s.add_card(GameState.BOT, "cash")
 
 	# 先确认牌桌真是「一具尸体 + 一个活组」，而且尸体的席位更多 ——
 	# 不然这一条测的就不是它想测的东西了
 	var broken: Array = []
 	var intact: Array = []
-	for t in s.attack_targets(GameState.AI):
+	for t in s.attack_targets(GameState.BOT):
 		if str(t["kind"]) != "combo":
 			continue
 		if bool(t.get("intact", true)):
@@ -963,9 +963,9 @@ func test_targets_distinguish_broken_combo() -> void:
 	# 环境明确区分已破与完好目标；不把某版选靶偏好当作游戏规则。
 	var live_target: Dictionary = intact[0]
 	check(s.apply_attack(GameState.PLAYER, live_target, pools)["ok"], "完好组合目标仍可合法攻击")
-	check(not s.combo_intact(GameState.AI, s.combos[1]), "点掉完好组合的一张核心后环境报告配方被拆散")
+	check(not s.combo_intact(GameState.BOT, s.combos[1]), "点掉完好组合的一张核心后环境报告配方被拆散")
 	for uid in dead_rest:
-		check(not s.find_card(GameState.AI, uid).is_empty(), "攻击另一个组不移除已破组合的剩余席位")
+		check(not s.find_card(GameState.BOT, uid).is_empty(), "攻击另一个组不移除已破组合的剩余席位")
 
 ## 历史诊断使用的两个观测量（当前手动调参 Q1–Q9 不依赖它们）：
 ##   state.stats.voided       克制次数：一次攻击让对手一个**本来成立**的组变不成立
@@ -975,7 +975,7 @@ func test_targets_distinguish_broken_combo() -> void:
 ## 于是它们坏掉的方式是**静默**的 —— 评估报告照样打印，数字照样是个数字，
 ## 只是不再对应真实事件。这里直接构造攻击和保护场景，核对它们各自的定义。
 ##
-## 用 _lock_table() 那张牌桌：AI 的 B 组核心吃用户（云课堂），点得到；
+## 用 _lock_table() 那张牌桌：BOT 的 B 组核心吃用户（云课堂），点得到；
 ## A 组核心吃现金、组里的用户全是富余（kind=spare），打富余**不该**算克制
 func test_eval_observables() -> void:
 	print("【测试10】评估观测量：克制只认「本来成立的组刚被打破」，成型只认无解生产组")
@@ -984,12 +984,12 @@ func test_eval_observables() -> void:
 	var s := _lock_table()
 
 	check(int(s.stats["voided"][GameState.PLAYER]) == 0
-			and int(s.stats["voided"][GameState.AI]) == 0,
+			and int(s.stats["voided"][GameState.BOT]) == 0,
 		"开局两边的克制计数都是 0")
 
 	# ---- 打富余料：配方不破，不算克制 ----
 	var spare: Array = []
-	for t in s.attack_targets(GameState.AI):
+	for t in s.attack_targets(GameState.BOT):
 		if str(t["kind"]) == "spare":
 			spare.append(t)
 	check(not spare.is_empty(), "牌桌上有富余靶（%d 个）" % spare.size())
@@ -1006,17 +1006,17 @@ func test_eval_observables() -> void:
 	# 改成 `voided = was_intact` 全套照旧全绿（实测过）
 	var s_fill := _blank_state(GameState.PLAYER)
 	var fdef: Dictionary = CardDB.get_def("yunketang")
-	var fcore := s_fill.add_card(GameState.AI, "yunketang")
+	var fcore := s_fill.add_card(GameState.BOT, "yunketang")
 	var fusers: Array = []
 	for i in int(fdef["recipe_n"]) + 1:   # 多备一张 → 打掉一张核心还够配方
-		fusers.append(s_fill.add_card(GameState.AI, "user")["uid"])
-	for i in 3: s_fill.add_card(GameState.AI, "cash")
+		fusers.append(s_fill.add_card(GameState.BOT, "user")["uid"])
+	for i in 3: s_fill.add_card(GameState.BOT, "cash")
 	for i in 3: s_fill.add_card(GameState.PLAYER, "cash")
-	var fmade := s_fill.create_combo(GameState.AI, [fcore["uid"]] + fusers)
+	var fmade := s_fill.create_combo(GameState.BOT, [fcore["uid"]] + fusers)
 	check(fmade["ok"], "「%s+用户×%d」编组成立（多备一张富余）（%s）" % [
 		fdef["name"], int(fdef["recipe_n"]) + 1, fmade.get("reason", "")])
 	var fcores: Array = []
-	for t in s_fill.attack_targets(GameState.AI):
+	for t in s_fill.attack_targets(GameState.BOT):
 		if str(t["kind"]) == "combo":
 			fcores.append(t)
 	check(fcores.size() == int(fdef["recipe_n"]),
@@ -1050,58 +1050,58 @@ func test_eval_observables() -> void:
 	check(int(s2.stats["voided"][GameState.PLAYER]) == 1,
 		"克制计数仍是 1（实际 %d）" % int(s2.stats["voided"][GameState.PLAYER]))
 	# 计数记在**攻击方**名下，才能区分是哪一方造成组合失效。
-	check(int(s2.stats["voided"][GameState.AI]) == 0, "记的是攻击方（AI 那边仍是 0）")
+	check(int(s2.stats["voided"][GameState.BOT]) == 0, "记的是攻击方（BOT 那边仍是 0）")
 
 	# ---- 成型：点得到核心的组不算，罩住的才算 ----
 	var s3 := _lock_table()
-	check(s3.sealed_combos(GameState.AI).is_empty(),
-		"B 组的核心露在外面 → AI 此刻没有成型的组（实际 %d 个）" % [
-			s3.sealed_combos(GameState.AI).size()])
+	check(s3.sealed_combos(GameState.BOT).is_empty(),
+		"B 组的核心露在外面 → BOT 此刻没有成型的组（实际 %d 个）" % [
+			s3.sealed_combos(GameState.BOT).size()])
 	# 一个**核心被罩住的攻击组合**：按字面「有效组合 + 核心点不到」它满足，
 	# 但 sealed_combos 专门观察受保护的生产能力，攻击组合不算成型。
 	# 这一条是「只认生产组合」那道过滤器的判据：
 	# 去掉那道过滤，这里当场变红
 	var s_atk := _blank_state(GameState.PLAYER)
 	var atk_def: Dictionary = CardDB.get_def("butie")
-	var atk_core := s_atk.add_card(GameState.AI, "butie")
+	var atk_core := s_atk.add_card(GameState.BOT, "butie")
 	var atk_pay: Array = []
 	for i in int(atk_def["recipe_n"]):
-		atk_pay.append(s_atk.add_card(GameState.AI, CardDB.unit_id(atk_def["recipe_res"]))["uid"])
+		atk_pay.append(s_atk.add_card(GameState.BOT, CardDB.unit_id(atk_def["recipe_res"]))["uid"])
 	# 补贴大战吃现金 → 要护现金的那张 Buff（降价促销）
-	var atk_buff := s_atk.add_card(GameState.AI, "jiangjia")
-	for i in 4: s_atk.add_card(GameState.AI, "cash")
+	var atk_buff := s_atk.add_card(GameState.BOT, "jiangjia")
+	for i in 4: s_atk.add_card(GameState.BOT, "cash")
 	for i in 3: s_atk.add_card(GameState.PLAYER, "cash")
-	var atk_made := s_atk.create_combo(GameState.AI,
+	var atk_made := s_atk.create_combo(GameState.BOT,
 		[atk_core["uid"], atk_buff["uid"]] + atk_pay)
 	check(atk_made["ok"], "「%s+现金×%d+降价促销」编组成立（%s）" % [
 		atk_def["name"], int(atk_def["recipe_n"]), atk_made.get("reason", "")])
 	check(str(atk_made["eval"].get("type", "")) == "attack", "它是攻击组合")
 	var atk_cores: Array = []
-	for t in s_atk.attack_targets(GameState.AI):
+	for t in s_atk.attack_targets(GameState.BOT):
 		if str(t["kind"]) == "combo":
 			atk_cores.append(t)
 	check(atk_cores.is_empty(),
 		"它的核心被 Buff 罩住了，一个都点不到（实际 %d 个靶）" % atk_cores.size())
-	check(s_atk.sealed_combos(GameState.AI).is_empty(),
-		"但它不算成型 —— 只认生产组合（实际 %d 个）" % s_atk.sealed_combos(GameState.AI).size())
+	check(s_atk.sealed_combos(GameState.BOT).is_empty(),
+		"但它不算成型 —— 只认生产组合（实际 %d 个）" % s_atk.sealed_combos(GameState.BOT).size())
 
 	# ---- 罩住核心的生产组：这才算成型 ----
 	# 云课堂（吃用户）+ 用户×配方量 + 推送弹窗（护用户）。
 	# Buff 入组当回合即保护；被罩住核心的生产组合当回合就算成型。
 	var s5 := _blank_state(GameState.PLAYER)
 	var def: Dictionary = CardDB.get_def("yunketang")
-	var core := s5.add_card(GameState.AI, "yunketang")
+	var core := s5.add_card(GameState.BOT, "yunketang")
 	var users: Array = []
 	for i in int(def["recipe_n"]):
-		users.append(s5.add_card(GameState.AI, "user")["uid"])
-	var buff := s5.add_card(GameState.AI, "tuisong")
-	for i in 3: s5.add_card(GameState.AI, "cash")     # 防清零即胜提前结束
+		users.append(s5.add_card(GameState.BOT, "user")["uid"])
+	var buff := s5.add_card(GameState.BOT, "tuisong")
+	for i in 3: s5.add_card(GameState.BOT, "cash")     # 防清零即胜提前结束
 	for i in 3: s5.add_card(GameState.PLAYER, "cash")
-	var made := s5.create_combo(GameState.AI, [core["uid"], buff["uid"]] + users)
+	var made := s5.create_combo(GameState.BOT, [core["uid"], buff["uid"]] + users)
 	check(made["ok"], "「%s+用户×%d+推送弹窗」编组成立（%s）" % [
 		def["name"], int(def["recipe_n"]), made.get("reason", "")])
-	check(s5.buff_armed(GameState.AI, buff["uid"]), "推送弹窗入组当回合立即保护")
-	var sealed: Array = s5.sealed_combos(GameState.AI)
+	check(s5.buff_armed(GameState.BOT, buff["uid"]), "推送弹窗入组当回合立即保护")
+	var sealed: Array = s5.sealed_combos(GameState.BOT)
 	check(sealed.size() == 1, "核心被罩住 → 这一组成型（实际 %d 个）" % sealed.size())
 	check(sealed.size() == 1 and sealed[0]["eval"].get("type") == "production",
 		"记下的是生产组合")

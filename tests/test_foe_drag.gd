@@ -120,7 +120,7 @@ func _t2_loopback(main: Node) -> void:
 
 # ---------- T3 租约挡住布局 ----------
 
-## 对手的一张闲置卡：租约要挡的就是这种牌（每步之后 _layout_ai_idle 都摆它）
+## 对手的一张闲置卡：租约要挡的就是这种牌（每步之后 _layout_bot_idle 都摆它）
 func _a_foe_card(main: Node) -> int:
 	for c in main.state.players[main.foe_seat]["cards"]:
 		if main.entities.has(c["uid"]) and is_instance_valid(main.entities[c["uid"]]):
@@ -142,9 +142,9 @@ func _t3_lease_blocks_layout(main: Node) -> void:
 		"牌摆到了 pickup 那一帧的位置（差 %.2f）" % e.global_position.distance_to(want))
 
 	# 布局跑一趟：租约在，它必须绕开这张牌。
-	# 这是整条租约存在的理由 —— AI 每一步之后都调这个函数
-	main.layout._layout_ai_idle()
-	await ai_moves_landed(main)
+	# 这是整条租约存在的理由 —— BOT 每一步之后都调这个函数
+	main.layout._layout_bot_idle()
+	await bot_moves_landed(main)
 	check(e.global_position.distance_to(want) < 0.6,
 		"布局跑过一趟之后牌还在半空（差 %.2f）" % e.global_position.distance_to(want))
 	check(main.is_drag_leased(uid), "布局没有偷偷收走租约")
@@ -152,7 +152,7 @@ func _t3_lease_blocks_layout(main: Node) -> void:
 	# 反面：租约放掉之后布局要把它摆回去，否则牌永远浮着
 	main.on_foe_drag(_frame(Protocol.DRAG_CANCEL, [uid], 0.3, 0.4))
 	check(not main.is_drag_leased(uid), "cancel 之后租约收回")
-	await ai_moves_landed(main)
+	await bot_moves_landed(main)
 	check(e.global_position.distance_to(want) > 0.6,
 		"松手之后布局把牌摆回去了（离半空那点 %.2f）"
 			% e.global_position.distance_to(want))
@@ -190,7 +190,7 @@ func _t4_stale_and_cancel(main: Node) -> void:
 		"uids": [uid], "u": 0.0, "v": 0.0 })
 	check(not main.is_drag_leased(uid),
 		"seq 落后的 cancel 也收（丢了它牌就永远浮着）")
-	await ai_moves_landed(main)
+	await bot_moves_landed(main)
 
 # ---------- T5 超时 ----------
 
@@ -218,7 +218,7 @@ func _t5_timeout(main: Node) -> void:
 	check(not main.is_drag_leased(uid),
 		"收不到 dragging 帧，租约自己到期（对方拖着牌掉线时靠这条）")
 	# 等的是摆放补间本身，不是墙钟：这条判据读的是落点，等不够就读到出发点
-	await ai_moves_landed(main)
+	await bot_moves_landed(main)
 	# 判据是「离开了半空那一点」，不是「y 小于某个数」：
 	# 摞里的牌沿层高台阶叠着（Board.ladder_y），摞得高的那张落定后 y 也有 0.9,
 	# 拿一个绝对高度当判据会把正常的摞判成没落地
@@ -327,7 +327,7 @@ func _t7_out_the_wire(main: Node, c: CardEntity) -> void:
 	print("\n--- T7 一路发到 net 层 ---")
 	var fake := FakeNet.new()
 	main.attach_net(fake)
-	check(not main._foe_is_ai(),
+	check(not main._foe_is_bot(),
 		"attach_net 之后本地不再驱动对手（对面是人）")
 
 	# 收：从**信号**发一帧进来，不直接调 on_foe_drag ——
@@ -341,7 +341,7 @@ func _t7_out_the_wire(main: Node, c: CardEntity) -> void:
 			"net 层那个信号真的接到了 on_foe_drag 上")
 		fake.foe_drag.emit({ "seq": 901, "phase": Protocol.DRAG_CANCEL,
 			"uids": [foe], "u": 0.4, "v": 0.6 })
-		await ai_moves_landed(main)
+		await bot_moves_landed(main)
 
 	main.board._on_card_clicked(c)
 	await process_frame
@@ -388,4 +388,4 @@ func _t7_out_the_wire(main: Node, c: CardEntity) -> void:
 				% [e.global_position.x, want.x])
 		fake2.foe_drag.emit({ "seq": 3, "phase": Protocol.DRAG_CANCEL,
 			"uids": [foe2], "u": 0.9, "v": 0.9 })
-		await ai_moves_landed(main)
+		await bot_moves_landed(main)

@@ -122,7 +122,7 @@ func _initialize() -> void:
 
 	# --- 自杀护栏：用户归零 = 当场判负，引擎层必须自己拦住 ---
 	# 走纯引擎（不经场景层）：这条原先只有玩家拖拽那条路上有，
-	# AI 侧靠 _ai 段的 keep_user_floor 挡着 —— 那是策略旋钮，配成 0 就能违反规则
+	# BOT 侧靠 _bot 段的 keep_user_floor 挡着 —— 那是策略旋钮，配成 0 就能违反规则
 	var s := GameState.new()
 	s.new_game()
 	var users: Array = []

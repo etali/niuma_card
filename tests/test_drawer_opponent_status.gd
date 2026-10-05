@@ -4,7 +4,7 @@
 
 extends "res://tests/harness.gd"
 
-## 收起后的状态来自真实回合交接；单机AI继续走，远端通过真实socket收手。
+## 收起后的状态来自真实回合交接；单机BOT继续走，远端通过真实socket收手。
 const PORT_BASE := 48520
 var _pump_done := false
 
@@ -14,16 +14,16 @@ func _initialize() -> void:
 func _run() -> void:
 	print("=== 收起抽屉时的对手状态回归 ===")
 	# 只改当前进程的搜索偏好；不保存、不碰玩家的偏好文件。
-	AISearch.set_pref_strength(0.0)
+	BOTSearch.set_pref_strength(0.0)
 	await _opening_purchase_switches()
-	await _ai_first_hands_over()
-	await _ai_second_crosses_round()
+	await _bot_first_hands_over()
+	await _bot_second_crosses_round()
 	await _attack_hands_over()
 	await _pawn_win_finishes_collapsed()
 	await _net_opening_purchase_switches(GameState.PLAYER)
-	await _net_opening_purchase_switches(GameState.AI)
+	await _net_opening_purchase_switches(GameState.BOT)
 	await _net_hands_over(GameState.PLAYER)
-	await _net_hands_over(GameState.AI)
+	await _net_hands_over(GameState.BOT)
 	net_stop()
 	finish()
 
@@ -70,20 +70,20 @@ func _opening_purchase_switches() -> void:
 	_check_status(main, "your_turn", "轮到你行动", "已行动后再次收起")
 	await _dispose(main)
 
-func _ai_first_hands_over() -> void:
+func _bot_first_hands_over() -> void:
 	var main := await _boot_drawer()
 	_small_local_fixture(main)
 	main.state.draw_first = main.foe_seat
 	main._begin_action_phase()
 	main.drawer_window.collapse_now()
-	check(not paused, "AI先手：收起后场景继续推进")
-	_check_status(main, "foe_acting", "等待对手行动", "AI先手")
+	check(not paused, "BOT先手：收起后场景继续推进")
+	_check_status(main, "foe_acting", "等待对手行动", "BOT先手")
 	var completed := await _until(func():
 		return (main.phase == main.PHASE_ACTION and main._actor == main.my_seat
 			and not main.board.input_locked and paused))
-	check(completed, "AI先手：实际搜索与意图落地在收起状态完成，并停在玩家后手")
-	_check_status(main, "foe_done", "等待你行动", "AI交棒")
-	check(not main.drawer_window.is_expanded(), "AI完成不擅自展开抽屉")
+	check(completed, "BOT先手：实际搜索与意图落地在收起状态完成，并停在玩家后手")
+	_check_status(main, "foe_done", "等待你行动", "BOT交棒")
+	check(not main.drawer_window.is_expanded(), "BOT完成不擅自展开抽屉")
 	_advance_motion(main.drawer_presentation._handle, 0.35)
 	check(main.drawer_presentation._handle._bubble.modulate.a > 0.95,
 		"暂停等待玩家时，等待你行动气泡仍可见且不需悬停")
@@ -93,7 +93,7 @@ func _ai_first_hands_over() -> void:
 	await _check_priorities_and_restart(main)
 	await _dispose(main)
 
-func _ai_second_crosses_round() -> void:
+func _bot_second_crosses_round() -> void:
 	var main := await _boot_drawer()
 	_small_local_fixture(main)
 	main.drawer_window.collapse_now()
@@ -104,8 +104,8 @@ func _ai_second_crosses_round() -> void:
 	main._on_action_done()
 	check(not main._opening_action_pending, "首次点击完成行动结束开场邀请，即使没有购买")
 	main.drawer_window.collapse_now()
-	check(not paused, "玩家收手后：AI后手时收起不暂停")
-	_check_status(main, "foe_acting", "等待对手行动", "AI后手")
+	check(not paused, "玩家收手后：BOT后手时收起不暂停")
+	_check_status(main, "foe_acting", "等待对手行动", "BOT后手")
 	var saw_settling := false
 	var saw_new_round_acting := false
 	var deadline := Time.get_ticks_msec() + 10000
@@ -118,11 +118,11 @@ func _ai_second_crosses_round() -> void:
 		if main.state.round_num > round_before and main._actor == main.my_seat and paused:
 			break
 		await process_frame
-	check(saw_settling, "AI后手完成后，收起状态经过自动结算并提示结算中")
-	check(saw_new_round_acting, "新回合AI先手时提示重新变为等待对手，未沿用上回合完成")
+	check(saw_settling, "BOT后手完成后，收起状态经过自动结算并提示结算中")
+	check(saw_new_round_acting, "新回合BOT先手时提示重新变为等待对手，未沿用上回合完成")
 	check(main.state.round_num == round_before + 1 and main._actor == main.my_seat and paused,
 		"无攻击的整回合在后台推进，下一次需要玩家操作时自动暂停")
-	_check_status(main, "foe_done", "等待你行动", "下一回合AI完成")
+	_check_status(main, "foe_done", "等待你行动", "下一回合BOT完成")
 	await _dispose(main)
 
 func _attack_hands_over() -> void:
@@ -157,12 +157,12 @@ func _attack_hands_over() -> void:
 	main._respawn_all()
 	main._run_attacks()
 	main.drawer_window.collapse_now()
-	check(not paused, "AI攻击期间收起仍继续选靶和结算")
-	_check_status(main, "foe_attacking", "对手攻击中…", "AI攻击")
+	check(not paused, "BOT攻击期间收起仍继续选靶和结算")
+	_check_status(main, "foe_attacking", "对手攻击中…", "BOT攻击")
 	var player_ready := await _until(func(): return main.board.attack_mode and paused)
-	check(player_ready, "AI实际攻击完毕后交给玩家攻击，并在收起状态暂停")
+	check(player_ready, "BOT实际攻击完毕后交给玩家攻击，并在收起状态暂停")
 	check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == 2,
-		"收起期间AI攻击确实扣除了配置指定的现金数量")
+		"收起期间BOT攻击确实扣除了配置指定的现金数量")
 	_check_status(main, "your_attack", "轮到你攻击", "玩家攻击")
 	main.drawer_window.pin()
 	var targets: Array = main.pipe.applier().affordable_targets(main.my_seat)
@@ -340,7 +340,7 @@ func _small_local_fixture(main: Node) -> void:
 	main.state.set_seed(20260918)
 	main.state.market.clear()
 	main._clear_market()
-	# 双方只留必要资源：AI仍真正搜索，但不会典当、买卡或生成随机攻击组合。
+	# 双方只留必要资源：BOT仍真正搜索，但不会典当、买卡或生成随机攻击组合。
 	for who in [main.my_seat, main.foe_seat]:
 		var kept := {}
 		for card in main.state.players[who]["cards"].duplicate():

@@ -38,7 +38,7 @@ static func sold_legends(intent: Dictionary, known: Dictionary) -> Array:
 ## 与 check_victory 的同一胜者内优先级一致：资金达标 > 对手现金清零 > 用户清零。
 ## pawn_legends 只能来自「已经触发获胜」的那次典当；此前变现不作致胜归因。
 static func classify(state: GameState, pawn_legends: Array = []) -> Dictionary:
-	if state.winner not in [GameState.PLAYER, GameState.AI]: return {}
+	if state.winner not in [GameState.PLAYER, GameState.BOT]: return {}
 	var other := GameState.opponent(state.winner)
 	var id := ""
 	if state.resource_count(state.winner, CardDB.RES_CASH) >= int(CardDB.game_rules()["win_cash"]):

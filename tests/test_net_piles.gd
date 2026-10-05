@@ -11,7 +11,7 @@ extends "res://tests/harness.gd"
 ## 为什么必须有这一条 —— 摞是**表现状态**，引擎里不存在：
 ## 玩家侧的摞存在 board.groups（一个装 CardEntity 的数组），
 ## 要到收手那一刻才由 main._register_player_combos 变成 create_combo。
-## 而对手区的形态是收方**重建**出来的（settle_layout._ai_piles 按
+## 而对手区的形态是收方**重建**出来的（settle_layout._bot_piles 按
 ## state.combos + 闲置资源分堆）。两件事合起来的后果是：
 ## 我摞了半天，对面看见的是牌被拖过去、然后**弹回资源堆** ——
 ## 因为在他那份 state 里那几张牌确实还是散卡。
@@ -19,7 +19,7 @@ extends "res://tests/harness.gd"
 ## 拖拽广播盯不到这个：它只在手里拿着的那几十帧有效，
 ## 松手之后就归布局说话了（scenes/board.gd 的表现分组）。
 ## 所以这里要的是一条独立的分组通道（Protocol.PILES），而这条判据
-## 从**发送端的 board.groups** 一路走到**接收端的 _ai_piles()**。
+## 从**发送端的 board.groups** 一路走到**接收端的 _bot_piles()**。
 ##
 ## 和另外几条 net 判据的分工：
 ##   - test_protocol       ：无端口，钉信封的往返（piles 的 uid 掰不掰回 int）
@@ -30,16 +30,16 @@ extends "res://tests/harness.gd"
 ##
 ## 变异提示（tools/mutate_check.py 登记的那几条打在这里）：
 ##   1. main._push_piles 里的指纹比较改成永远相等 → T1 收不到分组
-##   2. Protocol.pile_lists 不掰 int → T2 的 _ai_pile_of_uid 查不着（float 键）
+##   2. Protocol.pile_lists 不掰 int → T2 的 _bot_pile_of_uid 查不着（float 键）
 ##   3. settle_layout._declared_piles 不剔 claimed → T3 同一张牌摆两次
 ##   4. _collect_idle_units 忽略 extra_grouped → T2 那几张同时躺在资源堆里
-##   5. is_front_pile 不认 ai_group_ → T4 声明摞掉到后行的资源席位上
+##   5. is_front_pile 不认 bot_group_ → T4 声明摞掉到后行的资源席位上
 ##   6. 指纹不带位置 / 收方不认位置 → T7 两头各钉一条
 ##   7. 收方无条件 core_first_order → T8 摊开的摞两个视角次序不一样
 
 const PORT_BASE := 47340
 const A := GameState.PLAYER
-const B := GameState.AI
+const B := GameState.BOT
 
 ## 后台协程的完成标志。**必须是成员变量** —— GDScript 的 lambda 按值捕获
 ## 外层局部量，`var done := false` + `func(): done = true` 那次赋值写在副本上，
@@ -114,16 +114,16 @@ func _smallest_producer() -> String:
 ## 对手区当前的摞：key → uid 数组
 func _foe_piles_now(main: Node) -> Dictionary:
 	var out := {}
-	for p in main.layout._ai_piles():
+	for p in main.layout._bot_piles():
 		out[str(p["key"])] = (p["cards"] as Array).map(
 			func(e: CardEntity) -> int: return int(e.uid))
 	return out
 
-## 声明摞（ai_group_*）的 key 列表
+## 声明摞（bot_group_*）的 key 列表
 func _group_keys(piles: Dictionary) -> Array:
 	var out: Array = []
 	for k in piles:
-		if str(k).begins_with("ai_group_"):
+		if str(k).begins_with("bot_group_"):
 			out.append(str(k))
 	out.sort()
 	return out
@@ -287,7 +287,7 @@ func _t1_my_pile_reaches_the_foe() -> void:
 ## 对手声明的分组要变成对手区的一摞，而且那几张**不能同时**还躺在资源堆里。
 ##
 ## 走真的 send_piles → 服务器转发 → main.on_foe_piles，不是直接给
-## main.foe_piles 赋值：那样测的就只是 _ai_piles 一个函数，
+## main.foe_piles 赋值：那样测的就只是 _bot_piles 一个函数，
 ## 而这条 bug 的一半在「有没有人把这件事发出来 / 转过来」
 func _t2_declared_pile_becomes_a_foe_pile() -> void:
 	print("\n-- T2 对手摞的牌，我这边摆成一摞 --")
@@ -335,11 +335,11 @@ func _t2_declared_pile_becomes_a_foe_pile() -> void:
 	check(got == want, "那一摞正好是他声明的那几张（摞里 %s，声明的 %s）"
 		% [str(got), str(want)])
 
-	# **这一条是 bug 的正脸**：不剔的话这几张同时还在 ai_cash_0 里，
+	# **这一条是 bug 的正脸**：不剔的话这几张同时还在 bot_cash_0 里，
 	# 两处布局抢着摆同一张牌，后摆的赢 —— 玩家看见的就是「摞了一下又弹回去」
 	var in_res: Array = []
 	for k in piles:
-		if str(k).begins_with("ai_group_"):
+		if str(k).begins_with("bot_group_"):
 			continue
 		for u in piles[k]:
 			if want.has(int(u)):
@@ -349,7 +349,7 @@ func _t2_declared_pile_becomes_a_foe_pile() -> void:
 	# 点选要认得这一摞：收拢摞在攻击阶段是按 key 整摞点的（main._attack_pile）
 	var mapped := 0
 	for u in want:
-		if str(main.layout._ai_pile_of_uid.get(u, "")).begins_with("ai_group_"):
+		if str(main.layout._bot_pile_of_uid.get(u, "")).begins_with("bot_group_"):
 			mapped += 1
 	check(mapped == want.size(), "摞里每张都登记到了这一摞的 key（%d/%d）"
 		% [mapped, want.size()])
@@ -403,12 +403,12 @@ func _t3_combo_wins_over_declaration() -> void:
 	var unit := "cash" if str(d.get("recipe_res")) == CardDB.RES_CASH else "user"
 	for i in int(d.get("recipe_n", 0)):
 		uids.append(int(main.state.add_card(main.foe_seat, unit)["uid"]))
-	# 新加的牌要有实体，否则 _ai_piles 会把它们整批跳过（那一条过滤在 T5 里钉着）
+	# 新加的牌要有实体，否则 _bot_piles 会把它们整批跳过（那一条过滤在 T5 里钉着）
 	main._sync_entities()
 	await net_pump([a, b], 10)
 
 	# 先声明，再把同一批牌在**我这份状态**里编成组合。
-	# 直接改 main.state 而不是走服务器：这一条钉的是 _ai_piles 的取舍，
+	# 直接改 main.state 而不是走服务器：这一条钉的是 _bot_piles 的取舍，
 	# 而「组合怎么过网」由 test_net_attack_flow 的 T2 钉着
 	b.send_piles([uids])
 	if not await net_until([a, b], func(): return not main.foe_piles.is_empty()):
@@ -432,7 +432,7 @@ func _t3_combo_wins_over_declaration() -> void:
 		"这几张已经编成组合了，就不再当声明摞（声明摞：%s）" % str(_group_keys(piles)))
 	var combo_keys: Array = []
 	for k in piles:
-		if str(k).begins_with("ai_combo_"):
+		if str(k).begins_with("bot_combo_"):
 			combo_keys.append(str(k))
 	check(combo_keys.size() == 1, "它们现在是一个组合摞（实为 %s）" % str(combo_keys))
 	# 一张牌只该出现在一摞里 —— 整个对手区扫一遍
@@ -454,7 +454,7 @@ func _t3_combo_wins_over_declaration() -> void:
 
 ## 声明摞和组合同属「对手自己摆出来的分组」，该坐前行。
 ## 掉到后行的话它会摆在资源摞的固定席位上，两片牌互相压边 ——
-## 而那三个席位的 x 是按 key 前缀挑的（_layout_ai_zone 后半段）
+## 而那三个席位的 x 是按 key 前缀挑的（_layout_bot_zone 后半段）
 func _t4_declared_pile_sits_in_the_front_row() -> void:
 	print("\n-- T4 声明摞坐前行 --")
 	var trio := await _seated_scene(1717, "PDDD")
@@ -467,11 +467,11 @@ func _t4_declared_pile_sits_in_the_front_row() -> void:
 	# is_front_pile 是静态的，但 settle_layout.gd 没有 class_name（见文件头
 	# 那句「全局可见的是 CardEntity/Board/CardArt」），所以从实例上调
 	var L = main.layout
-	check(L.is_front_pile("ai_combo_0"), "组合摞算前行")
-	check(L.is_front_pile("ai_group_0"), "声明摞算前行")
-	check(not L.is_front_pile("ai_cash_0"), "现金摞不算前行")
-	check(not L.is_front_pile("ai_user_0"), "用户摞不算前行")
-	check(not L.is_front_pile("ai_bench_0"), "备牌摞不算前行")
+	check(L.is_front_pile("bot_combo_0"), "组合摞算前行")
+	check(L.is_front_pile("bot_group_0"), "声明摞算前行")
+	check(not L.is_front_pile("bot_cash_0"), "现金摞不算前行")
+	check(not L.is_front_pile("bot_user_0"), "用户摞不算前行")
+	check(not L.is_front_pile("bot_bench_0"), "备牌摞不算前行")
 
 	var uids := _foe_cash_uids(main, 4)
 	if not need(uids.size() == 4, "对手名下有四张现金卡（实为 %d）" % uids.size()):
@@ -490,8 +490,8 @@ func _t4_declared_pile_sits_in_the_front_row() -> void:
 		return
 	await net_pump([a, b], 30)   # 让布局跑完补间
 
-	# 前行 z = AI_ROW_Z[0] = -4.1，后行 = AI_ROW_Z[1] = -6.5 —— **越负越靠北**
-	# （AI 区北缘是 -7.6）。所以前行的牌 z 要比后行席位**大**。
+	# 前行 z = BOT_ROW_Z[0] = -4.1，后行 = BOT_ROW_Z[1] = -6.5 —— **越负越靠北**
+	# （BOT 区北缘是 -7.6）。所以前行的牌 z 要比后行席位**大**。
 	# 判相对关系而不是钉死坐标：组合摊开时每张沿 +z 长（见 combo_spread_step），
 	# 钉死会把「摊开了」判成失败
 	var zs: Array = []
@@ -504,7 +504,7 @@ func _t4_declared_pile_sits_in_the_front_row() -> void:
 		b.close()
 		await physics_frame
 		return
-	var back_z: float = main.layout._ai_back_z(uids.size())
+	var back_z: float = main.layout._bot_back_z(uids.size())
 	var front := true
 	for z in zs:
 		if z < back_z + 0.01:
@@ -568,7 +568,7 @@ func _t5_stale_uids_are_ignored() -> void:
 	check(got == want, "摞里只剩对手真有的那两张（摞里 %s，期望 %s）"
 		% [str(got), str(want)])
 	# 我的牌**没被搬到对手区**：那是「改一个客户端就能把对手的牌摆到自己区」
-	check(not main.layout._ai_pile_of_uid.has(mine[0]),
+	check(not main.layout._bot_pile_of_uid.has(mine[0]),
 		"我的牌没被对手的名单收走（uid %d）" % mine[0])
 
 	main.queue_free()
@@ -597,7 +597,7 @@ func _z_span(main: Node, uids: Array) -> float:
 ## 接收端那一半的收拢/摊开：对手说收拢我就摆收拢，说摊开我就摆摊开。
 ##
 ## 为什么单独一条而不是并进 T2：T2 钉的是「那几张牌进了同一摞」——
-## 收拢和摊开在它眼里完全一样（两种形态下 _ai_pile_of_uid 都指向那一摞）。
+## 收拢和摊开在它眼里完全一样（两种形态下 _bot_pile_of_uid 都指向那一摞）。
 ## 而玩家双击时唯一看得见的反馈**就是**形态变了，这件事得有自己的判据。
 ##
 ## 这一条钉的其实是两个 bug 合起来的那个症状：
@@ -688,14 +688,14 @@ func _t6_compact_matches_both_ways() -> void:
 ## 一摞牌摆在哪儿，两边也该一一对应。
 ##
 ## 这一条钉的病：对手把一个组合拖到桌子左边还是右边，我这边看到的都是
-## **同一个格子** —— 因为落点由收方的 _layout_ai_zone 按「第几摞 / 共几摞」
+## **同一个格子** —— 因为落点由收方的 _layout_bot_zone 按「第几摞 / 共几摞」
 ## 现算成整行居中（那边的 x0/pitch），发方压根没说过位置。
 ## 和 T6 是同一个形状的两个字段：形态和位置都是玩家亲手做的动作，
 ## 不是布局的自由度。
 ##
 ## 两头各钉一条，理由同 T6（只修一头的话症状还在）：
 ##   1. 发送端不发（my_pile_lists 不带 u/v，或者指纹不带位置 → 挪了不广播）
-##   2. 收方不认（_layout_ai_zone 照旧现算格子）
+##   2. 收方不认（_layout_bot_zone 照旧现算格子）
 ##
 ## 位置判的是**相对关系**，不钉死坐标：一摞牌落在哪儿要过归一化、钳位、
 ## 摊开预算好几道，钉死等于把这几道的实现细节抄进判据里。
@@ -823,10 +823,10 @@ func _t7_position_matches_both_ways() -> void:
 			zs.append(main.layout._rest_pos(main.entities[int(u)]).z)
 	var inside := true
 	for z in zs:
-		if z < main.layout.AI_FAR_Z_MIN - 0.01 or z > main.layout.AI_FAR_Z_MAX + 0.01:
+		if z < main.layout.BOT_FAR_Z_MIN - 0.01 or z > main.layout.BOT_FAR_Z_MAX + 0.01:
 			inside = false
 	check(inside, "贴边的位置也钳在对手半区里（z=%s 要落在 [%.1f, %.1f]）"
-		% [str(zs), main.layout.AI_FAR_Z_MIN, main.layout.AI_FAR_Z_MAX])
+		% [str(zs), main.layout.BOT_FAR_Z_MIN, main.layout.BOT_FAR_Z_MAX])
 
 	# 锚点是整摞的**中点**，不是某一端。同一个位置、只换形态发两次，
 	# 摆出来的中点该重合 —— 而两端的跨度不一样（收拢 0.05/张、摊开 0.52/张）。
@@ -860,7 +860,7 @@ func _t7_position_matches_both_ways() -> void:
 ##
 ## 这一条钉的病，玩家的原话是「从对方视角看一个组合里面牌的顺序不同，
 ## 并且提起组合后，首张牌居然还会变化」。两句是同一个根因的两面：
-## 收方（_declared_piles / _ai_piles）无条件跑一遍 Board.core_first_order。
+## 收方（_declared_piles / _bot_piles）无条件跑一遍 Board.core_first_order。
 ##
 ##   1. 次序不一样：发方的规矩是**只有收拢才提核心卡**
 ##      （board.toggle_compact → _core_first）。摊开态队首是露得最少的那张
@@ -901,7 +901,7 @@ func _t8_order_matches_both_ways() -> void:
 		units.append(int(main.state.add_card(main.foe_seat, unit)["uid"]))
 	var core_uid := int(main.state.add_card(main.foe_seat, core_id)["uid"])
 	var uids: Array = [units[0], core_uid, units[1], units[2]]
-	# 新加的牌要有实体，否则 _ai_piles 整批跳过（那条过滤在 T5 里钉着）
+	# 新加的牌要有实体，否则 _bot_piles 整批跳过（那条过滤在 T5 里钉着）
 	main._sync_entities()
 	await net_pump([a, b], 10)
 
@@ -993,12 +993,12 @@ func _t8_head_survives_a_lease(main: Node, a: NetTransport, b: NetTransport,
 	await net_pump([a, b], 6)
 
 ## 我这边把这几张牌摆成的那一摞，**当前次序**（uid 数组）。
-## 只认这几张里出现的：租出去的那张会被 _ai_piles 剔掉，那正是要看的
+## 只认这几张里出现的：租出去的那张会被 _bot_piles 剔掉，那正是要看的
 func _t8_pile_order(main: Node, uids: Array) -> Array:
 	var want := {}
 	for u in uids:
 		want[int(u)] = true
-	for p in main.layout._ai_piles():
+	for p in main.layout._bot_piles():
 		var got: Array = []
 		for e in (p["cards"] as Array):
 			if want.has(int(e.uid)):

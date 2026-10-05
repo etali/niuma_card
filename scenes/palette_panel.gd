@@ -32,7 +32,7 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_build()
 	_relayout()
-	# 内容自己变大变小的时候也要重算框子（同 ai_panel.gd 里那条）
+	# 内容自己变大变小的时候也要重算框子（同 bot_panel.gd 里那条）
 	get_node("Frame").minimum_size_changed.connect(_relayout)
 
 
@@ -181,7 +181,7 @@ func _on_color_changed(c: Color, section: String, key: String, slot: String) -> 
 
 
 ## 显隐、按钮文案、框子尺寸同一帧做完，不许 await 一帧去等 min size ——
-## 理由写在 ai_panel.gd 的 _on_toggle 上（这块是同一个 bug 的两处）
+## 理由写在 bot_panel.gd 的 _on_toggle 上（这块是同一个 bug 的两处）
 func _on_toggle() -> void:
 	_body.visible = not _body.visible
 	_toggle.text = "收起" if _body.visible else "展开"

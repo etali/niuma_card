@@ -35,7 +35,7 @@ func _local_recording() -> void:
 	main.tape.update_view()
 	var first: Dictionary = Snapshot.capture(main)
 	check(main.tape.configuration["rules"]["cards"] == CardDB.all_cards(), "完整有效卡牌配置随录像保存")
-	check(main.tape.configuration["cards_json"].get("_game") is Dictionary and main.tape.configuration["settings"].has("ai_parameters"), "原cards.json与AI设置均已dump")
+	check(main.tape.configuration["cards_json"].get("_game") is Dictionary and main.tape.configuration["settings"].has("bot_parameters"), "原cards.json与BOT设置均已dump")
 	# 买走中间卡，再买一张：它们必须是两个操作，剩余商品原槽位保持不变。
 	for index in [3, 1]:
 		var old_entities: Dictionary = main.entities.duplicate()

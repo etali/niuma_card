@@ -79,25 +79,25 @@ func _free_spot(anchor: Vector3, who: String, claimed: Array = [],
 				best = p
 	return best
 
-func _layout_ai_idle() -> void:
-	_layout_ai_zone()
+func _layout_bot_idle() -> void:
+	_layout_bot_zone()
 
-func _layout_ai_zone() -> void:
+func _layout_bot_zone() -> void:
 	board.clear_side_badges()
-	_ai_pile_of_uid.clear()
-	_ai_pile_uids.clear()
-	_ai_pile_compact.clear()
-	var piles := _ai_piles()
+	_bot_pile_of_uid.clear()
+	_bot_pile_uids.clear()
+	_bot_pile_compact.clear()
+	var piles := _bot_piles()
 	var safe := _center_bounds(_main.foe_seat)
 	var other: Array = []
 	for pile in piles:
 		var key := str(pile["key"])
-		if key.begins_with("ai_cash"):
-			_place_drawer_ai_pile(pile, Vector3(DRAWER_FOE_CASH_ANCHOR.x, 0.05,
+		if key.begins_with("bot_cash"):
+			_place_drawer_bot_pile(pile, Vector3(DRAWER_FOE_CASH_ANCHOR.x, 0.05,
 				clampf(DRAWER_FOE_CASH_ANCHOR.z, safe.position.y,
 					safe.end.y - Board.capped_offset((pile["cards"] as Array).size(), 0, DRAWER_PILE_CAP).z)))
-		elif key.begins_with("ai_user"):
-			_place_drawer_ai_pile(pile, Vector3(DRAWER_FOE_USER_ANCHOR.x, 0.05,
+		elif key.begins_with("bot_user"):
+			_place_drawer_bot_pile(pile, Vector3(DRAWER_FOE_USER_ANCHOR.x, 0.05,
 				clampf(DRAWER_FOE_USER_ANCHOR.z, safe.position.y,
 					safe.end.y - Board.capped_offset((pile["cards"] as Array).size(), 0, DRAWER_PILE_CAP).z)))
 		else:
@@ -112,21 +112,21 @@ func _layout_ai_zone() -> void:
 		var far := safe.position.y
 		var near := maxf(far, safe.end.y - span)
 		var z := lerpf(far, near, float(row) / float(maxi(rows - 1, 1)))
-		_place_drawer_ai_pile(pile, Vector3(float(columns[i % columns.size()]), 0.05, z))
-	_flush_ai_moves()
+		_place_drawer_bot_pile(pile, Vector3(float(columns[i % columns.size()]), 0.05, z))
+	_flush_bot_moves()
 
-func _place_drawer_ai_pile(pile: Dictionary, at: Vector3) -> void:
-	_refresh_ai_pile_progress(pile)
+func _place_drawer_bot_pile(pile: Dictionary, at: Vector3) -> void:
+	_refresh_bot_pile_progress(pile)
 	var cards: Array = pile["cards"]
 	var key := str(pile["key"])
 	var n := cards.size()
 	for j in n:
 		var e: CardEntity = cards[j]
 		e.freeze = true
-		_ai_move(e, at + Board.capped_offset(n, j, DRAWER_PILE_CAP))
-		_ai_pile_of_uid[e.uid] = key
-	_ai_pile_uids[key] = cards.map(func(c: CardEntity) -> int: return c.uid)
-	_ai_pile_compact[key] = true
+		_bot_move(e, at + Board.capped_offset(n, j, DRAWER_PILE_CAP))
+		_bot_pile_of_uid[e.uid] = key
+	_bot_pile_uids[key] = cards.map(func(c: CardEntity) -> int: return c.uid)
+	_bot_pile_compact[key] = true
 	if n >= 2:
 		board.show_side_badges(key, cards, at + Board.capped_offset(n, 0, DRAWER_PILE_CAP))
 

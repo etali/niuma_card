@@ -19,7 +19,7 @@ extends RefCounted
 ##   spread:<def_id>        用该核心卡凑一组摆好（摊开态），用来和 compact 对比占地
 ##   compact:<def_id>       同上，再执行一次双击收拢
 ##   merge:<n>[:def_id]     真实松手路径：收拢资源摞并到散卡，检查可见性
-##   atkpile:<n>            给 AI 摞 n 张现金，进攻击模式点摞顶一下（验「点一摞扣一摞」）
+##   atkpile:<n>            给 BOT 摞 n 张现金，进攻击模式点摞顶一下（验「点一摞扣一摞」）
 ##   settle:<n>[:<u>]       给玩家发 n 张现金（+ u 张用户）当本回合产出，走真实落位
 ##                          （验「每份 PILE_CHUNK 摞好、余数也摞」「现金一列用户一列」）
 ##   pawnat:<def_id>        把该卡拖到典当行当掉（验「现金摞在被当卡的原位、桌面不重排」）
@@ -27,13 +27,13 @@ extends RefCounted
 ##                          （受击表现只有 TEAR_TIME 那么短，手动截抓不到中间帧）
 ##   offline:<notice/log>  触发对手断线，检查底栏指引与可复制的重连记录
 ##   lanlayout:compare  同一窗口先截输入态，再截等待态，检查布局是否跳动
-##   lanwait:<host/cancel/collapsed>  等待面板、取消保留AI牌局及收起状态
+##   lanwait:<host/cancel/collapsed>  等待面板、取消保留BOT牌局及收起状态
 ##   result:<win/lose>[:collapsed/late/restore]  截取胜负提示与收放状态
 ##   edge:<top/bottom/left/right>:<open/close>  截取四边收放动画中间帧
 ##   record:<步数>        从 CARD_RECORD 指定的录像重放，检查真实记录的牌面显示
 ##   dragoverflow:<loose/group>  真实拖拽展开长列至底边，验证越界与松手合并
 ##   rulebook:<章节序号>   展开规则书并选择章节（从 0 开始）
-##   panel:<名字>           展开右上角某块面板（PalettePanel / AIPanel）。
+##   panel:<名字>           展开右上角某块面板（PalettePanel / BOTPanel）。
 ##                          两块面板默认都是收起的，展开态只有点过那个按钮才存在
 ##
 ## 这里刻意只读 main/Board 的成员、不复制它们的逻辑：截图要验的就是真实代码路径，
@@ -196,8 +196,8 @@ func _action(spec: String) -> void:
 		print("RECORD ", Tape.verdict(replay))
 		if not replay["ok"]:
 			return
-		print("RECORD_EVALUATION score=", AIPlan.score(replay["state"], m.my_seat),
-			" foe_production_net=", preload("res://engine/ai_evaluation.gd").capacity(replay["state"], m.foe_seat))
+		print("RECORD_EVALUATION score=", BOTPlan.score(replay["state"], m.my_seat),
+			" foe_production_net=", preload("res://engine/bot_evaluation.gd").capacity(replay["state"], m.foe_seat))
 		m.state = replay["state"]
 		m._rebuild_pipe()
 		m._respawn_all()
@@ -531,26 +531,26 @@ func _report_halves(c: CardEntity, halves: Array) -> void:
 			"有" if float(mat.get_shader_parameter("has_icon")) > 0.5 else "无"]
 	print(line)
 
-## 给 AI 摞 n 张现金，然后在攻击模式下点摞顶那张一次。
+## 给 BOT 摞 n 张现金，然后在攻击模式下点摞顶那张一次。
 ## 「点一摞扣一摞」只在真窗口里才验得完整（摞的位置、侧边张数、飞出动画都要眼看），
 ## 而进攻击模式要等整轮结算，靠不上；这里直接把玩家的点数池摆好走同一个入口
 func _attack_pile(n: int) -> void:
 	var state: GameState = m.state
-	state.players[GameState.AI]["cards"].clear()
-	state.combos = state.combos.filter(func(c): return c["owner"] != GameState.AI)
+	state.players[GameState.BOT]["cards"].clear()
+	state.combos = state.combos.filter(func(c): return c["owner"] != GameState.BOT)
 	for i in maxi(n, 1):
-		state.add_card(GameState.AI, CardDB.unit_id(CardDB.RES_CASH))
+		state.add_card(GameState.BOT, CardDB.unit_id(CardDB.RES_CASH))
 	m._sync_entities()
-	m.layout._layout_ai_zone()
+	m.layout._layout_bot_zone()
 	await m.get_tree().create_timer(0.5).timeout
 	var key: String = ""
-	for k in m.layout._ai_pile_uids:
-		if not (m.layout._ai_pile_uids[k] as Array).is_empty():
+	for k in m.layout._bot_pile_uids:
+		if not (m.layout._bot_pile_uids[k] as Array).is_empty():
 			key = str(k)
 	if key == "":
 		print("ATK_PILE 没摞出来")
 		return
-	var uids: Array = m.layout._ai_pile_uids[key]
+	var uids: Array = m.layout._bot_pile_uids[key]
 	print("ATK_PILE 摞 %s 共 %d 张，点数池 现金×%d" % [key, uids.size(), n - 2])
 	m.phase = m.PHASE_ATTACK
 	board.attack_mode = true
@@ -566,32 +566,32 @@ func _attack_pile(n: int) -> void:
 	await m._on_attack_clicked(m.entities[top])
 	await m.get_tree().create_timer(0.8).timeout
 	print("ATK_PILE 扣完剩 %d 张，池剩 现金×%d" % [
-		state.resource_count(GameState.AI, CardDB.RES_CASH),
+		state.resource_count(GameState.BOT, CardDB.RES_CASH),
 		m._attack_pools[CardDB.RES_CASH]])
-	for k in m.layout._ai_pile_uids:
-		print("ATK_PILE 摞 %s 现登记 %d 张" % [k, (m.layout._ai_pile_uids[k] as Array).size()])
+	for k in m.layout._bot_pile_uids:
+		print("ATK_PILE 摞 %s 现登记 %d 张" % [k, (m.layout._bot_pile_uids[k] as Array).size()])
 
 ## 造 n 张现金 + n_user 张用户当「本回合产出」，走 _stack_settled 的真实落位。
 ## 打印摆之前/之后的坐标，用来核对「桌上原有的卡一张没挪」「每份 PILE_CHUNK 摞好」
 ## 「现金一列、用户一列」
 func _settle_pile(n: int, n_user: int = 0) -> void:
 	var state: GameState = m.state
-	# AI 也发一批同种资源：验「相同资源不摞两坨」要有足够多的闲置卡
+	# BOT 也发一批同种资源：验「相同资源不摞两坨」要有足够多的闲置卡
 	for i in 18:
-		state.add_card(GameState.AI, CardDB.unit_id(CardDB.RES_CASH))
+		state.add_card(GameState.BOT, CardDB.unit_id(CardDB.RES_CASH))
 	for i in 14:
-		state.add_card(GameState.AI, CardDB.unit_id(CardDB.RES_USER))
+		state.add_card(GameState.BOT, CardDB.unit_id(CardDB.RES_USER))
 	m._sync_entities()
-	m.layout._layout_ai_idle()
+	m.layout._layout_bot_idle()
 	await m.get_tree().create_timer(0.6).timeout
 	var keys := {}
-	for g in m.layout._ai_piles():
+	for g in m.layout._bot_piles():
 		keys[str(g.get("key", "?"))] = int(g["cards"].size())
 	var kl: Array = []
 	for k in keys:
 		kl.append("%s×%d" % [k, keys[k]])
 	kl.sort()
-	print("AI 摞 %d 坨：%s" % [keys.size(), ", ".join(kl)])
+	print("BOT 摞 %d 坨：%s" % [keys.size(), ", ".join(kl)])
 
 	var before := {}
 	for uid in m.entities:
@@ -734,7 +734,7 @@ func _build_group(core: CardEntity):
 ## 要等一帧让子控件结算尺寸再重算高度），所以这里也 await 到它做完
 func _expand_panel(which: String) -> void:
 	if m.drawer_presentation != null:
-		var panels := { "PalettePanel": 0, "AIPanel": 1, "MsgLog": 2, "UI": 3, "WindowRatio": 3, "EntrySize": 4, "Record": 5, "Rulebook": 7 }
+		var panels := { "PalettePanel": 0, "BOTPanel": 1, "MsgLog": 2, "UI": 3, "WindowRatio": 3, "EntrySize": 4, "Record": 5, "Rulebook": 7 }
 		if which == "JoinPanel":
 			m._open_join_panel()
 		elif panels.has(which):
@@ -752,7 +752,7 @@ func _expand_panel(which: String) -> void:
 			if panel != null:
 				break
 	if panel == null:
-		print("找不到面板 %s（认得 PalettePanel / AIPanel）" % which)
+		print("找不到面板 %s（认得 PalettePanel / BOTPanel）" % which)
 		return
 	await panel._on_toggle()
 	await m.get_tree().process_frame

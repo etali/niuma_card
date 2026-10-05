@@ -295,7 +295,7 @@ func _on_join(from: int, msg: Dictionary) -> void:
 		#     不回放的话理牌把它们当散卡摊回资源堆：「我摆了半天的阵型没了」
 		#   foe_piles —— 对手那些摞。留下的那一位**不会**重发（他的
 		#     _push_piles 比指纹去重，分组没变就一条都不发），于是这一位
-		#     的 foe_piles 是空的，_layout_ai_zone 只能按「共几摞」现算成
+		#     的 foe_piles 是空的，_layout_bot_zone 只能按「共几摞」现算成
 		#     整行居中 —— 对手明明把组合拖到了桌角
 		var mine: Array = room.piles_of(seat)
 		if not mine.is_empty():

@@ -29,7 +29,7 @@ func _style(fill: Color, margin := 10, border := 2) -> StyleBoxFlat:
 ##
 ## 三件事，一件都不能省：
 ##   1. 填服务器地址 + 房间码 → 连上去（房间不存在就现开一个，见 net/server.gd）
-##   2. 等双方到齐发牌 —— 单人入座继续保留当前 AI 对局，取消后仍可继续
+##   2. 等双方到齐发牌 —— 单人入座继续保留当前 BOT 对局，取消后仍可继续
 ##   3. **把拒连的理由说出来**。这一条最容易被当成锦上添花：
 ##      版本不符 / 卡表不一致 / 房间满了，三种拒连在关闭帧里各有各的原因
 ##      （Protocol.CLOSE_CODES），不显示的话玩家看到的都是同一句「连不上」——
@@ -601,7 +601,7 @@ func _on_seated(_mine: String, _foe: String) -> void:
 func _try_start_match() -> bool:
 	if not has_pending_connection() or not _net.has_dealt_state():
 		return false
-	# 不把正在执行的 AI / 攻击协程接到另一局；当前动作完成后再切换。
+	# 不把正在执行的 BOT / 攻击协程接到另一局；当前动作完成后再切换。
 	if _main != null and not _main.can_start_pending_net_game():
 		_say("对手已就绪，完成当前行动后进入联机对局。", Palette.get_color("card", "body"))
 		return false

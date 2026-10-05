@@ -22,7 +22,7 @@ func _initialize() -> void:
 	# 都是配置项（写死一个总数，`_game.market_size` 一调就得跟着改一次），
 	# 这条要验的是「state 里每张卡都建了实体、一张不落也不多」
 	var want: int = main.state.players[GameState.PLAYER]["cards"].size() \
-		+ main.state.players[GameState.AI]["cards"].size() \
+		+ main.state.players[GameState.BOT]["cards"].size() \
 		+ main.state.market.size()
 	check(board.cards.size() == want, "全部实体注册（%d/%d）" % [board.cards.size(), want])
 

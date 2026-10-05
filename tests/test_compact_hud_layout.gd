@@ -72,8 +72,8 @@ func _check_drawer_header(main: Node, dpi: float, tag: String) -> void:
 	check(viewport_rect.encloses(header.get_global_rect()), tag + " 顶栏完整留在窗口内")
 	check(absf(header.get_global_rect().get_center().x - root.size.x * 0.5) <= 1.0,
 		tag + " 顶栏按内容宽度整体居中")
-	var widest_text := maxf(_text_width(main.lbl_player_res), _text_width(main.lbl_ai_res))
-	for label: Label in [main.lbl_player_res, main.lbl_ai_res]:
+	var widest_text := maxf(_text_width(main.lbl_player_res), _text_width(main.lbl_bot_res))
+	for label: Label in [main.lbl_player_res, main.lbl_bot_res]:
 		var cell: Control = label.get_parent()
 		check(cell.size.x <= widest_text + 32.0 * factor + 2.0,
 			tag + " 资源背景只比等宽读数多出必要内边距")
@@ -102,7 +102,7 @@ func _check_content_changes(main: Node, dpi: float, tag: String) -> void:
 	# HUD 读数使用真实规则状态；此处不新增牌面，避免将构图测试变成数百张牌的压力测试。
 	main._update_hud()
 	main.lbl_player_res.text += " ⚠"
-	main.lbl_ai_res.text += " ⚠"
+	main.lbl_bot_res.text += " ⚠"
 	presentation.compact_header_resources()
 	await _flush_layout(main)
 	_check_drawer_header(main, dpi, tag + " 三位数与预警")
@@ -116,7 +116,7 @@ func _check_content_changes(main: Node, dpi: float, tag: String) -> void:
 	check(absf(presentation._header.size.x - stable_width) <= 1.0,
 		tag + " 重复布局不会逐次撑大顶栏")
 	main._thinking = true
-	ThinkClock.start(ThinkClock.SRC_AI)
+	ThinkClock.start(ThinkClock.SRC_BOT)
 	ThinkClock._t0 -= 9900
 	main._update_hud()
 	await _flush_layout(main)
@@ -192,14 +192,14 @@ func _check_normal_hud() -> void:
 	var main: Node = await _boot(false, Vector2i(1920, 1200), 1.0)
 	if not need(main != null, "普通横屏场景可启动"):
 		return
-	var cards: Array = [main.hud_player_card, main.hud_ai_card]
+	var cards: Array = [main.hud_player_card, main.hud_bot_card]
 	for card: ResourceHUD in cards:
 		card.set_resources(123, 123, 123, 100, 23, true, true)
 	await _flush_layout(main)
 	var widths: Array = cards.map(func(card): return card.size.x)
 	for viewport_size in [Vector2i(1280, 800), Vector2i(2800, 1100)]:
 		root.size = viewport_size
-		ThinkClock.start(ThinkClock.SRC_AI)
+		ThinkClock.start(ThinkClock.SRC_BOT)
 		ThinkClock._t0 -= 9900
 		main._update_thinking_hint(true)
 		await _flush_layout(main)
@@ -236,7 +236,7 @@ func _check_normal_hud() -> void:
 					"普通横屏资源名称与数字作为整体居中")
 		ThinkClock.stop()
 		main._update_thinking_hint()
-	check(main.hud_player_card.summary == main.lbl_player_res and main.hud_ai_card.summary == main.lbl_ai_res,
+	check(main.hud_player_card.summary == main.lbl_player_res and main.hud_bot_card.summary == main.lbl_bot_res,
 		"紧凑布局仍保留原资源摘要接口")
 	await _dispose(main)
 

@@ -17,7 +17,7 @@ const UTILITY_RULEBOOK := 7
 const UTILITY_REPLAY := 8
 const UTILITY_CARDS := 9
 const UTILITY_PAGES := [
-	[0, "配色"], [1, "AI 强度"], [2, "提示记录"],
+	[0, "配色"], [1, "BOT 强度"], [2, "提示记录"],
 	[3, "UI"], [4, "入口大小"], [5, "存录像"], [UTILITY_REPLAY, "读入录像"], [6, "局域网对战"], [UTILITY_CARDS, "卡牌配置"],
 ]
 
@@ -31,7 +31,7 @@ const FRAMING_REST_HEIGHT := 0.5
 const PLAYER_RECT := Rect2(-10.0, 1.2, 20.0, 4.5)
 const PAD := 16.0
 ## 抽屉 UI 的统一设计令牌。所有设置页、按钮和菜单都从这里取值，
-## 这样窗口变大时只调整一次，不会出现「入口大小很大、AI 强度很小」的混搭。
+## 这样窗口变大时只调整一次，不会出现「入口大小很大、BOT 强度很小」的混搭。
 const UI_FONT_BODY := 17
 const UI_FONT_SMALL := 15
 const UI_FONT_TITLE := 21
@@ -60,7 +60,7 @@ var _utility_scroll: ScrollContainer
 var _active_utility_id := -1
 var _rulebook: Control
 var _palette: Control
-var _ai: Control
+var _bot: Control
 var _detail: PanelContainer
 var _detail_title: Label
 var _detail_text: Label
@@ -350,7 +350,7 @@ func _apply_tree_theme(root: Control) -> void:
 		if root is MenuButton or root is OptionButton:
 			_style_popup(root.get_popup())
 	elif root is Label:
-		var default_base := UI_FONT_TITLE if root.text in ["局域网对战", "配色", "AI 强度", "UI", "入口大小", "选项"] else UI_FONT_BODY
+		var default_base := UI_FONT_TITLE if root.text in ["局域网对战", "配色", "BOT 强度", "UI", "入口大小", "选项"] else UI_FONT_BODY
 		var base := int(root.get_meta("drawer_font_base", default_base))
 		root.add_theme_font_override("font", Fonts.zh_bold() if base >= UI_FONT_TITLE else Fonts.zh())
 		root.add_theme_font_size_override("font_size", _responsive_font(base))
@@ -381,7 +381,7 @@ func _apply_tree_theme(root: Control) -> void:
 		root.add_theme_stylebox_override("focus", _style(Palette.plate_color("plate_cash", "face"), 8, 2))
 	elif root is SpinBox:
 		# 数值输入框是 SpinBox 的内部子节点，普通 get_children() 遍历不到。
-		# 必须一起设真实字号，否则 AI 页只有数字仍是默认小字和灰色底。
+		# 必须一起设真实字号，否则 BOT 页只有数字仍是默认小字和灰色底。
 		_apply_tree_theme(root.get_line_edit())
 	elif root is HSlider or root is VSlider:
 		var track := _style(Palette.get_color("world", "background"), 2)
@@ -491,14 +491,14 @@ func _build_header() -> void:
 	_resources.add_theme_constant_override("separation", 8)
 	_resources.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	title_row.add_child(_resources)
-	for source in [_main.lbl_player_res, _main.lbl_ai_res]:
+	for source in [_main.lbl_player_res, _main.lbl_bot_res]:
 		var cell := PanelContainer.new()
 		cell.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		cell.add_theme_stylebox_override("panel", _style(Palette.get_color("world", "background"), 6))
 		cell.set_meta("drawer_surface", Palette.get_color("world", "background"))
 		cell.set_meta("drawer_margin_base", 6)
 		_resources.add_child(cell)
-		source.set_meta("drawer_ink", Palette.get_color("hud", "player" if source == _main.lbl_player_res else "ai"))
+		source.set_meta("drawer_ink", Palette.get_color("hud", "player" if source == _main.lbl_player_res else "bot"))
 		_adopt(source, cell)
 		source.add_theme_font_override("font", Fonts.zh_bold())
 		source.add_theme_font_size_override("font_size", 16)
@@ -601,9 +601,9 @@ func present_message(text: String, color: Color) -> void:
 
 func _build_utility() -> void:
 	_palette = _main.find_child("PalettePanel", true, false)
-	_ai = _main.find_child("AIPanel", true, false)
+	_bot = _main.find_child("BOTPanel", true, false)
 	_palette.hide()
-	_ai.hide()
+	_bot.hide()
 	_utility = PanelContainer.new()
 	_utility.name = "DrawerUtility"
 	_utility.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -676,9 +676,9 @@ func _open_utility(id: int) -> void:
 		_relayout_utility()
 		return
 	_utility.show()
-	_utility_title.text = "配色" if id == 0 else ("AI 强度" if id == 1 else ("UI" if id == 3 else "入口大小"))
+	_utility_title.text = "配色" if id == 0 else ("BOT 强度" if id == 1 else ("UI" if id == 3 else "入口大小"))
 	if id < 2:
-		var source: Control = _palette if id == 0 else _ai
+		var source: Control = _palette if id == 0 else _bot
 		source.show()
 		if not source._body.visible:
 			source._on_toggle()
@@ -1022,7 +1022,7 @@ func _theme_external_panel(panel: CanvasLayer) -> void:
 
 func _build_card_config_page() -> void:
 	_utility_title.text = "卡牌配置"
-	var intro := _label("单机和 AI 对局可使用自定义 cards.json；联网时强制使用默认配置。选择后从下一局生效。", UI_FONT_BODY)
+	var intro := _label("单机和 BOT 对局可使用自定义 cards.json；联网时强制使用默认配置。选择后从下一局生效。", UI_FONT_BODY)
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_utility_body.add_child(intro)
 	var info: Dictionary = _main.card_config_info()
@@ -1196,8 +1196,8 @@ func _process(_delta: float) -> void:
 		return
 	if Vector2(get_viewport().get_visible_rect().size) != _viewport_pixels:
 		relayout()
-	if _utility.visible and _utility.has_meta("source") and _utility.get_meta("source") == _ai:
-		_utility_title.text = "AI 强度 · %s" % _ai._slider_val.text
+	if _utility.visible and _utility.has_meta("source") and _utility.get_meta("source") == _bot:
+		_utility_title.text = "BOT 强度 · %s" % _bot._slider_val.text
 	if _main.mobile_mode:
 		return
 	var pointer := get_viewport().get_mouse_position()
@@ -1355,7 +1355,7 @@ func _fit_header_width(available: float) -> void:
 		if control != _resources and control is Control:
 			fixed_width += control.get_combined_minimum_size().x
 	var wanted := 0.0
-	for source: Label in [_main.lbl_player_res, _main.lbl_ai_res]:
+	for source: Label in [_main.lbl_player_res, _main.lbl_bot_res]:
 		var cell: Control = source.get_parent()
 		var font := source.get_theme_font("font")
 		var text_width := font.get_string_size(source.text, HORIZONTAL_ALIGNMENT_LEFT, -1, source.get_theme_font_size("font_size")).x
@@ -1377,7 +1377,7 @@ func compact_header_resources() -> void:
 		return
 	_main.lbl_round.tooltip_text = _main.lbl_round.text
 	_main.lbl_round.text = _main.lbl_round.text.replace("行动阶段", "行动").replace("攻击阶段", "攻击")
-	for item in [[_main.lbl_player_res, _main.my_seat, "你的公司"], [_main.lbl_ai_res, _main.foe_seat, "对手公司"]]:
+	for item in [[_main.lbl_player_res, _main.my_seat, "你的公司"], [_main.lbl_bot_res, _main.foe_seat, "对手公司"]]:
 		var label: Label = item[0]
 		var seat: String = item[1]
 		var full := label.text

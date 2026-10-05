@@ -40,7 +40,7 @@ func _run() -> void:
 		main.add_child(e2)
 		layout.entities[uid2] = e2
 		main.state.players[main.my_seat]["cards"].append({"uid": uid2, "def_id": e2.def_id})
-	layout._layout_ai_zone()
+	layout._layout_bot_zone()
 	await settle()
 	var stress_ok := true
 	for uid in layout.entities:
@@ -61,7 +61,7 @@ func _run() -> void:
 		var at3 := ce3.global_position
 		all_resources = all_resources and at3.x >= -10.0 and at3.x <= 10.0 and at3.z >= 1.2 and at3.z <= 5.7
 	check(all_resources, "结算到货后资源UID仍完整留在玩家区")
-	layout._layout_ai_zone()
+	layout._layout_bot_zone()
 	await settle()
 	var foe_ok := true
 	for rec in main.state.players[main.foe_seat]["cards"]:

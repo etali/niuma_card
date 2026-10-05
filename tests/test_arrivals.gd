@@ -1172,10 +1172,10 @@ func _t10_arrivals_land_in_band(main: Node, board: Board) -> void:
 	var fresh: Array = []
 	for i in n:
 		fresh.append(state.add_card(GameState.PLAYER, "cash")["uid"])
-	# AI 也产一批：同一批同时出生，落点也不许互相重叠（对方的产出同样看得见）
-	var ai_fresh: Array = []
+	# BOT 也产一批：同一批同时出生，落点也不许互相重叠（对方的产出同样看得见）
+	var bot_fresh: Array = []
 	for i in 5:
-		ai_fresh.append(state.add_card(GameState.AI, "cash")["uid"])
+		bot_fresh.append(state.add_card(GameState.BOT, "cash")["uid"])
 	var center := Vector3(3.0, 0.05, 2.0)
 	main.layout.begin_arrivals()
 	main._sync_entities(center)
@@ -1225,19 +1225,19 @@ func _t10_arrivals_land_in_band(main: Node, board: Board) -> void:
 		"落地即按每 %d 张分组（实际各组 %s，全落一处会是 [%d]）" % [
 			chunk, str(sizes), n])
 
-	# 4. AI 那批也不许互相重叠：同一批同时出生，读实时坐标读到的全是出发点
-	var ai_at := {}
-	var ai_dup := 0
-	for uid in ai_fresh:
+	# 4. BOT 那批也不许互相重叠：同一批同时出生，读实时坐标读到的全是出发点
+	var bot_at := {}
+	var bot_dup := 0
+	for uid in bot_fresh:
 		var e = main.entities.get(uid)
 		if not is_instance_valid(e):
 			continue
 		var k := "%.1f,%.1f" % [e.global_position.x, e.global_position.z]
-		if ai_at.has(k):
-			ai_dup += 1
-		ai_at[k] = true
-	check(ai_dup == 0, "AI 那批 %d 张也各有落点（重合 %d 张）" % [
-		ai_fresh.size(), ai_dup])
+		if bot_at.has(k):
+			bot_dup += 1
+		bot_at[k] = true
+	check(bot_dup == 0, "BOT 那批 %d 张也各有落点（重合 %d 张）" % [
+		bot_fresh.size(), bot_dup])
 
 	# 5. 结算末尾那趟统一摞牌之后：整份的那几摞成了真摞，余数留着散
 	main.layout.end_arrivals()

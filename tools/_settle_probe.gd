@@ -10,7 +10,7 @@ func _initialize() -> void:
 		var s := _table()
 		var cfgs := {}
 		if use_cfg:
-			cfgs[GameState.PLAYER] = AISearch.from_strength(1.0)
+			cfgs[GameState.PLAYER] = BOTSearch.from_strength(1.0)
 		print("\n=== cfgs %s ===" % ("满档" if use_cfg else "空（=权重表）"))
 		print("行动次序 %s" % [s.action_order()])
 		var before: Array = []
@@ -20,13 +20,13 @@ func _initialize() -> void:
 		Settle.run(s, cfgs)
 		# finalize 清了 combos，所以看牌面：哪个产品卡的用户卡少了
 		var left := {}
-		for c in s.players[GameState.AI]["cards"]:
+		for c in s.players[GameState.BOT]["cards"]:
 			var d: Dictionary = CardDB.get_def(c["def_id"])
 			left[c["def_id"]] = int(left.get(c["def_id"], 0)) + 1
-		print("AI 牌面 %s" % [left])
-		print("AI 现金 %d 用户 %d" % [
-			s.resource_count(GameState.AI, CardDB.RES_CASH),
-			s.resource_count(GameState.AI, CardDB.RES_USER)])
+		print("BOT 牌面 %s" % [left])
+		print("BOT 现金 %d 用户 %d" % [
+			s.resource_count(GameState.BOT, CardDB.RES_CASH),
+			s.resource_count(GameState.BOT, CardDB.RES_USER)])
 		for line in s.log:
 			if "点选" in str(line) or "攻击" in str(line) or "组合" in str(line):
 				print("   | %s" % line)
@@ -37,12 +37,12 @@ func _table() -> GameState:
 	s.set_seed(1)
 	s.players = {
 		GameState.PLAYER: { "cards": [] },
-		GameState.AI: { "cards": [] },
+		GameState.BOT: { "cards": [] },
 	}
 	s.draw_first = GameState.PLAYER
 	for i in 5:
 		s.add_card(GameState.PLAYER, CardDB.RES_CASH)
-		s.add_card(GameState.AI, CardDB.RES_CASH)
+		s.add_card(GameState.BOT, CardDB.RES_CASH)
 	# PLAYER 的攻击组：差评轰炸（配方 3 用户，出 2 点用户攻击）
 	var atk := "chaping"
 	var need := int(CardDB.get_def(atk).get("recipe_n", 0))
@@ -58,8 +58,8 @@ func _table() -> GameState:
 		(r.get("eval", {}) as Dictionary).get("attack_res", "?"),
 		int((r.get("eval", {}) as Dictionary).get("attack_n", 0))])
 	for id in ["shuabuting", "xinxijianfang"]:
-		var g: Array = [s.add_card(GameState.AI, id)["uid"]]
+		var g: Array = [s.add_card(GameState.BOT, id)["uid"]]
 		for i in int(CardDB.get_def(id).get("recipe_n", 0)):
-			g.append(s.add_card(GameState.AI, CardDB.RES_USER)["uid"])
-		s.create_combo(GameState.AI, g)
+			g.append(s.add_card(GameState.BOT, CardDB.RES_USER)["uid"])
+		s.create_combo(GameState.BOT, g)
 	return s

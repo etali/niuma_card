@@ -15,7 +15,7 @@ import check_balance_numbers as checker
 class BalanceNumbersTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / "engine/ai_turn_strategy.gd").read_text()
+        cls.source = (ROOT / "engine/bot_turn_strategy.gd").read_text()
 
     def test_constant_values_in_targets_and_defaults(self):
         schema = checker.read_parameter_schema(self.source)

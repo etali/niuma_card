@@ -48,7 +48,7 @@ func _t1_door_opens_after_real_session() -> void:
 	# 这里要测的是「_on_net_down 被调到之后怎么办」，socket 本身不参与
 	c.close()
 	c.my_seat = "player"
-	c.foe_seat = "ai"
+	c.foe_seat = "bot"
 	# 「曾经连上过」：他进过房间，服务器那边有他的座位和令牌
 	c.ever_open = true
 	main._net = c
@@ -94,7 +94,7 @@ func _t2_door_shut_when_never_connected() -> void:
 	# 同 T1：关掉，别让这条空连接自己冒出一条 disconnected 来抢戏
 	c.close()
 	c.my_seat = "player"
-	c.foe_seat = "ai"
+	c.foe_seat = "bot"
 	check(not c.ever_open, "这条连接从来没通过（ever_open 默认假）")
 	main._net = c
 	main.btn_net.visible = false
@@ -139,7 +139,7 @@ func _t4_details_live_in_log() -> void:
 	var c := NetTransport.new(main._host.url(), "TD4")
 	c.close()
 	c.my_seat = "player"
-	c.foe_seat = "ai"
+	c.foe_seat = "bot"
 	main._net = c
 	var count_before: int = main.msg_log.total()
 	main._on_foe_left_drag()

@@ -125,7 +125,7 @@ func _ready() -> void:
 	# **当时**那个宽度算的负数（贴右下角），不重算的话多出来的那点直接捅出
 	# 右边界（实测 17 像素，tools/_relayout_probe.gd）。
 	# 这条路上玩家没点过任何东西，_toggle_body 里那句兜不住它
-	# （ai_panel.gd 那条 54g 变异钉的是同一个漏法）
+	# （bot_panel.gd 那条 54g 变异钉的是同一个漏法）
 	_frame.minimum_size_changed.connect(_relayout)
 
 

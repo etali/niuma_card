@@ -21,6 +21,8 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from legacy_names import normalize_legacy
 from project_paths import relative_path, display_path, redact_paths, sanitize_file
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -42,13 +44,14 @@ DEFINITIONS = [
     ['Q11','典当后获胜比例','最终获胜方曾成功典当过的对局数 ÷ 已模拟局数。普通卡、用户及传说的典当均计，不要求典当直接致胜；双方都典当且有胜者也只计一局。未结束局计入分母，不计入分子。','%'],
 ]
 MAX_SAFE_INTEGER = 9007199254740991  # 与浏览器 Number / JSON 的精确整数范围一致。
-DEFAULT_OPTIONS = {'pairs':5,'max_rounds':40,'seed_start':1001,'model':'ai','strength':0.5,'ai_parameters':{}}
+DEFAULT_OPTIONS = {'pairs':5,'max_rounds':40,'seed_start':1001,'model':'bot','strength':0.5,'bot_parameters':{}}
 PLAY_START_TIMEOUT = 20.0
 
 
 def source_version():
     files = [Path(__file__).resolve(), WEB/'report.html', WEB/'report.js', WEB/'report.css',
-             ROOT/'data/card_config_schema.json', Path(__file__).with_name('project_paths.py')]
+             ROOT/'data/card_config_schema.json', Path(__file__).with_name('project_paths.py'),
+             Path(__file__).with_name('legacy_names.py')]
     return hashlib.sha256(b''.join(p.read_bytes() for p in files)).hexdigest()[:16]
 
 
@@ -178,15 +181,15 @@ def validate_options(o, schema):
         raise ValueError('总局数超过精确整数范围')
     if o['pairs'] - 1 > MAX_SAFE_INTEGER - o['seed_start']:
         raise ValueError('最后一个种子超过精确整数范围')
-    if o['model'] != 'ai' or not numeric(o['strength']) or not 0 <= o['strength'] <= 1:
-        raise ValueError('AI实现或强度无效')
-    if not isinstance(o['ai_parameters'],dict): raise ValueError('AI参数必须为对象')
-    if set(o['ai_parameters']) != {s['key'] for s in schema}: raise ValueError('AI参数必须包含全部可编辑项')
+    if o['model'] != 'bot' or not numeric(o['strength']) or not 0 <= o['strength'] <= 1:
+        raise ValueError('BOT实现或强度无效')
+    if not isinstance(o['bot_parameters'],dict): raise ValueError('BOT参数必须为对象')
+    if set(o['bot_parameters']) != {s['key'] for s in schema}: raise ValueError('BOT参数必须包含全部可编辑项')
     specs = {s['key']:s for s in schema}
-    for key,v in o['ai_parameters'].items():
+    for key,v in o['bot_parameters'].items():
         s = specs.get(key)
         if not s or not numeric(v) or not s['min'] <= v <= s['max']:
-            raise ValueError('AI参数无效：'+key)
+            raise ValueError('BOT参数无效：'+key)
         if s.get('read_only'):
             points = s['strength_points']
             expected = points[-1][1]
@@ -198,15 +201,15 @@ def validate_options(o, schema):
             expected = s['min'] + math.floor((expected - s['min']) / s['step'] + 0.5) * s['step']
             if not math.isclose(v, expected, rel_tol=0, abs_tol=1e-10):
                 raise ValueError(s['label']+'由强度自动推导，不能单独修改')
-        if s['kind']=='int' and v != int(v): raise ValueError('AI参数要求整数：'+s['label'])
+        if s['kind']=='int' and v != int(v): raise ValueError('BOT参数要求整数：'+s['label'])
         step = (v-s['min'])/s['step']
-        if abs(step-round(step)) > 1e-6: raise ValueError('AI参数步长不正确：'+s['label'])
+        if abs(step-round(step)) > 1e-6: raise ValueError('BOT参数步长不正确：'+s['label'])
     return copy.deepcopy(o)
 
 
 def engine_fingerprint():
     files = sorted((ROOT/'engine').glob('*.gd')) + sorted(WEB.glob('*.gd')) + [
-        ROOT/'tools/eval_report.gd', ROOT/'tools/ai_duel_report.gd', ROOT/'tools/ai_duel.gd', ROOT/'tools/ai_decision_stats.gd', ROOT/'data/ai.json', ROOT/'data/card_config_schema.json']
+        ROOT/'tools/eval_report.gd', ROOT/'tools/bot_duel_report.gd', ROOT/'tools/bot_duel.gd', ROOT/'tools/bot_decision_stats.gd', ROOT/'data/bot.json', ROOT/'data/card_config_schema.json']
     return digest({str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files})
 
 
@@ -251,9 +254,9 @@ class Workbench:
                 r = subprocess.run([self.godot,'--headless','--path','.','--log-file',relative_path(Path(tmp)/'engine.log',ROOT),'-s','tools/eval_report.gd','--',relative_path(request,ROOT)],
                                    cwd=str(ROOT),capture_output=True,text=True,timeout=45)
             except (OSError,subprocess.TimeoutExpired) as error:
-                raise ValueError('无法读取真实AI参数：'+redact_paths(str(error),ROOT)) from error
+                raise ValueError('无法读取真实BOT参数：'+redact_paths(str(error),ROOT)) from error
             if r.returncode or 'SCRIPT ERROR:' in r.stderr or not output.exists():
-                raise ValueError('无法读取真实AI参数：'+redact_paths((r.stderr+r.stdout)[-3000:],ROOT))
+                raise ValueError('无法读取真实BOT参数：'+redact_paths((r.stderr+r.stdout)[-3000:],ROOT))
             result = read_json(output)
             keys = {item['key'] for item in result['schema']}
             result['parameters'] = {key:value for key,value in result['parameters'].items() if key in keys}
@@ -449,11 +452,11 @@ class Workbench:
         if isinstance(obj.get('error'),str): obj['error'] = redact_paths(obj['error'],ROOT)
         for key,file in [('result','result.json'),('progress','progress.json'),('recordings','recordings.json')]:
             if (folder/file).exists(): obj[key] = read_json(folder/file)
-        return obj
+        return normalize_legacy(obj)
 
     def recording(self,rid,filename):
         run = self.run(rid)
-        if run.get('kind') != 'ai-duel' or not any(item.get('file') == filename for item in run.get('recordings',[])):
+        if run.get('kind') != 'bot-duel' or not any(item.get('file') == filename for item in run.get('recordings',[])):
             raise ValueError('录像不存在')
         folder = (self.store/'runs'/rid/'recordings').resolve()
         target = (folder/filename).resolve()
@@ -464,16 +467,16 @@ class Workbench:
     def start_duel(self,body):
         raw = body.get('options')
         if not isinstance(raw,dict) or set(raw) != {'pairs','max_rounds','seed_start','a','b'}:
-            raise ValueError('AI对比参数字段不完整或含不支持字段')
+            raise ValueError('BOT对比参数字段不完整或含不支持字段')
         options = {key:raw[key] for key in ('pairs','max_rounds','seed_start')}
         for side in ('a','b'):
             profile = raw[side]
-            if not isinstance(profile,dict) or set(profile) != {'strength','ai_parameters'}:
-                raise ValueError('AI对比配置须包含强度与全部可调参数：'+side)
+            if not isinstance(profile,dict) or set(profile) != {'strength','bot_parameters'}:
+                raise ValueError('BOT对比配置须包含强度与全部可调参数：'+side)
             checked = validate_options({**{key:options[key] for key in ('pairs','max_rounds','seed_start')},
-                'model':'ai','strength':profile['strength'],'ai_parameters':profile['ai_parameters']},self.schema)
+                'model':'bot','strength':profile['strength'],'bot_parameters':profile['bot_parameters']},self.schema)
             # Freeze the submitted values, including manual edits. Never reapply a preset here.
-            options[side] = {'strength':checked['strength'],'model':'ai','ai_parameters':checked['ai_parameters']}
+            options[side] = {'strength':checked['strength'],'model':'bot','bot_parameters':checked['bot_parameters']}
         return self.start(body,duel_options=options)
 
     def start(self,body,duel_options=None):
@@ -488,7 +491,7 @@ class Workbench:
             folder.mkdir(parents=True)
             run = {'id':rid,'config_id':config['id'],'name':config['name'],'status':'queued','created':time.time(),
                    'cards':config['cards'],'options':options,'strength_scale':'overall-v1','engine_fingerprint':engine_fingerprint()}
-            if duel_options is not None: run['kind'] = 'ai-duel'
+            if duel_options is not None: run['kind'] = 'bot-duel'
             atomic_json(folder/'cards.json',config['cards'])
             atomic_json(folder/'request.json',{'schema':'manual-balance-request-v1','cards_path':relative_path(folder/'cards.json',ROOT),
                         'output_path':relative_path(folder/'result.json',ROOT),'progress_path':relative_path(folder/'progress.json',ROOT),'options':options})
@@ -516,7 +519,7 @@ class Workbench:
             with (folder/'godot.log').open('w',encoding='utf-8') as log:
                 with self.lock:
                     if job['cancel'].is_set(): return
-                    proc = subprocess.Popen([self.godot,'--headless','--path','.','--log-file',relative_path(folder/'engine.log',ROOT),'-s',('tools/ai_duel_report.gd' if run.get('kind') == 'ai-duel' else 'tools/eval_report.gd'),'--',relative_path(folder/'request.json',ROOT)],
+                    proc = subprocess.Popen([self.godot,'--headless','--path','.','--log-file',relative_path(folder/'engine.log',ROOT),'-s',('tools/bot_duel_report.gd' if run.get('kind') == 'bot-duel' else 'tools/eval_report.gd'),'--',relative_path(folder/'request.json',ROOT)],
                                             cwd=str(ROOT),stdout=log,stderr=subprocess.STDOUT)
                     job['proc'] = proc
                     run['status']='running'
@@ -552,7 +555,7 @@ class Workbench:
                         and 'SCRIPT ERROR:' not in text and '\nERROR:' not in text
             if completed:
                 if engine_fingerprint() != run['engine_fingerprint']:
-                    run.update(status='error',error='模拟期间引擎或AI配置改变，请重新运行，勿混用结果')
+                    run.update(status='error',error='模拟期间引擎或BOT配置改变，请重新运行，勿混用结果')
                 else: run['status']='complete'
             elif job['cancel'].is_set(): run['status']='cancelled'
             else: run.update(status='error',error=error or text[-4000:] or json.dumps(result,ensure_ascii=False))
@@ -629,7 +632,7 @@ class Handler(BaseHTTPRequestHandler):
             app = self.server.app
             if path=='/api/bootstrap':
                 self.reply({'token':self.server.token,'default_options':DEFAULT_OPTIONS,'definitions':DEFINITIONS,
-                            'fields':mutable_fields(app.base),'labels':LABELS,'ai':app.metadata,
+                            'fields':mutable_fields(app.base),'labels':LABELS,'bot':app.metadata,
                             'configs':app.configs(),**app.run_overview()})
             elif path=='/api/runs': self.reply(app.run_overview())
             elif path=='/api/health': self.reply({'app':'manual-balance-v1','project':project_id(),'source_version':self.server.source_version,'pid':os.getpid()})

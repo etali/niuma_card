@@ -41,8 +41,8 @@ func _initialize() -> void:
 	check(not Logic.validate(invalid, base).is_empty(), "初始现金低于胜利线")
 	var games := [
 		{"winner":"player","first":"player","end_round":4,"observed_seat_rounds":8,"feedback_rounds":3,"bilateral_attack":true,"upgrade_occurred":false,"upgrade_produced":false,"pawned_seats":[],"used_cards":["yunketang","butie"]},
-		{"winner":"ai","first":"player","end_round":6,"observed_seat_rounds":12,"feedback_rounds":5,"bilateral_attack":false,"upgrade_occurred":true,"upgrade_produced":true,"pawned_seats":["ai"],"used_cards":["yunketang","jiaolv"]},
-		{"winner":"","first":"ai","end_round":null,"observed_seat_rounds":10,"feedback_rounds":2,"bilateral_attack":false,"upgrade_occurred":false,"upgrade_produced":false,"pawned_seats":[],"used_cards":[]},
+		{"winner":"bot","first":"player","end_round":6,"observed_seat_rounds":12,"feedback_rounds":5,"bilateral_attack":false,"upgrade_occurred":true,"upgrade_produced":true,"pawned_seats":["bot"],"used_cards":["yunketang","jiaolv"]},
+		{"winner":"","first":"bot","end_round":null,"observed_seat_rounds":10,"feedback_rounds":2,"bilateral_attack":false,"upgrade_occurred":false,"upgrade_produced":false,"pawned_seats":[],"used_cards":[]},
 	]
 	var scores := Scoring.summarize(games,["yunketang","butie","jiaolv","chaping"])
 	check(is_equal_approx(scores["Q1"]["value"],50.0), "Q1先手胜率只用已结束局")
@@ -86,13 +86,13 @@ func _initialize() -> void:
 	_test_pawn_collection()
 	_test_transient_resource_peak()
 	_test_report_output()
-	var cfgs := AISearch.duel_seats(AISearch.from_strength(0), AISearch.from_strength(0), false)
-	var plain := MatchSimulator.run_rounds(3,93,Callable(),Callable(),Callable(),cfgs,"ai")
+	var cfgs := BOTSearch.duel_seats(BOTSearch.from_strength(0), BOTSearch.from_strength(0), false)
+	var plain := MatchSimulator.run_rounds(3,93,Callable(),Callable(),Callable(),cfgs,"bot")
 	var counts := {"production":0,"attack":0}
 	var actual_peaks := {}
 	var observed := MatchSimulator.run_rounds(3,93,
 		func(s:GameState)->void: EvalReport._observe_resources(actual_peaks,s),
-		func(s:GameState)->void: EvalReport._begin_settle_observation(actual_peaks,s),Callable(),cfgs,"ai",
+		func(s:GameState)->void: EvalReport._begin_settle_observation(actual_peaks,s),Callable(),cfgs,"bot",
 		{"intent":func(s:GameState,intent:Dictionary,result:Dictionary)->void:
 			EvalReport._observe_resources(actual_peaks,s)
 			EvalReport._observe_pawn(actual_peaks,s,intent,result),
@@ -116,11 +116,11 @@ func _test_upgrade_and_pawn_metrics() -> void:
 		"旧局缺新字段时未观测，旧升级发生不能冒充升级后生产")
 	var rows := [
 		_metric_record("player",{"upgrade_produced":false,"pawned_seats":["player"]}),
-		_metric_record("ai",{"upgrade_produced":false,"pawned_seats":["player"]}),
-		_metric_record("player",{"upgrade_produced":true,"pawned_seats":["ai","player"]}),
-		_metric_record("",{"upgrade_produced":true,"pawned_seats":["player","ai"]}),
-		_metric_record("ai",{"upgrade_produced":false,"pawned_seats":[]}),
-		_metric_record("ai",{"upgrade_produced":false,"pawned_seats":["ai","ai"]}),
+		_metric_record("bot",{"upgrade_produced":false,"pawned_seats":["player"]}),
+		_metric_record("player",{"upgrade_produced":true,"pawned_seats":["bot","player"]}),
+		_metric_record("",{"upgrade_produced":true,"pawned_seats":["player","bot"]}),
+		_metric_record("bot",{"upgrade_produced":false,"pawned_seats":[]}),
+		_metric_record("bot",{"upgrade_produced":false,"pawned_seats":["bot","bot"]}),
 		_metric_record("player",{"upgrade_occurred":true}),
 		_metric_record("player",{"upgrade_produced":1,"pawned_seats":[""]}),
 		_metric_record("player",{"upgrade_produced":"true","pawned_seats":"player"}),
@@ -174,7 +174,7 @@ func _metric_upgrade(s: GameState,g: Dictionary,who: String) -> int:
 func _test_upgrade_production_collection() -> void:
 	var saved := CardDB.CARDS.duplicate(true)
 	_install_metric_cards()
-	for who in [GameState.PLAYER,GameState.AI]:
+	for who in [GameState.PLAYER,GameState.BOT]:
 		var s := _victory_state(20,20,4,4)
 		s.market = ["metric_t2"]
 		var bought := IntentApply.new(s).apply(Intent.buy(who,0),who)
@@ -217,7 +217,7 @@ func _test_upgrade_production_collection() -> void:
 			var attacked := false
 			for target in s.affordable_targets(GameState.PLAYER,pools):
 				if int(uids[1]) in target["uids"]:
-					attacked = s.apply_attack(GameState.AI,target,pools).get("ok",false)
+					attacked = s.apply_attack(GameState.BOT,target,pools).get("ok",false)
 					break
 			check(attacked, "通过真实攻击拆散升级产物的生产配方")
 		_resolve_metric_production(s,g)
@@ -253,8 +253,8 @@ func _test_pawn_collection() -> void:
 		var other := s.add_card(GameState.PLAYER,"metric_t1")
 		app.apply(Intent.pawn(GameState.PLAYER,[other["uid"]]),GameState.PLAYER)
 		check(g["pawned_seats"].size() == 1, "同座位反复典当只记录一次")
-		var rival := s.add_card(GameState.AI,"metric_t1")
-		app.apply(Intent.pawn(GameState.AI,[rival["uid"]]),GameState.AI)
+		var rival := s.add_card(GameState.BOT,"metric_t1")
+		app.apply(Intent.pawn(GameState.BOT,[rival["uid"]]),GameState.BOT)
 		check(g["pawned_seats"].size() == 2, "赢家未定时双方成功典当都保留，留待终局选择")
 	var s := _victory_state(2,2)
 	var g := {"pawned_seats":[]}
@@ -276,7 +276,7 @@ func _test_pawn_collection() -> void:
 func _test_transient_resource_peak() -> void:
 	var s := GameState.new()
 	s.new_game()
-	for who in [GameState.PLAYER,GameState.AI]:
+	for who in [GameState.PLAYER,GameState.BOT]:
 		s.players[who]["cards"].clear()
 		for i in 10: s.add_card(who,"cash")
 		for i in 5: s.add_card(who,"user")
@@ -316,7 +316,7 @@ func _test_report_output() -> void:
 	var progress := folder.path_join("progress.json")
 	EvalReport._write(request,{"schema":"manual-balance-request-v1",
 		"cards_path":ProjectSettings.globalize_path("res://data/cards.json"),"output_path":output,"progress_path":progress,
-		"options":{"pairs":1,"max_rounds":1,"seed_start":93,"model":"ai","strength":0,"ai_parameters":{}}})
+		"options":{"pairs":1,"max_rounds":1,"seed_start":93,"model":"bot","strength":0,"bot_parameters":{}}})
 	var logs: Array = []
 	var code := OS.execute(OS.get_executable_path(),PackedStringArray(["--headless","--path",
 		ProjectSettings.globalize_path("res://"),"--script","res://tools/eval_report.gd","--",request]),logs,true)
@@ -375,8 +375,8 @@ func _test_victory_diversity() -> void:
 	var categories := [{"id":"cash_threshold","label":"普通现金达标"},
 		{"id":"cash_depletion","label":"对手现金清零"},{"id":"user_depletion","label":"对手用户清零"}]
 	var a := {"winner":"player","victory_method":categories[0]}
-	var b := {"winner":"ai","victory_method":categories[1]}
-	var c := {"winner":"ai","victory_method":categories[2]}
+	var b := {"winner":"bot","victory_method":categories[1]}
+	var c := {"winner":"bot","victory_method":categories[2]}
 	var one := Scoring.victory_diversity([a,a,a],categories)
 	check(is_equal_approx(one["value"],1.0), "Q10单一胜法为1，与重复局数无关")
 	check(one["distribution"].size() == 3 and one["distribution"][1]["count"] == 0,
@@ -393,16 +393,16 @@ func _test_victory_diversity() -> void:
 		"旧记录与未结束局不当成一种胜法，无已归类样本时未观测")
 	check(missing["distribution"][0]["percentage"] == null, "零已归类样本时每类占比同样未观测")
 	var mixed := Scoring.victory_diversity([a,{"winner":"","victory_method":categories[1]},
-		{"winner":"ai","victory_method":{}},{"winner":"ai","victory_method":{"id":"bogus","label":"非法"}}],categories)
+		{"winner":"bot","victory_method":{}},{"winner":"bot","victory_method":{"id":"bogus","label":"非法"}}],categories)
 	check(mixed["value"] == 1.0 and mixed["classified_games"] == 1 and mixed["unclassified_wins"] == 2,
 		"未结束和无效分类不污染Q10，有效样本独立计数")
 	check(Scoring.victory_diversity([a,b])["value"] == two["value"], "独立逐局记录可重算同一多样性")
 
 func _victory_state(cash_a: int, cash_b: int, user_a := 2, user_b := 2) -> GameState:
 	var s := GameState.new()
-	s.players = {GameState.PLAYER:{"cards":[]},GameState.AI:{"cards":[]}}
+	s.players = {GameState.PLAYER:{"cards":[]},GameState.BOT:{"cards":[]}}
 	for index in 2:
-		var who: String = [GameState.PLAYER,GameState.AI][index]
+		var who: String = [GameState.PLAYER,GameState.BOT][index]
 		for i in [cash_a,cash_b][index]: s.add_card(who,CardDB.unit_id(CardDB.RES_CASH))
 		for i in [user_a,user_b][index]: s.add_card(who,CardDB.unit_id(CardDB.RES_USER))
 	return s
@@ -456,7 +456,7 @@ func _test_acquisition_distribution() -> void:
 	EvalReport._observe_acquisitions(g,s)
 	check(g["acquisitions"].is_empty(), "开局现金与用户均不计获得")
 	var materials: Array = []
-	for who in [GameState.PLAYER,GameState.PLAYER,GameState.AI]:
+	for who in [GameState.PLAYER,GameState.PLAYER,GameState.BOT]:
 		s.market = ["yunketang"]
 		var result := IntentApply.new(s).apply(Intent.buy(who,0),who)
 		check(result.get("ok",false), "获得指标通过真实购买发牌")

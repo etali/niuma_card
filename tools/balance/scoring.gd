@@ -101,7 +101,7 @@ static func summarize(games: Array, card_ids: Array, victory_types: Array = []) 
 static func valid_pawned_seats(value: Variant) -> bool:
 	if not value is Array: return false
 	for seat in value:
-		if not seat is String or seat not in [GameState.PLAYER, GameState.AI]: return false
+		if not seat is String or seat not in [GameState.PLAYER, GameState.BOT]: return false
 	return true
 
 static func valid_peak(value: Variant) -> bool:

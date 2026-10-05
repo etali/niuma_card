@@ -160,7 +160,7 @@ func _drain_and_finish() -> void:
 func boot_main(frames := -1) -> Node:
 	return await boot_main_seated("", "", frames)
 
-## 起一局并指定座位。mine/foe 留空 = 单机默认（PLAYER / AI）。
+## 起一局并指定座位。mine/foe 留空 = 单机默认（PLAYER / BOT）。
 ## frames < 0 = 等到补间跑完；frames >= 0 = 只等这么多帧（要卡在中途时用）。
 ##
 ## 座位必须在 _ready 之前设好（_sync_round 按座位决定往哪半边摆），
@@ -242,12 +242,12 @@ func _assert_booted(main: Node) -> void:
 ## main.gd 用 load() 现取而不在文件头 preload：纯引擎的那几个测试
 ## （test_engine / test_simulator 等）不该因为 main.gd 有语法错就一起挂
 ##
-## **不按墙钟等满，问机制**（和 arrivals_landed / ai_moves_landed 同一个理由）：
+## **不按墙钟等满，问机制**（和 arrivals_landed / bot_moves_landed 同一个理由）：
 ## 原先一律 create_timer(0.52)，而 107 个调用点里绝大多数身上一条补间都没在跑 ——
 ## 等的是个空。实测全表 229.6 秒里 test_attack_dbl 一个人占 41.8 秒，
 ## 40 次 settle() 有 20.8 秒是纯睡。三个机制各有可问的量：
 ##   飞入     卡身上的 fly_tw meta（main._fly_from 登记）
-##   对手摆放 main.layout.ai_moving()
+##   对手摆放 main.layout.bot_moving()
 ##   归位     board._move_tw 里还在跑的那些（编组重排、抬升）
 ## 上限仍按源常量折算兜底：补间被掐掉时记录还在但 is_running 为假，
 ## 真卡住也不该把测试挂死在这里。
@@ -320,7 +320,7 @@ func _anim_busy(main: Node) -> bool:
 		if tw is Tween and tw.is_valid() and tw.is_running():
 			return true
 	if main.layout != null and is_instance_valid(main.layout) \
-			and main.layout.ai_moving():
+			and main.layout.bot_moving():
 		return true
 	var board: Variant = main.board
 	if board != null and is_instance_valid(board):
@@ -340,7 +340,7 @@ func _anim_busy(main: Node) -> bool:
 ## 墙钟时间内推进得更少 —— 于是「等完了」的那一刻卡还在空中，读 global_position
 ## 读到的是出发点，一批同时出生的卡出发点又挨得近，就报出「落点重合」。
 ## 实测：单跑 8/8 全绿，和全表变异抢 CPU 时 test_arrivals 的
-## 「AI 那批也各有落点」直接红了一次 —— 而基线一红，mutate_check 整轮就废了。
+## 「BOT 那批也各有落点」直接红了一次 —— 而基线一红，mutate_check 整轮就废了。
 ##
 ## 改成问机制本身：飞入的补间记在卡的 `fly_tw` meta 上（main.gd `_fly_from`），
 ## 逐帧看还有没有在跑的。等多久由「补间跑完了没有」说，跟机器快慢无关。
@@ -374,23 +374,23 @@ func arrivals_landed(main: Node) -> void:
 	for i in 2:
 		await physics_frame
 
-## 等对手侧的归位补间跑完。用法：await ai_moves_landed(main)
+## 等对手侧的归位补间跑完。用法：await bot_moves_landed(main)
 ##
 ## 和 arrivals_landed 是同一个道理，等的是另一批补间：settle() 按墙钟等，
 ## CPU 被抢的时候（比如变异检查在跑）补间推进得更少，等完了牌还在半路，
 ## 读 global_position 读到的是出发点 —— 症状是「牌没落回桌面」这种假红，
 ## 而基线一红整轮变异就废了（memory: flaky-baseline-kills-mutation-run）。
 ##
-## 改成问机制本身：摆放补间记在 settle_layout 的 _ai_tw 里，逐帧问 ai_moving()。
-## 上限按 AI_MOVE_TIME 折算兜底（补间被 kill_ai_move 掐掉时也要能退出来）。
+## 改成问机制本身：摆放补间记在 settle_layout 的 _bot_tw 里，逐帧问 bot_moving()。
+## 上限按 BOT_MOVE_TIME 折算兜底（补间被 kill_bot_move 掐掉时也要能退出来）。
 ## 这不是判据，和 settle() 一样是同步
-func ai_moves_landed(main: Node) -> void:
+func bot_moves_landed(main: Node) -> void:
 	var step: float = 1.0 / float(maxi(Engine.physics_ticks_per_second, 1))
-	# 按**一趟**的时长折算（SettleLayout.ai_pass_time），不写死秒数：
+	# 按**一趟**的时长折算（SettleLayout.bot_pass_time），不写死秒数：
 	# 一趟多久由摆放那头说 —— 现在一趟等于单条补间，但这是那边的实现细节，
 	# 改成分批出发时这里不该跟着改
-	var frames_left: int = int(ceil(main.layout.ai_pass_time() * 3.0 / step))
-	while frames_left > 0 and main.layout.ai_moving():
+	var frames_left: int = int(ceil(main.layout.bot_pass_time() * 3.0 / step))
+	while frames_left > 0 and main.layout.bot_moving():
 		await physics_frame
 		frames_left -= 1
 	# 补间结束那一帧位置才写回，再多等两帧让物理和 global_position 对齐

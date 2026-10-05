@@ -20,8 +20,8 @@ import tempfile
 import check_balance_numbers as checker
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-INPUTS = ("data/cards.json", "data/ai.json", "engine/ai_turn_strategy.gd",
-          "balance.md", "README.md", "ai.md")
+INPUTS = ("data/cards.json", "data/bot.json", "engine/bot_turn_strategy.gd",
+          "balance.md", "README.md", "bot.md")
 
 
 def json_edit(relative, path, value):
@@ -48,7 +48,7 @@ def replace_text(relative, before, after):
 
 def parameter_row(key, column=None, value=None, action="value"):
     def edit(root):
-        target = root / "ai.md"
+        target = root / "bot.md"
         source = target.read_text()
         matches = [match for match in re.finditer(r"^\s*\|\s*`%s`\s*\|.*$" % re.escape(key), source, re.MULTILINE)
                    if match.start() > source.index("## 搜索参数与估值参数")]
@@ -84,7 +84,7 @@ def card_row(key, action):
 
 def schema_argument(key, index, value):
     def edit(root):
-        target = root / "engine/ai_turn_strategy.gd"
+        target = root / "engine/bot_turn_strategy.gd"
         source = target.read_text()
         pattern = r'^(\s*)_(int|float)\(("%s",.*)\),\s*$' % re.escape(key)
         matches = list(re.finditer(pattern, source, re.MULTILINE))
@@ -103,9 +103,9 @@ def schema_argument(key, index, value):
 def probes(snapshot):
     """(变异说明, 只操作传入临时目录的函数, 必须出现的诊断片段)。"""
     card = lambda path, value: json_edit("data/cards.json", path, value)
-    ai = lambda path, value: json_edit("data/ai.json", path, value)
+    bot = lambda path, value: json_edit("data/bot.json", path, value)
     checks = [
-        ("模拟上限展示漂移", ai(("simulation", "max_rounds"), 60), "simulation.max_rounds应是 60"),
+        ("模拟上限展示漂移", bot(("simulation", "max_rounds"), 60), "simulation.max_rounds应是 60"),
         ("独角兽回收价展示漂移", card(("dujiaoshou", "pawn"), 25), "独角兽的回收价应是 独角兽 25"),
         ("国民应用回收价展示漂移", card(("guomin", "pawn"), 60), "国民应用的回收价应是 国民应用 60"),
         ("上市敲钟回收价展示漂移", card(("shangshi", "pawn"), 80), "上市敲钟的回收价应是 上市敲钟 80"),
@@ -121,10 +121,10 @@ def probes(snapshot):
         ("卡牌行重复", card_row("yunketang", "duplicate"), "卡牌定义行重复：yunketang"),
         ("派生典当函数遗漏", replace_text("balance.md", "`pawn(C.yunketang)`", "自动计算"),
          "yunketang 未引用派生典当函数"),
-        ("未注册的配置键", ai(("search", "ai", "unknown_knob"), 1), "包含未注册参数：unknown_knob"),
+        ("未注册的配置键", bot(("search", "bot", "unknown_knob"), 1), "包含未注册参数：unknown_knob"),
     ]
-    schema = checker.read_parameter_schema(snapshot["engine/ai_turn_strategy.gd"])
-    settings = json.loads(snapshot["data/ai.json"])["search"]["ai"]
+    schema = checker.read_parameter_schema(snapshot["engine/bot_turn_strategy.gd"])
+    settings = json.loads(snapshot["data/bot.json"])["search"]["bot"]
     for key, spec in schema.items():
         raw = settings.get(key, spec["strength_points"])
         expected = checker.document_values(raw, spec)
@@ -136,7 +136,7 @@ def probes(snapshot):
             configured = [[strength, value] for strength, value in zip((0, 0.5, 1), configured)] if len(expected) == 3 else changed
             label = key + " " + ("强度%g应是" % (0, 0.5, 1)[index] if len(expected) == 3 else "默认值应是")
             checks.append(("配置漂移 " + key + "/" + str(index),
-                           ai(("search", "ai", key), configured), label))
+                           bot(("search", "bot", key), configured), label))
             checks.append(("文档漂移 " + key + "/" + str(index),
                            parameter_row(key, index + 1, changed), label))
         checks.append(("规格边界 " + key, schema_argument(key, 4, spec["min"] - 1),
@@ -147,31 +147,31 @@ def probes(snapshot):
          "buy_beam 强度0应是"),
         ("参数行缺失", parameter_row("buy_beam", action="delete"), "`buy_beam` 命中 0 行"),
         ("参数行重复", parameter_row("risk_weight", action="duplicate"), "`risk_weight` 命中 2 行"),
-        ("非有限参数", ai(("search", "ai", "engine_horizon"), float("nan")),
-         "search.ai.engine_horizon 配置无效：数值参数必须有限"),
-        ("数值字符串", ai(("search", "ai", "engine_horizon"), "3.0"),
-         "search.ai.engine_horizon 配置无效：必须是 int/float"),
-        ("预算数值字符串", ai(("search", "ai", "samples"), [1, "3"]),
-         "search.ai.samples 配置无效：必须是 int/float"),
-        ("布尔伪装数值", ai(("search", "ai", "risk_weight"), True),
-         "search.ai.risk_weight 配置无效：必须是 int/float"),
-        ("预算端点数量错误", ai(("search", "ai", "samples"), [1, 3, 4]),
-         "search.ai.samples 配置无效：强度范围必须有两个端点"),
-        ("强度锚点乱序", ai(("search", "ai", "samples"), [[0, 1], [0.8, 2], [0.5, 2], [1, 3]]),
+        ("非有限参数", bot(("search", "bot", "engine_horizon"), float("nan")),
+         "search.bot.engine_horizon 配置无效：数值参数必须有限"),
+        ("数值字符串", bot(("search", "bot", "engine_horizon"), "3.0"),
+         "search.bot.engine_horizon 配置无效：必须是 int/float"),
+        ("预算数值字符串", bot(("search", "bot", "samples"), [1, "3"]),
+         "search.bot.samples 配置无效：必须是 int/float"),
+        ("布尔伪装数值", bot(("search", "bot", "risk_weight"), True),
+         "search.bot.risk_weight 配置无效：必须是 int/float"),
+        ("预算端点数量错误", bot(("search", "bot", "samples"), [1, 3, 4]),
+         "search.bot.samples 配置无效：强度范围必须有两个端点"),
+        ("强度锚点乱序", bot(("search", "bot", "samples"), [[0, 1], [0.8, 2], [0.5, 2], [1, 3]]),
          "强度锚点必须在0到1间严格递增"),
-        ("强度锚点缺端点", ai(("search", "ai", "samples"), [[0.1, 1], [1, 3]]),
+        ("强度锚点缺端点", bot(("search", "bot", "samples"), [[0.1, 1], [1, 3]]),
          "强度锚点必须覆盖0到1"),
-        ("配置边界独立检查", sequence(ai(("search", "ai", "engine_horizon"), 11),
+        ("配置边界独立检查", sequence(bot(("search", "bot", "engine_horizon"), 11),
                                    parameter_row("engine_horizon", 1, 11)),
-         "search.ai.engine_horizon 配置无效：超出范围"),
-        ("配置步长独立检查", sequence(ai(("search", "ai", "upgrade_weight"), 0.655),
+         "search.bot.engine_horizon 配置无效：超出范围"),
+        ("配置步长独立检查", sequence(bot(("search", "bot", "upgrade_weight"), 0.655),
                                    parameter_row("upgrade_weight", 1, 0.655)),
-         "search.ai.upgrade_weight 配置无效：未对齐步长"),
-        ("整数参数小数", ai(("search", "ai", "samples"), [1.5, 3]),
-         "search.ai.samples 配置无效：整数参数不能含小数"),
-        ("规格非法kind", replace_text("engine/ai_turn_strategy.gd", '"kind":"float"', '"kind":"text"'),
+         "search.bot.upgrade_weight 配置无效：未对齐步长"),
+        ("整数参数小数", bot(("search", "bot", "samples"), [1.5, 3]),
+         "search.bot.samples 配置无效：整数参数不能含小数"),
+        ("规格非法kind", replace_text("engine/bot_turn_strategy.gd", '"kind":"float"', '"kind":"text"'),
          "参数规格 engine_horizon 的 kind 与声明 helper 不匹配"),
-        ("规格非法步长", replace_text("engine/ai_turn_strategy.gd", '"step":0.01', '"step":0'),
+        ("规格非法步长", replace_text("engine/bot_turn_strategy.gd", '"step":0.01', '"step":0'),
          "参数规格 engine_horizon 的边界或步长无效"),
         ("规格默认值越界", schema_argument("engine_horizon", 5, 11),
          "参数规格 engine_horizon 的默认值/端点无效：超出范围"),
@@ -191,16 +191,16 @@ def sequence(*edits):
 
 def json_delete(key):
     def edit(root):
-        target = root / "data/ai.json"
+        target = root / "data/bot.json"
         data = json.loads(target.read_text())
-        data["search"]["ai"].pop(key, None)
+        data["search"]["bot"].pop(key, None)
         target.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     return edit
 
 
 def positive_probes(snapshot):
     """合法覆盖与 fallback 必须通过，避免检查器错误禁止调参。"""
-    ai = lambda key, value: json_edit("data/ai.json", ("search", "ai", key), value)
+    bot = lambda key, value: json_edit("data/bot.json", ("search", "bot", key), value)
     card = lambda path, value: json_edit("data/cards.json", path, value)
     cards = json.loads(snapshot["data/cards.json"])
     return [
@@ -216,16 +216,16 @@ def positive_probes(snapshot):
         ("改Buff倍率不改文档", card(("_game", "buff_mult", "attack_x2"), cards["_game"]["buff_mult"]["attack_x2"] + 1)),
         ("改传说升级数量不改文档", card(("shangshi", "upgrade_dup_n"), cards["shangshi"]["upgrade_dup_n"] + 1)),
         ("改路线折算不改文档", card(("_upgrade", "routes", 2, "per"), cards["_upgrade"]["routes"][2]["per"] + 1)),
-        ("预算调参并同步文档", sequence(ai("buy_beam", [5, 13]),
+        ("预算调参并同步文档", sequence(bot("buy_beam", [5, 13]),
                                     parameter_row("buy_beam", 1, 5), parameter_row("buy_beam", 2, 13),
                                     parameter_row("buy_beam", 3, 32))),
-        ("系数调参并同步文档", sequence(ai("engine_horizon", 3.2), parameter_row("engine_horizon", 1, 3.2))),
+        ("系数调参并同步文档", sequence(bot("engine_horizon", 3.2), parameter_row("engine_horizon", 1, 3.2))),
         ("有显式配置时修改规格默认", schema_argument("engine_horizon", 5, 3.2)),
         ("有显式配置时修改规格预算端点", schema_argument("buy_beam", 5, 5)),
         ("无显式配置时使用fallback", sequence(json_delete("engine_horizon"),
                                           schema_argument("engine_horizon", 5, 3.2),
                                           parameter_row("engine_horizon", 1, 3.2))),
-        ("标量覆盖预算两端", sequence(ai("buy_beam", 5), parameter_row("buy_beam", 1, 5),
+        ("标量覆盖预算两端", sequence(bot("buy_beam", 5), parameter_row("buy_beam", 1, 5),
                                     parameter_row("buy_beam", 2, 5), parameter_row("buy_beam", 3, 5))),
     ]
 
@@ -282,7 +282,7 @@ def main():
     if failures:
         print("探针失败（%d/%d）：\n  - %s" % (len(failures), len(trials) + len(positives) + 1, "\n  - ".join(failures)))
         return 1
-    print("探针通过：基线及 %d 个合法卡表/阈值/AI调参正例及全卡表数字扰动通过，%d 个变异均被定位；所有写入仅在临时目录"
+    print("探针通过：基线及 %d 个合法卡表/阈值/BOT调参正例及全卡表数字扰动通过，%d 个变异均被定位；所有写入仅在临时目录"
           % (len(positives), len(trials)))
     return 0
 

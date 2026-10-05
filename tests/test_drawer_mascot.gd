@@ -85,7 +85,7 @@ func _run() -> void:
 	mascot.set_state(Mascot.STATE_OPENING)
 	mascot.greet()
 	_advance_motion(mascot, 0.3)
-	check(mascot._face_zoom >= 1.07, "AI开场招呼在暂停状态也能播放")
+	check(mascot._face_zoom >= 1.07, "BOT开场招呼在暂停状态也能播放")
 	check(mascot._bubble.modulate.a < 0.01 and mascot._greeting_label.text.is_empty(), "开场图标招呼播放时未悬停也不显示邀请")
 	check(_activations == 1, "启动招呼不会自动展开游戏")
 	# 招呼末尾回调创建恢复姿态的另一条 Tween，分开推进两个阶段。

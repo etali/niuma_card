@@ -22,7 +22,7 @@ func _initialize() -> void:
 
 func _test_limits() -> void:
 	var options := {"pairs":5001,"max_rounds":10000,"seed_start":2147483648,
-		"model":"ai","strength":0.0,"ai_parameters":{}}
+		"model":"bot","strength":0.0,"bot_parameters":{}}
 	check(EvalReport.validate_options(options).is_empty(), "允许超过旧500对、500回合及32位种子上限")
 	for key in ["pairs","max_rounds","seed_start"]:
 		for bad in [0,-1,1.5,INF,NAN,true,"1000",9007199254740992]:
@@ -47,10 +47,10 @@ func _test_accumulation() -> void:
 		{"winner":"player","first":"player","end_round":4,"observed_seat_rounds":8,"feedback_rounds":3,
 		"bilateral_attack":true,"upgrade_produced":false,"pawned_seats":["player"],"used_cards":["yunketang"],
 		"max_cash":40,"max_users":8,"acquisitions":{"yunketang":2},"victory_method":categories[0]},
-		{"winner":"ai","first":"player","end_round":6,"observed_seat_rounds":12,"feedback_rounds":5,
-		"bilateral_attack":false,"upgrade_produced":true,"pawned_seats":["ai"],"used_cards":["butie","jiaolv"],
+		{"winner":"bot","first":"player","end_round":6,"observed_seat_rounds":12,"feedback_rounds":5,
+		"bilateral_attack":false,"upgrade_produced":true,"pawned_seats":["bot"],"used_cards":["butie","jiaolv"],
 		"max_cash":60,"max_users":21,"acquisitions":{"butie":1,"jiaolv":1},"victory_method":categories[1]},
-		{"winner":"","first":"ai","observed_seat_rounds":10,"feedback_rounds":2,"upgrade_produced":false,
+		{"winner":"","first":"bot","observed_seat_rounds":10,"feedback_rounds":2,"upgrade_produced":false,
 		"pawned_seats":[],"max_cash":20,"max_users":13,"acquisitions":{}}
 	]
 	var accumulator = Scoring.new(ids,categories)

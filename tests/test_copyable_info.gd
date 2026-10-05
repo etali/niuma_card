@@ -59,7 +59,7 @@ func _t1_res_panel() -> void:
 	# 坐标相等可能只是巧合（面板在 (16,12)，原先那三行也在 (24,…)），
 	# 而「进了同一个容器」才是「有背景」这件事本身
 	for pair in [["回合", main.lbl_round], ["我方读数", main.lbl_player_res],
-			["对手读数", main.lbl_ai_res]]:
+			["对手读数", main.lbl_bot_res]]:
 		var lbl: Label = pair[1]
 		check(lbl != null and pc.is_ancestor_of(lbl),
 			"%s那一行在面板里（不然它没有背景）" % pair[0])
@@ -81,7 +81,7 @@ func _t1_res_panel() -> void:
 		if ch is Control:
 			check((ch as Control).mouse_filter == Control.MOUSE_FILTER_IGNORE,
 				"子节点 %s 也不吃（漏一层就等于整块都吃）" % ch.get_class())
-	for l in [main.lbl_round, main.lbl_player_res, main.lbl_ai_res]:
+	for l in [main.lbl_round, main.lbl_player_res, main.lbl_bot_res]:
 		check((l as Label).mouse_filter == Control.MOUSE_FILTER_IGNORE,
 			"读数 Label 也是 IGNORE")
 
@@ -89,11 +89,11 @@ func _t1_res_panel() -> void:
 	main._update_hud()
 	check(main.lbl_player_res.text.contains("你的公司"),
 		"我方读数照旧在写（实为「%s」）" % main.lbl_player_res.text)
-	check(main.lbl_ai_res.text.contains("对手公司"),
-		"对手读数照旧在写（实为「%s」）" % main.lbl_ai_res.text)
+	check(main.lbl_bot_res.text.contains("对手公司"),
+		"对手读数照旧在写（实为「%s」）" % main.lbl_bot_res.text)
 	# 折行开着：那两行会长到 40 字（「⚠ 付完归零，整组会作废」那个形态），
 	# 不折行的话面板横过去压到右上角那两块面板底下
-	for l in [main.lbl_player_res, main.lbl_ai_res]:
+	for l in [main.lbl_player_res, main.lbl_bot_res]:
 		check((l as Label).autowrap_mode != TextServer.AUTOWRAP_OFF,
 			"读数会折行 —— 「付完归零」那个形态长到 40 字")
 	main.queue_free()
@@ -256,7 +256,7 @@ func _t3_share_addr_in_lan_panel() -> void:
 ##   - bind 里只读态也锁桌面（去掉那句 return）      → 「桌面没被锁」红
 func _t4_readonly_panel_cannot_start_second_link() -> void:
 	print("\n-- T4 局中打开面板是只读的 --")
-	var main: Node = await boot_main_seated(GameState.PLAYER, GameState.AI)
+	var main: Node = await boot_main_seated(GameState.PLAYER, GameState.BOT)
 	if not need(main != null, "带座位的场景起得来"):
 		return
 	# 造一条**活着**的连接。net_live() 认的是 online()，

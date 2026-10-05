@@ -31,8 +31,8 @@ config/features=PackedStringArray("4.7")
 ; 而那正是用户点名要挪走的地方。
 ;
 ; 玩家配色仍使用 user://（engine/palette.gd 的 palette.json），
-; 改目录会让已有配色设置失效。AI 参数仅在本次运行中生效，
-; engine/ai_search.gd 初始化时清理旧 ai_search.json，不再读取或写入。
+; 改目录会让已有配色设置失效。BOT 参数仅在本次运行中生效，
+; engine/bot_search.gd 初始化时清理旧 bot_search.json，不再读取或写入。
 
 [configuration]
 

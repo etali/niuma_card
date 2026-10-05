@@ -20,7 +20,7 @@ extends "res://tests/harness.gd"
 ## 带配方的核心卡分四类（吃现金生产 / 吃用户生产 / 吃现金攻击 / 吃用户攻击），
 ## 四类各自走不同分支 —— `recipe_pay_n` 只在吃现金时非零、
 ## 攻击走 `arm_attacks` 而生产走 `Settle.produce`。上一轮那个 bug
-## （AI 预判不累计）只砸中「吃现金」那一类，抽查很容易全抽在另一边。
+## （BOT 预判不累计）只砸中「吃现金」那一类，抽查很容易全抽在另一边。
 ## 所以判据从卡表现读，卡表加一张卡这里自动多查一张，不用回来补。
 ##
 ## 六组判据：
@@ -29,7 +29,7 @@ extends "res://tests/harness.gd"
 ##   T3 升级卡  —— 同名升T2、同档可混名升传说，且吃掉全部参与材料
 ##   T4 Buff    —— 翻倍/补满/防御各自作用在哪个字段上
 ##   T5 配方差一 —— 每张卡都要在差 1 张料时判 invalid（不能靠富余料蒙过去）
-##   T6 走管道  —— 同样的事经 IntentApply 再来一遍：人和 AI 都走那条路
+##   T6 走管道  —— 同样的事经 IntentApply 再来一遍：人和 BOT 都走那条路
 ##
 ## 变异提示已登记进 tools/mutate_check.py 第 29 组（那里是实跑的，注释不算数）：
 ##   combo_rules.gd 的 attack_n 去掉 attack_x2 乘数         → 红 4 条
@@ -60,7 +60,7 @@ func _initialize() -> void:
 func _bare() -> GameState:
 	var s := GameState.new()
 	s.new_game()
-	for who in [GameState.PLAYER, GameState.AI]:
+	for who in [GameState.PLAYER, GameState.BOT]:
 		s.players[who]["cards"] = []
 	return s
 
@@ -186,7 +186,7 @@ func _t2_attack_cards() -> void:
 		var def: Dictionary = CardDB.get_def(core_id)
 		var s := _bare()
 		var who := GameState.PLAYER
-		var foe := GameState.AI
+		var foe := GameState.BOT
 		var name: String = def.get("name", core_id)
 		var atk_res := str(def["attack_res"])
 		var atk_n := int(def["attack_n"])
@@ -233,7 +233,7 @@ func _t2_attack_cards() -> void:
 func _t2b_broken_combo_cannot_fire() -> void:
 	var s := _bare()
 	var who := GameState.PLAYER
-	var foe := GameState.AI
+	var foe := GameState.BOT
 	_keepalive(s, who, 3, 3)
 	_units(s, foe, CardDB.RES_USER, 8, false)
 	var r := _build(s, who, "shanzhai")
@@ -424,16 +424,16 @@ func _t5_recipe_short_by_one() -> void:
 	check(checked == expect, "带配方的卡查了 %d 张（卡表里共 %d 张）" % [checked, expect])
 
 
-# ---------- T6 走 IntentApply：人和 AI 实际走的那条管子 ----------
+# ---------- T6 走 IntentApply：人和 BOT 实际走的那条管子 ----------
 
 ## T1-T5 都是直接调 create_combo/attack_pool，绕开了意图层。
-## 但玩家点「完成行动」走的是 IntentApply，AI 也走它 —— 引擎对了而管子接错，
+## 但玩家点「完成行动」走的是 IntentApply，BOT 也走它 —— 引擎对了而管子接错，
 ## 上面全绿也照样是「组合完成了但没发动」。这一组就为了堵这个缺口
 func _t6_through_pipe() -> void:
 	print("\n-- T6 意图层：编组→保护→结算 整条链 --")
 	var s := _bare()
 	var who := GameState.PLAYER
-	var foe := GameState.AI
+	var foe := GameState.BOT
 	_keepalive(s, who, 3, 3)
 	var atk_n := int(CardDB.get_def("shanzhai")["attack_n"])
 	var per_card := int(CardDB.game_rules()["attack_cost_per_card"])
@@ -512,7 +512,7 @@ func _t7_core_is_one_point_each() -> void:
 	var atk_n := int(CardDB.get_def("shanzhai")["attack_n"])
 	var s := _bare()
 	var who := GameState.PLAYER
-	var foe := GameState.AI
+	var foe := GameState.BOT
 	_keepalive(s, who, 3, 3)
 	_keepalive(s, foe, 3, 0)
 	# 对手把配方要的用户全摞进刷不停 —— 场上没有一张散用户

@@ -309,8 +309,8 @@ func _test_legacy_protocol() -> void:
 func _test_local_defense_shields(main: Node) -> void:
 	for swapped in [false, true]:
 		await _reset(main)
-		main.set_seats(GameState.AI if swapped else GameState.PLAYER,
-			GameState.PLAYER if swapped else GameState.AI)
+		main.set_seats(GameState.BOT if swapped else GameState.PLAYER,
+			GameState.PLAYER if swapped else GameState.BOT)
 		main.state.round_num = 4
 		var cards: Array = []
 		var uids: Array = []
@@ -348,7 +348,7 @@ func _test_local_defense_shields(main: Node) -> void:
 			"配方被拆散后，存活牌与待消失实体都不误亮盾牌")
 
 	await _reset(main)
-	main.set_seats(GameState.PLAYER, GameState.AI)
+	main.set_seats(GameState.PLAYER, GameState.BOT)
 	main.state.round_num = 4
 	var cards: Array = []
 	var uids: Array = []
@@ -381,7 +381,7 @@ func _test_defense_reports() -> void:
 	for fission in [false, true]:
 		for next_round in [false, true]:
 			var s := GameState.new()
-			s.players = {GameState.PLAYER: {"cards": []}, GameState.AI: {"cards": []}}
+			s.players = {GameState.PLAYER: {"cards": []}, GameState.BOT: {"cards": []}}
 			var ids: Array = ["shuabuting", "tuisong", "liebian", "user"] if fission else \
 				["yunketang", "tuisong", "user", "user", "user"]
 			var uids: Array = []

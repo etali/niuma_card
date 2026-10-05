@@ -51,7 +51,7 @@ static func effect_multipliers(cards: Array) -> Dictionary:
 			"attack_x2": out["attack"] *= CardDB.buff_mult(bt)
 	return out
 
-## 供按数量分配 Buff 的 AI 使用，和逐张应用规则一致；不限制可叠加张数。
+## 供按数量分配 Buff 的 BOT 使用，和逐张应用规则一致；不限制可叠加张数。
 static func stacked_multiplier(buff_type: String, count: int) -> int:
 	var multiplier := 1
 	var per_card := CardDB.buff_mult(buff_type)
@@ -240,7 +240,7 @@ static func legend_upgrade_target(tier: int, n: int) -> String:
 		if target != "": return target
 	return ""
 
-## 实际材料的唯一升级查询。UI、AI 与 evaluate 均可复用，不各自实现混名/混档判断。
+## 实际材料的唯一升级查询。UI、BOT 与 evaluate 均可复用，不各自实现混名/混档判断。
 static func upgrade_target_for_ids(ids: Array) -> String:
 	if ids.size() < 2: return ""
 	var tier := -1

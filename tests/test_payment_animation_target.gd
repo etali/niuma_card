@@ -34,10 +34,10 @@ func _run() -> void:
 		"现金吸入 tween 终点与用户产出实际落点重合（差 %.5f）" % payment.distance_to(actual_output))
 	check(payment.is_equal_approx(actual_output),
 		"现金与用户使用完全相同的三维坐标（x/y/z 全部一致）")
-	var foe_preview: Vector3 = layout.preview_arrival_spot(GameState.AI,
+	var foe_preview: Vector3 = layout.preview_arrival_spot(GameState.BOT,
 		{"def_id": CardDB.unit_id(CardDB.RES_USER)})
 	var foe_combo := {"eval": {"type": "production", "output_res": CardDB.RES_USER}}
-	check(main._payment_animation_target(GameState.AI, foe_combo).is_equal_approx(foe_preview),
+	check(main._payment_animation_target(GameState.BOT, foe_combo).is_equal_approx(foe_preview),
 		"对手现金→用户也使用对手实际用户产出落点")
 
 	# _suck_into 会把最终 tween 目标写入 dest_pos，验证不是只测了一个辅助函数返回值。

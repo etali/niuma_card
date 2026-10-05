@@ -18,7 +18,7 @@ const Regions = preload("res://scenes/table_regions.gd")
 const Motion = preload("res://scenes/ui_motion.gd")
 const CameraFit = preload("res://scenes/drawer_camera_fit.gd")
 const PLAYER_ZONE_Z := Regions.PLAYER_ZONE_Z
-const AI_ZONE_Z := Regions.AI_ZONE_Z
+const BOT_ZONE_Z := Regions.BOT_ZONE_Z
 const MARKET_Z := Regions.DRAWER_MARKET_Z
 
 var board: Board
@@ -35,7 +35,7 @@ var entities: Dictionary = {}
 var market_cards: Array[CardEntity] = []
 var market_price_labels: Array = []
 var my_seat := GameState.PLAYER
-var foe_seat := GameState.AI
+var foe_seat := GameState.BOT
 var foe_piles: Array = []
 var demo: Dictionary
 var phase := 0
@@ -120,7 +120,7 @@ func configure(example: Dictionary, sound: Sfx) -> void:
 					target = maxi(target, state.resource_count(who, res) + 1)
 			_cards(CardDB.unit_id(res), maxi(0, target - state.resource_count(who, res)), who)
 	layout._tidy_player_idle()
-	layout._layout_ai_idle()
+	layout._layout_bot_idle()
 	if mode == "upgrade":
 		var safe: Rect2 = layout._center_bounds(my_seat)
 		var ignores := {}

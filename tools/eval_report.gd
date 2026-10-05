@@ -7,7 +7,7 @@ extends SceneTree
 const Logic = preload("res://tools/balance/logic.gd")
 const Scoring = preload("res://tools/balance/scoring.gd")
 const Victory = preload("res://tools/balance/victory.gd")
-var _cfg: AISearch
+var _cfg: BOTSearch
 var _options: Dictionary
 var _progress := ""
 var _completed := 0
@@ -25,24 +25,24 @@ func _initialize() -> void:
 		quit(2)
 		return
 	var request := _json(args[0])
-	AIConfig._source = "res://data/ai.json"
+	BOTConfig._source = "res://data/bot.json"
 	if request.get("action") == "metadata":
-		var strength := float(request.get("strength", AISearch.default_strength()))
-		var profile := AISearch.from_strength(strength)
-		var schema := AISearch.editable_knobs(profile.model)
+		var strength := float(request.get("strength", BOTSearch.default_strength()))
+		var profile := BOTSearch.from_strength(strength)
+		var schema := BOTSearch.editable_knobs(profile.model)
 		# 网页滑钮步长为0.01。所有刻度由真实引擎一次解析，拖动仅回填快照，
 		# 不在每个input事件启动Godot，也不在JavaScript复制参数映射公式。
 		var strength_profiles := {}
 		for index in range(101):
-			var mapped := AISearch.from_model(profile.model,index/100.0).resolved_parameters()
+			var mapped := BOTSearch.from_model(profile.model,index/100.0).resolved_parameters()
 			var editable := {}
 			for spec in schema: editable[spec["key"]] = mapped[spec["key"]]
 			strength_profiles["%.2f" % (index/100.0)] = editable
 		_write(str(request["output_path"]), {"schema":schema,
 			"parameters":profile.resolved_parameters(),"strength_profiles":strength_profiles,"model":profile.model,
-			"strength":strength,"default_strength":AISearch.default_strength(),
+			"strength":strength,"default_strength":BOTSearch.default_strength(),
 			"profile_version":profile.implementation().profile_version(),
-			"max_rounds":AIConfig.read_section("simulation").get("max_rounds",80)})
+			"max_rounds":BOTConfig.read_section("simulation").get("max_rounds",80)})
 		quit(0)
 		return
 	if request.get("schema") != "manual-balance-request-v1":
@@ -60,17 +60,17 @@ func _initialize() -> void:
 		quit(2)
 		return
 	CardDB.reset()
-	AIConfig._source = "res://data/ai.json"
+	BOTConfig._source = "res://data/bot.json"
 	if not CardDB.load_from(cards_path):
 		quit(2)
 		return
-	_cfg = AISearch.from_model(str(_options["model"]), float(_options["strength"]))
+	_cfg = BOTSearch.from_model(str(_options["model"]), float(_options["strength"]))
 	if _cfg == null:
 		quit(2)
 		return
-	for key in _options.get("ai_parameters", {}):
-		if not _cfg.apply_override(str(key), _options["ai_parameters"][key]):
-			_write(output,{"schema":"manual-balance-eval-v1","status":"invalid","errors":["无效AI参数："+str(key)]})
+	for key in _options.get("bot_parameters", {}):
+		if not _cfg.apply_override(str(key), _options["bot_parameters"][key]):
+			_write(output,{"schema":"manual-balance-eval-v1","status":"invalid","errors":["无效BOT参数："+str(key)]})
 			quit(2)
 			return
 	for id in CardDB.all_cards():
@@ -78,7 +78,7 @@ func _initialize() -> void:
 	_scoring = Scoring.new(_card_ids,Victory.categories())
 	var started := Time.get_ticks_usec()
 	for pair in int(_options["pairs"]):
-		for first in [GameState.PLAYER,GameState.AI]:
+		for first in [GameState.PLAYER,GameState.BOT]:
 			var seed_i := int(_options["seed_start"]) + pair
 			var game := _run_one(seed_i,first)
 			_games.append(game)
@@ -90,7 +90,7 @@ func _initialize() -> void:
 	var result := {"schema":"manual-balance-eval-v1","status":"complete",
 		"metrics":_metrics,"games":_games,
 		"meta":{"options":_options,"cards_sha256":FileAccess.get_sha256(cards_path),
-		"ai_sha256":FileAccess.get_sha256("res://data/ai.json"),"ai_parameters":_cfg.resolved_parameters(),
+		"bot_sha256":FileAccess.get_sha256("res://data/bot.json"),"bot_parameters":_cfg.resolved_parameters(),
 		"metric_version":"manual-eleven-v4","elapsed_seconds":(Time.get_ticks_usec()-started)/1000000.0}}
 	if not _write(output,result):
 		quit(3)
@@ -110,9 +110,9 @@ static func validate_options(o: Dictionary) -> Array:
 		errors.append("最后一个种子超过精确整数范围")
 	var strength: Variant = o.get("strength")
 	if not (strength is int or strength is float) or not is_finite(float(strength)) or float(strength)<0 or float(strength)>1:
-		errors.append("AI强度须在0到1之间")
-	if str(o.get("model", "")) != "ai": errors.append("不支持的AI实现")
-	if not o.get("ai_parameters", {}) is Dictionary: errors.append("AI参数必须为对象")
+		errors.append("BOT强度须在0到1之间")
+	if str(o.get("model", "")) != "bot": errors.append("不支持的BOT实现")
+	if not o.get("bot_parameters", {}) is Dictionary: errors.append("BOT参数必须为对象")
 	return errors
 
 func _run_one(seed_i: int, first: String) -> Dictionary:
@@ -170,7 +170,7 @@ func _run_one(seed_i: int, first: String) -> Dictionary:
 					if not card.is_empty(): ids.append(str(card["def_id"]))
 				# 保存外部观测，不修改组合或游戏状态。
 				g["combos_before"].append({"owner":combo["owner"],"type":combo["eval"].get("type"),"cards":ids,"uids":combo["uids"].duplicate()}),
-		Callable(),{GameState.PLAYER:_cfg,GameState.AI:_cfg},first,hooks)
+		Callable(),{GameState.PLAYER:_cfg,GameState.BOT:_cfg},first,hooks)
 	_observe_resources(g,final)
 	_observe_acquisitions(g,final)
 	var feedback_count := 0
@@ -178,20 +178,20 @@ func _run_one(seed_i: int, first: String) -> Dictionary:
 	return {"seed":seed_i,"first":first,"winner":final.winner,
 		"end_round":final.round_num if final.winner!="" else null,
 		"observed_rounds":g["observed_rounds"],"observed_seat_rounds":g["observed_seat_rounds"],"feedback_rounds":feedback_count,
-		"bilateral_attack":g["attacked"].has(GameState.PLAYER) and g["attacked"].has(GameState.AI),
+		"bilateral_attack":g["attacked"].has(GameState.PLAYER) and g["attacked"].has(GameState.BOT),
 		"acquisitions":g["acquisitions"].duplicate(),"used_cards":g["used"].keys(),"upgrade_occurred":g["upgrade_occurred"],
 		"upgrade_produced":g["upgrade_produced"],"pawned_seats":g["pawned_seats"].duplicate(),
 		"max_cash":g["max_cash"],"max_users":g["max_users"],
 		"victory_method":Victory.classify(final,g["winning_pawn_legends"])}
 
 ## 每次真实状态变化后按新 UID 采集获得事件，覆盖购买、升级及其他实际发牌来源。
-## 资源卡、旧牌的重复使用/出售和 AI 搜索副本均不计；消耗升级材料不回减历史获得量。
+## 资源卡、旧牌的重复使用/出售和 BOT 搜索副本均不计；消耗升级材料不回减历史获得量。
 static func _observe_acquisitions(g: Dictionary,s: GameState) -> void:
 	var previous_uid := int(g.get("acquisition_next_uid",0))
 	g["acquisition_next_uid"] = s.peek_uid()
 	if not g.has("acquisitions"): g["acquisitions"] = {}
 	if previous_uid == int(g["acquisition_next_uid"]): return
-	for who in [GameState.PLAYER,GameState.AI]:
+	for who in [GameState.PLAYER,GameState.BOT]:
 		for card in s.players[who]["cards"]:
 			if int(card["uid"]) < previous_uid: continue
 			var id := str(card["def_id"])
@@ -233,7 +233,7 @@ static func _observe_upgrade_production(g: Dictionary,s: GameState,d: Dictionary
 static func _observe_pawn(g: Dictionary,s: GameState,intent: Dictionary,result: Dictionary) -> void:
 	if intent.get("op") != Intent.OP_PAWN or not result.get("ok",false): return
 	var owner := str(intent.get("seat",""))
-	if owner not in [GameState.PLAYER,GameState.AI] or not result.get("uids") is Array: return
+	if owner not in [GameState.PLAYER,GameState.BOT] or not result.get("uids") is Array: return
 	for uid in result["uids"]:
 		if s.find_card(owner,int(uid)).is_empty():
 			if not g.has("pawned_seats"): g["pawned_seats"] = []
@@ -241,9 +241,9 @@ static func _observe_pawn(g: Dictionary,s: GameState,intent: Dictionary,result: 
 			return
 
 ## 每局取任意一方曾持有的最高数量，包含开局及未结束局；不合计双方资产。
-## 调用点只挂真实模拟的现有钩子，不进入 AI 的搜索副本，也不改变局面。
+## 调用点只挂真实模拟的现有钩子，不进入 BOT 的搜索副本，也不改变局面。
 static func _observe_resources(g: Dictionary,s: GameState) -> void:
-	for who in [GameState.PLAYER,GameState.AI]:
+	for who in [GameState.PLAYER,GameState.BOT]:
 		g["max_cash"] = maxi(int(g.get("max_cash",0)),s.resource_count(who,CardDB.RES_CASH))
 		g["max_users"] = maxi(int(g.get("max_users",0)),s.resource_count(who,CardDB.RES_USER))
 

@@ -16,7 +16,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
-import ai_equivalence_benchmark as equivalence
+import bot_equivalence_benchmark as equivalence
 import benchmark_engine_variants as variants
 from project_paths import display_path
 
@@ -38,7 +38,7 @@ class BenchmarkPathsTest(unittest.TestCase):
             (project / 'tools').mkdir(parents=True)
             (project / 'data').mkdir()
             (project / 'data/cards.json').write_text('{"fixture": true}')
-        self.probe = self.current / 'tools/ai_equivalence_probe.gd'
+        self.probe = self.current / 'tools/bot_equivalence_probe.gd'
         self.probe.write_text('# probe fixture\n')
 
     def process(self, stdout, stderr='', returncode=0):
@@ -92,7 +92,7 @@ class BenchmarkPathsTest(unittest.TestCase):
 
     def test_equivalence_requests_resolve_for_each_project_and_preserve_metrics(self):
         state = dict(players={}, market=[], combos={}, winner='', win_reason='', uid=1,
-                     rng=1, stats={}, round=1, first='ai')
+                     rng=1, stats={}, round=1, first='bot')
         requests = []
 
         def launch(command, **kwargs):
@@ -101,10 +101,10 @@ class BenchmarkPathsTest(unittest.TestCase):
             args = command[command.index('--') + 1:]
             self.assertTrue(all(not Path(arg).is_absolute() for arg in args))
             script = Path(command[command.index('-s') + 1]).name
-            if script == 'ai_equivalence_probe.gd':
+            if script == 'bot_equivalence_probe.gd':
                 payload = [{'trace': [{'round_start': state}]}] if args[0] == 'games' else []
                 (project / args[1]).write_text(json.dumps({'failures': [], 'payload': payload}))
-            elif script == 'ai_decision_probe.gd':
+            elif script == 'bot_decision_probe.gd':
                 data = json.loads((project / args[1]).read_text())
                 self.assertEqual(len(data['positions']), 4)
                 (project / args[2]).write_text(json.dumps({'payload': [], 'timings': []}))
@@ -121,9 +121,9 @@ class BenchmarkPathsTest(unittest.TestCase):
                 self.assertEqual(output.parent, self.output)
                 self.assertEqual(progress.parent, self.output)
                 self.assertEqual(request['options'], dict(pairs=1, max_rounds=4, seed_start=1001,
-                                                         model='ai', strength=1, ai_parameters={}))
+                                                         model='bot', strength=1, bot_parameters={}))
                 result = {'status': 'complete', 'games': ['same-game'], 'metrics': {'score': 7},
-                          'meta': {'ai_parameters': {'budget': 42}, 'elapsed_seconds': 2.0}}
+                          'meta': {'bot_parameters': {'budget': 42}, 'elapsed_seconds': 2.0}}
                 output.write_text(json.dumps(result))
                 progress.write_text('{}')
                 requests.append((project, request))
@@ -209,7 +209,7 @@ class BenchmarkPathsTest(unittest.TestCase):
 
     def test_cli_errors_do_not_restore_absolute_paths_in_tracebacks(self):
         commands = [
-            ['tools/ai_equivalence_benchmark.py', '--baseline', str(ROOT / 'missing-benchmark-fixture'),
+            ['tools/bot_equivalence_benchmark.py', '--baseline', str(ROOT / 'missing-benchmark-fixture'),
              '--output', str(self.output)],
             ['tools/benchmark_engine_variants.py', '--variant', f'baseline={ROOT / "missing-benchmark-fixture.app"}',
              '--output', str(self.output)],

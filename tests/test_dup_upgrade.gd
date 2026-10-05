@@ -39,7 +39,7 @@ func _initialize() -> void:
 	test_settle_mixed_legends()
 	test_settle_to_legend()
 	test_settle_t1_direct()
-	test_ai_builds_dup_upgrades()
+	test_bot_builds_dup_upgrades()
 	finish()
 
 
@@ -340,10 +340,10 @@ func test_legend_rules_follow_config() -> void:
 func test_settle_mixed_legends() -> void:
 	for spec in [[1,4,"dujiaoshou"],[1,6,"guomin"],[1,8,"shangshi"],
 			[2,2,"dujiaoshou"],[2,3,"guomin"],[2,4,"shangshi"]]:
-		for who in [GameState.PLAYER,GameState.AI]:
+		for who in [GameState.PLAYER,GameState.BOT]:
 			var s := GameState.new()
-			s.players = {GameState.PLAYER:{"cards":[]},GameState.AI:{"cards":[]}}
-			for seat in [GameState.PLAYER,GameState.AI]:
+			s.players = {GameState.PLAYER:{"cards":[]},GameState.BOT:{"cards":[]}}
+			for seat in [GameState.PLAYER,GameState.BOT]:
 				for i in 3:
 					s.add_card(seat,"cash")
 					s.add_card(seat,"user")
@@ -369,8 +369,8 @@ func test_settle_mixed_legends() -> void:
 func test_duplicate_uid_rejected() -> void:
 	var s := GameState.new()
 	s.set_seed(415)
-	s.players = {GameState.PLAYER:{"cards":[]},GameState.AI:{"cards":[]}}
-	for seat in [GameState.PLAYER,GameState.AI]:
+	s.players = {GameState.PLAYER:{"cards":[]},GameState.BOT:{"cards":[]}}
+	for seat in [GameState.PLAYER,GameState.BOT]:
 		for i in 3:
 			s.add_card(seat,"cash")
 			s.add_card(seat,"user")
@@ -518,22 +518,22 @@ func test_settle_t1_direct() -> void:
 
 
 ## 每条数据定义的升级路线都应进入候选，并由环境验证其意图。
-func test_ai_builds_dup_upgrades() -> void:
-	var Actions = preload("res://engine/ai_actions.gd")
-	var Env = preload("res://engine/ai_environment.gd")
+func test_bot_builds_dup_upgrades() -> void:
+	var Actions = preload("res://engine/bot_actions.gd")
+	var Env = preload("res://engine/bot_environment.gd")
 	for core in _products(1) + _products(2):
 		for count in range(2, CardDB.max_upgrade_n() + 1):
 			var target := ComboRules.upgrade_target(str(core), count)
 			if target == "":
 				continue
 			var s := GameState.new()
-			s.players = {GameState.PLAYER: {"cards": []}, GameState.AI: {"cards": []}}
+			s.players = {GameState.PLAYER: {"cards": []}, GameState.BOT: {"cards": []}}
 			for i in count:
-				s.add_card(GameState.AI, core)
+				s.add_card(GameState.BOT, core)
 			var found := false
-			var profile := AISearch.from_model("ai", 0.0).resolved_parameters()
+			var profile := BOTSearch.from_model("bot", 0.0).resolved_parameters()
 			profile.merge({"plans": 256, "sales": 0, "buy_beam": 256, "build_beam": 256}, true)
-			for node in Actions.generate(s, GameState.AI, profile):
+			for node in Actions.generate(s, GameState.BOT, profile):
 				var candidate: GameState = node["state"]
 				for combo in candidate.combos:
 					if combo["eval"].get("output_card", "") == target and combo["uids"].size() == count:

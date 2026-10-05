@@ -22,7 +22,7 @@ func _initialize() -> void:
 		return
 	# 把两条读数灌成最长那个形态，逼出面板的真实宽度
 	main.lbl_player_res.text = "你的公司 · 资金 10（本回合待付 10）⚠ 付完归零，整组会作废 · 用户 12（在岗 7 / 闲置 5）"
-	main.lbl_ai_res.text = "对手公司 · 资金 10（本回合待付 10）⚠ 他付完归零，整组会作废 · 用户 12（在岗 7 / 闲置 5）"
+	main.lbl_bot_res.text = "对手公司 · 资金 10（本回合待付 10）⚠ 他付完归零，整组会作废 · 用户 12（在岗 7 / 闲置 5）"
 	for i in 6:
 		await process_frame
 
@@ -35,7 +35,7 @@ func _initialize() -> void:
 	print("视口 %.0f x %.0f" % [vp.x, vp.y])
 	print("资源面板 pos=%s size=%s → 右缘 %.0f" % [pc.position, pc.size, res_right])
 
-	# 右侧那两块：选色面板和 AI 强度面板。按脚本文件名认，不按节点名 ——
+	# 右侧那两块：选色面板和 BOT 强度面板。按脚本文件名认，不按节点名 ——
 	# 那两个 CanvasLayer 是 new() 出来的，名字是引擎给的 @CanvasLayer@NNN
 	# 那两块是 Control（不是 CanvasLayer —— 找错类型的话这个循环一条都不进，
 	# 而「一条都没打印」和「量出来没重叠」在输出里长得一样）
@@ -44,7 +44,7 @@ func _initialize() -> void:
 		if s == null:
 			continue
 		var who: String = s.resource_path.get_file()
-		if who not in ["palette_panel.gd", "ai_panel.gd"]:
+		if who not in ["palette_panel.gd", "bot_panel.gd"]:
 			continue
 		var f: Node = c.get_node_or_null("Frame")
 		if f == null or not (f is Control):

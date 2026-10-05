@@ -47,7 +47,7 @@ extends "res://tests/harness.gd"
 ## 值取「过一趟 JSON 会变形」的那种：uid 用整数（会变 float）、
 ## 座位名用真常量（收方要拿它和 my_seat 做 == 比较）
 const SEAT_A := "player"
-const SEAT_B := "ai"
+const SEAT_B := "bot"
 
 ## 使用真实快照验证递归结构；协议负责在任何客户端状态被替换之前拒绝坏字段。
 static func _fake_snapshot() -> Dictionary:
@@ -324,7 +324,7 @@ func _t4_client_whitelist() -> void:
 ## 这一节钉的是**「没说」和「说了 0」不能混**。位置是可选字段：
 ## 老形状的包（`[uid...]`）、单机局、测试里图省事的 send_piles([[1,2]]) 都不带它，
 ## 而收方靠「有没有这两个键」决定照发方说的摆、还是走整行居中那条老路
-## （settle_layout._layout_ai_zone）。缺键补成 0.0 的话，那些包会全被
+## （settle_layout._layout_bot_zone）。缺键补成 0.0 的话，那些包会全被
 ## 当成「这一摞在桌子左后角」—— 一屏的摞挤到一个点上，而且不报错。
 ##
 ## 钳位也在这里：收方拿 u/v 直接 lerp 到桌面坐标上，伪造包送个 u=50

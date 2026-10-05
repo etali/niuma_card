@@ -22,9 +22,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DOCS = ('README', 'balance', 'ai')
+DOCS = ('README', 'balance', 'bot')
 # 只能带名字引的那些（裸引用不在这里面找，见 check_ref 的注释）
-NAMED_ONLY = ('ai',)
+NAMED_ONLY = ('bot',)
 SCAN_DIRS = ('engine', 'net', 'scenes', 'tests', 'tools', 'data')
 SCAN_EXT = ('.gd', '.py', '.sh', '.json', '.md')
 
@@ -83,10 +83,10 @@ def check_ref(docs: dict, doc: str, title: str, item: str,
         err = resolve_in(docs[doc], title, item)
         return f'{doc}.md {err}' if err else ''
     # 文档内部的裸引用先在**本文档**里找：一份文档引自己的节不必写自己的名字，
-    # ai.md 内部也可用裸引用；下面的「专题文档带名字」约束外部引用。
+    # bot.md 内部也可用裸引用；下面的「专题文档带名字」约束外部引用。
     if own in docs and not resolve_in(docs[own], title, item):
         return ''
-    # 裸引用只在 README / balance 里找。外部引用 ai.md（AI 设计）须带文档名，
+    # 裸引用只在 README / balance 里找。外部引用 bot.md（BOT 设计）须带文档名，
     # 将它算进裸引用候选会造成歧义。
     cand = {n: d for n, d in docs.items() if n not in NAMED_ONLY}
     hits = [n for n, d in cand.items() if not resolve_in(d, title, item)]
@@ -115,7 +115,7 @@ def check_ref(docs: dict, doc: str, title: str, item: str,
 # 那个引号是行文而不是条目名，不该被当成条目去查
 _UNIT = r'((?:[^「」]|「[^「」]*」)+)'
 REF = re.compile(
-    r'(?:`?(README|balance|ai)(?:\.md)?`?[ 　]*)?'
+    r'(?:`?(README|balance|bot)(?:\.md)?`?[ 　]*)?'
     r'§[ 　]*「' + _UNIT + r'」(?:[ 　]*「' + _UNIT + r'」)?')
 
 # 裸 § 后面不跟「」的：漏了标题，或者还留着旧的数字写法

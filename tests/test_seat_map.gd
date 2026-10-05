@@ -9,43 +9,46 @@ extends "res://tests/harness.gd"
 ##
 ## 为什么要有这一条：其余 864 条断言全跑在 my_seat=PLAYER 的单机局上，
 ## 场景层漏掉一处 `GameState.PLAYER` 硬编码，它们照样全绿 —— 因为那一处
-## 恰好等于 my_seat。只有把座位换成 AI 才能让漏掉的那处露出来：
+## 恰好等于 my_seat。只有把座位换成 BOT 才能让漏掉的那处露出来：
 ## 它会去摆对手的牌，摆到远侧；双方相同卡牌保持同一套配色。
 ##
-## 联网局里客户端 B 拿到的就是 GameState.AI 这个座位（scenes/main.gd 的 set_seats：
-## GameState.PLAYER/AI 全仓引用近八百处、其中测试占九成，改名要波及三十多个
+## 联网局里客户端 B 拿到的就是 GameState.BOT 这个座位（scenes/main.gd 的 set_seats：
+## GameState.PLAYER/BOT 全仓引用近八百处、其中测试占九成，改名要波及三十多个
 ## 测试文件，所以映射不改名）。
 ##
-## 判据用「近侧 / 远侧」而不是读 PLAYER_ZONE_Z / AI_ZONE_Z：判据不许读被测
+## 判据用「近侧 / 远侧」而不是读 PLAYER_ZONE_Z / BOT_ZONE_Z：判据不许读被测
 ## 常量。两侧隔着购牌区（MARKET_Z=-1.6），拿 z 的正负号分边就够，
 ## 谁把区域整体挪了这条也不该跟着动
 
 
 func _initialize() -> void:
 	print("=== 座位映射测试 ===\n")
+	# 本测试检查座位与场景流程，使用小计算额度，不把完整搜索耗时误判为未交接。
+	BOTSearch.restore_defaults()
+	BOTSearch.set_override("compute_budget",100000)
 
 	# --- 单机默认：my_seat 就是 PLAYER ---
 	var a: Node = await boot_main()
-	check(a.my_seat == GameState.PLAYER and a.foe_seat == GameState.AI,
-		"默认座位 = PLAYER / AI（单机局与改造前一致）")
+	check(a.my_seat == GameState.PLAYER and a.foe_seat == GameState.BOT,
+		"默认座位 = PLAYER / BOT（单机局与改造前一致）")
 	a.queue_free()
 	await physics_frame
 
-	# --- 对调座位：我坐 AI 这个座位 ---
+	# --- 对调座位：我坐 BOT 这个座位 ---
 	#
 	# 只等 5 帧就先清空公共区：换座位后对手是先手，_sync_round 末尾那个
-	# _begin_action_phase() 已经把它的 _foe_action() 挂在 BEAT_AI_THINK(0.6s) 后面。
+	# _begin_action_phase() 已经把它的 _foe_action() 挂在 BEAT_BOT_THINK(0.6s) 后面。
 	# 公共区不空，对手会买到攻击卡并打我 —— 我方产出就不是确定的那一份了
 	# （实测见过 20→28：产出满额、被攻击掉 4）。
 	# 所以这里必须定帧，不能用不带参数的 boot_main（那条等的是「开局补间跑完」，
 	# 等完就压着那 0.6s 的边了）—— 代价是第 5 帧撞在飞入补间中间，见 _clear_market
-	var main: Node = await boot_main_seated(GameState.AI, GameState.PLAYER, 5)
+	var main: Node = await boot_main_seated(GameState.BOT, GameState.PLAYER, 5)
 	_clear_market(main)
 	for i in 25:
 		await physics_frame
 	_free_market_visuals(main)
-	check(main.my_seat == GameState.AI and main.foe_seat == GameState.PLAYER,
-		"set_seats 生效（my_seat=AI）")
+	check(main.my_seat == GameState.BOT and main.foe_seat == GameState.PLAYER,
+		"set_seats 生效（my_seat=BOT）")
 
 	# 我的牌：近侧（z>0）、可拖、不变暗
 	var mine_far := 0
@@ -119,17 +122,17 @@ func _initialize() -> void:
 	check(spot_foe.z < 0.0, "_free_spot(foe_seat) 落在远侧（z=%.2f）" % spot_foe.z)
 
 	# 战报里的公司名也得跟着座位走。这一段用的是引擎座位常量而不是
-	# main.my_seat —— 要验的正是「同一条日志，坐 AI 这个座位的人念反」：
+	# main.my_seat —— 要验的正是「同一条日志，坐 BOT 这个座位的人念反」：
 	# 拿 my_seat 去构造日志，两边都念「你的公司」，判据就恒真了
 	# （日志条目的结构与渲染细节在 test_log_viewpoint.gd 里单独验）
 	var entry := { "round": 1, "fmt": "%s 点拆 %s 的组合", "args": [
-		GameState.seat_arg(GameState.PLAYER), GameState.seat_arg(GameState.AI)] }
+		GameState.seat_arg(GameState.PLAYER), GameState.seat_arg(GameState.BOT)] }
 	check(main._render_log(entry) == "对手公司 点拆 你的公司 的组合",
-		"my_seat=AI 时战报念反（%s）" % main._render_log(entry))
-	check(main._seat_name(GameState.AI) == "你的公司"
+		"my_seat=BOT 时战报念反（%s）" % main._render_log(entry))
+	check(main._seat_name(GameState.BOT) == "你的公司"
 			and main._seat_name(GameState.PLAYER) == "对手公司",
-		"_seat_name 按座位给称呼（AI=%s，PLAYER=%s）" % [
-			main._seat_name(GameState.AI), main._seat_name(GameState.PLAYER)])
+		"_seat_name 按座位给称呼（BOT=%s，PLAYER=%s）" % [
+			main._seat_name(GameState.BOT), main._seat_name(GameState.PLAYER)])
 
 	await _scripted_round(main)
 	# 先等补间落定再释放：结算刚跑完，产出牌的飞入补间还在跑，
@@ -140,10 +143,11 @@ func _initialize() -> void:
 
 	await _live_market_round()
 	_check_no_hardcoded_seat()
+	BOTSearch.restore_defaults()
 	finish()
 
 
-## 第四段：静态检查 —— 场景层不许再出现 `GameState.PLAYER` / `GameState.AI`。
+## 第四段：静态检查 —— 场景层不许再出现 `GameState.PLAYER` / `GameState.BOT`。
 ##
 ## 为什么要有这条静态检查，而不是把行为测试铺满：
 ## 上面两段跑完，变异检查（tools/_seat_mut.py，把每一处 my_seat 改回
@@ -165,12 +169,12 @@ func _check_no_hardcoded_seat() -> void:
 	# 的 state.action_first() 重设，默认值只在 set_seats 之前活着
 	const ALLOW := [
 		"var my_seat := GameState.PLAYER",
-		"var foe_seat := GameState.AI",
+		"var foe_seat := GameState.BOT",
 		"var _actor := GameState.PLAYER",
 		# 单机局座位对的**唯一**定义处。重开一局要复位成它
-		# （main._reset_session_flags），而那儿再写一次 GameState.PLAYER / AI
+		# （main._reset_session_flags），而那儿再写一次 GameState.PLAYER / BOT
 		# 就是第二个定义处 —— 这条检查在那一版上真的报过一次
-		"const SOLO_SEATS := [GameState.PLAYER, GameState.AI]",
+		"const SOLO_SEATS := [GameState.PLAYER, GameState.BOT]",
 	]
 	var files := ["res://scenes/main.gd", "res://scenes/settle_layout.gd",
 		"res://scenes/board.gd", "res://scenes/card.gd"]
@@ -188,12 +192,12 @@ func _check_no_hardcoded_seat() -> void:
 			n += 1
 			var code := line.strip_edges()
 			if code.begins_with("#"):
-				continue   # 注释里说明「PLAYER/AI 是座位编号」是要留的
+				continue   # 注释里说明「PLAYER/BOT 是座位编号」是要留的
 			# 去掉行尾注释再判：`var x = 1  # 见 GameState.PLAYER` 不算违规
 			var hash_at := code.find("#")
 			if hash_at >= 0:
 				code = code.substr(0, hash_at).strip_edges()
-			if not ("GameState.PLAYER" in code or "GameState.AI" in code):
+			if not ("GameState.PLAYER" in code or "GameState.BOT" in code):
 				continue
 			var allowed := false
 			for ok in ALLOW:
@@ -212,7 +216,7 @@ func _check_no_hardcoded_seat() -> void:
 
 ## 第三段：换座位 + 公共区活着，只验不变量。
 ##
-## 为什么要单独一段：上面那段清空了公共区，对手无卡可买，于是 AI 买卡那一族
+## 为什么要单独一段：上面那段清空了公共区，对手无卡可买，于是 BOT 买卡那一族
 ## （`pick_market_buy` / `state.buy(foe_seat, …)` / `_unit_anchor(foe_seat, …)`）
 ## 整段不执行 —— 变异检查实测，清空后杀死数从 16 掉到 13，掉的正是这几处。
 ## 反过来公共区活着产出数就不确定（对手会买攻击卡打我）。
@@ -221,7 +225,7 @@ func _check_no_hardcoded_seat() -> void:
 ## 这一段不设产出判据，只设「对手买的卡不许进我手里、花的不许是我的钱」——
 ## 这个不变量与对手买了什么无关，所以不需要固定种子
 func _live_market_round() -> void:
-	var main: Node = await boot_main_seated(GameState.AI, GameState.PLAYER, 5)
+	var main: Node = await boot_main_seated(GameState.BOT, GameState.PLAYER, 5)
 	var state: GameState = main.state
 	var pre_cash: int = state.resource_count(main.my_seat, CardDB.RES_CASH)
 	var pre_user: int = state.resource_count(main.my_seat, CardDB.RES_USER)
@@ -233,7 +237,7 @@ func _live_market_round() -> void:
 	check(market_n0 > 0, "公共区有货（%d 个货位）" % market_n0)
 
 	var handed := false
-	# AI 搜索在线程中消耗真实 CPU 时间，只有演出补间和计时器受 TEST_SPEED
+	# BOT 搜索在线程中消耗真实 CPU 时间，只有演出补间和计时器受 TEST_SPEED
 	# 加速。交接的 15 秒预算必须按墙钟计算，否则 5 倍速会把正常搜索误报为超时。
 	var handoff_deadline := Time.get_ticks_msec() + 15000
 	while Time.get_ticks_msec() < handoff_deadline:
@@ -308,8 +312,8 @@ func _live_market_round() -> void:
 
 ## 清空公共区。分两步是必须的：
 ##
-## 引擎侧（`state.market`）立刻清 —— AI 买卡读的是它，而我们要在
-## BEAT_AI_THINK(0.6s) 之前把货架清空。这一步是纯数据，不牵扯补间。
+## 引擎侧（`state.market`）立刻清 —— BOT 买卡读的是它，而我们要在
+## BEAT_BOT_THINK(0.6s) 之前把货架清空。这一步是纯数据，不牵扯补间。
 ##
 ## 实体和价签晚一步放：`_spawn_market_card` 给每张货架卡挂了 0.3s 的飞入补间
 ## （`main.gd` 的 `_spawn_market_card()`，`create_tween().bind_node(e)`），而这两个用例是
@@ -342,7 +346,7 @@ func _free_market_visuals(main: Node) -> void:
 ## 任何一处漏改的硬编码都会让这两个数字对不上，或者干脆报错。
 ##
 ## 脚本本身和 test_full_game 一字不差地对应，只是把 GameState.PLAYER 换成
-## main.my_seat、GameState.AI 换成 main.foe_seat —— 这正是要验的那件事
+## main.my_seat、GameState.BOT 换成 main.foe_seat —— 这正是要验的那件事
 func _scripted_round(main: Node) -> void:
 	var state: GameState = main.state
 
@@ -350,7 +354,7 @@ func _scripted_round(main: Node) -> void:
 	# 而 _sync_round 末尾就已经调了 _begin_action_phase()：开局那一刻对手就在行动。
 	# 这正是联网里 B 客户端的常态，所以先等交接，等不到就不用往下测了。
 	# 交接本身就是判据：对手侧的自主行动跑完了，才会把行动权交回来
-	# 基线要在对手行动**之前**记：如果哪处 AI 调用点拿错了座位，它会替我买卡、
+	# 基线要在对手行动**之前**记：如果哪处 BOT 调用点拿错了座位，它会替我买卡、
 	# 花我的钱、用我的牌编组。在交接之后才记基线，这类错误全部发生在基线之前，
 	# 一条都看不见（第一版就是这么写的，变异检查里那几处 旧策略 调用全是 MISS）
 	var pre_cash: int = state.resource_count(main.my_seat, CardDB.RES_CASH)
@@ -360,7 +364,9 @@ func _scripted_round(main: Node) -> void:
 		pre_uids[c["uid"]] = true
 
 	var handed := false
-	for i in 200:
+	# 后台搜索不随测试演出加速；交接等待用独立的真实时间护栏。
+	var handoff_deadline := Time.get_ticks_msec()+15000
+	while Time.get_ticks_msec() < handoff_deadline:
 		await create_timer(0.05).timeout
 		if main._actor == main.my_seat and not main.board.input_locked:
 			handed = true
@@ -370,7 +376,7 @@ func _scripted_round(main: Node) -> void:
 		return
 
 	# 对手行动完，我这边应该一张不多一张不少 —— 对手买的卡进对手手里，
-	# 花的是对手的钱。这条守的是「AI 决策点的座位参数」那一族
+	# 花的是对手的钱。这条守的是「BOT 决策点的座位参数」那一族
 	var now_uids := {}
 	for c in state.players[main.my_seat]["cards"]:
 		now_uids[c["uid"]] = true
@@ -439,8 +445,8 @@ func _scripted_round(main: Node) -> void:
 	var foe_cash: int = state.resource_count(main.foe_seat, CardDB.RES_CASH)
 	check(str(mine_cash) in main.lbl_player_res.text,
 		"HUD「你的公司」显示我方资金 %d（%s）" % [mine_cash, main.lbl_player_res.text])
-	check(str(foe_cash) in main.lbl_ai_res.text,
-		"HUD「对手公司」显示对手资金 %d（%s）" % [foe_cash, main.lbl_ai_res.text])
+	check(str(foe_cash) in main.lbl_bot_res.text,
+		"HUD「对手公司」显示对手资金 %d（%s）" % [foe_cash, main.lbl_bot_res.text])
 
 
 func _same_card_colors(a: CardEntity, b: CardEntity) -> bool:

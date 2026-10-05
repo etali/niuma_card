@@ -162,7 +162,7 @@ const metricDefinitions = [
 
 async function workbench({notes = {}, withRuns = false, activeRun = false, activeRuns = [], notesGate, configGate, runGate,
   playGate, playError, profileGate, profileResolver, runMetrics = {}, runParameters = {}, runVersions = {}, definitions = metricDefinitions, realTimers = false,
-  savePicker = false, exportPath, stopGates = {}, stopFailures = {}, stopStatuses = {}, pollGates = [], fieldLimits = {}, profileParameters, ai = {model:'test-model', schema:[], parameters:{}}} = {}) {
+  savePicker = false, exportPath, stopGates = {}, stopFailures = {}, stopStatuses = {}, pollGates = [], fieldLimits = {}, profileParameters, bot = {model:'test-model', schema:[], parameters:{}}} = {}) {
   const document = new Element('document');
   document.ownerDocument = document;
   document.scrollEvents = [];
@@ -185,7 +185,7 @@ async function workbench({notes = {}, withRuns = false, activeRun = false, activ
     id, config_id:config.id, name:config.name, cards:config.cards, created, finished:created + 1,
     status:'complete', engine_fingerprint:'test-engine',
     options:{pairs:5, max_rounds:40, seed_start:1001, model:'test-model', strength:1},
-    result:{meta:{metric_version:runVersions[id] || 'test', ai_parameters:runParameters[id] || {}}, metrics:runMetrics[id] || {}},
+    result:{meta:{metric_version:runVersions[id] || 'test', bot_parameters:runParameters[id] || {}}, metrics:runMetrics[id] || {}},
     notes:{text:'这次评估的旧备注不应覆盖配置备注'},
   });
   const data = {
@@ -200,7 +200,7 @@ async function workbench({notes = {}, withRuns = false, activeRun = false, activ
         label:'出售价格', min:0, optional:card !== 'legend'})),
     ],
     definitions,
-    ai,
+    bot,
   };
   for (const field of data.fields) Object.assign(field, fieldLimits[field.card+'.'+field.field] || {});
   for (const [index, id] of [...(activeRun ? ['active-run'] : []), ...activeRuns].entries()) {
@@ -248,7 +248,7 @@ async function workbench({notes = {}, withRuns = false, activeRun = false, activ
       const config = saved.get(body.config_id);
       result = {id:'run-' + ++runSequence, config_id:config.id, name:config.name, cards:config.cards,
         status:'queued', created:10 + runSequence, options:body.options,strength_scale:'overall-v1'};
-      if(url==='api/duel')result.kind='ai-duel';
+      if(url==='api/duel')result.kind='bot-duel';
       data.runs.push(result);
     } else if (url === 'api/play') {
       if (playGate) await playGate;
@@ -261,7 +261,7 @@ async function workbench({notes = {}, withRuns = false, activeRun = false, activ
       profileRequests.push(body);
       if (profileGate && profileRequests.length > 1) await profileGate;
       result = profileResolver ? await profileResolver(body,profileRequests.length) :
-        {token:data.token, parameters:profileParameters ?? ai.parameters};
+        {token:data.token, parameters:profileParameters ?? bot.parameters};
     } else throw Error('Unexpected request: ' + url);
     return {ok:true, json:async () => structuredClone(result)};
   };
@@ -463,7 +463,7 @@ test('提交期间防止双击，保存等待期间修改模拟参数不改变�
   const submitted = ui.posts().filter(request => request.url === 'api/run');
   assert.equal(submitted.length, 1);
   assert.deepEqual(submitted[0].body.options, {pairs:5, max_rounds:40, seed_start:1001,
-    model:'test-model', strength:0.5, ai_parameters:{}});
+    model:'test-model', strength:0.5, bot_parameters:{}});
   ui.ready();
   await ui.run();
   assert.equal(ui.posts().filter(request => request.url === 'api/config').length, 1);
@@ -557,7 +557,7 @@ test('停止请求期间任务已完成视为正常终态，不误报失败或�
   const stopping = ui.stopButton('first').click();
   const metrics = observedMetrics(40, 25, victoryMetric([1, 1, 0]), 20);
   ui.updateRun('first', {status:'complete', finished:20,
-    result:{meta:{metric_version:'test', ai_parameters:{}}, metrics}});
+    result:{meta:{metric_version:'test', bot_parameters:{}}, metrics}});
   stopGate.resolve();
   await stopping;
   assert.match(ui.row('first').textContent, /已完成/);
@@ -609,7 +609,7 @@ test('停止前发出的旧轮询不能重新启用已停止任务，重试读�
 
 test('同一轮询中多个任务完成时，比较自动选择匹配配置中最新的记录', async () => {
   const ui = await workbench({activeRuns:['newer', 'older']});
-  const result = {meta:{metric_version:'test', ai_parameters:{}}, metrics:observedMetrics(40, 25)};
+  const result = {meta:{metric_version:'test', bot_parameters:{}}, metrics:observedMetrics(40, 25)};
   ui.updateRun('newer', {created:20, status:'complete', finished:25, result});
   ui.updateRun('older', {created:10, status:'complete', finished:25, result});
   await ui.tick();
@@ -1017,7 +1017,7 @@ test('试玩沿用配置名称规则，同名修改参数时置灰且不发启�
   assert.equal(ui.$('play').disabled, false);
 });
 
-test('评估正在运行、AI 参数正在加载以及非法模拟参数都不阻止试玩', async () => {
+test('评估正在运行、BOT 参数正在加载以及非法模拟参数都不阻止试玩', async () => {
   let release;
   const profileGate = new Promise(resolve => { release = resolve; });
   const ui = await workbench({activeRun:true, profileGate});
@@ -1463,7 +1463,7 @@ test('真实定时刷新保持各记录分布开关，更新进度及分布，�
   assert.equal(ui.document.scrollEvents.length, 1, '脱离文档的延迟展开事件应被忽略');
 
   ui.updateRun('active-run', {status:'complete', finished:Date.now() / 1000,
-    result:{meta:{metric_version:'test', ai_parameters:{}}, metrics:updated}});
+    result:{meta:{metric_version:'test', bot_parameters:{}}, metrics:updated}});
   await waitUntil(() => /已完成/.test(row('active-run').children[1].textContent), '完成状态应由真实轮询刷新');
   assert.deepEqual(states(), [true, false, false, false]);
   ui.$('sort').value = 'Q10';
@@ -1557,23 +1557,23 @@ test('模拟次数和回合可超过500，种子可超过32位；仍检查正整
   assert.equal(ui.posts().find(x=>x.url==='api/run').body.options.pairs,5001);
 });
 
-test('AI小数权重正常启动；范围、步长和整数参数分别校验，每个数值输入都有可见说明', async () => {
+test('BOT小数权重正常启动；范围、步长和整数参数分别校验，每个数值输入都有可见说明', async () => {
   const schema=[
     {key:'upgrade_weight',label:'升级潜力权重',kind:'float',min:0,max:2,step:0.01,hint:'升级价值权重'},
     {key:'protection_bonus',label:'入组保护加成',kind:'float',min:0,max:1,step:0.01,hint:'保护价值'},
     {key:'sales',label:'战略典当候选数',kind:'int',min:0,max:8,step:1,hint:'零关闭'},
   ];
-  const ui=await workbench({ai:{model:'test-model',schema,parameters:{upgrade_weight:0.65,protection_bonus:0.15,sales:0}},
+  const ui=await workbench({bot:{model:'test-model',schema,parameters:{upgrade_weight:0.65,protection_bonus:0.15,sales:0}},
     fieldLimits:{'_game.start_cash':{min:1,max:99},'alpha.price':{min:1,max:1000},'alpha.pawn':{min:0,max:1000}}});
   ui.ready();
-  const weight=ui.document.querySelector('input[data-ai="upgrade_weight"]');
-  assert.match(ui.$('range-ai-upgrade_weight').textContent,/0–2.*可填小数.*步长 0.01/);
-  assert.match(ui.$('range-ai-sales').textContent,/0–8.*整数.*步长 1/);
+  const weight=ui.document.querySelector('input[data-bot="upgrade_weight"]');
+  assert.match(ui.$('range-bot-upgrade_weight').textContent,/0–2.*可填小数.*步长 0.01/);
+  assert.match(ui.$('range-bot-sales').textContent,/0–8.*整数.*步长 1/);
   assert.match(ui.$('range-alpha-price').textContent,/1–1000/);
   assert.match(ui.$('range-alpha-pawn').textContent,/0–1000.*留空自动计算.*0 表示不可出售/);
   for(const input of ui.document.querySelectorAll('input[type=number]')){
     const id=input.getAttribute('aria-describedby');
-    assert.ok(id,`数值输入缺少范围说明：${input.id||input.dataset.ai||input.dataset.field}`);
+    assert.ok(id,`数值输入缺少范围说明：${input.id||input.dataset.bot||input.dataset.field}`);
     assert.match(ui.$(id).textContent,/范围.*步长/);
   }
   for(const value of ['0','0.65','1.27','2']){
@@ -1585,7 +1585,7 @@ test('AI小数权重正常启动；范围、步长和整数参数分别校验，
     assert.doesNotMatch(ui.$('run-reason').textContent,/正整数/);
   }
   weight.value='0.65';await weight.dispatch('input');ui.ready();
-  const sales=ui.document.querySelector('input[data-ai="sales"]');
+  const sales=ui.document.querySelector('input[data-bot="sales"]');
   sales.value='1.5';await sales.dispatch('input');
   await ui.blocked(/战略典当候选数.*整数/);
   sales.value='0';await sales.dispatch('input');ui.ready();
@@ -1593,31 +1593,31 @@ test('AI小数权重正常启动；范围、步长和整数参数分别校验，
   await ui.blocked(/种子对数.*正整数/);
   ui.$('pairs').value='501';await ui.$('pairs').dispatch('input');ui.ready();
   await ui.run();
-  assert.deepEqual(ui.posts().find(x=>x.url==='api/run').body.options.ai_parameters,
+  assert.deepEqual(ui.posts().find(x=>x.url==='api/run').body.options.bot_parameters,
     {upgrade_weight:0.65,protection_bonus:0.15,sales:0});
 });
 
 
-test('整体强度以滑钮映射全部AI参数，修改滑钮保留计算和节点覆盖', async () => {
+test('整体强度以滑钮映射全部BOT参数，修改滑钮保留计算和节点覆盖', async () => {
   const schema=[
     {key:'financing_mode',label:'典当动作覆盖',group:'设计能力',kind:'int',min:0,max:2,step:1,hint:'0单张典当；2联合融资'},
     {key:'node_budget',label:'总额度',group:'计算预算',kind:'int',min:1,max:10000000,step:1,hint:'节点额度'},
   ];
   const parameters={financing_mode:0,node_budget:30000};
-  const ui=await workbench({ai:{model:'ai',schema,parameters},profileResolver:async({strength})=>({parameters:
+  const ui=await workbench({bot:{model:'bot',schema,parameters},profileResolver:async({strength})=>({parameters:
     strength===1?{financing_mode:2,node_budget:60000}:strength===0?{financing_mode:0,node_budget:1000}:parameters})});
-  const field=key=>ui.$('ai-fields').querySelector(`[data-ai="${key}"]`);
+  const field=key=>ui.$('bot-fields').querySelector(`[data-bot="${key}"]`);
   for(const id of ['strength','duel-a-strength','duel-b-strength']){
     assert.equal(ui.$(id).type,'range');assert.equal(ui.$(id).getAttribute('min'),'0');
     assert.equal(ui.$(id).getAttribute('max'),'1');assert.equal(ui.$(id).getAttribute('step'),'0.01');
     assert.match(ui.$(ui.$(id).getAttribute('aria-describedby')).textContent,/0.5.*默认.*1.*最高/);
   }
   assert.equal(ui.$('strength').value,'0.5');assert.equal(ui.$('duel-a-strength').value,'0.5');
-  assert.equal(ui.$('ai-legacy'),null);assert.equal(ui.$('ai-enhanced'),null);
+  assert.equal(ui.$('bot-legacy'),null);assert.equal(ui.$('bot-enhanced'),null);
   assert.equal(ui.$('duel-a-preset'),null);assert.equal(ui.$('duel-b-preset'),null);
   assert.deepEqual(ui.profileRequests(),[{strength:0}]);
   assert.equal(field('financing_mode').value,'0');
-  assert.match(ui.$('ai-fields').textContent,/计算预算.*设计能力/s);
+  assert.match(ui.$('bot-fields').textContent,/计算预算.*设计能力/s);
   field('node_budget').value='1234';await field('node_budget').dispatch('input');
   ui.$('strength').value='1';await ui.$('strength').dispatch('input');
   assert.equal(ui.$('strength-value').textContent,'1.00');assert.equal(ui.$('run').disabled,false);
@@ -1628,28 +1628,28 @@ test('整体强度以滑钮映射全部AI参数，修改滑钮保留计算和节
   assert.equal(field('financing_mode').value,'2');assert.equal(field('node_budget').value,'1234');
   ui.$('strength').value='0.5';await ui.$('strength').dispatch('change');
   assert.equal(field('financing_mode').value,'0');assert.equal(field('node_budget').value,'1234');
-  assert.equal(ui.$('duel-a-fields').querySelector('[data-ai="node_budget"]').value,'30000');
+  assert.equal(ui.$('duel-a-fields').querySelector('[data-bot="node_budget"]').value,'30000');
 });
 
 
 test('三处强度滑钮拖动时同步应用全部可调参数，保留表单且不请求映射接口',async()=>{
- const aiConfig=JSON.parse(readFileSync(path.join(__dirname,'../data/ai.json'),'utf8')).search.ai;
- const keys=Object.keys(aiConfig).filter(key=>Array.isArray(aiConfig[key])||typeof aiConfig[key]==='number');
+ const botConfig=JSON.parse(readFileSync(path.join(__dirname,'../data/bot.json'),'utf8')).search.bot;
+ const keys=Object.keys(botConfig).filter(key=>Array.isArray(botConfig[key])||typeof botConfig[key]==='number');
  assert.equal(keys.length,36);
  const schema=keys.map(key=>({key,label:key,kind:'int',min:0,max:10000000,step:1,hint:''}));
  // Deliberately distinct snapshots prove the UI applies server results, rather than its own interpolation.
  const strength_profiles=Object.fromEntries(Array.from({length:101},(_,step)=>[(step/100).toFixed(2),
   Object.fromEntries(keys.map((key,index)=>[key,step*100+index]))]));
  const originalProfiles=structuredClone(strength_profiles);
- const ui=await workbench({ai:{model:'ai',schema,parameters:strength_profiles['0.50'],strength_profiles}});
- const fieldId=side=>side==='q'?'ai-fields':'duel-'+side+'-fields';
+ const ui=await workbench({bot:{model:'bot',schema,parameters:strength_profiles['0.50'],strength_profiles}});
+ const fieldId=side=>side==='q'?'bot-fields':'duel-'+side+'-fields';
  const sliderId=side=>side==='q'?'strength':'duel-'+side+'-strength';
- const fields=Object.fromEntries(['q','a','b'].map(side=>[side,ui.$(fieldId(side)).querySelectorAll('input[data-ai]')]));
- const field=(side,key)=>fields[side].find(input=>input.dataset.ai===key);
+ const fields=Object.fromEntries(['q','a','b'].map(side=>[side,ui.$(fieldId(side)).querySelectorAll('input[data-bot]')]));
+ const field=(side,key)=>fields[side].find(input=>input.dataset.bot===key);
  const writes=Object.fromEntries(['q','a','b'].map(side=>[side,ui.$(fieldId(side)).innerHTMLWrites]));
  for(const side of ['q','a','b']){
   const expected=strength_profiles[side==='b'?'0.00':'0.50'];
-  for(const input of fields[side])assert.equal(input.value,String(expected[input.dataset.ai]));
+  for(const input of fields[side])assert.equal(input.value,String(expected[input.dataset.bot]));
   field(side,'node_budget').value=String({q:12345,a:23456,b:34567}[side]);
   await field(side,'node_budget').dispatch('input');
  }
@@ -1662,7 +1662,7 @@ test('三处强度滑钮拖动时同步应用全部可调参数，保留表单�
   for(let step=0;step<=100;step++){
    slider.value=(step/100).toFixed(2);const dragging=slider.dispatch('input');
    for(const input of fields[side]){
-    assert.equal(input.value,String(input.dataset.ai==='node_budget'?{q:12345,a:23456,b:34567}[side]:strength_profiles[slider.value][input.dataset.ai]),'input时预算覆盖保留，其余参数更新');
+    assert.equal(input.value,String(input.dataset.bot==='node_budget'?{q:12345,a:23456,b:34567}[side]:strength_profiles[slider.value][input.dataset.bot]),'input时预算覆盖保留，其余参数更新');
     assert.equal(input.checkValidity(),true);
    }
    assert.equal(ui.$(slider.id+'-value').textContent,slider.value);
@@ -1673,49 +1673,49 @@ test('三处强度滑钮拖动时同步应用全部可调参数，保留表单�
   await slider.dispatch('change');
   assert.equal(field(side,'node_budget').value,'98765','松手不能覆盖同一强度下的逐项编辑');
   assert.equal(ui.$(fieldId(side)).innerHTMLWrites,writes[side],'拖动过程中不重建表单');
-  assert.deepEqual(ui.$(fieldId(side)).querySelectorAll('input[data-ai]'),fields[side]);
+  assert.deepEqual(ui.$(fieldId(side)).querySelectorAll('input[data-bot]'),fields[side]);
   assert.equal(details.open,true);
  }
  assert.deepEqual(ui.profileRequests(),[],'连续拖动不能产生后台映射请求');
  assert.deepEqual(strength_profiles,originalProfiles,'逐项编辑不能修改其他强度的源快照');
  await ui.$('duel-run').click();
  const duel=ui.posts().find(request=>request.url==='api/duel').body.options;
- assert.deepEqual(duel.a.ai_parameters,{...strength_profiles['1.00'],node_budget:98765});
- assert.deepEqual(duel.b.ai_parameters,{...strength_profiles['1.00'],node_budget:98765});
+ assert.deepEqual(duel.a.bot_parameters,{...strength_profiles['1.00'],node_budget:98765});
+ assert.deepEqual(duel.b.bot_parameters,{...strength_profiles['1.00'],node_budget:98765});
  await ui.run();
- assert.deepEqual(ui.posts().find(request=>request.url==='api/run').body.options.ai_parameters,
+ assert.deepEqual(ui.posts().find(request=>request.url==='api/run').body.options.bot_parameters,
   {...strength_profiles['1.00'],node_budget:98765});
 });
 
-test('比较实际AI参数并区分未记录字段，不能把缺失值当零', async () => {
+test('比较实际BOT参数并区分未记录字段，不能把缺失值当零', async () => {
  const schema=[{key:'financing_mode',label:'典当动作覆盖',group:'设计能力',kind:'int',min:0,max:2,step:1,hint:''},
  {key:'node_budget',label:'总额度',group:'计算预算',kind:'int',min:1,max:10000000,step:1,hint:''}];
- const ui=await workbench({withRuns:true,ai:{model:'ai',schema,parameters:{financing_mode:0,node_budget:30000}},
+ const ui=await workbench({withRuns:true,bot:{model:'bot',schema,parameters:{financing_mode:0,node_budget:30000}},
  runParameters:{'default-old':{financing_mode:0},'alternate-run':{financing_mode:2,node_budget:60000}}});
  ui.$('compare-a').value='default';await ui.$('compare-a').dispatch('change');
  ui.$('compare-b').value='alternate';await ui.$('compare-b').dispatch('change');
  ui.$('run-a').value='default-old';await ui.$('run-a').dispatch('change');
  ui.$('run-b').value='alternate-run';await ui.$('run-b').dispatch('change');
- assert.match(ui.$('ai-diff').textContent,/设计能力.*典当动作覆盖.*0.*2/s);
- assert.match(ui.$('ai-diff').textContent,/计算预算.*总额度.*未记录.*60000/s);
+ assert.match(ui.$('bot-diff').textContent,/设计能力.*典当动作覆盖.*0.*2/s);
+ assert.match(ui.$('bot-diff').textContent,/计算预算.*总额度.*未记录.*60000/s);
 });
 
 
-test('AI对战独立强度与参数、独立校验、进度统计、停止及导出', async () => {
+test('BOT对战独立强度与参数、独立校验、进度统计、停止及导出', async () => {
  const ui=await workbench();
  ui.$('pairs').value='0';await ui.$('pairs').dispatch('input');
  assert.equal(ui.$('run').disabled,true);
- assert.equal(ui.$('duel-run').disabled,false,'Q模拟参数不应阻止独立AI对战');
+ assert.equal(ui.$('duel-run').disabled,false,'Q模拟参数不应阻止独立BOT对战');
  ui.$('duel-a-strength').value='0.7';await ui.$('duel-a-strength').dispatch('change');
  ui.$('duel-b-strength').value='0.2';await ui.$('duel-b-strength').dispatch('change');ui.$('duel-pairs').value='501';
  await ui.$('duel-run').click();
  const request=ui.posts().find(x=>x.url==='api/duel');
  assert.deepEqual(request.body.options,{pairs:501,max_rounds:40,seed_start:1001,
-  a:{strength:0.7,ai_parameters:{}},b:{strength:0.2,ai_parameters:{}}});
- assert.doesNotMatch(ui.$('run-rows').textContent,/501/,'AI对战不能混入Q指标评估');
+  a:{strength:0.7,bot_parameters:{}},b:{strength:0.2,bot_parameters:{}}});
+ assert.doesNotMatch(ui.$('run-rows').textContent,/501/,'BOT对战不能混入Q指标评估');
  ui.updateRun('run-1',{status:'running',progress:{completed:3,total:1002,round:4,
   summary:{completed_games:3,a_wins:1,b_wins:0,draws:2,a_decisive_win_rate:1,draw_rate:2/3,a_score_rate:2/3,
-    mean_rounds:4,by_a_seat:{player:{A:1,B:0,draw:1},ai:{A:0,B:0,draw:1}}}}});
+    mean_rounds:4,by_a_seat:{player:{A:1,B:0,draw:1},bot:{A:0,B:0,draw:1}}}}});
  await ui.tick();
  assert.match(ui.$('duel-rows').textContent,/A 1 胜 \/ B 0 胜 \/ 未结束 2/);
  assert.match(ui.$('duel-rows').textContent,/A 胜率 100.0%（1\/1）/);
@@ -1725,14 +1725,14 @@ test('AI对战独立强度与参数、独立校验、进度统计、停止及导
  assert.equal(ui.posts().at(-1).url,'api/stop');
  assert.equal(ui.posts().at(-1).body.run_id,'run-1');
  await ui.$('duel-rows').querySelector('button[data-duel-export="run-1"]').click();
- const exported=(await ui.exported())[0];assert.equal(exported.kind,'ai-duel');assert.equal(exported.progress.completed,3);
+ const exported=(await ui.exported())[0];assert.equal(exported.kind,'bot-duel');assert.equal(exported.progress.completed,3);
  ui.$('duel-a-strength').value='1.1';await ui.$('duel-a-strength').dispatch('input');
  assert.equal(ui.$('duel-run').disabled,true);
  ui.$('duel-a-strength').value='1';await ui.$('duel-a-strength').dispatch('change');ui.$('duel-seed').value=String(Number.MAX_SAFE_INTEGER);await ui.$('duel-seed').dispatch('input');
  assert.equal(ui.$('duel-run').disabled,true);assert.match(ui.$('duel-reason').textContent,/最后一个种子/);
 });
 
-test('AI对战零局显示未观测，完成后的区间与参数可导出',async()=>{
+test('BOT对战零局显示未观测，完成后的区间与参数可导出',async()=>{
  const ui=await workbench();await ui.$('duel-run').click();
  assert.match(ui.$('duel-rows').textContent,/A 胜率 未观测/);
  const result={a:{parameters:{node_budget:30000}},b:{parameters:{node_budget:1000}},
@@ -1750,7 +1750,7 @@ test('AI对战零局显示未观测，完成后的区间与参数可导出',asyn
 });
 
 
-test('AI对战区分当前完成、未来中断与额度耗尽，直接使用后端累计数',async()=>{
+test('BOT对战区分当前完成、未来中断与额度耗尽，直接使用后端累计数',async()=>{
  const ui=await workbench();await ui.$('duel-run').click();
  const decisions={
   A:{decisions:4,elapsed_ms:8000,future_depth:4,selected_evaluation_complete:4,future_incomplete:4,budget_exhausted:0},
@@ -1769,7 +1769,7 @@ test('AI对战区分当前完成、未来中断与额度耗尽，直接使用后
  assert.deepEqual((await ui.exported())[0].result.summary.decisions,finished,'展示比例不能改写后端累计统计');
 });
 
-test('AI对战缺失或空诊断不推断为零，没有决策时不显示百分比',async()=>{
+test('BOT对战缺失或空诊断不推断为零，没有决策时不显示百分比',async()=>{
  const ui=await workbench();await ui.$('duel-run').click();
  assert.match(ui.$('duel-rows').textContent,/A 思考诊断：未记录.*B 思考诊断：未记录/);
  const decisions={A:{decisions:2,elapsed_ms:1000,future_depth:0,future_incomplete:null},B:{decisions:0,selected_evaluation_complete:0,future_incomplete:0,budget_exhausted:0}};
@@ -1781,31 +1781,31 @@ test('AI对战缺失或空诊断不推断为零，没有决策时不显示百分
 });
 
 
-test('AI对战的无效输入不会阻止卡表Q评估',async()=>{
+test('BOT对战的无效输入不会阻止卡表Q评估',async()=>{
  const ui=await workbench();ui.$('duel-pairs').value='0';await ui.$('duel-pairs').dispatch('input');
  assert.equal(ui.$('duel-run').disabled,true);assert.equal(ui.$('run').disabled,false);
  await ui.run();assert.equal(ui.posts().at(-1).url,'api/run');
 });
 
 
-test('AI 对战位于页面最下，双方完整呈现全部可调参数并保持各自的修改',async()=>{
- const aiConfig=JSON.parse(readFileSync(path.join(__dirname,'../data/ai.json'),'utf8')).search.ai;
- const keys=Object.keys(aiConfig).filter(key=>Array.isArray(aiConfig[key])||typeof aiConfig[key]==='number');
- const anchor=(key,index)=>{const value=Array.isArray(aiConfig[key])?aiConfig[key][index][1]:aiConfig[key];return key==='search_fraction'?Math.round(value*1000000)/1000000:value};
+test('BOT 对战位于页面最下，双方完整呈现全部可调参数并保持各自的修改',async()=>{
+ const botConfig=JSON.parse(readFileSync(path.join(__dirname,'../data/bot.json'),'utf8')).search.bot;
+ const keys=Object.keys(botConfig).filter(key=>Array.isArray(botConfig[key])||typeof botConfig[key]==='number');
+ const anchor=(key,index)=>{const value=Array.isArray(botConfig[key])?botConfig[key][index][1]:botConfig[key];return key==='search_fraction'?Math.round(value*1000000)/1000000:value};
  assert.equal(keys.length,36,'全部能力、预算与评估参数都应包含');
  const schema=keys.map((key,index)=>({key,label:key,group:index%2?'计算预算':'设计能力',
   kind:['search_fraction','upgrade_weight','attack_discount','protection_bonus','spent_attack_discount'].includes(key)?'float':'int',min:0,max:10000000,step:key==='search_fraction'?.000001:['upgrade_weight','attack_discount','protection_bonus','spent_attack_discount'].includes(key)?.01:1,hint:'测试参数'}));
  const parameters=Object.fromEntries(keys.map(key=>[key,anchor(key,1)]));
  const strongest=Object.fromEntries(keys.map(key=>[key,anchor(key,2)]));
  const weakest=Object.fromEntries(keys.map(key=>[key,anchor(key,0)]));
- const ui=await workbench({ai:{model:'ai',schema,parameters},profileResolver:async({strength})=>({parameters:strength===1?strongest:strength===0?weakest:parameters})});
- const sections=ui.document.querySelectorAll('section');assert.equal(sections.at(-1).id,'ai-duel');
- assert.ok(html.indexOf('<section id="ai-duel">')>html.indexOf('<section id="comparison">'));
- assert.ok(html.indexOf('<section id="ai-duel">')<html.indexOf('<footer>'));
- const field=(side,key)=>ui.$('duel-'+side+'-fields').querySelector(`[data-ai="${key}"]`);
+ const ui=await workbench({bot:{model:'bot',schema,parameters},profileResolver:async({strength})=>({parameters:strength===1?strongest:strength===0?weakest:parameters})});
+ const sections=ui.document.querySelectorAll('section');assert.equal(sections.at(-1).id,'bot-duel');
+ assert.ok(html.indexOf('<section id="bot-duel">')>html.indexOf('<section id="comparison">'));
+ assert.ok(html.indexOf('<section id="bot-duel">')<html.indexOf('<footer>'));
+ const field=(side,key)=>ui.$('duel-'+side+'-fields').querySelector(`[data-bot="${key}"]`);
  for(const side of ['a','b']){
-  const fields=ui.$('duel-'+side+'-fields').querySelectorAll('input[data-ai]');
-  assert.equal(fields.length,keys.length);assert.deepEqual(fields.map(input=>input.dataset.ai).sort(),keys.slice().sort());
+  const fields=ui.$('duel-'+side+'-fields').querySelectorAll('input[data-bot]');
+  assert.equal(fields.length,keys.length);assert.deepEqual(fields.map(input=>input.dataset.bot).sort(),keys.slice().sort());
   assert.match(ui.$('duel-'+side+'-fields').textContent,/计算预算.*设计能力/s);
   for(const input of fields){const hint=ui.$(input.getAttribute('aria-describedby'));assert.ok(hint);assert.match(hint.textContent,/范围.*含边界.*步长/)}
  }
@@ -1814,7 +1814,7 @@ test('AI 对战位于页面最下，双方完整呈现全部可调参数并保�
  ui.$('duel-a-strength').value='1';await ui.$('duel-a-strength').dispatch('change');
  for(const key of keys)assert.equal(Number(field('a',key).value),key==='node_budget'?777:strongest[key]);
  assert.equal(field('b','node_budget').value,'888');
- assert.equal(ui.$('ai-fields').querySelector('[data-ai="node_budget"]').value,String(parameters.node_budget));
+ assert.equal(ui.$('bot-fields').querySelector('[data-bot="node_budget"]').value,String(parameters.node_budget));
  field('a','node_budget').value='999';await field('a','node_budget').dispatch('input');
  ui.$('duel-b-strength').value='0.8';await ui.$('duel-b-strength').dispatch('change');
  assert.equal(field('a','node_budget').value,'999');assert.equal(field('b','node_budget').value,'888');
@@ -1822,23 +1822,23 @@ test('AI 对战位于页面最下，双方完整呈现全部可调参数并保�
  assert.equal(ui.$('duel-run').disabled,false,ui.$('duel-reason').textContent);
  await ui.$('duel-run').click();
  assert.deepEqual(ui.posts().find(request=>request.url==='api/duel').body.options,{
-  pairs:5,max_rounds:40,seed_start:1001,a:{strength:1,ai_parameters:{...strongest,node_budget:999}},
-  b:{strength:.8,ai_parameters:{...parameters,node_budget:222}},
+  pairs:5,max_rounds:40,seed_start:1001,a:{strength:1,bot_parameters:{...strongest,node_budget:999}},
+  b:{strength:.8,bot_parameters:{...parameters,node_budget:222}},
  });
  field('a','node_budget').value='1.5';await field('a','node_budget').dispatch('input');
- assert.equal(ui.$('duel-run').disabled,true);assert.match(ui.$('duel-reason').textContent,/AI A node_budget.*整数/);
+ assert.equal(ui.$('duel-run').disabled,true);assert.match(ui.$('duel-reason').textContent,/BOT A node_budget.*整数/);
  assert.equal(ui.$('run').disabled,false);
 });
 
 for(const side of ['q','a','b'])test(`强度 ${side} 快速拖动时仅接纳最新映射，旧响应不能清除加载状态或覆盖新参数`,async()=>{
  const pending=new Map();
  const schema=[{key:'node_budget',label:'总额度',group:'计算预算',kind:'int',min:1,max:10000000,step:1,hint:''}];
- const ui=await workbench({ai:{model:'ai',schema,parameters:{node_budget:30000}},profileResolver:async({strength})=>{
+ const ui=await workbench({bot:{model:'bot',schema,parameters:{node_budget:30000}},profileResolver:async({strength})=>{
   if(strength===0)return {parameters:{node_budget:1000}};
   return new Promise(resolve=>pending.set(strength,resolve));
  }});
  const slider=ui.$(side==='q'?'strength':'duel-'+side+'-strength');
- const field=()=>ui.$(side==='q'?'ai-fields':'duel-'+side+'-fields').querySelector('[data-ai="node_budget"]');
+ const field=()=>ui.$(side==='q'?'bot-fields':'duel-'+side+'-fields').querySelector('[data-bot="node_budget"]');
  const button=ui.$(side==='q'?'run':'duel-run');
  slider.value='0.7';const older=slider.dispatch('input');await slider.dispatch('change');
  assert.equal(button.disabled,true);assert.equal(field().disabled,true);
@@ -1857,27 +1857,27 @@ for(const side of ['q','a','b'])test(`强度 ${side} 快速拖动时仅接纳最
 test('旧服务回退也在 input 时读取并立即废弃旧响应，无需等待 change',async()=>{
  let release;
  const schema=[{key:'node_budget',label:'总额度',kind:'int',min:1,max:10000000,step:1,hint:''}];
- const ui=await workbench({ai:{model:'ai',schema,parameters:{node_budget:30000}},profileResolver:async({strength})=>{
+ const ui=await workbench({bot:{model:'bot',schema,parameters:{node_budget:30000}},profileResolver:async({strength})=>{
   if(strength===.7)return new Promise(resolve=>{release=resolve});
   return {parameters:{node_budget:strength===0?1000:55000}};
  }});
  ui.$('duel-a-strength').value='.7';const older=ui.$('duel-a-strength').dispatch('change');
  ui.$('duel-a-strength').value='.9';await ui.$('duel-a-strength').dispatch('input');
  release({parameters:{node_budget:40000}});await older;
- assert.equal(ui.$('duel-run').disabled,false);assert.equal(ui.$('duel-a-fields').querySelector('[data-ai="node_budget"]').value,'55000');
+ assert.equal(ui.$('duel-run').disabled,false);assert.equal(ui.$('duel-a-fields').querySelector('[data-bot="node_budget"]').value,'55000');
  await ui.$('duel-a-strength').dispatch('change');assert.equal(ui.$('duel-run').disabled,false);
- assert.equal(ui.$('duel-a-fields').querySelector('[data-ai="node_budget"]').value,'55000');
+ assert.equal(ui.$('duel-a-fields').querySelector('[data-bot="node_budget"]').value,'55000');
  assert.deepEqual(ui.profileRequests(),[{strength:0},{strength:.7},{strength:.9}]);
 });
 
 test('单方映射失败阻止提交旧参数，可重新拖动恢复且不影响另一类模拟',async()=>{
  const schema=[{key:'node_budget',label:'总额度',kind:'int',min:1,max:10000000,step:1,hint:''}];
- const ui=await workbench({ai:{model:'ai',schema,parameters:{node_budget:30000}},profileResolver:async({strength})=>{
+ const ui=await workbench({bot:{model:'bot',schema,parameters:{node_budget:30000}},profileResolver:async({strength})=>{
   if(strength===.7)throw Error('测试服务不可用');return {parameters:{node_budget:1000}};
  }});
  ui.$('duel-b-strength').value='.7';await ui.$('duel-b-strength').dispatch('input');
  assert.equal(ui.$('duel-run').disabled,true);assert.equal(ui.$('run').disabled,false);
- assert.match(ui.$('duel-reason').textContent,/AI B 参数读取失败.*重新调整强度/);
+ assert.match(ui.$('duel-reason').textContent,/BOT B 参数读取失败.*重新调整强度/);
  assert.match(ui.$('duel-b-profile-status').textContent,/测试服务不可用/);
  await ui.$('duel-b-strength').dispatch('change');assert.deepEqual(ui.profileRequests(),[{strength:0},{strength:.7}]);
  await ui.$('duel-run').click();assert.equal(ui.posts().filter(request=>request.url==='api/duel').length,0);
@@ -1898,10 +1898,10 @@ test('历史对战记录保留原强度语义，不显示为当前整体强度',
 
 test('Q评估列表和选择器区分历史强度与当前整体强度',async()=>{
  const ui=await workbench({withRuns:true});
- assert.match(ui.$('run-rows').textContent,/AI 历史强度 1（参数快照）/);
- assert.match(ui.$('run-a').textContent,/AI 历史强度 1（参数快照）/);
+ assert.match(ui.$('run-rows').textContent,/BOT 历史强度 1（参数快照）/);
+ assert.match(ui.$('run-a').textContent,/BOT 历史强度 1（参数快照）/);
  assert.doesNotMatch(ui.$('run-rows').textContent,/整体强度/);
- await ui.run();assert.match(ui.$('run-rows').textContent,/AI 整体强度 0.5/);
+ await ui.run();assert.match(ui.$('run-rows').textContent,/BOT 整体强度 0.5/);
  await ui.$('duel-run').click();assert.match(ui.$('duel-rows').textContent,/整体强度 0.5.*整体强度 0/s);
 });
 
@@ -1914,22 +1914,22 @@ test('三处计算使用比例只读显示、跟随强度，两个预算可独�
  const strength_profiles={'0.00':{search_fraction:.002,compute_budget:3000000,node_budget:45000},
   '0.50':{search_fraction:.12675,compute_budget:3000000,node_budget:45000},
   '1.00':{search_fraction:1,compute_budget:3000000,node_budget:45000}};
- const ui=await workbench({ai:{model:'ai',schema,parameters:strength_profiles['0.50'],strength_profiles}});
+ const ui=await workbench({bot:{model:'bot',schema,parameters:strength_profiles['0.50'],strength_profiles}});
  for(const side of ['q','a','b']){
-  const fields=ui.$(side==='q'?'ai-fields':'duel-'+side+'-fields');
-  assert.equal(fields.querySelector('[data-ai="search_fraction"]'),null);
-  const output=fields.querySelector('[data-ai-readonly="search_fraction"]');assert.ok(output);
+  const fields=ui.$(side==='q'?'bot-fields':'duel-'+side+'-fields');
+  assert.equal(fields.querySelector('[data-bot="search_fraction"]'),null);
+  const output=fields.querySelector('[data-bot-readonly="search_fraction"]');assert.ok(output);
   for(const [key,value] of [['compute_budget',6000000],['node_budget',90000]]){
-   const input=fields.querySelector(`[data-ai="${key}"]`);input.value=String(value);await input.dispatch('input');
+   const input=fields.querySelector(`[data-bot="${key}"]`);input.value=String(value);await input.dispatch('input');
   }
   const slider=ui.$(side==='q'?'strength':'duel-'+side+'-strength');slider.value='1';await slider.dispatch('input');
   assert.equal(output.textContent,'100.0000%');
-  assert.equal(fields.querySelector('[data-ai="compute_budget"]').value,'6000000');
-  assert.equal(fields.querySelector('[data-ai="node_budget"]').value,'90000');
+  assert.equal(fields.querySelector('[data-bot="compute_budget"]').value,'6000000');
+  assert.equal(fields.querySelector('[data-bot="node_budget"]').value,'90000');
  }
  await ui.$('duel-run').click();
  const options=ui.posts().find(r=>r.url==='api/duel').body.options;
- assert.equal(options.a.ai_parameters.search_fraction,1);assert.equal(options.b.ai_parameters.search_fraction,1);
+ assert.equal(options.a.bot_parameters.search_fraction,1);assert.equal(options.b.bot_parameters.search_fraction,1);
 });
 
 

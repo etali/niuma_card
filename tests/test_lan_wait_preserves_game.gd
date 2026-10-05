@@ -4,13 +4,13 @@
 
 extends "res://tests/harness.gd"
 
-## 玩家等人时仍拿着原来的 AI 局；取消只是撤掉尚未开打的连接。
+## 玩家等人时仍拿着原来的 BOT 局；取消只是撤掉尚未开打的连接。
 ## 真 main + 真 socket，并把非空录像、手工布局和抽屉收放一起带过等待过程。
 func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	print("=== 联网等待保留 AI 对局 ===")
+	print("=== 联网等待保留 BOT 对局 ===")
 	for dpi in [1.0, 2.0]:
 		var main: Node = await _boot_drawer(float(dpi))
 		if not need(main != null, "%s倍DPI真实抽屉启动" % dpi):
@@ -21,7 +21,7 @@ func _run() -> void:
 		await _dispose(main)
 	await _handoff_after_remote_action(false)
 	await _handoff_after_remote_action(true)
-	await _handoff_after_solo_resign_during_ai()
+	await _handoff_after_solo_resign_during_bot()
 	finish()
 
 func _boot_drawer(dpi: float) -> Node:
@@ -188,7 +188,7 @@ func _waiting_geometry_failure(main: Node, dpi: float) -> void:
 	check(panel._form.visible and panel._url_edit.editable and panel._room_edit.editable
 		and not panel._host_btn.disabled and not panel._btn.disabled
 		and panel._cancel_btn.text == "单机继续" and panel._status.text != "",
-		"%s：错误原位显示，保留重试和继续原AI局的入口" % context)
+		"%s：错误原位显示，保留重试和继续原BOT局的入口" % context)
 
 	var large_font := panel._url_edit.get_theme_font_size("font_size")
 	var original_window := root.size
@@ -243,7 +243,7 @@ func _check_geometry(panel: JoinPanel, before: Dictionary, context: String) -> v
 	check(moved.is_empty(), "%s：外框及各行位置尺寸偏差不超过1px%s" % [context,
 		"" if moved.is_empty() else "（位移：%s）" % ", ".join(moved)])
 
-## 两位已到齐，但本机旧AI行动尚未结束。远端可以先行动；
+## 两位已到齐，但本机旧BOT行动尚未结束。远端可以先行动；
 ## 这些消息不能在面板持有连接时被提前消费、丢掉负责推进次序的信号。
 func _handoff_after_remote_action(resign: bool) -> void:
 	var context := "延迟交接期间对手%s" % ("认输" if resign else "完成行动")
@@ -260,7 +260,7 @@ func _handoff_after_remote_action(resign: bool) -> void:
 		return
 	check(remote.my_seat == GameState.PLAYER, "%s：远端拿到本局先手座位" % context)
 	var original := _snapshot(main)
-	# 只保持与真实AI思考相同的交接门，实际连接/入座/行动消息均走真实socket。
+	# 只保持与真实BOT思考相同的交接门，实际连接/入座/行动消息均走真实socket。
 	main._thinking = true
 	var panel: JoinPanel = main._open_join_panel()
 	panel._url_edit.text = remote.url
@@ -307,15 +307,15 @@ func _handoff_after_remote_action(resign: bool) -> void:
 	net_stop()
 	await _dispose(main)
 
-## AI已经结束搜索，但正在「买一张后停半拍」时仍有旧局协程。
+## BOT已经结束搜索，但正在「买一张后停半拍」时仍有旧局协程。
 ## 此刻认输不能因phase=OVER就立即交接，否则旧协程会给新联网局提前换手。
-func _handoff_after_solo_resign_during_ai() -> void:
-	var context := "本机AI买卡节拍中认输再交接"
+func _handoff_after_solo_resign_during_bot() -> void:
+	var context := "本机BOT买卡节拍中认输再交接"
 	var main: Node = await _boot_drawer(1.0)
 	if not net_boot(48270, 42):
 		await _dispose(main)
 		return
-	var remote: NetTransport = net_client("MIDAI")
+	var remote: NetTransport = net_client("MIDBOT")
 	if not need(await net_until([remote], func(): return remote.my_seat != ""),
 		"%s：远端真实入座并持有先手" % context):
 		remote.close()
@@ -324,7 +324,7 @@ func _handoff_after_solo_resign_during_ai() -> void:
 		return
 	var solo_state: GameState = main.state
 	var original_market_size: int = solo_state.market.size()
-	# 不替换AI决策或节拍：从玩家「完成行动」真实驱动AI进入买卡步骤。
+	# 不替换BOT决策或节拍：从玩家「完成行动」真实驱动BOT进入买卡步骤。
 	main._on_action_done()
 	var panel: JoinPanel = main._open_join_panel()
 	panel._url_edit.text = remote.url
@@ -333,7 +333,7 @@ func _handoff_after_solo_resign_during_ai() -> void:
 	var ready := await net_until([remote], func():
 		return is_instance_valid(panel) and panel._net != null \
 			and panel._net.has_dealt_state() and panel._net.phase() != "")
-	if not need(ready, "%s：旧AI行动中联机双方已完成发牌" % context):
+	if not need(ready, "%s：旧BOT行动中联机双方已完成发牌" % context):
 		if is_instance_valid(panel):
 			panel._on_cancel()
 		remote.close()
@@ -357,7 +357,7 @@ func _handoff_after_solo_resign_during_ai() -> void:
 	main._on_resign_pressed()
 	main._on_resign_pressed()
 	check(main.phase == main.PHASE_OVER and solo_state.winner == main.foe_seat,
-		"%s：两次真实认输操作已经结束旧AI局" % context)
+		"%s：两次真实认输操作已经结束旧BOT局" % context)
 	check(not main.can_start_pending_net_game() and main._net == null,
 		"%s：搜索线程虽已空闲，仍等完整旧行动协程结束后交接" % context)
 	var transferred := await net_until([remote], func(): return main._net == pending, 10000)
@@ -367,9 +367,9 @@ func _handoff_after_solo_resign_during_ai() -> void:
 	await net_pump_for([remote], 900)
 	check(main.state.winner == "" and main.game_over_panel == null,
 		"%s：旧胜负层不留在新局里" % context)
-	check(main.my_seat == GameState.AI and main._actor == remote.my_seat
+	check(main.my_seat == GameState.BOT and main._actor == remote.my_seat
 		and pending.actor() == remote.my_seat and main.board.input_locked and main.btn_pass.disabled,
-		"%s：服务器仍是远端先手，旧AI协程不能给本机后手提前解锁" % context)
+		"%s：服务器仍是远端先手，旧BOT协程不能给本机后手提前解锁" % context)
 	main._reset_session_flags()
 	remote.close()
 	net_stop()
@@ -396,7 +396,7 @@ func _snapshot(main: Node) -> Dictionary:
 func _assert_preserved(main: Node, before: Dictionary, context: String) -> void:
 	check(main._net == null and main.state == before["state"]
 		and StateCodec.state_hash(main.state) == before["hash"],
-		"%s：保留同一个 AI 局面及其完整状态" % context)
+		"%s：保留同一个 BOT 局面及其完整状态" % context)
 	check(main.pipe == before["pipe"] and main.tape == before["tape"]
 		and main.tape._applier == before["tape_applier"],
 		"%s：保留原操作管道和录像裁决器连接" % context)

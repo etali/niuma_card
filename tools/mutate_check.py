@@ -189,31 +189,31 @@ MUTATIONS = [
      '\t\tif mine.has(s["uid"]):\n\t\t\tcontinue',
      '\t\tif false:\n\t\t\tcontinue',
      "自己正站着的那一格算空的"),
-    # ---- AI 区分行：分行看「是什么」不看「第几个」 ----
+    # ---- BOT 区分行：分行看「是什么」不看「第几个」 ----
     # 退回按序号分行 —— 开局零组合，两堆闲置卡被排进靠购牌区的前排、挤在中间
     ("scenes/settle_layout.gd",
      '\t\tif is_front_pile(p["key"]):',
      '\t\tif true:',
-     "离购牌区不比玩家近", "tests/test_ai_pile.gd"),
+     "离购牌区不比玩家近", "tests/test_bot_pile.gd"),
     # 闲置摞的席位不再镜像玩家侧：现金摞跑到杂项那个位置，两边对不上
     ("scenes/settle_layout.gd",
-     '\t\tif key.begins_with("ai_cash"):\n\t\t\tx = _ai_resource_anchor(CardDB.RES_CASH).x',
-     '\t\tif false:\n\t\t\tx = _ai_resource_anchor(CardDB.RES_CASH).x',
-     "摞对着玩家的", "tests/test_ai_pile.gd"),
+     '\t\tif key.begins_with("bot_cash"):\n\t\t\tx = _bot_resource_anchor(CardDB.RES_CASH).x',
+     '\t\tif false:\n\t\t\tx = _bot_resource_anchor(CardDB.RES_CASH).x',
+     "摞对着玩家的", "tests/test_bot_pile.gd"),
     # 侧边清单的高度回去扫实时坐标：开局那批牌正从头顶飞过，清单被顶到半空
     ("scenes/board.gd",
      '\tvar y: float = floor_y if pin_y else overlay_y(\n\t\tVector3(left + SIDE_W / 2.0, 0.0, at.z), Vector2(SIDE_W, col_h), floor_y)',
      '\tvar y: float = overlay_y(\n\t\tVector3(left + SIDE_W / 2.0, 0.0, at.z), Vector2(SIDE_W, col_h), floor_y)',
-     "没飘在半空", "tests/test_ai_pile.gd"),
+     "没飘在半空", "tests/test_bot_pile.gd"),
     # 后行不按张数往北退：摞沿 +z 长出去，伸进前行压着组合
     ("scenes/settle_layout.gd",
      '\tvar span: float = Board.capped_offset(n, 0, back_pile_cap()).z\n'
-     '\treturn maxf(AI_ROW_Z[1] - span, AI_BACK_Z_MIN)',
-     '\treturn AI_ROW_Z[1]',
+     '\treturn maxf(BOT_ROW_Z[1] - span, BOT_BACK_Z_MIN)',
+     '\treturn BOT_ROW_Z[1]',
      # 关键字对着「封顶封在席位真正的容量上」那条，不是「没有伸进前行」那条：
      # 后者量的是这一局真实那几摞，摞到那一刻还没满级、南缘离前行还有余量，
      # 不按张数往北退也没顶到人。真看得见这件事的是满级那一条
-     "封顶封在席位真正的容量上", "tests/test_ai_pile.gd"),
+     "封顶封在席位真正的容量上", "tests/test_bot_pile.gd"),
     # ---- 重开一局：连接不许活过重开 ----
     # 连接活过重开 —— 新局第一个对手回合停在 _await_foe_action 里等一条
     # 永远不来的 action_done。不报错、不崩，就是再也不动了
@@ -221,7 +221,7 @@ MUTATIONS = [
      '\tif _net != null:\n\t\t# 先摘信号再 close',
      '\tif false:\n\t\t# 先摘信号再 close',
      "不再往上一局那条连接上发", "tests/test_restart_bugs.gd"),
-    # 只清连接、忘了把「对手是人」置回去：本地 AI 不接手，新局第一个对手回合
+    # 只清连接、忘了把「对手是人」置回去：本地 BOT 不接手，新局第一个对手回合
     # 停在 _await_foe_action 里等一条永远不来的 action_done
     # 锚点只取 set_foe_remote 那一行（文件里唯一一处）：它上面那几行会变 ——
     # 后来插进来的 stop_local_host() 和它的注释就把带 `_net = null` 的旧锚点弄失配了，
@@ -243,8 +243,8 @@ MUTATIONS = [
     ("scenes/settle_layout.gd",
      '\treturn maxi(1, ceili(float(n) / float(per)))',
      '\treturn 1',
-     "组合是摊开的", "tests/test_ai_pile.gd"),
-    # ---- 前行按「最宽那组 + 空当」定节距（治「每次 AI 理完牌，组合卡都叠在一起」）----
+     "组合是摊开的", "tests/test_bot_pile.gd"),
+    # ---- 前行按「最宽那组 + 空当」定节距（治「每次 BOT 理完牌，组合卡都叠在一起」）----
     # 这四条守的是同一件事的四个零件。原先这儿有一条「分列不看 room」的，
     # 那个 room 参数已经没了 —— 整行的宽度成了定值，三个调用方传的是同一个数，
     # 掐列数那一步再也没掐着过。「一行摆不下」现在归下面的降列那一段
@@ -254,7 +254,7 @@ MUTATIONS = [
     ("scenes/settle_layout.gd",
      '\tvar pitch: float = lead + trail + COMBO_ROW_GAP',
      '\tvar pitch: float = lead + trail',
-     "兑现了声明的空当", "tests/test_ai_pile.gd"),
+     "兑现了声明的空当", "tests/test_bot_pile.gd"),
     # 节距只看第一组有多宽（不取整行最宽的那个）：最宽的那组在中间时，
     # 它自己的两边就压上邻居
     ("scenes/settle_layout.gd",
@@ -264,92 +264,92 @@ MUTATIONS = [
      '\t\tbool(out[0]["compact"])).x\n'
      '\tvar trail: float = combo_reach(int(out[0]["n"]), int(out[0]["cols"]),\n'
      '\t\tbool(out[0]["compact"])).y',
-     "没有牌压牌", "tests/test_ai_pile.gd"),
+     "没有牌压牌", "tests/test_bot_pile.gd"),
     # 摆不下也不降列：整行按最宽那组的节距摊开，宽到把一个组合挤下前行
     # （前行放不下就落到后排，和闲置摞混在一起 —— 判据数的就是前后排各几摞）
     ("scenes/settle_layout.gd",
      '\twhile _row_span(out, lead + trail) > avail:',
      '\twhile false:',
-     "都在前排", "tests/test_ai_pile.gd"),
+     "都在前排", "tests/test_bot_pile.gd"),
     # 降列的闸门按「带着空当摆得下吗」问，而不是「空当挤到 0 摆得下吗」：
     # 只差一点空当就触发降列，而降列是有损的（一列摊不开 5 张以上只好收拢）。
     # 症状是组合一多就整行崩成收拢，每个组合只剩一张牌 —— 正是报上来的
-    # 「AI 整理后的组合牌摞在一块儿看不清」。7 个组合时露馅
+    # 「BOT 整理后的组合牌摞在一块儿看不清」。7 个组合时露馅
     ("scenes/settle_layout.gd",
      '\twhile _row_span(out, lead + trail) > avail:',
      '\twhile _row_span(out, lead + trail + COMBO_ROW_GAP) > avail:',
-     "空当还挤得动就不降列", "tests/test_ai_pile.gd"),
+     "空当还挤得动就不降列", "tests/test_bot_pile.gd"),
     # 一行空得慌时不把节距撑开：节距按最宽那组的伸出算，组合小的时候只有 1.80,
     # 比原先的固定网格（2.5）还挤 —— 不重叠，但白空着大半个前行
     ("scenes/settle_layout.gd",
-     '\tif k > 1 and pitch < AI_SLOT_PITCH:',
+     '\tif k > 1 and pitch < BOT_SLOT_PITCH:',
      '\tif false:',
-     "节距撑开到 AI_SLOT_PITCH", "tests/test_ai_pile.gd"),
+     "节距撑开到 BOT_SLOT_PITCH", "tests/test_bot_pile.gd"),
     # 降到一列还是摆不下时不再压节距：出桌。
     # 判的是 _check_plan_row_stress 那一节 —— 压节距只在 12 个组合以上才启用，
     # 摆真牌那一节（8 个）碰不到
     ("scenes/settle_layout.gd",
      '\tif k > 1 and _row_span(out, pitch) > avail:',
      '\tif false:',
-     "卡宽放得下的组合数都没出桌", "tests/test_ai_pile.gd"),
+     "卡宽放得下的组合数都没出桌", "tests/test_bot_pile.gd"),
     # 压节距不留卡宽这条底线：压到相邻两张牌互相盖上去 —— 牌压牌看不见
     # （长得像「本来就这么多牌」），比出桌更糟。同样只有 20 个组合以上才压到底
     ("scenes/settle_layout.gd",
      '\t\tpitch = maxf(pitch - over / float(k - 1), CardEntity.CARD_SIZE.x)',
      '\t\tpitch = pitch - over / float(k - 1)',
-     "没有牌压牌", "tests/test_ai_pile.gd"),
+     "没有牌压牌", "tests/test_bot_pile.gd"),
     # 清单只往右长这件事不算进占地：按卡心居中，整片就往右偏出一个清单宽
     ("scenes/settle_layout.gd",
      '\t\t\tright = half + Board.SIDE_GAP + Board.SIDE_W',
      '\t\t\tright = half',
-     "以 x=0 居中", "tests/test_ai_pile.gd"),
+     "以 x=0 居中", "tests/test_bot_pile.gd"),
     # 按卡心居中（不按真实占地）：同上，右边那截清单出桌
     ("scenes/settle_layout.gd",
      '\tvar ext: Vector2 = _row_extent(out)\n'
      '\tvar shift: float = -(ext.x + ext.y) / 2.0',
      '\tvar shift: float = -float(out[out.size() - 1]["x"]) / 2.0',
-     "以 x=0 居中", "tests/test_ai_pile.gd"),
+     "以 x=0 居中", "tests/test_bot_pile.gd"),
     # 一列几张退回按整组张数算（分列之前的算法）：5 张以上一律 0 步长，
     # 分了列也白分 —— 判据是「张数多的组合也摊得开」那条前提
     ("scenes/settle_layout.gd",
-     '\tvar budget: float = combo_south_limit() - AI_ROW_Z[0]\n'
+     '\tvar budget: float = combo_south_limit() - BOT_ROW_Z[0]\n'
      '\treturn 1 + int(floor(budget / combo_band_step() + 0.0001))',
      '\treturn 1',
-     "组合是摊开的", "tests/test_ai_pile.gd"),
+     "组合是摊开的", "tests/test_bot_pile.gd"),
     # 分列了但列与列不错开 x：所有列落在同一个 x 上，几列牌完全重合 ——
     # 比不分列更糟（看不出是几张，还每张都压着别人的占地）
     ("scenes/settle_layout.gd",
      '\t\tvar dx: float = (float(col) - float(cols - 1) / 2.0) * COMBO_COL_PITCH',
      '\t\tvar dx: float = 0.0',
-     "每摞的高度差都对得上它声明的形态", "tests/test_ai_pile.gd"),
+     "每摞的高度差都对得上它声明的形态", "tests/test_bot_pile.gd"),
     # ---- 后行的资源摞：占地不随张数长（治「资源牌多的时候也不怎么摞」）----
     # 台阶不再封顶：40 张就压进前行，100 张（胜利线，一局真能走到）摞到 y=4.5、
     # 南缘盖在货架牌上。判据是「三个张数下占地逐位相同」那条
     ("scenes/board.gd",
      '\tvar rungs: int = mini(n, maxi(cap, 1))',
      '\tvar rungs: int = n',
-     "张时摞的占地逐位相同", "tests/test_ai_pile.gd"),
+     "张时摞的占地逐位相同", "tests/test_bot_pile.gd"),
     # 封顶封在 12 级（式子里纵深减两次 —— 那正是这段注释记着的坑）：
     # 摞更矮更紧，「不随张数长」照旧成立，可它把「不碰前行」偷偷换成一条更严的、
     # 没人说出口的规矩。判据是「满级的摞南缘正好顶在前行北缘上」那条
     ("scenes/settle_layout.gd",
-     '\tvar budget: float = AI_ROW_Z[0] - AI_BACK_Z_MIN - CardEntity.CARD_SIZE.z',
-     '\tvar budget: float = AI_ROW_Z[0] - AI_BACK_Z_MIN'
+     '\tvar budget: float = BOT_ROW_Z[0] - BOT_BACK_Z_MIN - CardEntity.CARD_SIZE.z',
+     '\tvar budget: float = BOT_ROW_Z[0] - BOT_BACK_Z_MIN'
      ' - CardEntity.CARD_SIZE.z * 2.0',
-     "正好顶在前行北缘", "tests/test_ai_pile.gd"),
-    # 摊开那一片不再限宽：现金能摊到 7 列 56 张、横着占掉大半个 AI 区，
+     "正好顶在前行北缘", "tests/test_bot_pile.gd"),
+    # 摊开那一片不再限宽：现金能摊到 7 列 56 张、横着占掉大半个 BOT 区，
     # 一眼看不出是几张 —— 报上来的「资源牌多的时候也不怎么摞」的另一半
     #
     # 关键词盯**新开那一局**那一节（_check_spread_width），不是镜像那一节：
-    # 开局 AI 恰好 20 张现金 = 3 列 = spread_max_cols(cash)，闸门正好不吃紧，
-    # 拆了和不拆一模一样；而其余几节桌上都有组合，_spread_ai_res 第一条
+    # 开局 BOT 恰好 20 张现金 = 3 列 = spread_max_cols(cash)，闸门正好不吃紧，
+    # 拆了和不拆一模一样；而其余几节桌上都有组合，_spread_bot_res 第一条
     # 先返回 false，闸门走不到。2026-09-01 这条一开始是 MISS，为它补了那一节
     ("scenes/settle_layout.gd",
      '\t\tif cols > spread_max_cols(res):\n\t\t\treturn false',
      '\t\tif false:\n\t\t\treturn false',
-     "张时这一片改收拢了", "tests/test_ai_pile.gd"),
+     "张时这一片改收拢了", "tests/test_bot_pile.gd"),
     # 侧边清单的核心卡闸门退回数「种」而不是数「张」：同名两张只有 1 种，
-    # 核心一行都不出。这正是报上来的「AI 合成了 2 张独角兽，下一回合只看到 1 张」——
+    # 核心一行都不出。这正是报上来的「BOT 合成了 2 张独角兽，下一回合只看到 1 张」——
     # 备牌摞按 def_id 分摞（两张必然同摞）、收拢只露摞顶那张，清单又不提，
     # 屏幕上和「只合出一张」逐像素相同。
     #
@@ -358,27 +358,27 @@ MUTATIONS = [
     ("scenes/board.gd",
      '\tif core_total >= 2:',
      '\tif cores.size() >= 2:',
-     "清单里有一行「×2」", "tests/test_ai_pile.gd"),
+     "清单里有一行「×2」", "tests/test_bot_pile.gd"),
     # ---- 前行的组合：张数少就摊开 ----
     # 摊开这条路整个不走了，一律收拢 —— 3 张的组合明明摊得下，却收成
     # 一坨只露核心卡。判据是「有组合摊开了」那条前提
     ("scenes/settle_layout.gd",
      '\t\tvar step: float = combo_spread_step(ceili(float(n) / float(maxi(cols, 1))))',
      '\t\tvar step: float = 0.0',
-     "有组合摊开了", "tests/test_ai_pile.gd"),
+     "有组合摊开了", "tests/test_bot_pile.gd"),
     # 摊开时座次不翻过来：核心卡落到最北那个座、被它后面每一张压掉，
     # 屏幕上露的是随便一张用户卡。收拢那条路（compact_offset 自己翻）不受影响，
     # 所以上面那节 8 张组合的「摞顶是核心卡」照样过 —— 只有摊开这一节报
     ("scenes/settle_layout.gd",
      '\t\tvar seat: int = per - 1 - (j % per)',
      '\t\tvar seat: int = j % per',
-     "每个组合的形态都完整可读", "tests/test_ai_pile.gd"),
-    # 南界退回读 AI 托盘那条线（AI_COMBO_MAX_Z 是卡心限制，不管货架牌的占地）：
+     "每个组合的形态都完整可读", "tests/test_bot_pile.gd"),
+    # 南界退回读 BOT 托盘那条线（BOT_COMBO_MAX_Z 是卡心限制，不管货架牌的占地）：
     # 预算从 0.80 涨到 2.10，3 张的组合按 0.52 摊开，南缘钻到货架牌底下
     ("scenes/settle_layout.gd",
      '\treturn _main.MARKET_Z - CardEntity.CARD_SIZE.z',
-     '\treturn AI_COMBO_MAX_Z',
-     "每个组合的形态都完整可读", "tests/test_ai_pile.gd"),
+     '\treturn BOT_COMBO_MAX_Z',
+     "每个组合的形态都完整可读", "tests/test_bot_pile.gd"),
     # 挤到看不出张数也照摊：7～8 张的组合按 0.11~0.13 摊开 —— 露不出标题带，
     # 又因为 compact=false 没有侧边清单顶上，那几张彻底读不出来。
     #
@@ -388,53 +388,53 @@ MUTATIONS = [
     # 一直到 2026-09-01 才查出来。两者唯一的区别就在预算怎么取
     #（这边「行线往南到南界」，那边「行线往北到后排退让线」）
     ("scenes/settle_layout.gd",
-     '\tvar budget: float = combo_south_limit() - AI_ROW_Z[0]\n'
+     '\tvar budget: float = combo_south_limit() - BOT_ROW_Z[0]\n'
      '\tvar step: float = minf(Board.STACK_GAP.z, budget / float(per_col - 1))\n'
      '\treturn step if step >= combo_band_step() - 0.0001 else 0.0',
-     '\tvar budget: float = combo_south_limit() - AI_ROW_Z[0]\n'
+     '\tvar budget: float = combo_south_limit() - BOT_ROW_Z[0]\n'
      '\tvar step: float = minf(Board.STACK_GAP.z, budget / float(per_col - 1))\n'
      '\treturn step',
-     "张数多的组合仍然收拢", "tests/test_ai_pile.gd"),
+     "张数多的组合仍然收拢", "tests/test_bot_pile.gd"),
     # 不再限制「别比玩家侧摊得更开」：预算摊得下就一路撑开。
     # 桌上量不出来（卡表最小的组合 3 张，那一档预算本来就收紧），
     # 判据是那条走遍张数域的 —— n=2 时步长会从 0.52 变成 0.80。
     # 锚点同样得带预算那行才唯一（见上一条）
     ("scenes/settle_layout.gd",
-     '\tvar budget: float = combo_south_limit() - AI_ROW_Z[0]\n'
+     '\tvar budget: float = combo_south_limit() - BOT_ROW_Z[0]\n'
      '\tvar step: float = minf(Board.STACK_GAP.z, budget / float(per_col - 1))',
-     '\tvar budget: float = combo_south_limit() - AI_ROW_Z[0]\n'
+     '\tvar budget: float = combo_south_limit() - BOT_ROW_Z[0]\n'
      '\tvar step: float = budget / float(per_col - 1)',
-     "比玩家侧", "tests/test_ai_pile.gd"),
+     "比玩家侧", "tests/test_bot_pile.gd"),
     # 台阶朝北长：北端不再钉在行线上，整组退进后排、核心卡也跑到最北那头
     ("scenes/settle_layout.gd",
-     '\t\t_ai_move(e, at + Vector3(dx, Board.ladder_y(seat), step * float(seat)))',
-     '\t\t_ai_move(e, at + Vector3(dx, Board.ladder_y(seat), -step * float(seat)))',
-     "每个组合的形态都完整可读", "tests/test_ai_pile.gd"),
+     '\t\t_bot_move(e, at + Vector3(dx, Board.ladder_y(seat), step * float(seat)))',
+     '\t\t_bot_move(e, at + Vector3(dx, Board.ladder_y(seat), -step * float(seat)))',
+     "每个组合的形态都完整可读", "tests/test_bot_pile.gd"),
     # ---- 理牌航迹：飞行途中也要守住「占地重叠 → y 差 > FACE_SPAN_Y」----
     # 抬升改成**每张各自算**（抬到同一个高度）而不是整趟共用一个 Δy：
     # 一整摞平移时底下那张抬得多、上面那张抬得少，整摞在半途压成一个平面。
     #
-    # 变异下在 _flush_ai_moves 而不是 _ai_arc 里那句 `+ lift * sin(...)`：
+    # 变异下在 _flush_bot_moves 而不是 _bot_arc 里那句 `+ lift * sin(...)`：
     # 后者试过，MISS —— 同摞两张牌的 from.y/at.y 一起偏移，那句里怎么改
     # 两张都一样地改，y 差原样保住，是一条近似等价的变异。
-    # 「共用一个 Δy」这个决定本来就在 _flush_ai_moves，判据该盯的是那儿
+    # 「共用一个 Δy」这个决定本来就在 _flush_bot_moves，判据该盯的是那儿
     #
-    # 变异要**连登记表一起改**（"lift": lift → 各自那个）：判据现在按 _ai_flight
+    # 变异要**连登记表一起改**（"lift": lift → 各自那个）：判据现在按 _bot_flight
     # 里登记的计划密采（见 test_tidy.gd 第 3 节，2026-09-01 从「按物理帧采」改的）。
-    # 只改 _ai_fly 那一句的话，登记的还是整趟共用的那个 lift，判据采到的是
+    # 只改 _bot_fly 那一句的话，登记的还是整趟共用的那个 lift，判据采到的是
     # **没被改坏的**那条航迹 —— 屏幕上压成平面，判据却全绿
     ("scenes/settle_layout.gd",
      '\tvar lift: float = maxf(0.0, _lift_ceiling() - low)\n'
      '\tfor m in moves:\n'
      '\t\tvar e: CardEntity = m[0]\n'
-     '\t\t_ai_flight[e.uid] = {"from": e.position, "at": m[1] as Vector3, "lift": lift}\n'
-     '\t\t_ai_fly(e, m[1], lift)',
+     '\t\t_bot_flight[e.uid] = {"from": e.position, "at": m[1] as Vector3, "lift": lift}\n'
+     '\t\t_bot_fly(e, m[1], lift)',
      '\tvar ceil2: float = _lift_ceiling()\n'
      '\tfor m in moves:\n'
      '\t\tvar e: CardEntity = m[0]\n'
      '\t\tvar lift: float = maxf(0.0, ceil2 - e.position.y)\n'
-     '\t\t_ai_flight[e.uid] = {"from": e.position, "at": m[1] as Vector3, "lift": lift}\n'
-     '\t\t_ai_fly(e, m[1], lift)',
+     '\t\t_bot_flight[e.uid] = {"from": e.position, "at": m[1] as Vector3, "lift": lift}\n'
+     '\t\t_bot_fly(e, m[1], lift)',
      "一趟理牌里同摞、占地重叠的牌 y 差都", "tests/test_tidy.gd"),
     # 出发那片占地上不再冻住 y：从厚摞顶起飞的那张，头几帧就被 lerp
     # 拽到原摞同伴的高度上。
@@ -489,10 +489,10 @@ MUTATIONS = [
     # 全发进去 = 全被抬到航线高度，同一摞里每一对都共面
     #
     # 判据是「落点没变的那一趟不发补间」，**不是**穿模那条：原地不动的牌
-    # span=0，进 _ai_arc 也走短程平飞那一支，y 一动不动。这一句守的是
-    # ai_moving() 那个同步条件，不是穿模（memory: vacuous-mutation-two-flavors）
+    # span=0，进 _bot_arc 也走短程平飞那一支，y 一动不动。这一句守的是
+    # bot_moving() 那个同步条件，不是穿模（memory: vacuous-mutation-two-flavors）
     ("scenes/settle_layout.gd",
-     '\tif e.position.distance_to(at) < AI_STILL_EPS:',
+     '\tif e.position.distance_to(at) < BOT_STILL_EPS:',
      '\tif false:',
      "落点没变的那一趟不发补间", "tests/test_tidy.gd"),
     # ---- 备牌那一片：不同的卡各占一摞（问题 2 的修复）----
@@ -501,9 +501,9 @@ MUTATIONS = [
     # z 只铺开 0.25 而牌纵深 1.7，85% 互相盖住
     ("scenes/settle_layout.gd",
      '\t\t\tvar d: String = e.def_id\n',
-     '\t\t\tvar d: String = "ai_bench_all"\n',
+     '\t\t\tvar d: String = "bot_bench_all"\n',
      "两张不同的卡分成了两摞", "tests/test_dblclick_pile.gd"),
-    # 分了摞却不给席位：全落回 AI_PILE_BENCH_X，分摞白分（就是分摞之前的样子）
+    # 分了摞却不给席位：全落回 BOT_PILE_BENCH_X，分摞白分（就是分摞之前的样子）
     ("scenes/settle_layout.gd",
      '\t\telif bench_x.has(key):\n\t\t\tx = float(bench_x[key])\n',
      '\t\telif false:\n\t\t\tx = float(bench_x[key])\n',
@@ -513,29 +513,29 @@ MUTATIONS = [
     ("scenes/settle_layout.gd",
      '\tvar pitch: float = minf(PLAYER_PILE_COL_PITCH,\n\t\t(hi - lo) / float(k - 1))\n',
      '\tvar pitch: float = PLAYER_PILE_COL_PITCH\n',
-     "备牌跟别的摞不互相盖住", "tests/test_ai_pile.gd"),
+     "备牌跟别的摞不互相盖住", "tests/test_bot_pile.gd"),
     # 整片不平移回窗口内：这是我改这一版时真踩出来的那次穿模 ——
     # 节距从窗口宽反解、居中却按 BENCH_X 算，两个基准不是一个数，
     # 6 摞时最左那摞落在 -5.00，摊开的现金片右缘 -4.80，相差 0.20 而牌宽 1.2
     ("scenes/settle_layout.gd",
      '\tx0 = clampf(x0, lo, hi - span)\n',
      '\tx0 = x0\n',
-     "备牌跟别的摞不互相盖住", "tests/test_ai_pile.gd"),
+     "备牌跟别的摞不互相盖住", "tests/test_bot_pile.gd"),
     # 窗口不看资源摊开没摊开（一律按收拢那一版的宽度算）：
     # 开局那一趟资源是摊开的，现金片往右长，备牌就压在它上头
     ("scenes/settle_layout.gd",
      '\tif spread:\n\t\tfor p in idles:\n',
      '\tif false:\n\t\tfor p in idles:\n',
-     "备牌跟别的摞不互相盖住", "tests/test_ai_pile.gd"),
+     "备牌跟别的摞不互相盖住", "tests/test_bot_pile.gd"),
     # 席位数不封顶：摆不下也照摆，整片撑出窗口。实测 26 种时最外那摞落到
-    # x=±15.00（AI_SPREAD_MAX_X 是 12.4，直接出桌），比不分摞还糟
+    # x=±15.00（BOT_SPREAD_MAX_X 是 12.4，直接出桌），比不分摞还糟
     #
     # 变异的是 cap 的**算式**而不是 _merge_bench_overflow 的调用：
     # 调用拆了的话 cap 照旧算得出来，判据「摞数 ≤ cap」反而会红在别的地方
     ("scenes/settle_layout.gd",
      '\treturn maxi(1, floori((hi - lo) / CardEntity.CARD_SIZE.x) + 1)',
      '\treturn 99',
-     "备牌都在桌上", "tests/test_ai_pile.gd"),
+     "备牌都在桌上", "tests/test_bot_pile.gd"),
     # 超出的那几摞不并：cap 白算，摞数照旧等于卡种数
     ("scenes/settle_layout.gd",
      '\tidles = _merge_bench_overflow(idles, spread)\n',
@@ -543,21 +543,21 @@ MUTATIONS = [
      # 关键字里不许带那两个数：判据句子是「摞数 %d ≤ ...摆得下的 %d 个席位」，
      # 改坏之后前一个数从 5 变成 12，写「摞数 5」的话对不上红的那一行
      # （memory: keyword-must-survive-the-fail-branch）
-     "这片窗口摆得下的", "tests/test_ai_pile.gd"),
+     "这片窗口摆得下的", "tests/test_bot_pile.gd"),
     # ---- 侧边清单认核心卡（并起来那一摞唯一说得出内容的东西）----
     # 清单不列核心卡（退回只数资源和 buff）：并起来那一摞在屏幕上就是
     # 「一张牌 + 什么提示都没有」，摞里另外几种卡既看不见也没处读
     ("scenes/board.gd",
      '\tif core_total >= 2:\n',
      '\tif false:\n',
-     "并起来那一摞的清单说全了卡种", "tests/test_ai_pile.gd"),
+     "并起来那一摞的清单说全了卡种", "tests/test_bot_pile.gd"),
     # 清单行数不封顶：这一列以摞顶为中心上下摊开，行数一多两头一起探 ——
-    # 卡表凑得出 11 行、列高 3.96，北探到 -8.48 出了 AI 区、南探到 -4.52
+    # 卡表凑得出 11 行、列高 3.96，北探到 -8.48 出了 BOT 区、南探到 -4.52
     # 压进前行的组合
     ("scenes/board.gd",
      '\tif out.size() > SIDE_MAX_ROWS:\n',
      '\tif false:\n',
-     "清单这一列留在后行带子里", "tests/test_ai_pile.gd"),
+     "清单这一列留在后行带子里", "tests/test_bot_pile.gd"),
     # ---- 结算到货窗口：产出直接落进左侧带，按每 PILE_CHUNK 张分组 ----
     # 窗口不开 = 退回老路：整批同时出生，_free_spot 对每张都判「锚点空着」，
     # 于是全落在玩家自己的现金堆锚点上、糊成一坨
@@ -588,9 +588,9 @@ MUTATIONS = [
     # MISS —— 实测**全套 52 文件 3541 断言全绿**。换成去掉 main.gd 里飞入那行
     # `set_meta("dest_pos", to_pos)`，**照样全绿**。
     # 两次都绿是因为这条不变量有两道**互为冗余**的防线：
-    #   - `_arr_claimed`：本次结算已许诺出去的落点（AI 那批走这条）
+    #   - `_arr_claimed`：本次结算已许诺出去的落点（BOT 那批走这条）
     #   - `dest_pos`：飞行中那批宣告的归宿，`_obstacles` 经 `_rest_pos` 读到（玩家带走这条）
-    # 各去一个都还有另一个兜着，**两个一起去掉**才终于红（实测「AI 那批 5 张也各有落点
+    # 各去一个都还有另一个兜着，**两个一起去掉**才终于红（实测「BOT 那批 5 张也各有落点
     # （重合 4 张）」）。所以这不是判据漏，是任何单点变异都到不了它。
     # `_clash_at` 是两套机制汇合的那一点：障碍怎么收集的都不管用了。
     # 顺带说明为什么原先那两条不能留着当「反正是冗余」——
@@ -600,7 +600,7 @@ MUTATIONS = [
      '\t\tif absf((p as Vector3).x - spot.x) < 1.3',
      '\tfor p in []:\n'
      '\t\tif absf((p as Vector3).x - spot.x) < 1.3',
-     "AI 那批", "tests/test_arrivals.gd"),
+     "BOT 那批", "tests/test_arrivals.gd"),
     # 【这里原先有一条 `for uid in extra_mine:` → `for uid in []:`，盯「落点不变」。
     #   2026-09-01 撤掉：它什么都验不了，而长期挂着 MISS 会被当成判据有洞。
     #
@@ -660,25 +660,25 @@ MUTATIONS = [
      '\t\t\t\t# 按半路上的位置重新钉死一遍（见 _move_to_spot 的注释）\n'
      '\t\t\t\tvar at: Vector3 = c.global_position',
      "每个余数组都只占一列", "tests/test_arrivals.gd"),
-    # ---- 开局两边形态一致（AI 摊开，见 settle_layout.gd 的 _spread_ai_res）----
-    # 永不摊开：AI 的资源又挤成一坨，玩家摊成三列、AI 一摞 —— 就是那个 bug 的原样
+    # ---- 开局两边形态一致（BOT 摊开，见 settle_layout.gd 的 _spread_bot_res）----
+    # 永不摊开：BOT 的资源又挤成一坨，玩家摊成三列、BOT 一摞 —— 就是那个 bug 的原样
     ("scenes/settle_layout.gd",
      '\tif not no_combos:\n\t\treturn false',
      '\tif true:\n\t\treturn false',
-     "AI 的列数和玩家一样", "tests/test_ai_pile.gd"),
+     "BOT 的列数和玩家一样", "tests/test_bot_pile.gd"),
     # 摊开了但台阶步长按收拢那档给：列数、每列张数全对，牌却前后叠死，
     # 看不出张数 —— 光验「分了几列」验不到这一层
     ("scenes/settle_layout.gd",
-     '\treturn minf(Board.STACK_GAP.z, (south - AI_SPREAD_Z0) / float(n - 1))',
+     '\treturn minf(Board.STACK_GAP.z, (south - BOT_SPREAD_Z0) / float(n - 1))',
      '\treturn Board.COMPACT_GAP.z',
-     "一列对一列地照玩家的排布来", "tests/test_ai_pile.gd"),
+     "一列对一列地照玩家的排布来", "tests/test_bot_pile.gd"),
     # 换列的张数不照玩家侧：4 张就换一列，开局那点现金（`_game.start_cash`）
     # 于是比玩家侧多摊出几列 —— 玩家侧是每 PLAYER_PILE_PER_COL 张一列。
     # 每列内部照样是摊开的台阶（形态那条过），错的只是「不是同一个排布」
     ("scenes/settle_layout.gd",
      'float(i / PLAYER_PILE_PER_COL) * PLAYER_PILE_COL_PITCH',
      'float(i / 4) * PLAYER_PILE_COL_PITCH',
-     "AI 的列数和玩家一样", "tests/test_ai_pile.gd"),
+     "BOT 的列数和玩家一样", "tests/test_bot_pile.gd"),
     # ---- 产出音效：每张牌落地各响一声 drop ----
     # 落地不响：产出就成了没有声音的事
     ("scenes/main.gd",
@@ -711,7 +711,7 @@ MUTATIONS = [
     # 有变异盯着，否则「就一份实现」反倒成了没人验的单点
     # 打自己：攻击该扣对方的卡
     ("engine/game_state.gd",
-     'static func opponent(who: String) -> String:\n\treturn PLAYER if who == AI else AI',
+     'static func opponent(who: String) -> String:\n\treturn PLAYER if who == BOT else BOT',
      'static func opponent(who: String) -> String:\n\treturn who',
      # 关键字挑不带数字、也不带定价口径的那半句：原先写「外卖核心 4 一减到底」，
      # 后来外卖配方量从 4 改到 5，断言文案跟着变、这条就漂成 MISS 了；
@@ -721,12 +721,12 @@ MUTATIONS = [
      # 这次索性挑测试7 那条清零即胜：打自己的话对手一张不掉，胜负判定跟着塌，
      # 而那句文案里既没有数字也没有定价口径，改口径改配方量都碰不到它
      "立即获胜"),
-    # 两方都用先手身份行动 → 后手那一方整局没动过（AI 组不出任何组合）
+    # 两方都用先手身份行动 → 后手那一方整局没动过（BOT 组不出任何组合）
     ("engine/game_state.gd",
      '\tvar first := action_first()\n\treturn [first, opponent(first)]',
      '\tvar first := action_first()\n\treturn [first, first]',
      # 同上：别把「两边」写进关键字。核心改成 1 点/张之后，
-     # 玩家那 5 点会先打破 AI 的攻击组合 → AI 装不上弹 → 只有一边的组作废
+     # 玩家那 5 点会先打破 BOT 的攻击组合 → BOT 装不上弹 → 只有一边的组作废
      "产出组合被拆散作废"),
     # 不筛点数：点不起的靶也照样报上去
     # 关键字盯测试6：余点作废那一条从测试1挪过去了（弹药规则下测试1的牌桌
@@ -1071,8 +1071,8 @@ MUTATIONS = [
      "整个结果里没有 float uid", "tests/test_net_socket.gd"),
 
     # ==== 联网：对手侧画面只能来自 pipe.applied（README.md §「3. 文件目录结构」）====
-    # 改造前，对手侧的每一张卡都是**驱动对手的那段代码**顺手画的（_ai_buy_once 自己
-    # spawn、_ai_pawn_relief 自己飞走）。联网局里对手是人，没有那段代码在跑 ——
+    # 改造前，对手侧的每一张卡都是**驱动对手的那段代码**顺手画的（_bot_buy_once 自己
+    # spawn、_bot_pawn_relief 自己飞走）。联网局里对手是人，没有那段代码在跑 ——
     # 对手侧就什么都不画，而且不报错。这一段钉的是「画面只认落地结果」。
     # 登记之前这 11 条**全是 MISS**：32 个测试文件里没有一个观察对手侧的画面，
     # 把渲染整段删掉也全绿（memory: green-mutation-means-no-observer）。
@@ -1093,7 +1093,7 @@ MUTATIONS = [
      "新卡的 uid 进了 entities", "tests/test_foe_render.gd"),
     # 落位这一条**没有登记变异**，理由记在这儿免得下次有人再试一遍：
     # 对手侧的落位是**双重决定**的 —— _render_foe_buy 先按 _unit_anchor 摆一次,
-    # 两行之后 _layout_ai_idle() 又把对手所有牌整片重排一次。
+    # 两行之后 _layout_bot_idle() 又把对手所有牌整片重排一次。
     # 把 _free_spot 那两个 foe_seat 换成 my_seat（实测）：z = -7.49，
     # 还在对手那半边，因为重排那一下把它救回来了。
     # 反过来只坏重排、不坏 spawn 也一样：spawn 那个位置本来就是对的。
@@ -1149,7 +1149,7 @@ MUTATIONS = [
     ("engine/intent_apply.gd",
      '''	if r.get("ok", false):''',
      '''	if false:''',
-     "AI 内部直接落地的编组也画得出来", "tests/test_foe_render.gd"),
+     "BOT 内部直接落地的编组也画得出来", "tests/test_foe_render.gd"),
     # 去重失效：submit 成功的那条已经被 _on_landed 广播过了（landed 同步发），
     # 再 _publish 一遍表现层就收两遍 —— 公共区被摘两格、seq 也多涨一个
     ("engine/local_transport.gd",
@@ -1191,7 +1191,7 @@ MUTATIONS = [
      '''func attach_net(net: NetTransport) -> void:
 	pass''',
      "拎起来这一下发到了 net 层", "tests/test_foe_drag.gd"),
-    # 忘了 set_foe_remote → 本地还在驱动 AI 替对手行动（两边各打一局）
+    # 忘了 set_foe_remote → 本地还在驱动 BOT 替对手行动（两边各打一局）
     ("scenes/main.gd",
      '''	_net = net
 	set_foe_remote(true)''',
@@ -1255,13 +1255,13 @@ MUTATIONS = [
 			pass''',
      "cancel 之后租约收回", "tests/test_foe_drag.gd"),
     # 松手不交还布局：牌浮在 DRAG_HEIGHT 上，谁都不摆它。
-    # 锚点带上前一行 —— 'layout._layout_ai_idle()' 在 main.gd 里有 7 处，
+    # 锚点带上前一行 —— 'layout._layout_bot_idle()' 在 main.gd 里有 7 处，
     # 光这一行会去改第一处（见 SKIP 那一关）
     ("scenes/main.gd",
      '''	_drag_lease_t = 0.0
 	# 交还给布局：牌现在浮在 DRAG_HEIGHT 上，得有人把它们摆回去。
-	# 对手买/典当那几张牌可能已经不在场上了，_layout_ai_idle 只摆还在的
-	layout._layout_ai_idle()''',
+	# 对手买/典当那几张牌可能已经不在场上了，_layout_bot_idle 只摆还在的
+	layout._layout_bot_idle()''',
      '''	_drag_lease_t = 0.0''',
      "松手之后布局把牌摆回去了", "tests/test_foe_drag.gd"),
     # 倾斜不清：那几张牌斜着躺在摞里
@@ -1281,7 +1281,7 @@ MUTATIONS = [
      '''	if _drag_lease_t >= DRAG_LEASE_TIMEOUT:''',
      '''	if true:''',
      "才过 0.05s，租约还在", "tests/test_foe_drag.gd"),
-    # 租约不挡布局（闲置摞那条）：_layout_ai_idle 每步都把牌摆回摞里
+    # 租约不挡布局（闲置摞那条）：_layout_bot_idle 每步都把牌摆回摞里
     ("scenes/settle_layout.gd",
      '''		if _main.is_drag_leased(int(c["uid"])):
 			continue''',
@@ -1850,8 +1850,8 @@ MUTATIONS = [
      "那几张不再躺在资源摞里", "tests/test_net_piles.gd"),
     # 声明摞不算前行：摞塌到后行席位上，等它变成真组合时又跳回前行
     ("scenes/settle_layout.gd",
-     '	return key.begins_with("ai_combo_") or key.begins_with("ai_group_")',
-     '	return key.begins_with("ai_combo_")',
+     '	return key.begins_with("bot_combo_") or key.begins_with("bot_group_")',
+     '	return key.begins_with("bot_combo_")',
      "声明摞算前行", "tests/test_net_piles.gd"),
 
     # --- 21b. 收拢/摊开这一位：双击摞起来和摊开，对手要看得出区别 ---
@@ -1920,7 +1920,7 @@ MUTATIONS = [
      "广播里那一摞报的是收拢", "tests/test_net_piles.gd"),
     # 收方不看对手明说的那一位，退回「按几何猜」：前行那份预算摊不开，
     # 于是摞多少张都被压成收拢 —— 摊开和收拢长得一模一样
-    # （这段规则从 _layout_ai_zone 搬到了 plan_combo_row —— 缩进跟着少一层。
+    # （这段规则从 _layout_bot_zone 搬到了 plan_combo_row —— 缩进跟着少一层。
     #   搬家不改判据：摊开/收拢那一位仍然只写在一处，
     #   memory: doc-migration-moves-anchors）
     ("scenes/settle_layout.gd",
@@ -1935,9 +1935,9 @@ MUTATIONS = [
     # 锚点得带上下一行：back_pile_cap 的预算那行以这一行**开头**
     #（那边多减一个卡纵深），只写这一行会撞 2 处、整条被 SKIP 掉
     ("scenes/settle_layout.gd",
-     '\tvar budget: float = AI_ROW_Z[0] - AI_BACK_Z_MIN\n'
+     '\tvar budget: float = BOT_ROW_Z[0] - BOT_BACK_Z_MIN\n'
      '\tvar step: float = minf(Board.STACK_GAP.z, budget / float(n - 1))',
-     '\tvar budget: float = combo_south_limit() - AI_ROW_Z[0]\n'
+     '\tvar budget: float = combo_south_limit() - BOT_ROW_Z[0]\n'
      '\tvar step: float = minf(Board.STACK_GAP.z, budget / float(n - 1))',
      "他说摊开，我这边就摆成摊开", "tests/test_net_piles.gd"),
 
@@ -2538,16 +2538,16 @@ MUTATIONS = [
      '				out.append({\n'
      '					"kind": "combo", "uids": core, "cost": core.size() * per_card,\n',
      "各自成靶", "tests/test_all_combos.gd"),                # 31a：红 7 条
-    # 32. 「玩家打对方和 AI 打玩家，撕毁动画是同一套、速度也一样」。
+    # 32. 「玩家打对方和 BOT 打玩家，撕毁动画是同一套、速度也一样」。
     # 撕牌本身两边一直共用 _tear_out，差的是外面那层节拍 ——
     # 所以两条变异钉的都是节拍，不是撕牌
-    # 32a：AI 不再按摞攒（batch 键作废）→ 回到一条意图一拍，7 张 6.3 秒
+    # 32a：BOT 不再按摞攒（batch 键作废）→ 回到一条意图一拍，7 张 6.3 秒
     # （锚点跟着 GameState.target_batch 的收口改过一次：batch 名原先在这里
     # 手写 str(target.get(...))，「一次只打一个组合」把这句读法收进了引擎）
     ("scenes/main.gd",
      '\t\tvar batch := GameState.target_batch(target)',
      '\t\tvar batch := ""',
-     # 实跑：AI 侧 14 声（1 声命中×7 批 + 7 声逐张）、两边差 5396ms
+     # 实跑：BOT 侧 14 声（1 声命中×7 批 + 7 声逐张）、两边差 5396ms
      "耗时相差", "tests/test_attack_dbl.gd"),          # 32a：红 2 条
     # 32b：起飞时刻不再排在公用队上 → 分次进来的 N 张同时撕开，读作一团
     ("scenes/main.gd",
@@ -2608,8 +2608,8 @@ MUTATIONS = [
      '	return str(target.get("kind", "")) in ["combo", "spare"]',
      '	return true',
      "散卡不上锁", "tests/test_engine.gd"),             # 34c：红 2 条
-    # 35. 「AI 上一回合攻击完，下一回合那张攻击卡没了」。链条是：装弹吃掉组合
-    # 自己的配方现金 → AI 手头紧到触发 pawn_relief → relief 跑在重建组合之前，
+    # 35. 「BOT 上一回合攻击完，下一回合那张攻击卡没了」。链条是：装弹吃掉组合
+    # 自己的配方现金 → BOT 手头紧到触发 pawn_relief → relief 跑在重建组合之前，
     # 此时 finalize 已清空 locked 和 combos，那张刚立过功的攻击卡在
     # _pawn_candidate 眼里就是废牌。三条变异断掉这条修复的三个关节
     # 35a：不记开火回合 → 后面全都无从判断
@@ -3006,97 +3006,97 @@ MUTATIONS = [
     ("engine/match_simulator.gd",
      '\t\t\taction_phase(state, who, cfgs.get(who))\n\t\tif not before_settle.is_null():',
      '\t\t\taction_phase(state, who)\n\t\tif not before_settle.is_null():',
-     "改变第 1 回合的行动结果", "tests/test_ai_search.gd"),
+     "改变第 1 回合的行动结果", "tests/test_bot_search.gd"),
     # 51t：`Settle.run` 不把 picker 穿下去。选靶于是永远是那份四档权重表 ——
     # 这**正是改造前的状态**：`attack_phase` 的 `target_picker` 参数早就在，
     # 只是无头这条路上没有调用方给得出一个会搜索的 picker。
     # 判据不能只看「参数存在」，得看那一条实参真的算出了 picker
     ("engine/settle.gd",
-     '\tattack_phase(state, order[0], AIPlan.target_picker(cfgs.get(order[0])))',
+     '\tattack_phase(state, order[0], BOTPlan.target_picker(cfgs.get(order[0])))',
      '\tattack_phase(state, order[0])',
-     "满档的选靶真的在搜索", "tests/test_ai_search.gd"),
+     "满档的选靶真的在搜索", "tests/test_bot_search.gd"),
 
-    # ---------- AI 参数面板（scenes/ai_panel.gd） ----------
+    # ---------- BOT 参数面板（scenes/bot_panel.gd） ----------
     #
     # 这一段守的是「玩家点得到、点了有用」。参数层那一整串判据
     # （上面 51a~51j）一条都不看画面 —— 面板整块从 canvas 上摘掉，
     # 它们全绿。那正是 net/ 那一层踩过的坑（测试全绿而玩家点不到）
     #
     # 52a：面板不挂上去。第 2 条要的那个 tab 于是根本不存在，
-    # 而 AISearch 的判据一条不少地全过
+    # 而 BOTSearch 的判据一条不少地全过
     ("scenes/main.gd",
-     '\tvar aip := AIPanel.new()\n\taip.above = pal\n\tcanvas.add_child(aip)',
-     '\tvar aip := AIPanel.new()\n\taip.above = pal',
-     "面板在场景树里", "tests/test_ai_panel.gd"),
+     '\tvar aip := BOTPanel.new()\n\taip.above = pal\n\tcanvas.add_child(aip)',
+     '\tvar aip := BOTPanel.new()\n\taip.above = pal',
+     "面板在场景树里", "tests/test_bot_panel.gd"),
     # 52b：`above` 不赋值 —— 面板改去贴屏幕顶边，和配色面板叠在一起。
     # 这条钉的是「贴在配色下方」那个位置要求（第 2 条：结构类似于配色 tab）
     ("scenes/main.gd",
      '\taip.above = pal\n\tcanvas.add_child(aip)',
      '\tcanvas.add_child(aip)',
-     "AI 面板在配色面板下方", "tests/test_ai_panel.gd"),
+     "BOT 面板在配色面板下方", "tests/test_bot_panel.gd"),
     # 52c：`main.gd` 移除新搜索前读取当前设置的接线，重规划继续沿用阶段开始时的值。
     # 面板拖得动、摘要照变，但下一次决策没有采用新参数。
     # 参数层判据全绿（它们直接调 prefs()，不经过 main.gd）
     ("scenes/main.gd",
-     '\tagent.config_provider = AISearch.prefs',
+     '\tagent.config_provider = BOTSearch.prefs',
      '\tagent.config_provider = Callable()',
-     "场景层读玩家偏好", "tests/test_ai_live_parameters.gd"),
+     "场景层读玩家偏好", "tests/test_bot_live_parameters.gd"),
     # 52d：`_syncing` 护栏破掉。回填每一行会触发 toggled / value_changed，
     # 那两个回调往下写 set_override —— 于是**拖一下滑块就给每个旋钮盖一层覆盖**，
     # 滑块从此失灵（覆盖盖住档位），面板上只多一个星号
-    ("scenes/ai_panel.gd",
-     '\tif _syncing:\n\t\treturn\n\tAISearch.set_override(key, on)',
-     '\tAISearch.set_override(key, on)',
-     "回填没有反过来写覆盖", "tests/test_ai_panel.gd"),
-    # 52c2：屏幕那条路整个空转 —— AI 回合什么都不做。
-    # 「跑完没崩」那种判据抓不住它（空转也叫没崩），所以 test_ai_panel
+    ("scenes/bot_panel.gd",
+     '\tif _syncing:\n\t\treturn\n\tBOTSearch.set_override(key, on)',
+     '\tBOTSearch.set_override(key, on)',
+     "回填没有反过来写覆盖", "tests/test_bot_panel.gd"),
+    # 52c2：屏幕那条路整个空转 —— BOT 回合什么都不做。
+    # 「跑完没崩」那种判据抓不住它（空转也叫没崩），所以 test_bot_panel
     # 在这条路上数了落地的意图条数。这条同时是那个计数判据的非空证明
     #
     # 锚点搬过一次：双工那一步在这两行之间插进了 `agent.think = _think_off_thread`，
     # 原先那份「构造 + await」的连写从此不相邻。现在只钉 await 那一行
     ("scenes/main.gd",
-     '\tagent.think = _think_off_thread\n\tawait agent.run_action_phase(_ai_beat)',
+     '\tagent.think = _think_off_thread\n\tawait agent.run_action_phase(_bot_beat)',
      '\tagent.think = _think_off_thread',
-     "真的经管道落了意图", "tests/test_ai_panel.gd"),
+     "真的经管道落了意图", "tests/test_bot_panel.gd"),
     # 52d2：整数那一行的护栏。和 52d 是两段独立的代码（bool 走 CheckBox.toggled，
     # int 走 SpinBox.value_changed），删任一段都要有人报 ——
     # 只钉 bool 那段的话，把 int 那段的护栏删掉一条判据不红
-    ("scenes/ai_panel.gd",
-     '\tif _syncing:\n\t\treturn\n\tAISearch.set_override(key, int(v) if kind == "int" else v)',
-     '\tAISearch.set_override(key, int(v) if kind == "int" else v)',
-     "回填没有反过来写覆盖", "tests/test_ai_panel.gd"),
+    ("scenes/bot_panel.gd",
+     '\tif _syncing:\n\t\treturn\n\tBOTSearch.set_override(key, int(v) if kind == "int" else v)',
+     '\tBOTSearch.set_override(key, int(v) if kind == "int" else v)',
+     "回填没有反过来写覆盖", "tests/test_bot_panel.gd"),
     # 52e：回填整个不跑 —— 拖滑块之后每一行还显示上一档的数。
-    # 玩家照着面板上的数判断「现在 AI 有多强」，而那是错的
-    ("scenes/ai_panel.gd",
-     '\tAISearch.set_pref_strength(v)   # 会清掉逐项覆盖：拖滑块 = 整档换掉\n\t_sync_rows()',
-     '\tAISearch.set_pref_strength(v)   # 会清掉逐项覆盖：拖滑块 = 整档换掉',
-     "每一行显示的都是这一档的真值", "tests/test_ai_panel.gd"),
-    # 52f：星号不打。有逐项覆盖时滑块的数已经不能描述 AI 强度了，
-    # 不标出来的话「滑块在 0 但 AI 在搜索」看着像 bug ——
+    # 玩家照着面板上的数判断「现在 BOT 有多强」，而那是错的
+    ("scenes/bot_panel.gd",
+     '\tBOTSearch.set_pref_strength(v)   # 会清掉逐项覆盖：拖滑块 = 整档换掉\n\t_sync_rows()',
+     '\tBOTSearch.set_pref_strength(v)   # 会清掉逐项覆盖：拖滑块 = 整档换掉',
+     "每一行显示的都是这一档的真值", "tests/test_bot_panel.gd"),
+    # 52f：星号不打。有逐项覆盖时滑块的数已经不能描述 BOT 强度了，
+    # 不标出来的话「滑块在 0 但 BOT 在搜索」看着像 bug ——
     # 玩家会去查代码，而代码是对的
-    ("scenes/ai_panel.gd",
-     '\tvar star := "*" if AISearch.has_overrides() else ""',
+    ("scenes/bot_panel.gd",
+     '\tvar star := "*" if BOTSearch.has_overrides() else ""',
      '\tvar star := ""',
-     "读数带星号", "tests/test_ai_panel.gd"),
-    # 52g：拖滑块就落盘。AI 参数只在本次运行中生效，不应再生成偏好文件。
+     "读数带星号", "tests/test_bot_panel.gd"),
+    # 52g：拖滑块就落盘。BOT 参数只在本次运行中生效，不应再生成偏好文件。
     # 直接注入写盘，避免依赖已经移除的 save() API 导致变异仅被语法检查拦住。
-    ("scenes/ai_panel.gd",
-     '\tAISearch.set_pref_strength(v)   # 会清掉逐项覆盖：拖滑块 = 整档换掉',
-     '\tAISearch.set_pref_strength(v)\n\tvar stale := FileAccess.open(AISearch.USER_PATH, FileAccess.WRITE)\n\tstale.store_string(JSON.stringify({"strength": v}))\n\tstale.close()',
-     "拖滑块不落盘", "tests/test_ai_panel.gd"),
+    ("scenes/bot_panel.gd",
+     '\tBOTSearch.set_pref_strength(v)   # 会清掉逐项覆盖：拖滑块 = 整档换掉',
+     '\tBOTSearch.set_pref_strength(v)\n\tvar stale := FileAccess.open(BOTSearch.USER_PATH, FileAccess.WRITE)\n\tstale.store_string(JSON.stringify({"strength": v}))\n\tstale.close()',
+     "拖滑块不落盘", "tests/test_bot_panel.gd"),
     # 52h：跟随失效 —— 改成记一个常量偏移。配色面板一展开，两块面板就叠在一起
-    ("scenes/ai_panel.gd",
+    ("scenes/bot_panel.gd",
      '\t\ttop = above.offset_bottom + GAP',
      '\t\ttop = 56.0 + GAP',
-     "跟着下移", "tests/test_ai_panel.gd"),
+     "跟着下移", "tests/test_bot_panel.gd"),
     # 52i：档位按钮的 tooltip 念错档。面板和 `tools/eval.sh` 认的是同一批档位名
-    # （ai_panel.gd `_build_presets` 那条注释），说明念错的话玩家照着报告调不出同一个 AI
+    # （bot_panel.gd `_build_presets` 那条注释），说明念错的话玩家照着报告调不出同一个 BOT
     #
     # tooltip 直接读取该预设的实际强度，不能写死成其他档位。
-    ("scenes/ai_panel.gd",
-     '\t\tb.tooltip_text = "强度 %.2f" % float(AISearch.PRESETS[key])',
+    ("scenes/bot_panel.gd",
+     '\t\tb.tooltip_text = "强度 %.2f" % float(BOTSearch.PRESETS[key])',
      '\t\tb.tooltip_text = "强度 %.2f" % 0.5',
-     "悬停说明念的是它真会设的强度", "tests/test_ai_panel.gd"),
+     "悬停说明念的是它真会设的强度", "tests/test_bot_panel.gd"),
     # 52j：展开之后压根不重算高度，面板还是折叠时那么高 ——
     # 里头的行被裁在框外。
     # 这条原先锚在 `await get_tree().process_frame\n\t_relayout()` 上，
@@ -3108,10 +3108,10 @@ MUTATIONS = [
     # 而「展开后面板变高」那条判据前面等了两帧，照旧全绿（实测）。
     # 去掉 _relayout 之后唯一还看得见的破坏就是那一帧的不一致，
     # 所以钉的是零间隔那条判据
-    ("scenes/ai_panel.gd",
+    ("scenes/bot_panel.gd",
      '\t_toggle.text = "收起" if _body.visible else "展开"\n\t_relayout()',
      '\t_toggle.text = "收起" if _body.visible else "展开"',
-     "当帧就自洽", "tests/test_ai_panel.gd"),
+     "当帧就自洽", "tests/test_bot_panel.gd"),
 
     # ---------- 53：牌局录像（engine/tape.gd + 场景层的接线） ----------
     # 53a：不报意图只报结果。录像录的就是 landed_intent —— 不发它，
@@ -3128,7 +3128,7 @@ MUTATIONS = [
      '\t\tlanded_intent.emit(intent if intent is Dictionary else {}, from_seat)',
      "录进去的都是规范化后的字典", "tests/test_tape.gd"),
     # 53c：先报结果再报意图。landed 的回调里还能再落地一条意图
-    # （AI 那几条就是），于是子意图排在父意图**前面** ——
+    # （BOT 那几条就是），于是子意图排在父意图**前面** ——
     # 重放时子意图先跑，它依赖的那张卡还没出现
     ("engine/intent_apply.gd",
      '\t\tlanded_intent.emit(dec["intent"], from_seat)\n\t\tlanded.emit(r)',
@@ -3254,23 +3254,23 @@ MUTATIONS = [
     # 54e：展开 / 收起时 await 一帧再重算框子。那一帧里 visible 和按钮文案
     # 都翻了、框子还是旧的 —— 协程没恢复就永久停在
     # 「按钮写着展开、底下压着一大片空框子」（用户报的就是这个）
-    ("scenes/ai_panel.gd",
+    ("scenes/bot_panel.gd",
      '\t_toggle.text = "收起" if _body.visible else "展开"\n\t_relayout()',
      '\t_toggle.text = "收起" if _body.visible else "展开"\n'
      '\tawait get_tree().process_frame\n\t_relayout()',
-     "当帧就自洽", "tests/test_ai_panel.gd"),
+     "当帧就自洽", "tests/test_bot_panel.gd"),
     # 54f：选色面板同款（同一个缺陷的两处）
     ("scenes/palette_panel.gd",
      '\t_toggle.text = "收起" if _body.visible else "展开"\n\t_relayout()',
      '\t_toggle.text = "收起" if _body.visible else "展开"\n'
      '\tawait get_tree().process_frame\n\t_relayout()',
-     "选色面板连按", "tests/test_ai_panel.gd"),
+     "选色面板连按", "tests/test_bot_panel.gd"),
     # 54g：内容自己变尺寸时不重算框子。开关那条路照旧全绿 ——
     # 漏的是 _sync_rows：读数多一个星号，收起态下星号被切掉
-    ("scenes/ai_panel.gd",
+    ("scenes/bot_panel.gd",
      '\tget_node("Frame").minimum_size_changed.connect(_relayout)',
      '\tpass',
-     "读数变长之后框子跟着变宽", "tests/test_ai_panel.gd"),
+     "读数变长之后框子跟着变宽", "tests/test_bot_panel.gd"),
     # ---- 55：三处「玩家要拿走的信息」（tests/test_copyable_info.gd）----
     # 55a：左上角资源面板改成吃鼠标。取牌是 board.gd 在 _unhandled_input 里打射线
     # 做的，Control 吃掉的事件到不了那儿 —— 而这块面板盖的正是对手牌区的投影。
@@ -3400,7 +3400,7 @@ MUTATIONS = [
      "\tfor i in range(0, lines.size()):",
      "存着的行数封在上限附近", "tests/test_no_vanishing.gd"),
     # 56i：单向开关 —— 展开之后收不回去。这是用户报过的那个 bug 的原样
-    # （原话「AI强度tab无法正确展开和收齐」），换个面板又长出来一次
+    # （原话「BOT强度tab无法正确展开和收齐」），换个面板又长出来一次
     ("scenes/msg_log.gd",
      "\t_body.visible = not _body.visible",
      "\t_body.visible = true",
@@ -3456,49 +3456,49 @@ MUTATIONS = [
      "目录不存在也存得下来", "tests/test_no_vanishing.gd"),
     # 57a：整条线程分支失效 —— 每次都走同步退化那一路。
     #
-    # 这条是 test_ai_think.gd 存在的理由：**返回值一模一样**，
+    # 这条是 test_bot_think.gd 存在的理由：**返回值一模一样**，
     # 所有既有判据（场景侧那批走 main.gd 钩子的）照旧全绿，
     # 唯一的症状是满档那 1.7 秒里画面冻住。
     # 加这份文件之前，线程分支可以从头到尾没执行过而没人知道
-    ("engine/ai_think.gd",
+    ("engine/bot_think.gd",
      "\tif tree == null:\n\t\treturn job.call()",
      "\tif true:\n\t\treturn job.call()",
-     "job 跑在工作线程上", "tests/test_ai_think.gd"),
+     "job 跑在工作线程上", "tests/test_bot_think.gd"),
     # 57b：信箱退回共用那一格（这是真出过的 bug，不是假想的坏法）。
     # 两个调用方共用 `_box`：第二个进闸门时那一格里还是第一份的结果,
     # 于是它的 `while box.is_empty()` 一进来就成立，**领走第一份的结果**
-    # 就返回了——自己那份反而被扔掉。两个 AI 座位同时开口就是「A 座拿到 B 座的计划」
-    ("engine/ai_think.gd",
+    # 就返回了——自己那份反而被扔掉。两个 BOT 座位同时开口就是「A 座拿到 B 座的计划」
+    ("engine/bot_think.gd",
      "\tvar box: Array = []\n\tvar th := Thread.new()",
      "\tvar box: Array = _box\n\tvar th := Thread.new()",
-     "第二份任务算出了自己的结果", "tests/test_ai_think.gd"),
+     "第二份任务算出了自己的结果", "tests/test_bot_think.gd"),
     # 57c：重入闸门拆掉。两条搜索线程并排烧两个核，
     # 而 `_thread`/`_box` 两格只认得最后进来那个 —— 退出时 flush() 只收得掉一条。
     #
     # 抓它的判据是**两段区间不重叠**，不是「有没有漏 Thread」：
     # 线程句柄是各自的 local，闸门拆了也各自 join 得掉，busy() 照旧是假。
     # 拿漏没漏当判据这条就是 MISS（判据没有观察点那一类）
-    ("engine/ai_think.gd",
+    ("engine/bot_think.gd",
      "\twhile _thread != null:",
      "\twhile false:",
-     "闸门把两份串起来了", "tests/test_ai_think.gd"),
-    # 58a：秒表没装在 AI 那条路上。顶部从不显示当前搜索计时，
+     "闸门把两份串起来了", "tests/test_bot_think.gd"),
+    # 58a：秒表没装在 BOT 那条路上。顶部从不显示当前搜索计时，
     # 而 ThinkClock 自己的那些判据（start/stop 对不对）照旧全绿
     ("scenes/main.gd",
-     "\tThinkClock.start(ThinkClock.SRC_AI)\n\t_update_thinking_hint()",
+     "\tThinkClock.start(ThinkClock.SRC_BOT)\n\t_update_thinking_hint()",
      "\t_update_thinking_hint()",
      "计时器记下了", "tests/test_think_clock.gd"),
     # 58b：搜索之前就停表。次数仍正确，但每次记录接近零，漏掉了实际搜索。
     ("scenes/main.gd",
-     "\tThinkClock.start(ThinkClock.SRC_AI)\n\t_update_thinking_hint()",
-     "\tThinkClock.start(ThinkClock.SRC_AI)\n\tThinkClock.stop()\n\t_update_thinking_hint()",
+     "\tThinkClock.start(ThinkClock.SRC_BOT)\n\t_update_thinking_hint()",
+     "\tThinkClock.start(ThinkClock.SRC_BOT)\n\tThinkClock.stop()\n\t_update_thinking_hint()",
      "记下的时长真裹住了搜索", "tests/test_think_clock.gd"),
-    # 58c：联网局也念「AI」。对面是个人，管他叫 AI 是错的；
-    # 而且联网那一路量到的含网络往返，说法本来就不该和本地 AI 一样
+    # 58c：联网局也念「BOT」。对面是个人，管他叫 BOT 是错的；
+    # 而且联网那一路量到的含网络往返，说法本来就不该和本地 BOT 一样
     ("scenes/main.gd",
      '\t\tvar prefix := (" · " if drawer_presentation else "\\n") + "对手思考中… "',
-     '\t\tvar prefix := (" · " if drawer_presentation else "\\n") + "AI思考中… "',
-     "念「对手」而**不**念 AI", "tests/test_think_clock.gd"),
+     '\t\tvar prefix := (" · " if drawer_presentation else "\\n") + "BOT思考中… "',
+     "念「对手」而**不**念 BOT", "tests/test_think_clock.gd"),
     # 58d：念的还是估值。这是「换了行、没换数据源」那个坏法 ——
     # 实测计数器若被改成固定数字，便不会随实际计算时间变化。
     # 屏幕上看不出区别（都是「1.8 秒」），只有换台机器才会发现它不动
@@ -3517,15 +3517,15 @@ MUTATIONS = [
 
 # 哪条变异该由哪个测试抓（默认 test_engine）
 TEST_FOR = {
-    "engine/ai_search.gd": "tests/test_ai_search.gd",
-    "engine/ai_agent.gd": "tests/test_ai_search.gd",
+    "engine/bot_search.gd": "tests/test_bot_search.gd",
+    "engine/bot_agent.gd": "tests/test_bot_search.gd",
     "engine/pile_solver.gd": "tests/test_pile_solver.gd",
     "scenes/settle_layout.gd": "tests/test_arrivals.gd",
     "scenes/board.gd": "tests/test_market.gd",
     "scenes/main.gd": "tests/test_arrivals.gd",
     "engine/card_db.gd": "tests/test_simulator.gd",
     "data/cards.json": "tests/test_simulator.gd",
-    "data/ai.json": "tests/test_simulator.gd",
+    "data/bot.json": "tests/test_simulator.gd",
     "data/ui.json": "tests/test_config_complete.gd",
     "engine/match_simulator.gd": "tests/test_simulator.gd",
 }
@@ -3792,7 +3792,7 @@ def main():
         # 锚点撞了名的时候它去改了另一个调用点，那里没人看，于是报 MISS。
         # 这是第三种 MISS，修法和另两种都不一样（另两种见文件头）：
         # 不是判据太松、也不是没有观察点，是**变异根本没打在想改的地方**。
-        # 实测：'layout._layout_ai_idle()' 在 scenes/main.gd 里有 7 处，
+        # 实测：'layout._layout_bot_idle()' 在 scenes/main.gd 里有 7 处，
         # 登记的那条一直在改第 2 处，报表上是一条查无实据的 MISS
         hits = src.count(old)
         if hits > 1:

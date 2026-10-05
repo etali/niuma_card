@@ -68,7 +68,7 @@ func _pipe(s: GameState) -> LocalTransport:
 ## 也会进指纹，那是**该**进的：买卡/产出的插入位置也是行为的一部分
 func _fingerprint(s: GameState) -> String:
 	var parts: Array = []
-	for who in [GameState.PLAYER, GameState.AI]:
+	for who in [GameState.PLAYER, GameState.BOT]:
 		var cs: Array = []
 		for c in s.players[who]["cards"]:
 			cs.append("%d:%s:%s" % [int(c["uid"]), c["def_id"], str(c["locked"])])
@@ -231,7 +231,7 @@ func test_pay_order_preserved() -> void:
 
 # ---------- 二、不信任客户端 ----------
 
-## 一局摆好的攻击场面：PLAYER 有一个攻击组合，AI 有散卡当靶。
+## 一局摆好的攻击场面：PLAYER 有一个攻击组合，BOT 有散卡当靶。
 ## 返回 [state, transport, def_id]
 ##
 ## 挑的是**吃现金**的攻击卡：下面三条判据（阶段推进权 / 重复装弹 / 收手）
@@ -244,7 +244,7 @@ func _armed_scene() -> Array:
 	s.set_seed(11)
 	s.players = {
 		GameState.PLAYER: { "cards": [] },
-		GameState.AI: { "cards": [] },
+		GameState.BOT: { "cards": [] },
 	}
 	s.draw_first = GameState.PLAYER
 	# 攻击组合：挑一张吃现金的攻击卡，配齐弹药 + 留够散现金（付完不能归零）
@@ -266,11 +266,11 @@ func _armed_scene() -> Array:
 	for i in 5:
 		s.add_card(GameState.PLAYER, "cash")
 	s.add_card(GameState.PLAYER, "user")
-	# 靶子：AI 手上一堆散现金 + 用户（用户留着，不然打完就判负、后面的判据全走不到）
+	# 靶子：BOT 手上一堆散现金 + 用户（用户留着，不然打完就判负、后面的判据全走不到）
 	for i in 6:
-		s.add_card(GameState.AI, "cash")
+		s.add_card(GameState.BOT, "cash")
 	for i in 4:
-		s.add_card(GameState.AI, "user")
+		s.add_card(GameState.BOT, "user")
 	if not s.create_combo(GameState.PLAYER, uids)["ok"]:
 		return []
 	return [s, LocalTransport.new(IntentApply.new(s)), def_id]
@@ -310,19 +310,19 @@ func test_forged_cost_rejected() -> void:
 	check(spent > 0, "点掉了 %d 个靶" % spent)
 
 	# 池子空了，现在拿一个「自称 cost=0」的包去点还活着的靶
-	var live: Array = s.attack_targets(GameState.AI)
+	var live: Array = s.attack_targets(GameState.BOT)
 	if live.is_empty():
-		check(false, "AI 身上没有剩余目标可做伪造判据")
+		check(false, "BOT 身上没有剩余目标可做伪造判据")
 		return
 	var forged: Dictionary = live[0].duplicate()
 	forged["cost"] = 0
-	var before: int = s.players[GameState.AI]["cards"].size()
+	var before: int = s.players[GameState.BOT]["cards"].size()
 	var bad: Dictionary = await pipe.submit(
 		Intent.apply_attack(GameState.PLAYER, forged), GameState.PLAYER)
 	check(not bad.get("ok", true) and bad.get("code", "") == "short_points",
 		"cost=0 的伪造包被拒（%s / %s）" % [bad.get("code", "?"), bad.get("reason", "")])
-	check(s.players[GameState.AI]["cards"].size() == before,
-		"伪造包没能移走任何卡（%d → %d）" % [before, s.players[GameState.AI]["cards"].size()])
+	check(s.players[GameState.BOT]["cards"].size() == before,
+		"伪造包没能移走任何卡（%d → %d）" % [before, s.players[GameState.BOT]["cards"].size()])
 
 	# 反面：不带 cost 的正常引用，在池子有点数时是认得的（否则上面那条是恒真的）
 	var s2c := _armed_scene()
@@ -342,16 +342,16 @@ func test_forged_cost_rejected() -> void:
 		check(int(ok2.get("cost", -1)) == int(av2[0]["cost"]),
 			"cost 由对端重算得出（%s vs 卡面 %s）" % [ok2.get("cost"), av2[0]["cost"]])
 
-## 冒充：连接身份是 AI，包里自称 player
+## 冒充：连接身份是 BOT，包里自称 player
 func test_impersonation_rejected() -> void:
 	print("【冒充座位】")
 	var s := _seeded_game(3)
 	var pipe := _pipe(s)
 	var slot := _affordable_slot(s, GameState.PLAYER)
 	var fake: Dictionary = await pipe.submit(
-		Intent.buy(GameState.PLAYER, int(slot[0]), []), GameState.AI)
+		Intent.buy(GameState.PLAYER, int(slot[0]), []), GameState.BOT)
 	check(not fake.get("ok", true) and fake.get("code", "") == "wrong_seat",
-		"AI 的连接不能替 PLAYER 买卡（%s）" % fake.get("code", "?"))
+		"BOT 的连接不能替 PLAYER 买卡（%s）" % fake.get("code", "?"))
 
 	# from_seat 为空 = 服务器自己提交，同一个包要能过（否则上面那条可能只是「包本身坏」）
 	var ok: Dictionary = await pipe.submit(Intent.buy(GameState.PLAYER, int(slot[0]), []))
@@ -575,7 +575,7 @@ func _attack_scene(seed_v: int) -> Array:
 	var prod := _cheapest(CardDB.KIND_PRODUCT, CardDB.RES_CASH)
 	if atk == "" or prod == "":
 		return []
-	for who in [GameState.PLAYER, GameState.AI]:
+	for who in [GameState.PLAYER, GameState.BOT]:
 		# 弹药和配方都吃现金，先把现金铺够（付完还得剩，否则整组不生效）
 		for i in 20:
 			s.add_card(who, CardDB.unit_id(CardDB.RES_CASH))
@@ -608,7 +608,7 @@ func _cheapest(kind: String, res: String) -> String:
 			best_n = n
 	return best
 
-## 双方各自用 AI 的组卡器编组。用 当前行动策略 而不是手摆牌桌：
+## 双方各自用 BOT 的组卡器编组。用 当前行动策略 而不是手摆牌桌：
 ## 它会编出攻击组合和生产组合的混合场面，比手摆的更接近真实局。
 ##
 ## 得先发核心卡：开局手上只有单位卡（现金/用户），一张核心都没有，
@@ -646,7 +646,7 @@ func _seed_cores(s: GameState) -> void:
 		if best != "":
 			picks.append(best)
 	# 两边发**同一套**：指纹要能比，双方的牌面必须对称
-	for who in [GameState.PLAYER, GameState.AI]:
+	for who in [GameState.PLAYER, GameState.BOT]:
 		for def_id in picks:
 			s.add_card(who, def_id)
 		# 多发些单位卡：配方吃现金，攻击组合还要付弹药，

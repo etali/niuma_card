@@ -18,7 +18,7 @@ extends "res://tests/harness.gd"
 
 const PORT_BASE := 47380
 const A := GameState.PLAYER
-const B := GameState.AI
+const B := GameState.BOT
 
 ## 协程完成标志。**必须是成员变量** —— GDScript 的 lambda 按值捕获外层局部量
 ## （test_net_attack_flow 的 _flag 那段注释里有实测经过）
@@ -119,7 +119,7 @@ func _t2_my_half_lives_his_half_blocked() -> void:
 		main.queue_free()
 		return
 	main._sync_entities()
-	main.layout._layout_ai_zone()
+	main.layout._layout_bot_zone()
 	_run_attacks_bg(main)
 	if not await net_until([a, b], func(): return main.board.attack_mode, 10000):
 		check(false, "场景层开出了点选模式")

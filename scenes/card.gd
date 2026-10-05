@@ -96,7 +96,7 @@ var def_id := ""
 var uid := -1
 var dragging := false
 var highlighted := false
-var draggable := true    # AI 的牌不可拖
+var draggable := true    # BOT 的牌不可拖
 var is_market := false   # 公共区的牌：拖拽用于购买，不参与堆叠
 
 var label: Label3D
@@ -857,7 +857,7 @@ func overlay_uv_y(n: Node3D) -> float:
 	var z: float = n.position.z
 	return clampf((z + CARD_SIZE.z / 2.0) / CARD_SIZE.z, 0.0, 1.0)
 
-## 调暗（用于区分 AI 的牌）
+## 调暗（用于区分 BOT 的牌）
 func set_dimmed(on: bool) -> void:
 	_dimmed = on
 	_apply_color()

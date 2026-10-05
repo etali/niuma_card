@@ -374,7 +374,7 @@ func _t6_rejected_not_taped() -> void:
 	# 三条注定被拒的：不属于自己的卡、越界卡位、替别人行动
 	var r1: Dictionary = ap.apply(Intent.buy(GameState.PLAYER, 0, [999999]), GameState.PLAYER)
 	var r2: Dictionary = ap.apply(Intent.buy(GameState.PLAYER, 99), GameState.PLAYER)
-	var r3: Dictionary = ap.apply(Intent.buy(GameState.AI, 0), GameState.PLAYER)
+	var r3: Dictionary = ap.apply(Intent.buy(GameState.BOT, 0), GameState.PLAYER)
 	check(not r1.get("ok", true) and not r2.get("ok", true) and not r3.get("ok", true),
 		"三条意图都被拒了")
 	check(t.size() == before, "磁带一步没长（实为 %d 步）" % (t.size() - before))

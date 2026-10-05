@@ -101,7 +101,7 @@ func _check_visible_space(main: Node, dpi: float, label: String) -> void:
 	var row_rect := title_row.get_global_rect()
 	check(header.size.y <= 80.0 * dpi, "%s：首行顶部高度不超过80逻辑像素" % label)
 	check(header_rect.end.y < content.position.y, "%s：顶部与牌桌内容区分离" % label)
-	for company: Label in [main.lbl_player_res, main.lbl_ai_res]:
+	for company: Label in [main.lbl_player_res, main.lbl_bot_res]:
 		var company_rect := company.get_global_rect()
 		check(company.get_parent().get_parent().get_parent() == title_row,
 			"%s：%s与游戏标题位于同一个首行容器" % [label, company.text])

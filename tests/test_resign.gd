@@ -45,7 +45,7 @@ extends "res://tests/harness.gd"
 
 const PORT_BASE := 47420
 const A := GameState.PLAYER
-const B := GameState.AI
+const B := GameState.BOT
 
 ## 协程里要翻的标志位得是成员变量：lambda 捕获局部量是**按值**的
 var _flag := false

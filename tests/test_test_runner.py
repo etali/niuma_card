@@ -156,7 +156,7 @@ class RuntimeRequestPathsTest(unittest.TestCase):
             request.write_text(json.dumps({"cards_path":"cards.json", "output_path":"result.json",
                                            "progress_path":"progress.json", "options":{"pairs":1}}))
             original = request.read_bytes()
-            for script in ("eval_report.gd", "ai_duel_report.gd"):
+            for script in ("eval_report.gd", "bot_duel_report.gd"):
                 with self.subTest(script=script):
                     args = ["-s", "tools/" + script, "--", "request.json"]
                     adjusted = runtime.preserve_project_paths(args, source, isolated)

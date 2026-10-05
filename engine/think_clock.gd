@@ -12,9 +12,9 @@ extends RefCounted
 ##
 ## ---
 ##
-## **为什么要它，而不是让 `AIThink` 自己计时。**
+## **为什么要它，而不是让 `BOTThink` 自己计时。**
 ##
-## 联网局那一路压根不经过 `AIThink`：对手在他自己那台机器上想，
+## 联网局那一路压根不经过 `BOTThink`：对手在他自己那台机器上想，
 ## 这边只是在 `scenes/main.gd::_await_foe_action` 里等一条 action_done。
 ## 也就是说「思考耗时」有两个来源，只有一个在工作线程上 ——
 ## 秒表必须待在两条路都够得着的地方。
@@ -25,14 +25,14 @@ extends RefCounted
 ## ---
 ##
 ## 用法：
-##     ThinkClock.start(ThinkClock.SRC_AI)   # 开始想
+##     ThinkClock.start(ThinkClock.SRC_BOT)   # 开始想
 ##     …
 ##     ThinkClock.stop()                     # 想完了，这一趟计入统计
 ## 顶部实时读 `running()` / `elapsed_ms()`，不把上一趟耗时显示成当前耗时。
 
 
-## 记录计时来源：本地 AI 量搜索耗时；联网等待包含网络往返。
-const SRC_AI := "ai"
+## 记录计时来源：本地 BOT 量搜索耗时；联网等待包含网络往返。
+const SRC_BOT := "bot"
 const SRC_FOE := "foe"
 
 ## 现在在跑的话，是谁在跑；空串 = 没人在想

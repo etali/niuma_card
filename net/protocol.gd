@@ -66,7 +66,8 @@ extends RefCounted
 ## v8：入座和落地回执携带完整 recovery 检查点。状态、阶段和行动方属于同一次
 ## 服务端事务，恢复不再把尚未播完的展示快照与最新阶段拼在一起。
 ## v9：同类数值 Buff 按张数叠乘，避免与只应用一次倍率的旧客户端混用。
-const VERSION := 9
+## v10：对手座位标识统一为 bot，拒绝与旧座位编码的客户端混用。
+const VERSION := 10
 ## 仅录像里的权威快照恢复标记，不是玩家可提交的 Intent。
 const RECOVERY_STEP := "recovery"
 
@@ -80,7 +81,7 @@ const DRAG := "drag"                 ## { seq, phase, uids, u, v }
 ## （玩家的摞要到收手时才由 _register_player_combos 变成 create_combo）。
 ##
 ## 为什么非得有这条：对手区的形态是收方**重建**出来的
-## （settle_layout._ai_piles 按 state.combos + 闲置资源分堆），
+## （settle_layout._bot_piles 按 state.combos + 闲置资源分堆），
 ## 而我行动阶段里摞好的那些摞在引擎里根本不存在 —— 于是我摞了半天，
 ## 对面看见的是牌被拖过去、然后**弹回资源堆**。拖拽广播管不了这个：
 ## 它只在手里拿着的那几十帧有效，松手之后由 PILES 同步表现分组，并由收方布局重建。
@@ -92,7 +93,7 @@ const DRAG := "drag"                 ## { seq, phase, uids, u, v }
 ##
 ## 还带 u/v = 这一摞**摆在哪**（归一化坐标，和 DRAG 同一套口径，
 ## 见 main.my_pile_lists）。同一个道理再来一次：只有名单和形态的话，
-## 落点由收方的 _layout_ai_zone 按「共几摞」现算成整行居中 ——
+## 落点由收方的 _layout_bot_zone 按「共几摞」现算成整行居中 ——
 ## 于是对手把组合拖到哪儿，我看到的都是同一个格子。
 ## 位置和形态一样是玩家亲手做的事，不是布局的自由度
 const PILES := "piles"               ## { piles: [{uids: [uid...], compact: bool, u: float, v: float}, ...] }
@@ -416,7 +417,7 @@ static func pong(at_ms: int) -> Dictionary:
 ## u/v 和 compact 不同，**没说就不出这两个键**（不是补个 0.0）：
 ## (0,0) 是桌角一个真实的点，补上去等于替发方声明「这一摞在桌角」——
 ## 于是老形状的包和单机局的摞会全挤到左后角。缺键时收方走它原来那条路
-## （整行居中，见 settle_layout._layout_ai_zone），也就是这条改动之前的行为。
+## （整行居中，见 settle_layout._layout_bot_zone），也就是这条改动之前的行为。
 ## 两个键**一起**给或者一起不给：只有一半的包按没说算，
 ## 半个坐标没有意义，而补另一半同样是替发方编造位置
 ##
@@ -556,7 +557,7 @@ static func result_issue(value: Variant, depth := 0) -> String:
 			return "裁决结果缺少成功标记或有效操作码"
 		if d["op"] == RECOVERY_STEP:
 			if d.get("phase") not in [PhaseMachine.ACTION, PhaseMachine.ATTACK, PhaseMachine.OVER]: return "恢复阶段无效"
-			if d.get("actor") not in ["", GameState.PLAYER, GameState.AI]: return "恢复行动方无效"
+			if d.get("actor") not in ["", GameState.PLAYER, GameState.BOT]: return "恢复行动方无效"
 			if d["phase"] != PhaseMachine.OVER and d["actor"] == "": return "恢复行动方缺失"
 			if not Intent.valid_integer(d.get("seq"), 0): return "恢复序号无效"
 		var required := {
@@ -574,7 +575,7 @@ static func result_issue(value: Variant, depth := 0) -> String:
 		UID_FIELDS + ["market_idx", "combo_idx", "cost", "total", "round", "seq"], UID_LIST_FIELDS,
 		["ok", "empty", "forfeited", "voided", "intact", "resolved"])
 	if issue != "": return issue
-	if d.has("seat") and d["seat"] not in ["", GameState.PLAYER, GameState.AI]: return "裁决座位无效"
+	if d.has("seat") and d["seat"] not in ["", GameState.PLAYER, GameState.BOT]: return "裁决座位无效"
 	for key in UID_FIELDS + ["cost", "total", "round", "seq"]:
 		if d.has(key) and not Intent.valid_integer(d[key], 0): return "%s 必须是非负整数" % key
 	for key in ["target", "resolution", "combo"]:
@@ -629,7 +630,7 @@ static func _shape_issue(d: Dictionary, t: String) -> Dictionary:
 		issue = StateCodec.snapshot_issue(d.get("snapshot"))
 		if issue != "": return err("bad_snapshot", issue)
 	if t in [SEATED, REMATCH_START]:
-		if d["my_seat"] not in [GameState.PLAYER, GameState.AI] or d["foe_seat"] != GameState.opponent(d["my_seat"]):
+		if d["my_seat"] not in [GameState.PLAYER, GameState.BOT] or d["foe_seat"] != GameState.opponent(d["my_seat"]):
 			return err("bad_seat", "双方座位无效")
 	if t == APPLIED:
 		issue = result_issue(d.get("result"))
@@ -641,12 +642,12 @@ static func _shape_issue(d: Dictionary, t: String) -> Dictionary:
 		if not d["votes"] is Array: return err("bad_votes", "投票名单必须是数组")
 		var seen := {}
 		for seat in d["votes"]:
-			if seat not in [GameState.PLAYER, GameState.AI] or seen.has(seat): return err("bad_votes", "投票座位无效或重复")
+			if seat not in [GameState.PLAYER, GameState.BOT] or seen.has(seat): return err("bad_votes", "投票座位无效或重复")
 			seen[seat] = true
 	if t == PHASE:
 		if d["phase"] not in [PhaseMachine.ACTION, PhaseMachine.ATTACK, PhaseMachine.SETTLING, PhaseMachine.OVER]:
 			return err("bad_phase", "未知对局阶段")
-		if d.get("actor", "") not in ["", GameState.PLAYER, GameState.AI]: return err("bad_seat", "行动座位无效")
+		if d.get("actor", "") not in ["", GameState.PLAYER, GameState.BOT]: return err("bad_seat", "行动座位无效")
 	return {}
 
 ## 只在一次服务器同步推进完成后的可交互/终局边界生成检查点。
@@ -657,7 +658,7 @@ static func recovery_issue(value: Variant) -> String:
 		if not value.has(key): return "恢复检查点缺少 %s" % key
 	if value["phase"] not in [PhaseMachine.ACTION, PhaseMachine.ATTACK, PhaseMachine.OVER]:
 		return "恢复检查点阶段无效"
-	if value["actor"] not in ["", GameState.PLAYER, GameState.AI]: return "恢复行动方无效"
+	if value["actor"] not in ["", GameState.PLAYER, GameState.BOT]: return "恢复行动方无效"
 	if value["phase"] != PhaseMachine.OVER and value["actor"] == "": return "恢复检查点缺少行动方"
 	if not Intent.valid_integer(value["seq"], 0): return "恢复序号无效"
 	var issue := StateCodec.snapshot_issue(value["snapshot"])
@@ -722,7 +723,7 @@ static func from_dict(d: Dictionary) -> Dictionary:
 		PILES, FOE_PILES, MY_PILES:
 			# 走 pile_lists 而不是原样收下，两件事：
 			#   1. uid 过一趟 JSON 全变成 double，而收方拿它当**字典键**用
-			#      （settle_layout._ai_pile_of_uid）—— { 60: x }.has(60.0) 是 false，
+			#      （settle_layout._bot_pile_of_uid）—— { 60: x }.has(60.0) 是 false，
 			#      症状是摞看着摆好了、点不着（和 UID_FIELDS 那段是同一个坑）
 			#   2. compact 掰成 bool，并且把老形状（光名单）补齐成字典
 			out["piles"] = pile_lists(d["piles"])

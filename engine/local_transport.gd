@@ -9,10 +9,10 @@ extends Transport
 ## 单机局用它；联网时换成 NetTransport，场景层一行都不用改（见 Transport）
 ##
 ## **落地即广播**：这里连着 applier 的 landed 信号，所以经过这个裁决器的每条
-## 意图都会发一遍 applied —— 包括没走 submit() 的那些（AI 内部直接 apply 的
+## 意图都会发一遍 applied —— 包括没走 submit() 的那些（BOT 内部直接 apply 的
 ## 编组和典当，见 IntentApply.landed 的说明）。联网侧的 NetTransport 早就是
 ## 这个语义了（服务器给每条落地结果广播一遍 applied），本地侧原先不是：
-## 于是「对手做了什么」在单机局只有驱动 AI 的那段代码知道，联网局却要靠信号 ——
+## 于是「对手做了什么」在单机局只有驱动 BOT 的那段代码知道，联网局却要靠信号 ——
 ## 两条路径的表现层代码没法是同一份。补齐这一侧就不用分叉了
 
 var _applier: IntentApply

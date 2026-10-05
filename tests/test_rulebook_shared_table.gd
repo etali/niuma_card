@@ -193,6 +193,6 @@ func _example(section: String, mode: String, tier := -1) -> Dictionary:
 func _finish_fixture_layout(arena: Node) -> void:
 	for i in 30:
 		await process_frame
-		if not arena.layout.ai_moving():
+		if not arena.layout.bot_moving():
 			break
 	await create_timer(0.4).timeout

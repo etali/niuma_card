@@ -4,13 +4,13 @@
 
 extends "res://tests/harness.gd"
 
-## 抽屉暂停语义回归：等待玩家输入时冻结时钟，AI 与联网对手在收起时继续推进。
+## 抽屉暂停语义回归：等待玩家输入时冻结时钟，BOT 与联网对手在收起时继续推进。
 
 func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	print("=== 抽屉暂停与 AI 线程回归 ===")
+	print("=== 抽屉暂停与 BOT 线程回归 ===")
 	var main := await _boot_drawer_main()
 	if not need(main != null and main.drawer_window != null, "抽屉模式 main 实例化"):
 		finish()
@@ -35,7 +35,7 @@ func _run() -> void:
 	check(resumed > paused_after, "展开后演出时钟继续增加")
 	check(before <= paused_at, "暂停起点不早于收起前时钟")
 
-	# 此探针没有切成AI行动，仍在等待玩家：纯计算可结束，包装协程须等展开。
+	# 此探针没有切成BOT行动，仍在等待玩家：纯计算可结束，包装协程须等展开。
 	ThinkClock.reset()
 	var probe := {"done": false, "returns": 0, "value": null}
 	call_deferred("_probe_think", main, probe)
@@ -43,29 +43,29 @@ func _run() -> void:
 	while not ThinkClock.running() and wait < 30:
 		await process_frame
 		wait += 1
-	check(ThinkClock.running(), "AI 搜索开始并进入 ThinkClock")
+	check(ThinkClock.running(), "BOT 搜索开始并进入 ThinkClock")
 	drawer.collapse_now()
 	await _real_wait(0.22)
-	check(not ThinkClock.running(), "AI 工作线程完成后 ThinkClock 停表")
+	check(not ThinkClock.running(), "BOT 工作线程完成后 ThinkClock 停表")
 	check(not probe.done, "等待玩家期间收起时，线程探针仍遵守暂停")
 	drawer.expand()
 	wait = 0
 	while not probe.done and wait < 60:
 		await process_frame
 		wait += 1
-	check(probe.done, "展开后 AI 包装协程恢复")
-	check(probe.returns == 1 and probe.value == 42, "AI 结果只返回一次且值正确")
-	check(not ThinkClock.running(), "AI 结果恢复后 ThinkClock 仍已停止")
+	check(probe.done, "展开后 BOT 包装协程恢复")
+	check(probe.returns == 1 and probe.value == 42, "BOT 结果只返回一次且值正确")
+	check(not ThinkClock.running(), "BOT 结果恢复后 ThinkClock 仍已停止")
 
 	# 真实行动阶段锁不被窗口收放覆盖。
 	main.phase = main.PHASE_ACTION
 	main._actor = main.foe_seat
 	main.board.input_locked = true
 	drawer.collapse_now()
-	check(not self.paused, "真正轮到AI行动时收起不暂停，可继续计算和落地")
-	check(main.board.input_locked, "AI行动阶段的业务输入锁保持")
+	check(not self.paused, "真正轮到BOT行动时收起不暂停，可继续计算和落地")
+	check(main.board.input_locked, "BOT行动阶段的业务输入锁保持")
 	drawer.expand()
-	check(main.board.input_locked, "AI行动阶段展开后业务输入锁仍保持")
+	check(main.board.input_locked, "BOT行动阶段展开后业务输入锁仍保持")
 
 	# _host 非空代表本机嵌入服务器：收起只静音，不暂停 SceneTree。
 	main._host = EmbeddedHost.new()

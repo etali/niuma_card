@@ -12,11 +12,11 @@ extends RefCounted
 ## 引擎这边不存 phase —— 两份记录会各说各话（真出现过 settle vs settling 这种
 ## 取值对不上，而引擎那份只写不读，对不上也没人发现）
 
-## 运行时AI额度不进入状态编码、规则指纹或搜索副本。每座位每回合一份。
-var ai_work_sessions: Dictionary = {}
+## 运行时BOT额度不进入状态编码、规则指纹或搜索副本。每座位每回合一份。
+var bot_work_sessions: Dictionary = {}
 
 const PLAYER := "player"
-const AI := "ai"
+const BOT := "bot"
 
 ## 典当和编组都要校验归属，报的是同一句话
 const REASON_NOT_YOURS := "包含不属于你的卡"
@@ -44,13 +44,13 @@ static func seat_arg(who: String) -> Dictionary:
 	return { SEAT_KEY: who }
 
 ## 座位 → 界面上的公司名。措辞跟 HUD 对齐
-## （scenes/main.gd 的 lbl_player_res / lbl_ai_res）
+## （scenes/main.gd 的 lbl_player_res / lbl_bot_res）
 static func seat_name(who: String, my_seat: String) -> String:
 	return "你的公司" if who == my_seat else "对手公司"
 
 ## 按视角把一条日志渲染成文本。
 ## my_seat 是「正在看这局的人」坐的座位 —— 单机局是 PLAYER，
-## 联网时客户端 B 传 AI 进来，同一条日志就念成反过来的称呼。
+## 联网时客户端 B 传 BOT 进来，同一条日志就念成反过来的称呼。
 ##
 ## args 为空表示这条日志没有视角相关的参数，fmt 就是最终文本
 ## （开局提示、点选失败原因这类）。这时**不能**再套 fmt % []：
@@ -76,7 +76,7 @@ var market: Array = []          # 公共区 def_id 列表
 var combos: Array = []          # {owner, uids:[], eval:{}}
 var round_num := 1
 var draw_first: String = PLAYER # 本回合抽卡先手（组卡后手）
-var winner := ""                # "player" / "ai" / ""
+var winner := ""                # "player" / "bot" / ""
 var win_reason := ""
 var log: Array = []
 var _uid := 0
@@ -91,7 +91,7 @@ var _uid := 0
 ##
 ## 不进 StateCodec 是刻意的：它不参与规则，重连丢了也不影响这一局怎么打
 ## （联网局两端的这个数因此会各算各的，评估只跑无头局，用不着它对齐）
-var stats: Dictionary = { "voided": { PLAYER: 0, AI: 0 } }
+var stats: Dictionary = { "voided": { PLAYER: 0, BOT: 0 } }
 
 var _rng := RandomNumberGenerator.new()
 
@@ -102,7 +102,7 @@ func _init() -> void:
 func set_seed(s: int) -> void:
 	_rng.seed = s
 
-## 引擎内统一随机源（AI 决策也用，保证同种子可复现）
+## 引擎内统一随机源（BOT 决策也用，保证同种子可复现）
 func next_float() -> float:
 	return _rng.randf()
 
@@ -166,10 +166,10 @@ func rng_restore(d) -> void:
 ## first: 抽卡先手。留空 = 沿用当前值（单机局照旧从 PLAYER 开）。
 ## 联网 rematch 传对手，让先手在局间轮换（net/room.gd 的 reset_for_rematch）
 func new_game(first := "") -> void:
-	ai_work_sessions.clear()
+	bot_work_sessions.clear()
 	players = {
 		PLAYER: { "cards": [] },
-		AI: { "cards": [] },
+		BOT: { "cards": [] },
 	}
 	combos.clear()
 	market.clear()
@@ -180,7 +180,7 @@ func new_game(first := "") -> void:
 	if first != "":
 		draw_first = first
 	var rules: Dictionary = CardDB.game_rules()
-	for who in [PLAYER, AI]:
+	for who in [PLAYER, BOT]:
 		for i in rules["start_cash"]:
 			add_card(who, CardDB.unit_id(CardDB.RES_CASH))
 		for i in rules["start_user"]:
@@ -258,11 +258,11 @@ static func validate_unique_uids(uids: Array, duplicate_reason := "同一张卡�
 	return {}
 
 ## 购买：支付现金卡（移出游戏），卡牌进入己方区域。
-## 唯一的购买入口 —— 玩家拖现金摞、AI 决策、无头模拟器都走这里，
+## 唯一的购买入口 —— 玩家拖现金摞、BOT 决策、无头模拟器都走这里，
 ## 否则「至少留 1 块」这类规则只在其中一条路上生效，另几条路玩的是另一个游戏。
 ##
 ## pay_uids —— 指定用哪几张现金付（玩家拖来的那一摞，多付的部分原样退回）；
-##   空 = 自动挑未被组合锁的现金卡（AI / 模拟器）
+##   空 = 自动挑未被组合锁的现金卡（BOT / 模拟器）
 ## 失败时带 code，供表现层决定要不要抖一下：
 ##   bad_idx / unbuyable / not_cash / short / zero_out
 func buy(who: String, market_idx: int, pay_uids: Array = []) -> Dictionary:
@@ -294,7 +294,7 @@ func buy(who: String, market_idx: int, pay_uids: Array = []) -> Dictionary:
 				"reason": "现金不够：%d/%d" % [pay_uids.size(), price] }
 		pay = pay_uids
 	# 自杀护栏：付完这笔钱现金归零 = 当场判负（见 check_victory）。
-	# 玩家、AI 和无头模拟共用此检查；AI 候选也必须通过真实购买接口。
+	# 玩家、BOT 和无头模拟共用此检查；BOT 候选也必须通过真实购买接口。
 	if resource_count(who, CardDB.RES_CASH) - price <= 0:
 		return { "ok": false, "code": "zero_out",
 			"reason": "不能买：付完资金会归零，回合结束就判负（至少留 1 块）" }
@@ -356,7 +356,7 @@ func pawn(who: String, uids: Array) -> Dictionary:
 		return { "ok": false, "reason": "没有可回收的卡" }
 	# 自杀护栏：用户归零 = 当场判负，不许靠典当把自己当死。
 	# 这条是硬规则，所以在引擎里 —— 原先只有玩家侧（scenes/main.gd）拦着，
-	# 合法性由环境统一决定，AI超参数不能允许典当清零。
+	# 合法性由环境统一决定，BOT超参数不能允许典当清零。
 	if pawn_would_zero_user(who, uids):
 		return { "ok": false, "reason": REASON_PAWN_ZERO_USER }
 	var total := 0
@@ -375,7 +375,7 @@ func pawn(who: String, uids: Array) -> Dictionary:
 	for u in uids:
 		remove_card(who, u)
 	# locked 的语义是「本回合已编入组合」，回收所得是自由资金：
-	# 标 locked 会让 AI 的组卡器（按 locked 播种候选池）看不见自己刚典当来的钱
+	# 标 locked 会让 BOT 的组卡器（按 locked 播种候选池）看不见自己刚典当来的钱
 	for i in total:
 		add_card(who, CardDB.unit_id(CardDB.RES_CASH), false)
 	log_fmt("%s 典当 %d 张卡，回收 %s×%d",
@@ -446,10 +446,10 @@ func _combo_desc(eval: Dictionary) -> String:
 func action_first() -> String:
 	return draw_first
 
-## 另一方。原先 14 处各写一遍 `PLAYER if who == AI else AI`，
+## 另一方。原先 14 处各写一遍 `PLAYER if who == BOT else BOT`，
 ## 三层（引擎/场景/工具）都有 —— 只有两方，这个派生本该只有一处
 static func opponent(who: String) -> String:
-	return PLAYER if who == AI else AI
+	return PLAYER if who == BOT else BOT
 
 ## 本回合的行动次序 [先手, 后手]。买卡组卡、攻击、产出结算都按这个序走，
 ## 原先五处各自 `action_first()` + 手写后手（引擎两处、场景一处、模拟器一处、平衡工具一处）。
@@ -543,7 +543,7 @@ func combo_survivors(who: String, combo: Dictionary) -> Array:
 func combo_intact(who: String, combo: Dictionary) -> bool:
 	return combo_intact_without(who, combo, {})
 
-## AI 的拆组收益预判共用齐整检查，不另写配方/裂变/升级规则，也不修改实局。
+## BOT 的拆组收益预判共用齐整检查，不另写配方/裂变/升级规则，也不修改实局。
 func combo_intact_without(who: String, combo: Dictionary, removed: Dictionary) -> bool:
 	var alive := combo_survivors(who, combo)
 	if not removed.is_empty():
@@ -638,7 +638,7 @@ func pending_cash_income(who: String, piles: Array) -> int:
 ## 和 `pending_pay` 是一对，差别只在数据源，而这个差别是刚需：
 ## `pending_pay` 读场景层现搭的 `piles`，因为它服务行动阶段的 HUD，
 ## 那时 `self.combos` 还是空的（`Settle.finalize` 每回合清一次）。
-## 这一个读 `self.combos`，因为它服务**编组当中**的决策 —— AI 在
+## 这一个读 `self.combos`，因为它服务**编组当中**的决策 —— BOT 在
 ## `build_combos` 里一轮轮往 `combos` 里塞，它要问的正是
 ## 「前面几组已经把钱占掉多少了」。
 ##
@@ -768,7 +768,7 @@ func attack_just_fired(who: String, uid: int) -> bool:
 ## 回合号记在 Buff 卡的**卡实例**上。写法和 `_mark_fired` 对称（每次覆写、记在卡上）。
 ##
 ## 为什么要单记一笔而不是问「它现在在不在组合里」：`Settle.finalize` 每回合
-## `combos.clear()`，而 AI 的典当（`match_simulator` 的 action_phase）跑在重建组合**之前** ——
+## `combos.clear()`，而 BOT 的典当（`match_simulator` 的 action_phase）跑在重建组合**之前** ——
 ## 那一刻所有 Buff 在 `_pawn_candidate` 眼里都是无主散卡，和废牌一模一样
 ##
 ## 不带下划线（`_mark_fired` 带）：攻击那一路的调用方就在本文件里，
@@ -785,13 +785,13 @@ func mark_buff_worked(who: String, combo: Dictionary) -> void:
 
 ## 这张 Buff 是不是上一回合（或本回合）刚立过功（所在组开火了或产出了）。
 ##
-## AI 的典当挑选念这个。缘由和 `attack_just_fired` 一字不差：**这一张已经验证过能用**
+## BOT 的典当挑选念这个。缘由和 `attack_just_fired` 一字不差：**这一张已经验证过能用**
 ## —— 配方凑齐了、组也成立、效果真结算过了。卖掉它等于把上回合攒的那一整套推倒重来。
 ##
-## 实测（录像 20260912_161516）：AI 第 8 步花 8 块买热搜包年，第 10 步贴进山寨围剿，
+## 实测（录像 20260912_161516）：BOT 第 8 步花 8 块买热搜包年，第 10 步贴进山寨围剿，
 ## attack_x2 把攻击 4 翻成 8、真打出 8 次；第 24 步组合散开，第 26 步现金 4 低于
 ## 救急线 6，`_pawn_candidate` 从桶 0（Buff）挑走了它，收 4 块 —— 净亏 4 块加一个翻倍。
-## 同一局里山寨围剿靠 `attack_just_fired` 活下来了：AI 保住了枪，卖掉了瞄准镜
+## 同一局里山寨围剿靠 `attack_just_fired` 活下来了：BOT 保住了枪，卖掉了瞄准镜
 func buff_just_worked(who: String, uid: int) -> bool:
 	var c := find_card(who, uid)
 	if c.is_empty() or not c.has("worked_round"):
@@ -799,7 +799,7 @@ func buff_just_worked(who: String, uid: int) -> bool:
 	return round_num - int(c["worked_round"]) <= 1
 
 ## 防御 Buff 无需等待回合：有效组合入组时即生效。
-## 保留这个查询接口供场景临时牌摞和 AI 使用；它只判断卡是否为防御 Buff，
+## 保留这个查询接口供场景临时牌摞和 BOT 使用；它只判断卡是否为防御 Buff，
 ## 不要求 create_combo 已注册。有效组合、资源种类和配方额度由 protected_uids 判定。
 ## 旧存档的 armed_round 不再参与保护规则。
 func buff_armed(who: String, uid: int) -> bool:
@@ -868,10 +868,10 @@ func is_protected(who: String, uid: int, res: String) -> bool:
 ##
 ## batch —— 「这些靶在界面上是同一摞」。核心改成逐张计价之后，啃穿一个 7 席组
 ## 是 7 条意图而不是 1 条；驱动方不知道这 7 条是一件事的话，就会演成
-## 7 次瞄准 + 7 声 + 7 朵爆花（实测 AI 打玩家 6323ms，玩家点同一个组 936ms ——
+## 7 次瞄准 + 7 声 + 7 朵爆花（实测 BOT 打玩家 6323ms，玩家点同一个组 936ms ——
 ## 玩家那边 _attack_pile 早就是「一摞攒成一批」了）。
 ## 这个键让两侧对「一批」有同一个口径：一个组合一批、场上散卡按资源一批，
-## 正好对上界面上收拢的那几摞（settle_layout 的 ai_combo_%d / ai_cash / ai_user）。
+## 正好对上界面上收拢的那几摞（settle_layout 的 bot_combo_%d / bot_cash / bot_user）。
 ##
 ## 它同时是**规则单位**：「选中一摞就得把它打完才能转下一摞」这条由
 ## attack_lock 按 batch 锁（见 affordable_targets / apply_attack）。所以组合的
@@ -933,7 +933,7 @@ func attack_targets(victim: String) -> Array:
 			#
 			# intact：这张核心所在的组此刻还成不成立。已经被打破的组，
 			# 剩下的核心卡只是普通资源了 —— 「废掉整组」这份收益已经领过，
-			# 再点一张不会让它更废。选靶的人（AI / 界面引导）靠这个字段
+			# 再点一张不会让它更废。选靶的人（BOT / 界面引导）靠这个字段
 			# 把余点转去下一个还活着的组，而不是继续锤一具尸体。
 			# 不进 Intent.target_ref，所以不参与判等、也不上网
 			var still := combo_intact(victim, combo)
@@ -1014,7 +1014,7 @@ static func batch_locks(target: Dictionary) -> bool:
 ## _attack_turn 原先各有一份逐字节同构的实现
 ##
 ## **锁在这里生效**：打到一半的那一摞里还有点得起的靶，就只返回那一摞的
-## —— 选靶的人（AI / 界面高亮 / 无头模拟器）因此天然接着啃同一摞，
+## —— 选靶的人（BOT / 界面高亮 / 无头模拟器）因此天然接着啃同一摞，
 ## 不必各自记住「我刚才在打谁」。那一摞打空了（或剩下的点数点不起它了），
 ## 锁自然失效，整张桌子重新可选
 func affordable_targets(victim: String, pools: Dictionary) -> Array:
@@ -1162,9 +1162,9 @@ func check_victory() -> bool:
 	if winner != "":
 		return true   # 已分胜负（防重复战报）
 	var p_cash := resource_count(PLAYER, CardDB.RES_CASH)
-	var a_cash := resource_count(AI, CardDB.RES_CASH)
+	var a_cash := resource_count(BOT, CardDB.RES_CASH)
 	var p_user := resource_count(PLAYER, CardDB.RES_USER)
-	var a_user := resource_count(AI, CardDB.RES_USER)
+	var a_user := resource_count(BOT, CardDB.RES_USER)
 	var win_cash: int = CardDB.game_rules()["win_cash"]
 	if p_cash >= win_cash or a_cash <= 0 or a_user <= 0:
 		winner = PLAYER
@@ -1175,7 +1175,7 @@ func check_victory() -> bool:
 		else:
 			win_reason = "对手的用户跑光了。你赢在了对手更离谱。"
 	elif a_cash >= win_cash or p_cash <= 0 or p_user <= 0:
-		winner = AI
+		winner = BOT
 		if a_cash >= win_cash:
 			win_reason = "对手先攒到 %d 资金。它甚至没怎么为难你。" % win_cash
 		elif p_cash <= 0:

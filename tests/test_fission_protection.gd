@@ -4,8 +4,8 @@
 
 extends "res://tests/harness.gd"
 
-const Actions = preload("res://engine/ai_actions.gd")
-const Env = preload("res://engine/ai_environment.gd")
+const Actions = preload("res://engine/bot_actions.gd")
+const Env = preload("res://engine/bot_environment.gd")
 
 ## 裂变只补配方，不取消防御：入组即护住实际需要的一个用户，富余投料仍可攻击。
 func _initialize() -> void:
@@ -14,10 +14,10 @@ func _initialize() -> void:
 func _run() -> void:
 	CardDB.ensure_loaded()
 	print("=== 裂变组合的用户保护 ===")
-	for owner in [GameState.PLAYER, GameState.AI]:
+	for owner in [GameState.PLAYER, GameState.BOT]:
 		_test_immediate_protection(owner)
 	_test_spare_users()
-	_test_ai_candidates()
+	_test_bot_candidates()
 	await _test_simulator_runtime_parity()
 	finish()
 
@@ -25,8 +25,8 @@ func _fixture(owner: String, user_count := 1, register := true) -> Dictionary:
 	var s := GameState.new()
 	s.set_seed(97)
 	s.round_num = 4
-	s.players = {GameState.PLAYER: {"cards": []}, GameState.AI: {"cards": []}}
-	for seat in [GameState.PLAYER, GameState.AI]:
+	s.players = {GameState.PLAYER: {"cards": []}, GameState.BOT: {"cards": []}}
+	for seat in [GameState.PLAYER, GameState.BOT]:
 		s.add_card(seat, CardDB.unit_id(CardDB.RES_CASH))
 	s.add_card(GameState.opponent(owner), CardDB.unit_id(CardDB.RES_USER))
 	var core := s.add_card(owner, "shuabuting")
@@ -142,11 +142,11 @@ func _test_spare_users() -> void:
 	check(s.combo_intact(owner, combo) and s.is_protected(owner, f["users"][0], CardDB.RES_USER),
 		"富余用户被打掉后，裂变配方仍成立，原有用户仍受保护")
 
-func _test_ai_candidates() -> void:
-	var owner := GameState.AI
+func _test_bot_candidates() -> void:
+	var owner := GameState.BOT
 	var f := _fixture(owner, 1, false)
 	var s: GameState = f["state"]
-	var profile := AISearch.from_model("ai", 0.0).resolved_parameters()
+	var profile := BOTSearch.from_model("bot", 0.0).resolved_parameters()
 	profile["sales"] = 0
 	var found := false
 	for node in Actions.generate(s, owner, profile):
@@ -158,18 +158,18 @@ func _test_ai_candidates() -> void:
 				continue
 			found = true
 			var replay := Env.copy(s)
-			check(Env.replay(replay, node["intents"]), "AI的裂变＋推送组合候选可通过真实意图重放")
-			check(replay.is_protected(owner, f["users"][0], CardDB.RES_USER), "AI候选编组当回合立即保护唯一用户")
+			check(Env.replay(replay, node["intents"]), "BOT的裂变＋推送组合候选可通过真实意图重放")
+			check(replay.is_protected(owner, f["users"][0], CardDB.RES_USER), "BOT候选编组当回合立即保护唯一用户")
 			break
 		if found:
 			break
-	check(found, "AI完整候选生成包含裂变＋推送弹窗＋唯一用户组合")
+	check(found, "BOT完整候选生成包含裂变＋推送弹窗＋唯一用户组合")
 
 ## 同一起点分别走模拟器的 Settle.run 和实战意图管道，核对整回合结果。
 ## 不只比摘要哈希：卡实例字段、完整战报也必须一致。
 func _test_simulator_runtime_parity() -> void:
-	var config := AISearch.from_model("ai", 0.0)
-	for owner in [GameState.PLAYER, GameState.AI]:
+	var config := BOTSearch.from_model("bot", 0.0)
+	for owner in [GameState.PLAYER, GameState.BOT]:
 		for next_round in [false, true]:
 			for user_count in [1, 3]:
 				var fixture := _fixture(owner, user_count)
@@ -186,9 +186,9 @@ func _test_simulator_runtime_parity() -> void:
 				check(sim.attack_targets(owner) == initial.attack_targets(owner)
 						and restored.attack_targets(owner) == initial.attack_targets(owner),
 					"搜索复制和快照恢复均保留保护目标列表（%s）" % label)
-				Settle.run(sim, {GameState.PLAYER: config, GameState.AI: config})
+				Settle.run(sim, {GameState.PLAYER: config, GameState.BOT: config})
 				var pipe := LocalTransport.new(IntentApply.new(live))
-				await pipe.run_round(AIPlan.target_picker(config))
+				await pipe.run_round(BOTPlan.target_picker(config))
 				check(StateCodec.state_hash(sim) == StateCodec.state_hash(live)
 						and Env.key(sim) == Env.key(live),
 					"模拟器与实战完整牌局状态一致（%s）" % label)

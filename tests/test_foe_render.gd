@@ -7,15 +7,15 @@ extends "res://tests/harness.gd"
 ## 对手侧画面测试 —— 「对手做了什么」画得出来吗（scenes/main.gd 的拖拽广播与租约处理）
 ##
 ## 为什么单独立一个文件：这一整块**原先没有任何观察点**。改造前对手的每一处
-## 画面都长在「驱动对手的那段代码」里（那时 scenes/main.gd 里有 _ai_buy_once /
-## _ai_pawn_relief 两个函数，买完顺手 _spawn_entity、典当完顺手 _fly_out；
-## 两个名字现在都不在仓里了，决策次序搬去了 engine/ai_agent.gd），
+## 画面都长在「驱动对手的那段代码」里（那时 scenes/main.gd 里有 _bot_buy_once /
+## _bot_pawn_relief 两个函数，买完顺手 _spawn_entity、典当完顺手 _fly_out；
+## 两个名字现在都不在仓里了，决策次序搬去了 engine/bot_agent.gd），
 ## 而没有一条判据看对手侧的画面 ——
 ## 实测把那几处画面调用全删掉，32 个测试文件一条不红。
 ## 于是「联网局对手侧一个像素都不动」这个 bug 在测试里是不可见的。
 ##
 ## 这个文件的判据全部**只经管道**驱动对手：submit 一条以服务器身份提交的意图，
-## 然后看画面。它一次都不调 _foe_action / _drive_ai_action ——
+## 然后看画面。它一次都不调 _foe_action / _drive_bot_action ——
 ## 那正是联网局的形状（对手是人，本地没有任何代码在驱动他）。
 ## 所以这些判据同时也是「联网时对手侧画得出来」的证明。
 ##
@@ -25,12 +25,12 @@ extends "res://tests/harness.gd"
 ## 根本不看对手画面的测试 —— 跑得过，等于没测）。登记前那十一条**全是 MISS**。
 ## 具体锚点和报警关键字看那张表，这里只记它们分别钉住了什么：
 ##   总闸（不连 applied）／四个 op 分支各自不画／座位过滤失效／不分客户端操作／
-##   判定接反／landed 不发（AI 内部落地又看不见）／submit 去重失效（广播两遍）／
+##   判定接反／landed 不发（BOT 内部落地又看不见）／submit 去重失效（广播两遍）／
 ##   阶段名不再转引 PhaseMachine
 ##
 ## T1 里另有一条「买的卡落在他那半边」，它**没有登记变异**，而且是故意的：
 ## 对手侧的落位是**双重决定**的 —— _render_foe_buy 先按 _unit_anchor 摆一次，
-## 两行之后 _layout_ai_idle() 把对手所有牌整片重排一次。
+## 两行之后 _layout_bot_idle() 把对手所有牌整片重排一次。
 ## 实测把 _free_spot 那两个 foe_seat 换成 my_seat：z = -7.49，牌还在对手那半边
 ## （重排把它救回来了）；只坏重排也一样，spawn 那个位置本来就是对的。
 ## 单点变异破不了它，所以那一条是**端到端的回归护栏**，不是某一处实现的判据 ——
@@ -98,7 +98,7 @@ func _t1_buy(main: Node) -> void:
 	var market_before: int = main.market_cards.size()
 
 	# **以服务器身份提交**（from_seat 留空）。联网局里这一步是
-	# 「服务器把对方客户端发来的 buy 落地后广播给我」，本地局是 AI 驱动 ——
+	# 「服务器把对方客户端发来的 buy 落地后广播给我」，本地局是 BOT 驱动 ——
 	# 两条路进到 _on_intent_applied 是同一个形状
 	var r: Dictionary = await main.pipe.submit(Intent.buy(main.foe_seat, idx))
 	check(r["ok"], "对手的 buy 意图落地（%s）" % r.get("reason", ""))
@@ -118,11 +118,11 @@ func _t1_buy(main: Node) -> void:
 	# 一张牌画到我这半边桌上，它们全绿。
 	#
 	# 这是端到端的护栏，**不对着某一处实现**：落位有两条路各自都能放对
-	# （_render_foe_buy 的 _unit_anchor，和两行后 _layout_ai_idle 的整片重排），
+	# （_render_foe_buy 的 _unit_anchor，和两行后 _layout_bot_idle 的整片重排），
 	# 坏掉任一条另一条都会把牌救回来 —— 实测换掉 _free_spot 那两个 seat 参数，
 	# z = -7.49，还在对手那半边。所以它没有登记变异，理由见文件头
 	#
-	# 判 z<0 是精确的、不是估的：_free_spot 把远侧钳在 [AI_FAR_Z_MIN, AI_FAR_Z_MAX]
+	# 判 z<0 是精确的、不是估的：_free_spot 把远侧钳在 [BOT_FAR_Z_MIN, BOT_FAR_Z_MAX]
 	# = [-7.6, -1.8]，近侧钳在 [0.6, 5.2]，两段不重叠（settle_layout.gd 的 `_free_spot()`）
 	if main.entities.has(r["new_uid"]):
 		var pos: Vector3 = (main.entities[r["new_uid"]] as Node3D).position
@@ -152,7 +152,7 @@ func _t2_pawn(main: Node) -> void:
 	var state: GameState = main.state
 	# 给对手塞一张典当行肯收的卡，确保有东西可当
 	var c: Dictionary = state.add_card(main.foe_seat, CardDB.unit_id(CardDB.RES_USER))
-	main._spawn_entity(c, Vector3(-6.0, 0.05, main.AI_ZONE_Z), false)
+	main._spawn_entity(c, Vector3(-6.0, 0.05, main.BOT_ZONE_Z), false)
 	await settle()
 	var uid: int = c["uid"]
 	check(main.entities.has(uid), "待当的卡在场上（uid=%d）" % uid)
@@ -171,7 +171,7 @@ func _t2_pawn(main: Node) -> void:
 
 ## 对手编成一组 → 那一组在对手区收拢成摞。
 ##
-## 这条同时盯着 IntentApply.landed：AI 的编组走 applier.apply（不经 submit），
+## 这条同时盯着 IntentApply.landed：BOT 的编组走 applier.apply（不经 submit），
 ## landed 不发的话表现层就看不见它 —— 所以下面第二段直接调 applier.apply
 func _t3_combo(main: Node) -> void:
 	print("\n--- T3 对手编组 ---")
@@ -188,15 +188,15 @@ func _t3_combo(main: Node) -> void:
 		return
 	check(r.has("uids"), "create_combo 的结果回传了 uids")
 	await settle()
-	# 收拢成摞 = 摆放层给这几张登记了摞归属（settle_layout._ai_pile_of_uid）
+	# 收拢成摞 = 摆放层给这几张登记了摞归属（settle_layout._bot_pile_of_uid）
 	var in_pile := 0
 	for u in uids:
-		if str(main.layout._ai_pile_of_uid.get(u, "")) != "":
+		if str(main.layout._bot_pile_of_uid.get(u, "")) != "":
 			in_pile += 1
 	check(in_pile == uids.size(),
 		"对手编的组收拢成摞（%d/%d 张有摞归属）" % [in_pile, uids.size()])
 
-	# 第二段：**不经 submit**，直接让裁决器落地一条 —— 那是 AI 走的路
+	# 第二段：**不经 submit**，直接让裁决器落地一条 —— 那是 BOT 走的路
 	# （旧组卡器 把决策和落地交错在一个 while 里）。
 	# 这一段能画出来，靠的是 IntentApply.landed
 	var uids2 := _make_foe_combo_cards(main)
@@ -210,22 +210,22 @@ func _t3_combo(main: Node) -> void:
 	await settle()
 	var in_pile2 := 0
 	for u in uids2:
-		if str(main.layout._ai_pile_of_uid.get(u, "")) != "":
+		if str(main.layout._bot_pile_of_uid.get(u, "")) != "":
 			in_pile2 += 1
 	check(in_pile2 == uids2.size(),
-		"AI 内部直接落地的编组也画得出来（%d/%d 张有摞归属）" % [in_pile2, uids2.size()])
+		"BOT 内部直接落地的编组也画得出来（%d/%d 张有摞归属）" % [in_pile2, uids2.size()])
 
 ## 给对手凑一组能成立的组合（一张核心 + 它要的单位卡），返回 uids。
 ## 凑不出返回空数组
 func _make_foe_combo_cards(main: Node) -> Array:
 	var state: GameState = main.state
 	var prod: Dictionary = state.add_card(main.foe_seat, "shuabuting")
-	main._spawn_entity(prod, Vector3(1.0, 0.05, main.AI_ZONE_Z), false)
+	main._spawn_entity(prod, Vector3(1.0, 0.05, main.BOT_ZONE_Z), false)
 	var uids: Array = [prod["uid"]]
 	var need := 7
 	for i in need:
 		var u: Dictionary = state.add_card(main.foe_seat, CardDB.unit_id(CardDB.RES_USER))
-		main._spawn_entity(u, Vector3(2.0 + float(i) * 0.4, 0.05, main.AI_ZONE_Z), false)
+		main._spawn_entity(u, Vector3(2.0 + float(i) * 0.4, 0.05, main.BOT_ZONE_Z), false)
 		uids.append(u["uid"])
 	var cards: Array = []
 	for u in uids:
@@ -278,12 +278,12 @@ func _t4_attack(main: Node) -> void:
 
 ## 对手是远端的人时：本地不驱动他，画面照样来自落地的意图。
 ##
-## 这条判的是**分人机的那一处**（_foe_is_ai）。set_foe_remote(true) 之后
-## _foe_action 不再调 AI，而是等一条 action_done —— 那条意图由「服务器」发来
+## 这条判的是**分人机的那一处**（_foe_is_bot）。set_foe_remote(true) 之后
+## _foe_action 不再调 BOT，而是等一条 action_done —— 那条意图由「服务器」发来
 func _t5_remote_shape(main: Node) -> void:
 	print("\n--- T5 联网形状（对手是人） ---")
 	main.set_foe_remote(true)
-	check(not main._foe_is_ai(), "置远端之后不再把对手当电脑")
+	check(not main._foe_is_bot(), "置远端之后不再把对手当电脑")
 
 	# 先确认「等对手」真的在等：起一条 _foe_action 但不喂 action_done，
 	# 它必须停在那儿不往下走（不往下走 = 没进 _finish_actions，phase 还是行动阶段）
@@ -300,7 +300,7 @@ func _t5_remote_shape(main: Node) -> void:
 	check(r["ok"], "对手的 action_done 落地（%s）" % r.get("reason", ""))
 	for i in 6:
 		await physics_frame
-	# 对手是人：本地一次都没调 AI —— 场上不该凭空多出对手的卡
+	# 对手是人：本地一次都没调 BOT —— 场上不该凭空多出对手的卡
 	check(_foe_entity_count(main) == before,
 		"远端对手不由本地驱动（对手侧卡数没变：%d）" % before)
 	main.set_foe_remote(false)

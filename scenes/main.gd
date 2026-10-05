@@ -37,7 +37,7 @@ const CardConfig = preload("res://engine/card_config.gd")
 
 const PLAYER_ZONE_Z := TableRegions.PLAYER_ZONE_Z
 const MARKET_Z := TableRegions.TABLE_MARKET_Z
-const AI_ZONE_Z := TableRegions.AI_ZONE_Z
+const BOT_ZONE_Z := TableRegions.BOT_ZONE_Z
 const MARKET_GAP_MAX := TableRegions.MARKET_GAP_MAX
 
 static func market_gap(n: int) -> float:
@@ -55,16 +55,16 @@ const PHASE_OVER := PhaseMachine.OVER
 
 ## 演出节拍（秒）。全是「让玩家看清刚发生了什么」的停顿，不是平衡数值 ——
 ## 所以留在场景层，不进 cards.json。
-## 都起名字是为了「AI 回合太慢」能一眼定位到是哪一段停顿，不用逐个 await 去猜
-const BEAT_AI_THINK := 0.6         # AI 先手时的思考停顿（回合刚开，给玩家读提示的时间）
-const BEAT_AI_THINK_LATE := 0.4    # AI 后手时更短：玩家刚操作完，不用再等
-const BEAT_AI_BUY := 0.5           # AI 每买一张之间（连买时能看清买了什么）
-const BEAT_AI_STEP := 0.3          # AI 买完 → 组卡之间的换手
+## 都起名字是为了「BOT 回合太慢」能一眼定位到是哪一段停顿，不用逐个 await 去猜
+const BEAT_BOT_THINK := 0.6         # BOT 先手时的思考停顿（回合刚开，给玩家读提示的时间）
+const BEAT_BOT_THINK_LATE := 0.4    # BOT 后手时更短：玩家刚操作完，不用再等
+const BEAT_BOT_BUY := 0.5           # BOT 每买一张之间（连买时能看清买了什么）
+const BEAT_BOT_STEP := 0.3          # BOT 买完 → 组卡之间的换手
 const BEAT_PHASE := 0.5            # 阶段切换（进攻击、结算铺完卡）
 const BEAT_BANNER := 0.6           # 大字横幅（「结算开始！」）
 const BEAT_COMBO_SHOW := 0.5       # 亮出正在结算的组合
 const BEAT_COMBO_DONE := 0.7       # 一组结算完（产出飞完、数字跳完）
-const BEAT_ATTACK_AIM := 0.35      # 高亮靶子（看清打的是哪个）
+const BEAT_ATTACK_BOTM := 0.35      # 高亮靶子（看清打的是哪个）
 const BEAT_ATTACK_HIT := 0.55      # 一击落地（爆花 + 数字变化）
 const BEAT_WASTED := 1.2           # 「余点作废」这类需要读完的长提示
 const BEAT_GAME_OVER := 0.8        # 终局前的静场
@@ -75,7 +75,7 @@ const BEAT_GAME_OVER := 0.8        # 终局前的静场
 ## 全部文案外置成 JSON 会把「%s 少一个参数」从编辑期错误变成运行期崩溃，
 ## 这项目又没有本地化需求，不值当；同一句改一处漏一处才是真问题
 const TXT_ACTION_DONE := "完成行动 ✓"
-const TXT_AI_ACTING := "对手行动中…"
+const TXT_BOT_ACTING := "对手行动中…"
 const TXT_ATTACK_MINE := "⚔ 你的攻击"
 const TXT_ATTACK_FOE := "对手攻击"
 ## 认输按钮的两段字。点第一下不认，先换成 TXT_RESIGN_SURE 再点一下才算 ——
@@ -196,7 +196,7 @@ func _rebuild_pipe() -> void:
 ## 那时 applier 换了新的一个（见 _rebuild_pipe），还连在旧 applier 上的话
 ## 这一局一步都录不到，而存出来的文件看着一切正常（只是短得离谱）
 var tape := Tape.new()
-# 回放场景在入树前注入，不启动AI、不录制回放自身。
+# 回放场景在入树前注入，不启动BOT、不录制回放自身。
 var replay_session: RefCounted
 var _replay_picker: CanvasLayer
 var _replay_busy := false
@@ -259,22 +259,22 @@ func _host_room() -> NetRoom:
 	var r = (_host.server.rooms as Dictionary).get(code)
 	return r as NetRoom if r is NetRoom else null
 
-## 座位。引擎里 GameState.PLAYER / AI 是**座位编号**，不是「人 / 电脑」——
-## 联网时远端客户端的 my_seat 会是 GameState.AI，界面上它照样叫「你的公司」。
-## 场景层一律念 my_seat / foe_seat，不再直接写 GameState.PLAYER / AI：
+## 座位。引擎里 GameState.PLAYER / BOT 是**座位编号**，不是「人 / 电脑」——
+## 联网时远端客户端的 my_seat 会是 GameState.BOT，界面上它照样叫「你的公司」。
+## 场景层一律念 my_seat / foe_seat，不再直接写 GameState.PLAYER / BOT：
 ## 那两个常量在项目里被引用近八百处（九成在测试里），改名会波及三十多个测试文件，
 ## 而座位这件事本来就只该在场景层存在（引擎不关心谁在看这一局）。
 ##
-## 单机局是 my_seat=PLAYER / foe_seat=AI，与改造前完全一致。
+## 单机局是 my_seat=PLAYER / foe_seat=BOT，与改造前完全一致。
 ## 谁坐哪个座位由 net 层在开局前设定（见 set_seats），此后整局不变
 var my_seat := GameState.PLAYER
-var foe_seat := GameState.AI
+var foe_seat := GameState.BOT
 
 ## 单机局那一对座位。**重开一局要用它复位**（_reset_session_flags），
-## 而那儿不能再写一次 GameState.PLAYER / AI —— 座位对只该有一个定义处，
+## 而那儿不能再写一次 GameState.PLAYER / BOT —— 座位对只该有一个定义处，
 ## 写第二遍就是「以后有人只改了一处」的入口（tests/test_seat_map.gd 的静态检查
 ## 正是为此而设，它在这一条上报过一次）
-const SOLO_SEATS := [GameState.PLAYER, GameState.AI]
+const SOLO_SEATS := [GameState.PLAYER, GameState.BOT]
 
 ## 开局前设座位。必须在 state.new_game() 之前调 ——
 ## 摆放层按座位决定往哪半边摆，中途换座位会让整桌牌左右互换
@@ -283,7 +283,7 @@ func set_seats(mine: String, foe: String) -> void:
 	foe_seat = foe
 	_actor = mine
 
-## 座位 → 界面上的公司名。措辞与 HUD 一致（lbl_player_res / lbl_ai_res）。
+## 座位 → 界面上的公司名。措辞与 HUD 一致（lbl_player_res / lbl_bot_res）。
 ## 引擎不存名字（那是视角量，见 GameState.seat_arg 那段），场景层按 my_seat 现算
 func _seat_name(who: String) -> String:
 	return GameState.seat_name(who, my_seat)
@@ -339,9 +339,9 @@ var _attack_hl: Array = []       # 当前高亮的可点目标实体
 var table_hud: CanvasLayer
 var lbl_round: Label
 var lbl_player_res: Label
-var lbl_ai_res: Label
+var lbl_bot_res: Label
 var hud_player_card: ResourceHUD
-var hud_ai_card: ResourceHUD
+var hud_bot_card: ResourceHUD
 var hud_panel: PanelContainer
 var hud_status_panel: PanelContainer
 var _table_hud_content := Rect2()
@@ -474,12 +474,12 @@ func _on_palette_changed(_section: String, _key: String) -> void:
 func _refresh_hud_palette() -> void:
 	if lbl_player_res:
 		lbl_player_res.add_theme_color_override("font_color", Palette.get_color("hud", "player"))
-	if lbl_ai_res:
-		lbl_ai_res.add_theme_color_override("font_color", Palette.get_color("hud", "ai"))
+	if lbl_bot_res:
+		lbl_bot_res.add_theme_color_override("font_color", Palette.get_color("hud", "bot"))
 	if is_instance_valid(hud_player_card):
 		hud_player_card.refresh_palette()
-	if is_instance_valid(hud_ai_card):
-		hud_ai_card.refresh_palette()
+	if is_instance_valid(hud_bot_card):
+		hud_bot_card.refresh_palette()
 	if drawer_presentation == null and lbl_round:
 		lbl_round.add_theme_color_override("font_color", Palette.semantic("ink"))
 	for panel in [hud_panel, hud_status_panel]:
@@ -652,7 +652,7 @@ func _animation_now_ms() -> int:
 
 func _await_drawer_resume() -> void:
 	var session := _session_generation
-	# 真正暂停等待玩家时，工作线程结果仍等恢复；后台AI回合不会取得暂停。
+	# 真正暂停等待玩家时，工作线程结果仍等恢复；后台BOT回合不会取得暂停。
 	while _session_current(session) and get_tree().paused:
 		await get_tree().process_frame
 
@@ -732,12 +732,12 @@ func _setup_hud() -> void:
 	canvas.add_child(pal)
 	Palette.bus().changed.connect(_on_palette_changed)
 
-	# AI 参数面板，贴在选色面板下方。
-	# above 在 add_child 之前赋值：AIPanel._ready 里要按它算自己的位置，
+	# BOT 参数面板，贴在选色面板下方。
+	# above 在 add_child 之前赋值：BOTPanel._ready 里要按它算自己的位置，
 	# 而 _ready 是 add_child 那一刻同步跑的，之后再赋就晚了。
 	# 这个面板不连任何信号到主场景：每次新行动搜索和选靶都会读取
-	# AISearch.prefs()。已经开始的搜索和已生成的行动计划持有自己的快照。
-	var aip := AIPanel.new()
+	# BOTSearch.prefs()。已经开始的搜索和已生成的行动计划持有自己的快照。
+	var aip := BOTPanel.new()
 	aip.above = pal
 	canvas.add_child(aip)
 
@@ -842,7 +842,7 @@ func _setup_hud() -> void:
 	_position_pass_button()
 	_set_button(TXT_ACTION_DONE, _on_action_done)
 
-	# 攻击点数标签：玩家攻击时跟随鼠标，AI 攻击时置顶居中
+	# 攻击点数标签：玩家攻击时跟随鼠标，BOT 攻击时置顶居中
 	lbl_attack = _make_label(canvas, Vector2(0, 120), 34, Color(1.0, 0.45, 0.35))
 	lbl_attack.visible = false
 	lbl_attack.set_anchors_preset(Control.PRESET_CENTER_TOP)
@@ -896,12 +896,12 @@ func _setup_res_panel(canvas: CanvasLayer) -> void:
 	hud_player_card.name = "PlayerResourceCard"
 	row.add_child(hud_player_card)
 	hud_player_card.setup("你的公司", "player", _uses_fitted_table())
-	hud_ai_card = ResourceHUD.new()
-	hud_ai_card.name = "AIResourceCard"
-	row.add_child(hud_ai_card)
-	hud_ai_card.setup("对手公司", "ai", _uses_fitted_table())
+	hud_bot_card = ResourceHUD.new()
+	hud_bot_card.name = "BOTResourceCard"
+	row.add_child(hud_bot_card)
+	hud_bot_card.setup("对手公司", "bot", _uses_fitted_table())
 	lbl_player_res = hud_player_card.summary
-	lbl_ai_res = hud_ai_card.summary
+	lbl_bot_res = hud_bot_card.summary
 
 	# 当前提示独立放在底部工具与主操作之间，长文本省略且完整内容在 tooltip/记录中。
 	# 抽屉会立即把它收养到自己的底栏，不建立第二个空面板。
@@ -1113,7 +1113,7 @@ func _refresh_button_theme() -> void:
 
 var _connection_mascot_state := "idle"
 var _phase_mascot_state := "idle"
-# AI 对局首次购牌或完成行动前保留邀请；联机只显示实际对局状态。
+# BOT 对局首次购牌或完成行动前保留邀请；联机只显示实际对局状态。
 var _opening_action_pending := true
 var _foe_completed_round := -1
 var _attack_actor := ""
@@ -1154,7 +1154,7 @@ func _refresh_mascot_state() -> void:
 				elif _foe_completed_round == state.round_num:
 					# 提醒玩家时必须真的轮到玩家；自动换阶段期间显示结算状态。
 					value = "foe_done" if not board.input_locked and not btn_pass.disabled else "resolving"
-				elif _opening_action_pending and _net == null and _foe_is_ai():
+				elif _opening_action_pending and _net == null and _foe_is_bot():
 					value = "opening"
 				else:
 					value = "your_turn"
@@ -1267,14 +1267,14 @@ func _respawn_all() -> void:
 	for c in state.players[my_seat]["cards"]:
 		_spawn_entity(c, _rand_pos(PLAYER_ZONE_Z + 0.8, PLAYER_ZONE_Z + 3.5), true)
 	for c in state.players[foe_seat]["cards"]:
-		var e := _spawn_entity(c, _rand_pos(AI_ZONE_Z - 2.5, AI_ZONE_Z + 1.0), false)
+		var e := _spawn_entity(c, _rand_pos(BOT_ZONE_Z - 2.5, BOT_ZONE_Z + 1.0), false)
 	# 已有的组合要**在理牌之前**变回 board.groups（重连时快照里可能带着组合）。
 	# 次序不能反：_tidy_player_idle 认「哪些牌是闲置的」是问 board.groups 的
 	# （settle_layout.gd 的 _collect_idle_units 对我这一侧读 groups，
 	# 对对手那一侧读 state.combos），组还没建起来时我编好的组合会被
 	# 当成散牌拆进现金堆、用户堆里 —— 状态里组合还在，桌上散了
 	_restore_my_combo_groups()
-	layout._layout_ai_idle()   # AI 理牌：闲置现金/用户各自成堆
+	layout._layout_bot_idle()   # BOT 理牌：闲置现金/用户各自成堆
 	layout._tidy_player_idle() # 玩家理牌：散落现金/用户各自成摞
 
 	_respawn_market()
@@ -1297,7 +1297,7 @@ func _respawn_all() -> void:
 ## 把 state.combos 里属于我这一侧的组合变回 board.groups 的摞。
 ##
 ## 为什么只有我这一侧要：对手侧的组合根本不进 board.groups ——
-## 那边的摆放是 settle_layout._ai_piles 现从 state.combos 读的（每次重排都重读），
+## 那边的摆放是 settle_layout._bot_piles 现从 state.combos 读的（每次重排都重读），
 ## 所以对手的组合重画时自动就在。我这一侧反过来：board.groups 是**桌面的实况**，
 ## 它只由拖拽产生，重画一遍桌子就没了。
 ##
@@ -1694,10 +1694,10 @@ func _begin_action_phase(resume_actor := "") -> void:
 	else:
 		var order_label := "先手" if _actor == state.action_first() else "后手"
 		_show_message("第 %d 回合 · 对手%s，正在行动……" % [state.round_num, order_label], Palette.semantic("warning"))
-		btn_pass.text = TXT_AI_ACTING
+		btn_pass.text = TXT_BOT_ACTING
 		btn_pass.disabled = true
 		board.input_locked = true
-		await _drawer_timer(BEAT_AI_THINK).timeout
+		await _drawer_timer(BEAT_BOT_THINK).timeout
 		if not _session_current(session):
 			return
 		if state != round_state or state.winner != "":
@@ -1839,8 +1839,8 @@ func _finish_player_action() -> void:
 		_actor = foe_seat
 		_refresh_mascot_state()
 		_refresh_drawer_pause()
-		btn_pass.text = TXT_AI_ACTING
-		await _drawer_timer(BEAT_AI_THINK_LATE).timeout
+		btn_pass.text = TXT_BOT_ACTING
+		await _drawer_timer(BEAT_BOT_THINK_LATE).timeout
 		if not _session_current(session):
 			return
 		_foe_action()
@@ -1922,15 +1922,15 @@ func _register_player_combos() -> bool:
 ##
 ## **这是联网局对手侧唯一的画面来源**，也是这个连接存在的全部理由。
 ## 改造前对手的每一处画面都长在「驱动对手的那段代码」里
-## （那时这个文件里有 _ai_buy_once / _ai_pawn_relief 两个函数，买完顺手
+## （那时这个文件里有 _bot_buy_once / _bot_pawn_relief 两个函数，买完顺手
 ## _spawn_entity、典当完顺手 _fly_out；两个名字现在都不在仓里了，
-## 决策次序搬去了 engine/ai_agent.gd）。
-## 那在单机局能跑，因为驱动 AI 的正是这个进程；联网局里对手是人，
+## 决策次序搬去了 engine/bot_agent.gd）。
+## 那在单机局能跑，因为驱动 BOT 的正是这个进程；联网局里对手是人，
 ## **没有任何一段本地代码在驱动他** —— 于是对手买了什么、编了什么组，
 ## 这一侧一个像素都不会变，而且不报错（共享执行路径失配造成的静默分叉）。
 ##
 ## 现在反过来：驱动方只管决策和节拍，画面一律由落地结果驱动。
-## 单机局的 AI 走 applier.apply（IntentApply.landed → LocalTransport 广播），
+## 单机局的 BOT 走 applier.apply（IntentApply.landed → LocalTransport 广播），
 ## 联网局的对手走服务器广播（NetTransport._on_applied），
 ## 两条路进到这里是同一个 Dictionary 形状。
 ##
@@ -1989,7 +1989,7 @@ func _render_foe_buy(r: Dictionary) -> void:
 		market_cards.remove_at(idx)
 		_drop_price_label(idx)
 		_fly_out(mc, Vector3(0, 4, -2))
-	layout._layout_ai_idle()   # 买到新卡后顺手理牌
+	layout._layout_bot_idle()   # 买到新卡后顺手理牌
 	_update_hud()
 	_show_message("对手购入「%s」" % CardDB.card_name(def_id), Palette.semantic("warning"))
 
@@ -2028,9 +2028,9 @@ func _render_foe_resign() -> void:
 	_show_game_over()
 
 ## 对手编成一组。整区重排一次 —— 组合区的摆放是「当前所有组合」的函数，
-## 不是逐组累加的（见 settle_layout.gd 的 _layout_ai_zone），所以逐条调它是幂等的
+## 不是逐组累加的（见 settle_layout.gd 的 _layout_bot_zone），所以逐条调它是幂等的
 func _render_foe_combo(_r: Dictionary) -> void:
-	layout._layout_ai_zone()
+	layout._layout_bot_zone()
 	_foe_combo_shown += 1
 	_show_message("对手编成了 %d 个组合" % _foe_combo_shown, Palette.semantic("warning"))
 
@@ -2073,7 +2073,7 @@ const DRAG_X := Vector2(-9.0, 9.0)
 const DRAG_LEASE_TIMEOUT := 2.0
 
 ## 正被远端拖着的 uid → true。**布局绕开这些牌**（settle_layout.gd 的
-## _collect_idle_units / _ai_piles 都问它），否则 _layout_ai_idle 每步都会
+## _collect_idle_units / _bot_piles 都问它），否则 _layout_bot_idle 每步都会
 ## 抢着把牌摆回摞里，和网络驱动的位置打架，牌会抽搐
 var _drag_lease := {}
 var _drag_lease_t := 0.0    # 上一帧 dragging 到现在过了多久
@@ -2123,7 +2123,7 @@ func _lease_foe_cards(uids: Array) -> void:
 			# 补间不掐会逐帧盖掉下面写的位置（_cancel_fly 的注释里有同一个道理）
 			_cancel_fly(entities[uid])
 			# 归位补间同理。租约只挡「之后」的摆放，已经在跑的那条得掐
-			layout.kill_ai_move(uid)
+			layout.kill_bot_move(uid)
 			(entities[uid] as CardEntity).freeze = true
 	_drag_lease_t = 0.0
 
@@ -2189,8 +2189,8 @@ func _release_drag_lease() -> void:
 	_drag_lease.clear()
 	_drag_lease_t = 0.0
 	# 交还给布局：牌现在浮在 DRAG_HEIGHT 上，得有人把它们摆回去。
-	# 对手买/典当那几张牌可能已经不在场上了，_layout_ai_idle 只摆还在的
-	layout._layout_ai_idle()
+	# 对手买/典当那几张牌可能已经不在场上了，_layout_bot_idle 只摆还在的
+	layout._layout_bot_idle()
 
 ## uid 正被远端拖着吗。settle_layout.gd 问这个 —— 它是租约唯一的读者，
 ## 也是租约存在的理由：移动中的远端牌必须临时脱离自动布局。
@@ -2238,7 +2238,7 @@ func _on_drag_broadcast(phase_name: String, uids: Array, at: Vector3) -> void:
 ##
 ## u/v 是这一摞**摆在哪**，归一化坐标，和拖拽那条通道同一套口径
 ## （my_drag_uv / foe_drag_point）。这一条是个 bug 修回来的：不带位置的话
-## 收方只有名单和形态，落点由 _layout_ai_zone 按「第几摞 / 共几摞」现算
+## 收方只有名单和形态，落点由 _layout_bot_zone 按「第几摞 / 共几摞」现算
 ## （整行居中，见那边的 x0/pitch）—— 于是对手把一个组合拖到桌角还是拖到中间，
 ## 我这边看到的都是同一个格子。玩家亲手挪的位置和双击收拢是同一类动作，
 ## 两边都该一一对应。
@@ -2337,15 +2337,15 @@ var _piles_fp := ""
 
 ## 对手声明的摞分组：[{uids, compact}...]（形状由 Protocol.pile_lists 归一化，
 ## 光名单的老形状也会被补齐成字典）。**表现状态，不是玩法状态** ——
-## 它只决定对手区那些牌怎么摆（settle_layout._ai_piles），
+## 它只决定对手区那些牌怎么摆（settle_layout._bot_piles），
 ## 谁拥有什么牌一律以 state 为准
 var foe_piles: Array = []
 
 ## 对手声明的收拢位：uid → bool。摆放层查它决定摊开还是收拢
-## （settle_layout._layout_ai_zone），查不着的按几何自己定。
+## （settle_layout._layout_bot_zone），查不着的按几何自己定。
 ##
 ## 按 uid 摊平而不是按摞查，是为了让**组合**也能沿用：对手收手那一刻
-## 他的摞变成 state.combos 里的组合，声明摞被 claimed 剔掉（_ai_piles），
+## 他的摞变成 state.combos 里的组合，声明摞被 claimed 剔掉（_bot_piles），
 ## 于是「那一摞是收拢的」这件事在组合这条路上就没了出处 ——
 ## 而玩家看见的是收手一瞬间摞自己摊开了。uid 是两条路唯一共有的东西
 func foe_compact_of(uid: int) -> Variant:
@@ -2396,7 +2396,7 @@ func my_pile_point(u: float, v: float) -> Vector3:
 ## 收到对手的分组（NetTransport.foe_piles）。存下来 + 重排一次对手区。
 ##
 ## 不校验 uid 的归属：摆放层逐个 uid 查自己那份 state
-## （_ai_piles 只认对手名下、有实体、没被租约占着的卡），
+## （_bot_piles 只认对手名下、有实体、没被租约占着的卡），
 ## 查不着的静默跳过 —— 校验放在读的那一侧，因为那里才知道「现在还在不在」
 func on_foe_piles(msg: Dictionary) -> void:
 	foe_piles = Protocol.pile_lists(msg.get("piles", []))
@@ -2404,7 +2404,7 @@ func on_foe_piles(msg: Dictionary) -> void:
 		_record_layout_pending = true
 		_record_layout_seat = foe_seat
 	if layout != null:
-		layout._layout_ai_zone()
+		layout._layout_bot_zone()
 
 ## 服务器回放**我自己**上一次声明的摞（NetTransport.my_piles）。
 ## 只在重连进一间开着局的房时来一条，用途是把 board.groups 补回来。
@@ -2498,7 +2498,7 @@ var _net: NetTransport = null
 ## 联网局开局：把 net 层接上来。**入口只有这一个** ——
 ## 拖拽的收发两端 + 摞分组的收发两端 + 「对手是人」必须一起生效，分开设置的话
 ## 漏掉哪一个都不报错，症状各不相同（只设 _net：对手看得到我拖牌，我看不到他的；
-## 只连 foe_drag：反过来；只 set_foe_remote：本地还在驱动 AI 替对手行动；
+## 只连 foe_drag：反过来；只 set_foe_remote：本地还在驱动 BOT 替对手行动；
 ## 只连 foe_drag 不连 foe_piles：拖的过程看得见，松手之后牌弹回资源堆）
 func attach_net(net: NetTransport) -> void:
 	_net = net
@@ -2531,7 +2531,7 @@ func attach_net(net: NetTransport) -> void:
 ##   state  —— 不换：界面读的还是本地那份空局，桌上一张牌都没有
 ##   pipe   —— 不换：每条玩家输入落在本地那份 state 上，服务器完全不知道；
 ##              两边各打各的，直到某一步被判非法才第一次出现症状
-##   座位   —— 不换：远端那位的 my_seat 是 AI，摆放层会把他的牌摆到对面半区
+##   座位   —— 不换：远端那位的 my_seat 是 BOT，摆放层会把他的牌摆到对面半区
 ##              （他看着自己在对手位上出牌）
 ##   applied —— 不连：对手做的任何事这一侧一个像素都不变（见 _on_intent_applied）
 ##
@@ -2588,7 +2588,7 @@ func begin_net_game(net: NetTransport) -> void:
 	# 亮着的按钮点下去会被服务器拒掉，玩家看到的是「能点但没反应」。
 	# 两支都要灰：等对手进房、和等服务器广播阶段，都还轮不到自己动
 	board.input_locked = true
-	btn_pass.text = TXT_AI_ACTING
+	btn_pass.text = TXT_BOT_ACTING
 	btn_pass.disabled = true
 	# 等旧行动结束后才交接时，phase 可能已被候选连接收过，不能再等一次广播。
 	if net.phase() != "":
@@ -2664,7 +2664,7 @@ func _on_net_seated(mine: String, foe: String) -> void:
 		_on_net_phase(_net.phase(), _net.actor())
 	else:
 		board.input_locked = true
-		btn_pass.text = TXT_AI_ACTING
+		btn_pass.text = TXT_BOT_ACTING
 		btn_pass.disabled = true
 
 ## 新会话按权威阶段恢复；后续 phase 广播仍交给正常演出流程消费。
@@ -2710,7 +2710,7 @@ func can_start_pending_net_game() -> bool:
 	return phase == PHASE_OVER or (state.winner == "" and phase == PHASE_ACTION
 		and _actor == my_seat and not board.input_locked)
 
-## 打开联网面板。双方到齐发牌前不换管道，等待和取消都保留当前 AI 牌局。
+## 打开联网面板。双方到齐发牌前不换管道，等待和取消都保留当前 BOT 牌局。
 func _open_join_panel() -> JoinPanel:
 	if replay_session != null:
 		_show_message("请退出录像后再开始局域网对局", Palette.semantic("info"))
@@ -3251,15 +3251,15 @@ func _on_foe_back() -> void:
 	if btn_net:
 		btn_net.visible = false
 
-## 对手的连接还在吗。单机局恒真（本地 AI 不会掉线），
+## 对手的连接还在吗。单机局恒真（本地 BOT 不会掉线），
 ## 联网局由 foe_left / foe_back 这一对翻它
 var _foe_online := true
 
-## 对手牌区那句「对手断开」。挂在 AI 区托盘上方，跟着 Label3D 那套走
+## 对手牌区那句「对手断开」。挂在 BOT 区托盘上方，跟着 Label3D 那套走
 var _foe_offline_lbl: Label3D
 
 ## 针对对手的行为要不要拦。**只在联网局且他确实掉线时**为真 ——
-## 单机局的 AI 不会掉线，_foe_online 恒真
+## 单机局的 BOT 不会掉线，_foe_online 恒真
 ##
 ## 拦住的时候要说一句话：不说的话点下去没反应，和「这张牌点不起」
 ## 在屏幕上分不开（那种是有音效的，见 _on_attack_clicked 里 deny 那条）
@@ -3309,7 +3309,7 @@ var _foe_combo_shown := 0
 
 ## 对手的完整行动阶段。
 ##
-## 这个函数是**分人机的唯一一处**：单机局在这里驱动 AI，联网局在这里等对方
+## 这个函数是**分人机的唯一一处**：单机局在这里驱动 BOT，联网局在这里等对方
 ## 发来的 action_done。除它以外，对手侧的代码路径两种局完全相同 ——
 ## 画面来自 _on_intent_applied，与谁在驱动无关（README.md §「3. 文件目录结构」）。
 ##
@@ -3326,8 +3326,8 @@ func _foe_action() -> void:
 func _run_foe_action() -> void:
 	var session := _session_generation
 	_foe_combo_shown = 0
-	if _foe_is_ai():
-		await _drive_ai_action()
+	if _foe_is_bot():
+		await _drive_bot_action()
 		if not _session_current(session):
 			return
 	else:
@@ -3359,10 +3359,10 @@ func _run_foe_action() -> void:
 		if not _session_current(session):
 			return
 
-## 对手是本地 AI 吗。单机局恒真；联网局由 net 层置 false（见 set_foe_remote）。
+## 对手是本地 BOT 吗。单机局恒真；联网局由 net 层置 false（见 set_foe_remote）。
 ## 这个量是**这次改造引入的第一个「人 / 电脑」判别**：
 ## 在此之前场景层只认座位，而座位分不出对面是谁在按键
-func _foe_is_ai() -> bool:
+func _foe_is_bot() -> bool:
 	return not _foe_remote
 
 var _foe_remote := false
@@ -3371,29 +3371,29 @@ var _foe_remote := false
 func set_foe_remote(remote: bool) -> void:
 	_foe_remote = remote
 
-## 单机局：本地 AI 依次发出典当 / 买卡 / 编组三段意图。
+## 单机局：本地 BOT 依次发出典当 / 买卡 / 编组三段意图。
 ## 这里**只有节拍**，画面全在 _on_intent_applied ——
 ## 所以这个函数删掉之后，联网局的对手侧照样画得出来。
 ##
-## 「一个行动阶段由哪几步、按什么次序组成」不在这里，在 engine/ai_agent.gd。
+## 「一个行动阶段由哪几步、按什么次序组成」不在这里，在 engine/bot_agent.gd。
 ## 原先它在这里有一份、在 MatchSimulator.action_phase 有另一份，
-## 行动步骤只由 AIAgent 负责，场景和无头共用同一份计划，
+## 行动步骤只由 BOTAgent 负责，场景和无头共用同一份计划，
 ## 而平衡数字只从模拟器那一份量出来
-func _drive_ai_action() -> void:
+func _drive_bot_action() -> void:
 	var session := _session_generation
 	# 本次运行的设置在每次新搜索前读取；已有搜索和行动计划保持快照。
-	var agent := AIAgent.new(pipe, foe_seat, AISearch.prefs())
-	agent.config_provider = AISearch.prefs
-	agent.decision_observer = tape.record_ai_decision
+	var agent := BOTAgent.new(pipe, foe_seat, BOTSearch.prefs())
+	agent.config_provider = BOTSearch.prefs
+	agent.decision_observer = tape.record_bot_decision
 	# 搜索放在工作线程，增加计算预算时仍保持画面与输入响应。
-	# `AIThink` 的类注释说明线程间的状态隔离边界。
+	# `BOTThink` 的类注释说明线程间的状态隔离边界。
 	agent.think = _think_off_thread
 	agent.cancelled = func(): return not _session_current(session)
-	await agent.run_action_phase(_ai_beat)
+	await agent.run_action_phase(_bot_beat)
 	if not _session_current(session):
 		return
 
-## AI 那份纯决策交给工作线程。签名见 `AIAgent.think`。
+## BOT 那份纯决策交给工作线程。签名见 `BOTAgent.think`。
 ##
 ## 这里是**唯一**一处开线程的地方：意图落地、掷骰、画面全留在主线程，
 ## 所以随机流和画面次序都不受线程调度影响
@@ -3401,7 +3401,7 @@ func _think_off_thread(job: Callable) -> Variant:
 	var session := _session_generation
 	_thinking = true
 	# 只量本次搜索的真实墙钟；方案之后逐条落地的演出不计入思考耗时。
-	ThinkClock.start(ThinkClock.SRC_AI)
+	ThinkClock.start(ThinkClock.SRC_BOT)
 	_update_thinking_hint()
 	var out: Variant = await _think.run(job, get_tree(), func(): return not _session_current(session))
 	if not _session_current(session):
@@ -3415,7 +3415,7 @@ func _think_off_thread(job: Callable) -> Variant:
 	return out
 
 ## 那个工作线程。整个场景共用一个 —— 同一时刻只有一个座位在想
-var _think := AIThink.new()
+var _think := BOTThink.new()
 var _thinking := false
 var _thinking_tick := -1
 
@@ -3462,7 +3462,7 @@ func _update_thinking_hint(force := false) -> void:
 ##
 ## 这是本仓第一个 `_exit_tree` —— 加它不是习惯问题：Godot 的 `Thread` 没被
 ## `wait_to_finish` 就析构会报「Thread must be disposed」，而那条错误在导出版里
-## 只进日志。玩家关窗口时 AI 可能正在想（满档 1.7 秒，关窗口撞得上）
+## 只进日志。玩家关窗口时 BOT 可能正在想（满档 1.7 秒，关窗口撞得上）
 func _exit_tree() -> void:
 	_invalidate_session()
 	tape.stop()
@@ -3470,16 +3470,16 @@ func _exit_tree() -> void:
 		get_tree().paused = false
 	_think.flush()
 
-## AI 每走完一步，停多久。返回 Signal 就等它，返回 null 就不等
-## （见 AIAgent.run_action_phase）。节拍长度是表现层的事，所以判断在这边
-func _ai_beat(step: String):
-	if step == AIAgent.STEP_PAWN and _table_actions.pawn_busy():
+## BOT 每走完一步，停多久。返回 Signal 就等它，返回 null 就不等
+## （见 BOTAgent.run_action_phase）。节拍长度是表现层的事，所以判断在这边
+func _bot_beat(step: String):
+	if step == BOTAgent.STEP_PAWN and _table_actions.pawn_busy():
 		return _table_actions.pawn_finished
-	if step == AIAgent.STEP_BUY:
+	if step == BOTAgent.STEP_BUY:
 		_update_hud()
-		return _drawer_timer(BEAT_AI_BUY).timeout
-	if step == AIAgent.STEP_BUY_DONE or step == AIAgent.STEP_COMBO:
-		return _drawer_timer(BEAT_AI_STEP).timeout
+		return _drawer_timer(BEAT_BOT_BUY).timeout
+	if step == BOTAgent.STEP_BUY_DONE or step == BOTAgent.STEP_COMBO:
+		return _drawer_timer(BEAT_BOT_STEP).timeout
 	return null
 
 ## 联网局：等对方把行动阶段走完。
@@ -3490,9 +3490,9 @@ func _ai_beat(step: String):
 ## 这里等的是「对方还在想」，而对方掉线会走 foe_left
 func _await_foe_action() -> void:
 	var session := _session_generation
-	# 联网局的「对手想了多久」就量在这儿。这一路**不经过 AIThink** ——
+	# 联网局的「对手想了多久」就量在这儿。这一路**不经过 BOTThink** ——
 	# 对手在他自己那台机器上想，这边只是在等一条 action_done，
-	# 所以秒表不能挂在 AIThink 上（`ThinkClock` 的类注释写了这件事）。
+	# 所以秒表不能挂在 BOTThink 上（`ThinkClock` 的类注释写了这件事）。
 	#
 	# 量到的是**含网络往返**的墙钟，不是对方的纯搜索时间：
 	# 那个数这边拿不到（协议里没有这一项），而玩家等的确实是这一段
@@ -3520,8 +3520,8 @@ func _finish_actions() -> void:
 		if is_instance_valid(lb):
 			lb.queue_free()
 	market_price_labels.clear()
-	# AI 侧收拢重排；玩家侧不动（见 _next_round 里的说明）
-	layout._layout_ai_idle()
+	# BOT 侧收拢重排；玩家侧不动（见 _next_round 里的说明）
+	layout._layout_bot_idle()
 	_update_hud()
 	await _drawer_timer(BEAT_PHASE).timeout
 	if not _session_current(session):
@@ -3584,7 +3584,7 @@ func _run_attacks(resume_actor := "") -> void:
 		if not _session_current(session):
 			return
 
-## 单方攻击回合：AI 自动点选（演出），玩家手动点选（互动）
+## 单方攻击回合：BOT 自动点选（演出），玩家手动点选（互动）
 ## 清零即胜：每次点选后立刻判胜，对方现金/用户到 0 当场结束
 ## 装弹与攻击顺序由 RoundFlow 共用；这里仅提供互动和演出。
 func _attack_turn(who: String) -> void:
@@ -3601,8 +3601,8 @@ func _play_attack_turn(who: String, pools: Dictionary) -> Dictionary:
 		await _drawer_timer(BEAT_PHASE).timeout
 		if not _session_current(session):
 			return Intent.err("cancelled", "牌局已切换")
-		if _foe_is_ai():
-			var attack_result: Dictionary = await _drive_ai_attack(who, pools)
+		if _foe_is_bot():
+			var attack_result: Dictionary = await _drive_bot_attack(who, pools)
 			if not _session_current(session):
 				return Intent.err("cancelled", "牌局已切换")
 			if not attack_result.get("ok", false):
@@ -3616,7 +3616,7 @@ func _play_attack_turn(who: String, pools: Dictionary) -> Dictionary:
 		# 玩家互动点选：点数必须花完（点不起任何目标时自动结束，余点作废）
 		# 开局就得先判一次能不能点得起——对方把全部单位卡塞进受保护的组合时，
 		# 目标列表可能一开始就是空的；不判空会卡在 await 上，而按钮此刻已 disabled，
-		# 整局无法继续。三处都要判：这里、AI 分支、每点掉一个之后
+		# 整局无法继续。三处都要判：这里、BOT 分支、每点掉一个之后
 		if pipe.applier().affordable_targets(who).is_empty():
 			_show_message("你有攻击点数，但对手没有点得起的目标，余点作废", Palette.semantic("muted"))
 			var exhausted: Dictionary = await pipe.submit(Intent.attack_done(who, Intent.DONE_EXHAUSTED))
@@ -3642,19 +3642,19 @@ func _play_attack_turn(who: String, pools: Dictionary) -> Dictionary:
 		_hide_attack_label()
 	return {"ok": true}
 
-## 单机局的对手攻击回合：本地 AI 反复点选。
+## 单机局的对手攻击回合：本地 BOT 反复点选。
 ##
 ## 击中的画面（音效、飞出、爆花、HUD）在 _render_foe_attack ——
 ## 这里留下的是**只有驱动方才知道的东西**：瞄准高亮和两拍停顿。
 ## 联网局里那两样也没有（对方在他自己那边瞄），所以走 _await_foe_attack。
 ##
 ## 发的意图和次序必须与 Transport.run_attack_phase 一致（装弹 → 反复点选 → 收尾）
-func _drive_ai_attack(who: String, pools: Dictionary) -> Dictionary:
+func _drive_bot_attack(who: String, pools: Dictionary) -> Dictionary:
 	var session := _session_generation
-	var choose := _live_ai_target_picker()
+	var choose := _live_bot_target_picker()
 	var before := func(target: Dictionary) -> void:
 		_hl_target(target, true)
-		await _drawer_timer(BEAT_ATTACK_AIM).timeout
+		await _drawer_timer(BEAT_ATTACK_BOTM).timeout
 	var after := func(target: Dictionary) -> void:
 		_hl_target(target, false)
 		_show_attack_label(_attack_label_text(TXT_ATTACK_FOE, pools), false)
@@ -3665,22 +3665,22 @@ func _drive_ai_attack(who: String, pools: Dictionary) -> Dictionary:
 	return result if _session_current(session) else Intent.err("cancelled", "牌局已切换")
 
 ## 每次选靶读取当前设置；未改参数时复用闭包，保留整个攻击阶段的共享预算。
-func _live_ai_target_picker() -> Callable:
+func _live_bot_target_picker() -> Callable:
 	var active := {"model":"", "parameters":{}, "picker":Callable()}
 	return func(current: GameState, seat: String, targets: Array, current_pools: Dictionary) -> Dictionary:
-		var cfg := AISearch.prefs()
+		var cfg := BOTSearch.prefs()
 		var parameters := cfg.resolved_parameters()
 		if cfg.model != active["model"] or parameters != active["parameters"]:
 			active["model"] = cfg.model
 			active["parameters"] = parameters
-			active["picker"] = AIPlan.target_picker(cfg,current,seat)
+			active["picker"] = BOTPlan.target_picker(cfg,current,seat)
 		# 与行动计划同一边界：主线程冻结输入，搜索期间认输/退出只改真实牌桌。
 		var picker: Callable = active["picker"]
 		# 同组同类靶在搜索中等价，锁定组合后的续击通常无需再开线程。
 		# 仍调用原选择器，消费缓存续打并推进预算，保持真实执行与模拟一致。
 		if cfg.implementation().can_pick_target_inline(targets):
 			return picker.call(current,seat,targets,current_pools)
-		var snapshot := AIEnvironment.copy(current)
+		var snapshot := BOTEnvironment.copy(current)
 		var target_snapshot := targets.duplicate(true)
 		var pool_snapshot := current_pools.duplicate(true)
 		return await _think_off_thread(func(cancelled_check: Callable = Callable()):
@@ -3736,12 +3736,12 @@ func _apply_player_attack(card: CardEntity) -> void:
 			sfx.play("deny_quiet")
 			_show_message("不能点自己的卡", Palette.semantic("danger"))
 		return
-	# 点在 AI 的摞上 = 点这一摞：摞在玩家眼里是一个整体，收拢之后连张数都只在
+	# 点在 BOT 的摞上 = 点这一摞：摞在玩家眼里是一个整体，收拢之后连张数都只在
 	# 侧边写着，点一下只扣一张就成了「看上去摞好了，却还得一张一张点」。
 	# 所以摞走「一路啃到底」：靶按 _pile_target_by_key 反复挑，点数花光或摞空为止。
 	# 组合摞本来就是一次拆整份核心，这里让闲置摞（现金/用户/备牌）也一样。
 	# 不在任何摞里的散卡保持原样：一张就是一张，没有「整体」可言
-	var pile_key := str(layout._ai_pile_of_uid.get(card.uid, ""))
+	var pile_key := str(layout._bot_pile_of_uid.get(card.uid, ""))
 	if pile_key != "":
 		await _attack_pile(pile_key)
 		if not _session_current(session):
@@ -3821,7 +3821,7 @@ func _attack_pile(key: String) -> void:
 		# 摞里一个点得起的靶都没有：区分「点不起」和「压根点不了」
 		sfx.play("deny_quiet")
 		var pool_txt := "（%s）" % GameState.pool_text(_attack_pools)
-		_table_actions.shield_feedback(_table_actions._members(layout._ai_pile_uids.get(key, [])))
+		_table_actions.shield_feedback(_table_actions._members(layout._bot_pile_uids.get(key, [])))
 		var blocked := _pile_blocked_reason(key)
 		if blocked != "":
 			_show_message(blocked, Palette.semantic("danger"))
@@ -3835,7 +3835,7 @@ func _attack_pile(key: String) -> void:
 ## 一摞点不动时的说明：摞里全是不可点的卡（核心/Buff/传说）就直说，
 ## 否则交给调用方按「点数不够」报。空字符串 = 不是这种情况
 func _pile_blocked_reason(key: String) -> String:
-	var uids: Array = layout._ai_pile_uids.get(key, [])
+	var uids: Array = layout._bot_pile_uids.get(key, [])
 	var any_unit := false
 	for u in uids:
 		var c: Dictionary = state.find_card(foe_seat, u)
@@ -3849,7 +3849,7 @@ func _pile_blocked_reason(key: String) -> String:
 		return ""
 	return "这一摞里没有可点的单位卡——核心卡/Buff 卡打不掉，传说卡只能典当变现"
 
-## 一次攻击点选之后的统一收尾：动画、特效、AI 区重排、胜负与点数结算
+## 一次攻击点选之后的统一收尾：动画、特效、BOT 区重排、胜负与点数结算
 func _settle_attack(removed: Array, center: Vector3) -> void:
 	var session := _session_generation
 	# 和对手侧同一份职责（_render_foe_attack）：按摞报一次。
@@ -3860,16 +3860,16 @@ func _settle_attack(removed: Array, center: Vector3) -> void:
 		resource = str(CardDB.get_def(entities[int(removed[0])].def_id).get("res", ""))
 	_impact_once(center, my_seat, resource)
 	_clear_attack_hl()
-	# 先把这一批撕完再往下走。下面第一句就是重排 AI 区，
+	# 先把这一批撕完再往下走。下面第一句就是重排 BOT 区，
 	# 不等的话重排会把还没轮到的那几张连补间带卡一起清掉（见 _animate_removed）：
 	# 一组三张，玩家只看见撕掉一张，另外两张凭空不见了
 	await _await_removed(removed, false)
 	if not _session_current(session):
 		return
-	# AI 的摞是自己摆的（不进 board.groups），扣完必须重排一次：
+	# BOT 的摞是自己摆的（不进 board.groups），扣完必须重排一次：
 	# 不排的话被扣掉那几张的层位空着、侧边清单还挂着扣之前的张数，
 	# 看上去就像点了一下什么都没扣掉
-	layout._layout_ai_zone()
+	layout._layout_bot_zone()
 	# 清零即胜由 applier 在 apply_attack 里判过了（IntentApply._attack），这里不再判第二遍
 	if state.winner != "":
 		_hide_attack_label()
@@ -3924,7 +3924,7 @@ func _finish_player_attack(reason := Intent.DONE_FORFEIT) -> void:
 func _pile_target_by_key(key: String) -> Dictionary:
 	if key == "":
 		return {}
-	var uids: Array = layout._ai_pile_uids.get(key, [])
+	var uids: Array = layout._bot_pile_uids.get(key, [])
 	if uids.is_empty():
 		return {}
 	var core := {}
@@ -3961,14 +3961,14 @@ func _refresh_attack_targets() -> void:
 		for u in t["uids"]:
 			if not entities.has(u) or not is_instance_valid(entities[u]):
 				continue
-			var key: String = str(layout._ai_pile_of_uid.get(u, ""))
-			if key != "" and bool(layout._ai_pile_compact.get(key, true)):
+			var key: String = str(layout._bot_pile_of_uid.get(u, ""))
+			if key != "" and bool(layout._bot_pile_compact.get(key, true)):
 				pile_hl[key] = true
 				continue
 			entities[u].set_highlight(true, Color(1.5, 0.55, 0.45))
 			_attack_hl.append(entities[u])
 	for key in pile_hl:
-		var uids: Array = layout._ai_pile_uids.get(key, [])
+		var uids: Array = layout._bot_pile_uids.get(key, [])
 		if uids.is_empty():
 			continue
 		var top: int = uids[0]   # 摞顶 = core_first_order 的队首
@@ -4003,11 +4003,11 @@ func _target_center(target: Dictionary) -> Vector3:
 ## 摞里会留着被扣掉那几张的空层
 ##
 ## **要 await**：撕牌的补间是 bind_node 到卡本身的（见 _delayed_flyout），
-## 谁在这段时间里重画桌子（_layout_ai_zone / _sync_entities / 照快照重建），
+## 谁在这段时间里重画桌子（_layout_bot_zone / _sync_entities / 照快照重建），
 ## 排在后面那几张就连补间带卡一起没了 —— 屏幕上只看见第一张（delay 0）被撕掉，
 ## 剩下的凭空消失。调用方 await 完再往下走，一组三张就是三张挨个撕。
 ## 返回整批撕完要多久，调用方要接着排别的节拍时不必自己算
-func _animate_removed(removed: Array, toward_ai: bool) -> float:
+func _animate_removed(removed: Array, toward_bot: bool) -> float:
 	# 起飞时刻排在**同一条队**上，不是每次调用各从 0 数。
 	# 核心逐张计价之后一摞是 N 条意图（一条一张），对手侧每条各走一次
 	# _render_foe_attack —— 各从 0 数的话这 N 张会同时撕开，读作一团，
@@ -4021,7 +4021,7 @@ func _animate_removed(removed: Array, toward_ai: bool) -> float:
 			var e: CardEntity = entities[u]
 			entities.erase(u)
 			board.drop_card(e)
-			var dir := Vector3(0, 4, -2) if toward_ai else Vector3(0, 4, 2)
+			var dir := Vector3(0, 4, -2) if toward_bot else Vector3(0, 4, 2)
 			_delayed_flyout(e, dir, float(slot - now) / 1000.0)
 			slot += int(TEAR_STAGGER * 1000.0)
 			i += 1
@@ -4056,8 +4056,8 @@ func _impact_once(center: Vector3, attacker := "", resource := "") -> void:
 
 ## 整批撕完（含最后一张撕开的 TEAR_TIME）。调用方 await 它，
 ## 别拿裸 create_timer 各写一遍时长
-func _await_removed(removed: Array, toward_ai: bool) -> void:
-	var dur := _animate_removed(removed, toward_ai)
+func _await_removed(removed: Array, toward_bot: bool) -> void:
+	var dur := _animate_removed(removed, toward_bot)
 	if dur > 0.0:
 		await _drawer_timer(dur).timeout
 
@@ -4094,7 +4094,7 @@ func _delayed_flyout_ex(card: CardEntity, dir: Vector3, delay: float,
 	_card_motion.sfx = sfx
 	_card_motion.delayed_tear(card, dir, delay, with_sfx)
 
-## 攻击点数标签：玩家回合跟随鼠标（_process 驱动），AI 回合置顶居中
+## 攻击点数标签：玩家回合跟随鼠标（_process 驱动），BOT 回合置顶居中
 func _show_attack_label(text: String, follow_mouse: bool) -> void:
 	_refresh_attack_panel()
 	attack_panel.visible = true if is_instance_valid(attack_panel) else false
@@ -4161,7 +4161,7 @@ func _run_settle() -> void:
 	layout.end_arrivals()
 	board.prune_groups()
 	_update_hud()
-	layout._layout_ai_idle()   # 结算后 AI 新产出的单位卡也归堆
+	layout._layout_bot_idle()   # 结算后 BOT 新产出的单位卡也归堆
 	layout._stack_settled(known)
 	await _drawer_timer(BEAT_PHASE).timeout
 	if not _session_current(session):
@@ -4361,7 +4361,7 @@ func _next_round() -> void:
 	_respawn_market()
 
 	phase = PHASE_ACTION
-	layout._layout_ai_idle()      # 回合开始：AI 散牌归堆
+	layout._layout_bot_idle()      # 回合开始：BOT 散牌归堆
 	# 玩家侧不再自动理牌：桌面归玩家自己摆。
 	# _tidy_player_idle 会先解散全部纯资源摞再整片重排，回合一开就把玩家
 	# 上一回合摆好的现金堆、用户堆洗了个位置；更要紧的是它会把结算刚在左侧
@@ -4603,7 +4603,7 @@ func _on_rematch_started(mine: String, foe: String) -> void:
 	# 和 begin_net_game 末尾一样：阶段还没来，按钮先灰着 ——
 	# 亮着的按钮点下去会被服务器 not_your_turn 拒掉，玩家看到「能点但没反应」
 	board.input_locked = true
-	btn_pass.text = TXT_AI_ACTING
+	btn_pass.text = TXT_BOT_ACTING
 	btn_pass.disabled = true
 	_show_message("新的一局（%s先手）" % [
 		"你" if state.draw_first == my_seat else "对手"], Palette.semantic("success"))
@@ -4673,8 +4673,8 @@ func _reset_session_flags(keep_net := false) -> void:
 	if keep_net:
 		return
 	# 座位回到单机局那一对。**这一句是「再战一局」在联网局之后的必需项**：
-	# 上一局如果是远端那位（my_seat = AI），不改回来的话新的单机局里
-	# 我坐 AI 座、本地 AI 驱动 PLAYER 座 —— 桌子左右不镜像（scenes/main.gd 的拖拽广播与租约处理），
+	# 上一局如果是远端那位（my_seat = BOT），不改回来的话新的单机局里
+	# 我坐 BOT 座、本地 BOT 驱动 PLAYER 座 —— 桌子左右不镜像（scenes/main.gd 的拖拽广播与租约处理），
 	# 于是我的牌摆在远侧半区、对手的摆在近侧，而且**我能拖对手的牌**
 	# （摆放层按 my_seat 判近侧，draggable 按 my_seat 给）
 	set_seats(str(SOLO_SEATS[0]), str(SOLO_SEATS[1]))
@@ -4764,15 +4764,15 @@ func _update_hud() -> void:
 	# 玩家侧不会遇到这个（board.groups 一直在），所以只有这一侧要这道判断
 	if not foe_piles.is_empty():
 		foe_user += "（在岗 %d / 闲置 %d）" % [int(foe_dep["on_duty"]), int(foe_dep["idle"])]
-	lbl_ai_res.text = "对手公司 · %s · %s" % [foe_cash, foe_user]
+	lbl_bot_res.text = "对手公司 · %s · %s" % [foe_cash, foe_user]
 	if is_instance_valid(hud_player_card):
 		hud_player_card.set_resources(state.resource_count(my_seat, CardDB.RES_CASH),
 			state.resource_count(my_seat, CardDB.RES_USER), due,
 			int(dep["on_duty"]), int(dep["idle"]), true,
 			due > 0 and state.resource_count(my_seat, CardDB.RES_CASH)
 				+ state.pending_cash_income(my_seat, piles) - due <= 0)
-	if is_instance_valid(hud_ai_card):
-		hud_ai_card.set_resources(state.resource_count(foe_seat, CardDB.RES_CASH),
+	if is_instance_valid(hud_bot_card):
+		hud_bot_card.set_resources(state.resource_count(foe_seat, CardDB.RES_CASH),
 			state.resource_count(foe_seat, CardDB.RES_USER), foe_due,
 			int(foe_dep["on_duty"]), int(foe_dep["idle"]), not foe_piles.is_empty(),
 			foe_due > 0 and state.resource_count(foe_seat, CardDB.RES_CASH)

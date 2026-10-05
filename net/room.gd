@@ -23,7 +23,7 @@ extends RefCounted
 ## 这个不对称是**引擎本来就有的**：draw_first 默认 PLAYER，
 ## action_first() 是它的反面。所以「先进来的人先抽卡」——
 ## 不是随机分座位，那样两局之间同一个人的体验会莫名其妙地变
-const SEATS := [GameState.PLAYER, GameState.AI]
+const SEATS := [GameState.PLAYER, GameState.BOT]
 
 var code := ""
 var state: GameState
@@ -222,7 +222,7 @@ func voted_seats() -> Array:
 ##
 ## **先手在局间轮换**：抽卡先手默认 PLAYER，而房间里先进来的人坐 PLAYER
 ## （见 SEATS 那段）—— 不轮换的话同一个人局局先抽，那是一局定终身的不对称，
-## 而 rematch 恰好是它唯一会被看见的场合（单机局对手是 AI，没人计较）。
+## 而 rematch 恰好是它唯一会被看见的场合（单机局对手是 BOT，没人计较）。
 ## 传的是「这一局先手的对手」，和 end_round 里那句 `draw_first = opponent(draw_first)`
 ## 是同一个语义，只是跨局那一跳没人替它做
 ##
@@ -232,7 +232,7 @@ func voted_seats() -> Array:
 ##
 ## 记着的摞也要清（见 piles 那段）：新局是一手新牌，上一局那些 uid
 ## 一个都不在场上了。不清的话双方在新局一开始就各收到一份回放，
-## 里面全是查不着的 uid —— 收方虽然会静默跳过（_ai_piles 逐个查 state），
+## 里面全是查不着的 uid —— 收方虽然会静默跳过（_bot_piles 逐个查 state），
 ## 但下一次 _push_piles 的去重指纹是拿**我这边的实况**算的，
 ## 于是那份垃圾会一直留在服务器里，直到有人真的摞了一摞
 func reset_for_rematch() -> Array:
@@ -403,7 +403,7 @@ func handle_drag(peer: int, msg: Dictionary) -> Array:
 ## 不问阶段 —— 摞是表现，不是玩法（见 Protocol.PILES）。
 ##
 ## 所以也不校验「这几张是不是你的牌」：转过去之后收方按自己那份 state
-## 逐个 uid 查（settle_layout._ai_piles 只认对手名下、且有实体的卡），
+## 逐个 uid 查（settle_layout._bot_piles 只认对手名下、且有实体的卡），
 ## 编造别人的 uid 最多让自己那份分组里多一条查不着的记录。
 ## 这条纪律和服务器权威不冲突 —— 权威管的是牌和钱，那些一律走 intent
 ## 记一笔**再**转发。存那一下在 foe == 0 的判断**之前** ——

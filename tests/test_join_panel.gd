@@ -128,8 +128,8 @@ func _t1_host() -> void:
 	check(seated, "主机侧自己入座了（座位 %s）"
 		% (_panel._net.my_seat if is_instance_valid(_panel) and _panel._net else "无"))
 	check(_main._net == null, "只有一个人时连接留在面板，尚未切成联网局")
-	check(_main.state == _solo_state, "等待对手时保留原 AI 局的 state")
-	check(_main.pipe == _solo_pipe, "等待对手时保留原 AI 局的 pipe")
+	check(_main.state == _solo_state, "等待对手时保留原 BOT 局的 state")
+	check(_main.pipe == _solo_pipe, "等待对手时保留原 BOT 局的 pipe")
 	check(is_instance_valid(_panel) and _panel.visible and _panel._waiting,
 		"入座后等待面板继续显示，可以查看地址和取消")
 
@@ -231,12 +231,12 @@ func _t3_apply_launch() -> void:
 		check(panel._net.room == "LINK1",
 			"进的是链接里那一间（实为 %s）" % panel._net.room)
 	check(_main._net == null and _main.state == solo_state and _main.pipe == solo_pipe,
-		"链接进入空房也保留 AI 对局，在等待面板内等对手")
+		"链接进入空房也保留 BOT 对局，在等待面板内等对手")
 	panel._on_cancel()
 	await process_frame
 	check(not is_instance_valid(panel), "链接自动加入后仍能取消并关闭等待面板")
 	check(_main._net == null and _main.state == solo_state and _main.pipe == solo_pipe,
-		"取消加入后继续原 AI 对局，不重建局面和管道")
+		"取消加入后继续原 BOT 对局，不重建局面和管道")
 	check(host.running(), "取消加入只关闭自己的连接，不关闭对方服务器")
 	# 网页版开不了房，界面据此少画一个按钮。这一条钉的是「那个判断存在」——
 	# 无头桌面环境下它必须为真，否则连桌面版都点不到「开房间」
@@ -349,7 +349,7 @@ func _t6_handoff_after_release() -> void:
 	_main._on_restart()
 	await settle()
 	if not need(_main.phase == _main.PHASE_ACTION and _main._actor == _main.my_seat
-		and not _main.board.input_locked, "当前 AI 局处于玩家可操作的行动阶段"):
+		and not _main.board.input_locked, "当前 BOT 局处于玩家可操作的行动阶段"):
 		return
 	var solo_state: GameState = _main.state
 	var solo_pipe: Variant = _main.pipe
@@ -402,7 +402,7 @@ func _t6_handoff_after_release() -> void:
 	, 600)
 	check(ready, "抓牌期间第二位已到齐，候选连接收齐双座位快照和首阶段 phase")
 	check(_main._net == null and _main.state == solo_state and _main.pipe == solo_pipe,
-		"即便联网已就绪，抓着牌时仍保留原 AI 局和操作管道")
+		"即便联网已就绪，抓着牌时仍保留原 BOT 局和操作管道")
 	check(is_instance_valid(panel) and panel.visible and panel._waiting,
 		"延迟交接期间等待面板继续显示，可取消")
 	check(target in board._drag_cards and target.dragging,
@@ -429,7 +429,7 @@ func _t6_handoff_after_release() -> void:
 		check(_main.btn_pass.disabled == not my_action
 			and board.input_locked == not my_action,
 			"延迟交接后的按钮与牌桌可操作状态符合服务器的行动座位")
-		check(_main.btn_pass.text == (_main.TXT_ACTION_DONE if my_action else _main.TXT_AI_ACTING),
+		check(_main.btn_pass.text == (_main.TXT_ACTION_DONE if my_action else _main.TXT_BOT_ACTING),
 			"延迟交接后按钮显示当前行动，而非停在等服务器")
 	foe.close()
 	if is_instance_valid(panel):

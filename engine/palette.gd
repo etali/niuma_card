@@ -176,7 +176,7 @@ static func editable_groups() -> Array:
 	return [
 		{ "title": "HUD 读数", "items": [
 			{ "section": "hud", "key": "player", "label": "我方公司" },
-			{ "section": "hud", "key": "ai",     "label": "对手公司" },
+			{ "section": "hud", "key": "bot",     "label": "对手公司" },
 		] },
 		{ "title": "交互语义", "items": [
 			{ "section": "semantic", "key": "surface", "label": "面板表面" },

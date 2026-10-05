@@ -38,7 +38,7 @@ func _run() -> void:
 		{"op": Intent.OP_ATTACK, "seat": GameState.PLAYER, "target": {"batch": "combo_0"}},
 		{"op": Intent.OP_ATTACK, "seat": GameState.PLAYER, "target": {"batch": "combo_1"}},
 		{"op": Intent.OP_ATTACK_DONE, "seat": GameState.PLAYER},
-		{"op": Intent.OP_ATTACK, "seat": GameState.AI, "target": {"batch": "combo_1"}},
+		{"op": Intent.OP_ATTACK, "seat": GameState.BOT, "target": {"batch": "combo_1"}},
 	]
 	for index in indexed_results.size():
 		grouped_session._index_action(index, indexed_results[index])
@@ -96,7 +96,7 @@ func _run() -> void:
 	main.drawer_presentation.relayout()
 	await settle()
 	check(main.btn_pass.text == "录像下一步" and not main.btn_pass.disabled, "读入后主按钮为录像下一步")
-	check(not main.tape.recording() and not main._thinking and main.board.input_locked, "回放不录制、不运行AI，禁止改动牌桌")
+	check(not main.tape.recording() and not main._thinking and main.board.input_locked, "回放不录制、不运行BOT，禁止改动牌桌")
 	var popup: PopupMenu = main.drawer_presentation._menu.get_popup()
 	check(popup.get_item_text(popup.get_item_index(8)) == "读入录像", "选项菜单提供读入录像入口")
 	var same: GameState = main.state
@@ -265,7 +265,7 @@ func _record() -> Tape:
 	state.set_seed(9271)
 	state.new_game()
 	state.market = ["yunketang"]
-	var weapon := state.add_card(GameState.AI, "butie")
+	var weapon := state.add_card(GameState.BOT, "butie")
 	var ap := IntentApply.new(state)
 	var record := Tape.new()
 	record.start(ap)
@@ -278,31 +278,31 @@ func _record() -> Tape:
 	ap.apply(Intent.create_combo(GameState.PLAYER, uids), GameState.PLAYER)
 	ap.apply(Intent.action_done(GameState.PLAYER), GameState.PLAYER)
 	var attack_uids: Array = [weapon["uid"]]
-	for card in state.players[GameState.AI]["cards"]:
+	for card in state.players[GameState.BOT]["cards"]:
 		if card["def_id"] == CardDB.unit_id(CardDB.RES_CASH) and attack_uids.size() <= int(CardDB.get_def("butie")["recipe_n"]):
 			attack_uids.append(card["uid"])
-	ap.apply(Intent.create_combo(GameState.AI, attack_uids), GameState.AI)
-	ap.apply(Intent.action_done(GameState.AI), GameState.AI)
+	ap.apply(Intent.create_combo(GameState.BOT, attack_uids), GameState.BOT)
+	ap.apply(Intent.action_done(GameState.BOT), GameState.BOT)
 	ap.apply(Intent.arm_attacks(GameState.PLAYER))
 	ap.apply(Intent.attack_done(GameState.PLAYER), GameState.PLAYER)
-	ap.apply(Intent.arm_attacks(GameState.AI))
-	var targets: Array = ap.affordable_targets(GameState.AI)
+	ap.apply(Intent.arm_attacks(GameState.BOT))
+	var targets: Array = ap.affordable_targets(GameState.BOT)
 	# 攻击闲置用户，后续产出仍成立：同一录像覆盖撕牌和新增资源动画。
 	var idle_targets := targets.filter(func(target): return target["uids"].all(func(uid): return not uids.has(uid)))
 	if not idle_targets.is_empty():
-		var first_attack: Dictionary = ap.apply(Intent.apply_attack(GameState.AI, idle_targets[0]), GameState.AI)
+		var first_attack: Dictionary = ap.apply(Intent.apply_attack(GameState.BOT, idle_targets[0]), GameState.BOT)
 		# 同一组合的第二张目标仍在同一 attack batch：录像保留两次逐击状态，回放界面应合并成一个行动。
 		var batch := str(first_attack.get("target", {}).get("batch", ""))
 		if batch != "":
-			for target in ap.affordable_targets(GameState.AI):
+			for target in ap.affordable_targets(GameState.BOT):
 				if str(target.get("batch", "")) == batch:
-					ap.apply(Intent.apply_attack(GameState.AI, target), GameState.AI)
+					ap.apply(Intent.apply_attack(GameState.BOT, target), GameState.BOT)
 					break
-	ap.apply(Intent.attack_done(GameState.AI), GameState.AI)
+	ap.apply(Intent.attack_done(GameState.BOT), GameState.BOT)
 	ap.apply(Intent.produce(0))
 	ap.apply(Intent.finalize())
 	ap.apply(Intent.next_round())
-	ap.apply(Intent.resign(GameState.AI), GameState.AI)
+	ap.apply(Intent.resign(GameState.BOT), GameState.BOT)
 	record.stop()
 	return record
 

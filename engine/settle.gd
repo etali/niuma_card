@@ -6,11 +6,11 @@ class_name Settle
 extends RefCounted
 
 ## 结算流水线（对应设计文档 4.3 / 4.4）
-## 攻击阶段：先手先攻，点数池 + 点选目标（互动模式由场景层逐次驱动，无头/AI 走自动选靶）
+## 攻击阶段：先手先攻，点数池 + 点选目标（互动模式由场景层逐次驱动，无头/BOT 走自动选靶）
 ## 结算阶段：只结算产出/升级组合，先手方先结算；被拆散的组合整组作废
 
 ## target_picker: Callable(state, attacker, targets, pools) -> Dictionary（{} = 停止）
-## 不传则使用 AIPlan.target_picker（无头模拟器双方同款策略）
+## 不传则使用 BOTPlan.target_picker（无头模拟器双方同款策略）
 ## 每次点选后立即判定胜负：对方现金/用户被清零 → 攻击阶段当场结束（清零即胜）
 static func attack_phase(state: GameState, who: String, target_picker: Callable = Callable(),
 		observe: Callable = Callable(), applier: IntentApply = null) -> void:
@@ -31,7 +31,7 @@ static func attack_phase(state: GameState, who: String, target_picker: Callable 
 
 ## 把一个**已经装好弹**的点数池打完。
 ##
-## 从 `attack_phase` 里分出来是给选靶搜索用的（`AITurnPlan.target_picker`）：
+## 从 `attack_phase` 里分出来是给选靶搜索用的（`BOTTurnPlan.target_picker`）：
 ## 试算要在快照上「点这一张，剩下的按基线点完」，而它不能再调 `attack_phase` ——
 ## 那会 `arm_attacks` 第二遍，把配方现金再吃一次、点数池凭空翻倍。
 ## 装弹和花点是两件事，这个签名就是那条缝
@@ -39,7 +39,7 @@ static func spend_pool(state: GameState, who: String, pools: Dictionary,
 		target_picker: Callable = Callable(), observe: Callable = Callable(),
 		applier: IntentApply = null) -> void:
 	if target_picker.is_null():
-		target_picker = AIPlan.target_picker()
+		target_picker = BOTPlan.target_picker()
 	var victim := GameState.opponent(who)
 	while state.winner == "" and (int(pools[CardDB.RES_CASH]) > 0 or int(pools[CardDB.RES_USER]) > 0):
 		var affordable: Array = state.affordable_targets(victim, pools)
@@ -71,14 +71,14 @@ static func produce(state: GameState, observe: Callable = Callable()) -> void:
 ## 一次性跑完：先手攻击 → 后手攻击 → 产出结算 → 收尾（无头模拟器用）
 ## 清零即胜：任一攻击阶段把对方打到 0，后续阶段直接跳过
 ##
-## cfgs：`{座位: AISearch}`，与 MatchSimulator.run_rounds 使用同一参数。
-## 缺少座位配置时由 AIPlan 选择默认配置；双方各用自己的共享选靶入口。
+## cfgs：`{座位: BOTSearch}`，与 MatchSimulator.run_rounds 使用同一参数。
+## 缺少座位配置时由 BOTPlan 选择默认配置；双方各用自己的共享选靶入口。
 static func run(state: GameState, cfgs: Dictionary = {}, observe: Callable = Callable(),
 		applier: IntentApply = null) -> void:
 	var order := state.action_order()
-	attack_phase(state, order[0], AIPlan.target_picker(cfgs.get(order[0]),state,order[0]), observe, applier)
+	attack_phase(state, order[0], BOTPlan.target_picker(cfgs.get(order[0]),state,order[0]), observe, applier)
 	if state.winner == "":
-		attack_phase(state, order[1], AIPlan.target_picker(cfgs.get(order[1]),state,order[1]), observe, applier)
+		attack_phase(state, order[1], BOTPlan.target_picker(cfgs.get(order[1]),state,order[1]), observe, applier)
 	if state.winner == "":
 		if applier == null: produce(state, observe)
 		else:
@@ -111,7 +111,7 @@ static func ordered_production_combos(state: GameState) -> Array:
 
 ## 收尾：解锁、清空组合、胜负检查（防御 Buff 不折旧：在组合中即永久生效）
 static func finalize(state: GameState) -> void:
-	for who in [GameState.PLAYER, GameState.AI]:
+	for who in [GameState.PLAYER, GameState.BOT]:
 		for c in state.players[who]["cards"]:
 			c["locked"] = false
 	state.combos.clear()
@@ -144,7 +144,7 @@ static func _resolve_combo(state: GameState, combo: Dictionary) -> Dictionary:
 			GameState.seat_arg(owner), leader_name, paid["reason"]])
 		return { "resolved": false, "reason": paid["reason"], "paid_uids": [] }
 
-	# 付款成功后记录 Buff 的实际生效回合；该标记不构成 AI 的禁售条件。
+	# 付款成功后记录 Buff 的实际生效回合；该标记不构成 BOT 的禁售条件。
 	state.mark_buff_worked(owner, combo)
 
 	# 第 4 步：组合效果

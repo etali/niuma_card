@@ -4,7 +4,7 @@
 
 extends RefCounted
 
-## 单步回放只通过原裁决器执行，不运行AI。校验失败时保留上一个完整步骤。
+## 单步回放只通过原裁决器执行，不运行BOT。校验失败时保留上一个完整步骤。
 const TableSnapshot = preload("res://scenes/table_snapshot.gd")
 const Regions = preload("res://scenes/table_regions.gd")
 
@@ -32,7 +32,7 @@ static func load_path(file_path: String) -> Dictionary:
 		return {"ok": false, "reason": "卡牌规则不一致，不能载入"}
 	if tape.table == "" and tape.configuration.is_empty():
 		return {"ok": false, "reason": "录像缺少卡牌规则校验信息，不能载入"}
-	if tape.meta.get("my_seat", GameState.PLAYER) not in [GameState.PLAYER, GameState.AI]:
+	if tape.meta.get("my_seat", GameState.PLAYER) not in [GameState.PLAYER, GameState.BOT]:
 		return {"ok": false, "reason": "录像的玩家座位无效"}
 	var issue := _validate_snapshot(tape)
 	if issue != "":
@@ -113,7 +113,7 @@ func rewind() -> void:
 	market_indices = range(state.market.size())
 	actor = state.action_first()
 	phase = PhaseMachine.OVER if state.winner != "" else PhaseMachine.ACTION
-	for who in [GameState.PLAYER, GameState.AI]:
+	for who in [GameState.PLAYER, GameState.BOT]:
 		if not applier.pool_empty(who):
 			phase = PhaseMachine.ATTACK
 			actor = who
@@ -137,7 +137,7 @@ func advance() -> Dictionary:
 	if not result.get("ok", false):
 		error = "第 %d 步无法执行：%s" % [cursor + 1, result.get("reason", "")]
 		return {"ok": false, "reason": error}
-	if entry.get("hash", "") != "" and StateCodec.state_hash(next_state) != entry["hash"]:
+	if entry.get("hash", "") != "" and record.recorded_state_hash(next_state) != entry["hash"]:
 		error = "第 %d 步与录制结果不一致，已停止。" % (cursor + 1)
 		return {"ok": false, "reason": error}
 	if intent["op"] == Intent.OP_BUY:
@@ -215,7 +215,7 @@ func caption(intent: Dictionary = {}, grouped_size := 1) -> String:
 		var action_label := str(labels.get(intent["op"], ""))
 		if grouped_size > 1 and intent["op"] == Intent.OP_ATTACK:
 			action_label = "同一摞攻击（%d 次扣减）" % grouped_size
-		progress += " · " + ("玩家方" if seat == GameState.PLAYER else ("对手方" if seat == GameState.AI else "")) + action_label
+		progress += " · " + ("玩家方" if seat == GameState.PLAYER else ("对手方" if seat == GameState.BOT else "")) + action_label
 	return progress
 
 func seek(step: int) -> Dictionary:

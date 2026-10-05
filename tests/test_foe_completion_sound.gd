@@ -8,11 +8,11 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	AISearch.set_pref_strength(0.0)
+	BOTSearch.set_pref_strength(0.0)
 	var main := await boot_main()
 	main.sfx.set_user_muted(false)
 	main.sfx.set_drawer_suspended(false)
-	# 真实 AI 的空行动也要提醒，不依赖买牌、编组或生产附带的声音。
+	# 真实 BOT 的空行动也要提醒，不依赖买牌、编组或生产附带的声音。
 	main.state.market.clear()
 	main.state.combos.clear()
 	main.state.players[main.foe_seat]["cards"].clear()
@@ -23,7 +23,7 @@ func _run() -> void:
 	var before: int = main.sfx._next
 	await main._run_foe_action()
 	check(main._actor == main.my_seat and not main.board.input_locked,
-		"真实 AI 行动结束后交回玩家")
+		"真实 BOT 行动结束后交回玩家")
 	check(main.sfx._next == (before + 1) % Sfx.POOL_SIZE,
 		"对手即使没有买牌或编组，行动结束也只提醒一次")
 	var notification: Resource = main.sfx._streams[Sfx.action("foe_action_done")["sound"]]
@@ -77,5 +77,5 @@ func _run() -> void:
 	await process_frame
 	check(main.sfx._next == before, "退出或换局取消等待时不伪报对手已完成")
 	main.sfx.set_user_muted(true)
-	AISearch.restore_defaults()
+	BOTSearch.restore_defaults()
 	finish()

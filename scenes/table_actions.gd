@@ -61,7 +61,7 @@ func pawn(cards: Array, uids: Array, owner := "") -> void:
 		if mine:
 			motion._suck_into(card, counter)
 		else:
-			host.layout.kill_ai_move(card.uid)
+			host.layout.kill_bot_move(card.uid)
 			var tween: Tween = motion.pawn_into(card, counter, spread * float(i) / maxf(1, sold.size() - 1))
 			_pawn_moves.append({"card": card, "tween": tween, "retired": true})
 	if back == Vector3.INF:
@@ -77,11 +77,11 @@ func pawn(cards: Array, uids: Array, owner := "") -> void:
 		host.layout._stack_arrivals(fresh, back, 0, true, 1)
 	else:
 		# 先登记完整到账状态并让现有布局确定归宿，动画只搬这批持有的实体。
-		host.layout._layout_ai_idle()
+		host.layout._layout_bot_idle()
 		for i in fresh.size():
 			var card: CardEntity = fresh[i]
-			var target: Vector3 = host.layout._ai_flight.get(card.uid, {}).get("at", card.position)
-			host.layout.kill_ai_move(card.uid)
+			var target: Vector3 = host.layout._bot_flight.get(card.uid, {}).get("at", card.position)
+			host.layout.kill_bot_move(card.uid)
 			var tween: Tween = motion._fly_from(card, counter, target, i, fresh.size(), motion.PAWN_TRAVEL_TIME + spread)
 			_pawn_moves.append({"card": card, "tween": tween, "retired": false, "at": target})
 		set_process(pawn_busy())

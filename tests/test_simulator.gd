@@ -13,10 +13,10 @@ extends "res://tests/harness.gd"
 func _raw_config() -> Dictionary:
 	var cards := _raw_json(CardDB.BUILTIN_PATH)
 	var ui := _raw_json("res://data/ui.json")
-	var ai := _raw_json("res://data/ai.json")
+	var bot := _raw_json("res://data/bot.json")
 	cards["_game"]["res_labels"] = ui.get("resource_labels", {})
 	cards["_sfx"] = ui.get("sfx", {})
-	cards["_sim"] = ai.get("simulation", {})
+	cards["_sim"] = bot.get("simulation", {})
 	return cards
 
 func _raw_json(path: String) -> Dictionary:
@@ -43,7 +43,7 @@ func _real_keys(section: Dictionary) -> Array:
 ##   - 配置里有、没人读 → 闲置旋钮。调了毫无反应，比硬编码更难查
 ##     （「配置里明摆着一个 attack_keep_p，改了却什么都没变」）
 ##   - 代码里读、配置里没有 → 读出 null 再静默变成 0。
-##     AI 的门槛全变 0 就是「什么都买」，而一条错都不报
+##     BOT 的门槛全变 0 就是「什么都买」，而一条错都不报
 ##
 ## 嵌套字典（buff_mult / res_labels）只判外层键：
 ## 里层的键是 buff_type / 资源名，各有自己的判据盯着（protect_key 那条、
@@ -57,7 +57,7 @@ func _check_section_coverage(raw: Dictionary, section: String, srcs: Array) -> v
 		check(s != "", "读到了 %s" % p)
 		# 掐掉注释：注释里提到键名不算「有人读」。
 		# 不掐的话这条会被自己的说明文档喂饱 —— card_db.gd 的文档注释里
-		# 就写着 `ai["score_floor"]`，谁把真正的读取删了它照样绿
+		# 就写着 `bot["score_floor"]`，谁把真正的读取删了它照样绿
 		for line in s.split("\n"):
 			text += line.split("#")[0] + "\n"
 	var unread: Array = []
@@ -79,11 +79,11 @@ func _check_keys_exist(raw: Dictionary) -> void:
 		"sim_rules": "_sim",
 	}
 	var re := RegEx.new()
-	# 只认字面量下标：`ai["score_floor"]` 这种。变量下标（`ai[k]`）判不了，
+	# 只认字面量下标：`bot["score_floor"]` 这种。变量下标（`bot[k]`）判不了，
 	# 也没必要 —— 那种写法的键名本来就来自配置自己
 	re.compile('(game_rules|sim_rules)\\(\\)\\["([a-z0-9_]+)"\\]')
 	var alias := RegEx.new()
-	# `var ai := CardDB.game_rules()` 之后再 `ai["k"]`：先认出局部名，再收它的下标
+	# `var bot := CardDB.game_rules()` 之后再 `bot["k"]`：先认出局部名，再收它的下标
 	alias.compile('var ([a-z_]+) *:?= *CardDB\\.(game_rules|sim_rules)\\(\\)')
 	var missing: Array = []
 	for p in _config_readers():
@@ -259,10 +259,10 @@ func _initialize() -> void:
 	check(CardDB.all_cards().size() == raw_cards.size() and CardDB.card_name("cash") == "现金",
 		"reset 后回到内置配置")
 
-	# --- 无头模拟：10 局不同种子，至少 6 局在回合上限内分出胜负（镜像 AI 允许僵持） ---
+	# --- 无头模拟：10 局不同种子，至少 6 局在回合上限内分出胜负（镜像 BOT 允许僵持） ---
 	# 局数和「≥6 局」是这条判据自己的尺度（要多少样本、放多宽），不是游戏数值，
 	# 所以写在这里。回合上限是游戏侧的旋钮，走 _sim.max_rounds
-	var wins := { "player": 0, "ai": 0 }
+	var wins := { "player": 0, "bot": 0 }
 	var rounds_total := 0
 	var finished := 0
 	for i in 10:
@@ -275,8 +275,8 @@ func _initialize() -> void:
 			finished += 1
 		rounds_total += r["rounds"]
 	check(finished >= 6, "10 局模拟 ≥6 局分出胜负（实际 %d 局）" % finished)
-	print("       战况：玩家胜 %d / AI 胜 %d / 僵持 %d，平均 %.1f 回合" % [
-		wins["player"], wins["ai"], 10 - finished, rounds_total / 10.0])
+	print("       战况：玩家胜 %d / BOT 胜 %d / 僵持 %d，平均 %.1f 回合" % [
+		wins["player"], wins["bot"], 10 - finished, rounds_total / 10.0])
 	check(rounds_total >= 20, "对局不是秒结束（平均回合 %.1f ≥ 2）" % (rounds_total / 10.0))
 
 	# --- 同一种子可复现 ---
@@ -316,12 +316,12 @@ func _test_attack_damage_from_rules() -> void:
 				var removed: int = points / int(per_card)
 				CardDB.GAME["win_cash"] = maxi(int(saved_game["win_cash"]), maxi(removed, int(d["recipe_n"])) + 10)
 				var state := GameState.new()
-				state.players = {GameState.PLAYER: {"cards": []}, GameState.AI: {"cards": []}}
+				state.players = {GameState.PLAYER: {"cards": []}, GameState.BOT: {"cards": []}}
 				for res in [CardDB.RES_CASH, CardDB.RES_USER]:
 					state.add_card(GameState.PLAYER, CardDB.unit_id(res))
 					var count := removed + 1 if res == d["attack_res"] else 1
 					for _i in count:
-						state.add_card(GameState.AI, CardDB.unit_id(res))
+						state.add_card(GameState.BOT, CardDB.unit_id(res))
 				var uids: Array = [state.add_card(GameState.PLAYER, str(id))["uid"]]
 				for _i in int(d["recipe_n"]):
 					uids.append(state.add_card(GameState.PLAYER, CardDB.unit_id(str(d["recipe_res"])))["uid"])
@@ -332,10 +332,10 @@ func _test_attack_damage_from_rules() -> void:
 					continue
 				check(int(state.attack_pool(GameState.PLAYER)[d["attack_res"]]) == points,
 					label + " 攻击池等于配置点数乘倍率")
-				# 此处只测规则，固定从合法目标中取第一张，不依赖 AI 强度或偏好。
+				# 此处只测规则，固定从合法目标中取第一张，不依赖 BOT 强度或偏好。
 				Settle.attack_phase(state, GameState.PLAYER,
 					func(_s: GameState, _who: String, targets: Array, _pools: Dictionary) -> Dictionary: return targets[0])
-				check(state.resource_count(GameState.AI, str(d["attack_res"])) == 1,
+				check(state.resource_count(GameState.BOT, str(d["attack_res"])) == 1,
 					label + " 实际移除 %d 张，余点不足一张不继续攻击" % removed)
 	CardDB.GAME = saved_game
 
@@ -352,17 +352,17 @@ func _test_attack_damage_from_rules() -> void:
 ## 白名单是空的：模拟器里**没有**哪一步该直接改状态。
 ## 结算那半边（Settle.run）不在这条检查里 —— 它本来就是两条路共用的那一层。
 ##
-## 查两个文件：`match_simulator.gd` 起头，`ai_agent.gd` 落地。
-## 行动阶段的三步搬去 AIAgent 之后，只查模拟器那个文件的话这条禁令就空转了 ——
+## 查两个文件：`match_simulator.gd` 起头，`bot_agent.gd` 落地。
+## 行动阶段的三步搬去 BOTAgent 之后，只查模拟器那个文件的话这条禁令就空转了 ——
 ## 它查的那些字眼已经不在被查的文件里，而绕开管道的新地方没人看着
 func _t_no_pipeline_bypass() -> void:
-	var paths := ["res://engine/match_simulator.gd", "res://engine/ai_agent.gd"]
+	var paths := ["res://engine/match_simulator.gd", "res://engine/bot_agent.gd"]
 	# 直接改状态的入口。`state.buy(` 这种带括号的写法才算，
 	# 免得把注释里提到的函数名也算进去（注释里就有好几处，是故意留的说明）
 	#
 	# 两种拿到状态的写法都要禁：模拟器那边状态是局部变量（`state.buy(`），
-	# AIAgent 那边是取值函数（`state().buy(`）。只禁前一种的话，
-	# 在 ai_agent.gd 里写 `state().buy(_seat, idx)` 这条禁令一个字都不说 ——
+	# BOTAgent 那边是取值函数（`state().buy(`）。只禁前一种的话，
+	# 在 bot_agent.gd 里写 `state().buy(_seat, idx)` 这条禁令一个字都不说 ——
 	# 实跑变异撞到过：它是被隔壁那条正面判据（「买卡走的是 apply」）拦下的，
 	# 而那条只盯买卡一个入口，典当和编组退回去就没人管了
 	var banned: Array = []
@@ -384,16 +384,16 @@ func _t_no_pipeline_bypass() -> void:
 					+ "不然平衡数字量的是另一条路上的游戏（README.md §「3. 文件目录结构」）")
 	# 反过来也要判：管道**真的**在用。上面那圈全是「没有 X」，
 	# 把整个行动阶段删空它也全绿（memory: green-mutation-means-no-observer）
-	var agent_src := FileAccess.get_file_as_string("res://engine/ai_agent.gd")
+	var agent_src := FileAccess.get_file_as_string("res://engine/bot_agent.gd")
 	check(agent_src.contains("applier().apply(intent)"),
 		"方案意图逐条交给 applier().apply(intent) —— 上面禁令是「没有 X」型判据，"
 		+ "少了这一条的话把行动阶段整个删空它照样绿")
 	check(FileAccess.get_file_as_string("res://engine/match_simulator.gd")
 			.contains("IntentApply.new("),
 		"action_phase 自己开了一个 applier")
-	# 模拟器**必须**把行动阶段交给 AIAgent。少这一条的话，
+	# 模拟器**必须**把行动阶段交给 BOTAgent。少这一条的话，
 	# 谁把那两行改回「自己调 旧的三个策略入口」就没人看着了 ——
-	# 而那正是「两个 AI」的老形状，且改回去一条判据都不红
+	# 而那正是「两个 BOT」的老形状，且改回去一条判据都不红
 	check(FileAccess.get_file_as_string("res://engine/match_simulator.gd")
-			.contains("AIAgent.new("),
-		"action_phase 把决策次序交给 AIAgent（次序只有那一份）")
+			.contains("BOTAgent.new("),
+		"action_phase 把决策次序交给 BOTAgent（次序只有那一份）")

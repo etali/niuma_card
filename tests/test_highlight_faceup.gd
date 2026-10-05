@@ -69,7 +69,7 @@ func _initialize() -> void:
 	check(absf(back_off.x - 1.0) < 0.01,
 		"背面期间灭的灯，翻回正面后也不留金光（实际 %.2f）" % back_off.x)
 
-	# 4. 调暗（AI 的牌）也走同一条通道，一起钉住：
+	# 4. 调暗（BOT 的牌）也走同一条通道，一起钉住：
 	#    只补 highlighted 不补 _dimmed 的话，对手的牌翻回正面就变亮了
 	e.set_face_down(true)
 	e.set_dimmed(true)

@@ -29,7 +29,7 @@ extends "res://tests/harness.gd"
 ##      applier.apply(it)（不传 from_seat）→ 「冒充座位被拒」红
 
 var A := GameState.PLAYER
-var B := GameState.AI
+var B := GameState.BOT
 
 func _initialize() -> void:
 	print("=== 联网/单机同构测试 ===")
@@ -199,7 +199,7 @@ func _t1_no_attack() -> void:
 	var s: GameState = d["state"]
 
 	same_state(s, r.state, "开局两条路径状态一致")
-	_play_round(d, r, func(who, step): return Intent.buy(who, 0) if step == 0 else {}, false)
+	_play_round(d, r, func(who, step): return _legal_buy(s,who) if step == 0 else {}, false)
 	same_state(s, r.state, "一整回合跑完，哈希一致")
 	eq(r.state.round_num, s.round_num, "回合数一致")
 	check(r.state.round_num == 2, "第二回合起点一致（房间自己发了 next_round）")
@@ -420,8 +420,16 @@ func _t6_two_rounds() -> void:
 	for rnd in 2:
 		if s.winner != "" or r.state.winner != "":
 			break
-		_play_round(d, r, func(who, step): return Intent.buy(who, 0) if step == 0 else {}, true)
+		_play_round(d, r, func(who, step): return _legal_buy(s,who) if step == 0 else {}, true)
 		same_state(s, r.state, "第 %d 回合末哈希一致" % (rnd + 1))
 
 	eq(r.state.round_num, s.round_num, "两回合后回合数一致")
 	check(r.seq > 0, "房间给意图编了序号（seq=%d）" % r.seq)
+
+## 卡表改价后，成功购买夹具仍需保留一现金；拒绝路径另有阶段/冒充测试。
+func _legal_buy(s: GameState, who: String) -> Dictionary:
+	for index in s.market.size():
+		if int(CardDB.get_def(s.market[index]).get("price",-1)) >= 0 and int(CardDB.get_def(s.market[index]).price) < s.resource_count(who,CardDB.RES_CASH):
+			return Intent.buy(who,index)
+	check(false,"夹具市场存在购买后仍保留现金的商品")
+	return {}

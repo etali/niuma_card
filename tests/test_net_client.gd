@@ -50,7 +50,7 @@ extends "res://tests/harness.gd"
 
 const PORT_BASE := 47200
 const A := GameState.PLAYER
-const B := GameState.AI
+const B := GameState.BOT
 
 func _initialize() -> void:
 	print("=== 联网局客户端测试 ===")
@@ -290,7 +290,7 @@ func _t3_combo_groups_survive_respawn() -> void:
 	main._respawn_all()
 	await settle()
 	# **不数 groups 的总数**：board.groups 里还有理牌摆出来的散卡摞
-	# （_tidy_player_idle / _layout_ai_idle 也往里 append），
+	# （_tidy_player_idle / _layout_bot_idle 也往里 append），
 	# 数总数的判据会被那些摞的数量变化牵着走 —— 而那和这条判据要钉的事无关。
 	# 逐个组合去认「桌上有没有一摞正好是它」
 	var found := 0
@@ -417,7 +417,7 @@ func _t4_scene_hosts_net() -> void:
 	check(main.pipe == a, "pipe 换成了网络那条")
 	check(main.state == a.state(), "state 换成了服务器那份")
 	check(main.my_seat == a.my_seat, "座位跟着连接（%s）" % main.my_seat)
-	check(not main._foe_is_ai(), "对手标成了人")
+	check(not main._foe_is_bot(), "对手标成了人")
 	check(a.applied.is_connected(main._on_intent_applied), "applied 接上了")
 	check(a.phase_changed.is_connected(main._on_net_phase), "phase 接上了")
 	check(main.entities.size() > 0, "照服务器那份快照把桌子摆出来了（%d 张）"
@@ -438,7 +438,7 @@ func _t4_scene_hosts_net() -> void:
 
 	# 「再战一局」要把座位改回单机那一对，不然桌子左右不镜像
 	main._reset_session_flags()
-	check(main.my_seat == GameState.PLAYER and main.foe_seat == GameState.AI,
+	check(main.my_seat == GameState.PLAYER and main.foe_seat == GameState.BOT,
 		"重开之后座位回到单机那一对（%s/%s）" % [main.my_seat, main.foe_seat])
 	check(not main._net_phase_seen, "重开之后 phase 标记清了")
 

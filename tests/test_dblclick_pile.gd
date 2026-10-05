@@ -4,7 +4,7 @@
 
 extends "res://tests/harness.gd"
 
-## 双击收拢/摊开的可靠性 + AI 摞牌覆盖全部手牌
+## 双击收拢/摊开的可靠性 + BOT 摞牌覆盖全部手牌
 ##
 ## 三个原始缺陷：
 ## 1. 双击有时候不摞牌。第一击已经走完「按下-拎起-松手」，_layout_group 起了
@@ -14,19 +14,19 @@ extends "res://tests/harness.gd"
 ## 2. 就算射线打中了，toggle_compact 先 _core_first 把核心卡换到队首，
 ##    而 _layout_group 拿队首坐标反推组起点——核心卡此刻还在飞，
 ##    读到的是中间值，整摞落到一个说不清的地方；来回双击还会一路爬
-## 3. AI 没编进组合的核心/Buff 卡不在任何摞里，_layout_ai_zone 不管它们,
+## 3. BOT 没编进组合的核心/Buff 卡不在任何摞里，_layout_bot_zone 不管它们,
 ##    只能留在 _free_spot 随手找的空位上，跟摞好的组合互相压边
 
 
 func _initialize() -> void:
-	print("=== 双击收拢 / AI 摞牌覆盖测试 ===")
+	print("=== 双击收拢 / BOT 摞牌覆盖测试 ===")
 	var main: Node = await boot_main()
 	var board: Board = main.board
 
 	await _t1_toggle_keeps_origin(main, board)
 	await _t2_dbl_target_fallback(main, board)
 	await _t3_toggle_midflight(main, board)
-	await _t4_ai_bench_pile(main)
+	await _t4_bot_bench_pile(main)
 	await _t5_toggle_after_clamp(main, board)
 
 	finish()
@@ -150,41 +150,41 @@ func _t3_toggle_midflight(main: Node, board: Board) -> void:
 	check(d < 0.02, "收拢后组起点不动（实际 %.3f）" % d)
 	park(board, members)
 
-# ---------- 4. AI 摞牌覆盖全部手牌 ----------
+# ---------- 4. BOT 摞牌覆盖全部手牌 ----------
 
-func _t4_ai_bench_pile(main: Node) -> void:
-	print("--- 4. AI 没编进组合的牌也要进摞 ---")
+func _t4_bot_bench_pile(main: Node) -> void:
+	print("--- 4. BOT 没编进组合的牌也要进摞 ---")
 	# 直接塞两张编不进组合的牌：一张 Buff（没有可贴的组合）、一张缺料的生产卡
 	var uid := 9700
 	for def_id in ["jiangjia", "yunketang"]:
-		var c: Dictionary = main.state.add_card(GameState.AI, def_id)
+		var c: Dictionary = main.state.add_card(GameState.BOT, def_id)
 		main._spawn_entity(c, Vector3(6.0, 0.05, -6.0), false)
 		uid += 1
-	main.layout._layout_ai_zone()
-	# _layout_ai_zone 的补间是 0.3s，等它跑完再量间距（TRANS_BACK 中途会过冲）
+	main.layout._layout_bot_zone()
+	# _layout_bot_zone 的补间是 0.3s，等它跑完再量间距（TRANS_BACK 中途会过冲）
 	await create_timer(0.45).timeout
 	for i in 4:
 		await physics_frame
 
 	var loose: Array = []
-	for c in main.state.players[GameState.AI]["cards"]:
-		if not main.layout._ai_pile_of_uid.has(c["uid"]):
+	for c in main.state.players[GameState.BOT]["cards"]:
+		if not main.layout._bot_pile_of_uid.has(c["uid"]):
 			loose.append(CardDB.card_name(c["def_id"]))
-	check(loose.is_empty(), "AI 每张牌都登记进了某个摞（游离：%s）" % [
+	check(loose.is_empty(), "BOT 每张牌都登记进了某个摞（游离：%s）" % [
 		"无" if loose.is_empty() else ", ".join(loose)])
 
 	# 备牌摞按卡面分：**不同的卡各占一摞**，同一张卡的几份才收拢在一起。
 	#
 	# 这一段原先要求的是反的（「备牌摞是收拢摆放」，拿 jiangjia + yunketang
 	# 两张**不同**的卡量相邻 z 间距 == COMPACT_GAP.z）—— 那正是报上来的
-	# 「AI 整理后把组合牌都摞在一块儿看不清」：几种互不相同的核心卡收成一摞，
+	# 「BOT 整理后把组合牌都摞在一块儿看不清」：几种互不相同的核心卡收成一摞，
 	# 只露得出最上面那一张，侧边那个 ×N 说得出有几张、说不出是哪几张。
 	# 资源摞收拢是对的（20 张现金张张一样），备牌摞不是一回事
 	var benches := {}
-	for key in main.layout._ai_pile_uids:
-		if str(key).begins_with("ai_bench"):
-			benches[str(key)] = main.layout._ai_pile_uids[key]
-	check(not benches.is_empty(), "存在备牌摞 ai_bench_*")
+	for key in main.layout._bot_pile_uids:
+		if str(key).begins_with("bot_bench"):
+			benches[str(key)] = main.layout._bot_pile_uids[key]
+	check(not benches.is_empty(), "存在备牌摞 bot_bench_*")
 	# 两张不同的卡 → 两摞，各自一个席位
 	var defs_per_pile: Array = []
 	for key in benches:
@@ -216,16 +216,16 @@ func _t4_ai_bench_pile(main: Node) -> void:
 			min_dx, CardEntity.CARD_SIZE.x])
 
 	# 同一张卡的几份仍然收拢成一摞、带台阶：这是资源摞那条口径，没变
-	var same: Dictionary = main.state.add_card(GameState.AI, "jiangjia")
+	var same: Dictionary = main.state.add_card(GameState.BOT, "jiangjia")
 	main._spawn_entity(same, Vector3(6.0, 0.05, -6.0), false)
-	main.layout._layout_ai_zone()
+	main.layout._layout_bot_zone()
 	await create_timer(0.45).timeout
 	for i in 4:
 		await physics_frame
 	var twin: Array = []
-	for key in main.layout._ai_pile_uids:
-		var arr2: Array = main.layout._ai_pile_uids[key]
-		if not str(key).begins_with("ai_bench") or arr2.size() < 2:
+	for key in main.layout._bot_pile_uids:
+		var arr2: Array = main.layout._bot_pile_uids[key]
+		if not str(key).begins_with("bot_bench") or arr2.size() < 2:
 			continue
 		twin = arr2
 	check(twin.size() == 2, "同一张卡的两份收在一摞里（实为 %d 张）" % twin.size())

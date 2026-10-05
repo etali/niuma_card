@@ -161,11 +161,11 @@ func _snapshot_types() -> void:
 	combo["combos"] = [{"owner": GameState.PLAYER, "uids": [0], "eval": {"type": "production", "leader": "yunketang", "output_res": "cash", "output_n": {}}}]
 	cases.append(combo)
 	for snap in cases:
-		for message in [Protocol.seated(GameState.PLAYER, GameState.AI, snap), Protocol.applied({"ok":true,"op":Intent.OP_ACTION_DONE}, 1, snap),
-			Protocol.rematch_start(GameState.PLAYER, GameState.AI, snap)]:
+		for message in [Protocol.seated(GameState.PLAYER, GameState.BOT, snap), Protocol.applied({"ok":true,"op":Intent.OP_ACTION_DONE}, 1, snap),
+			Protocol.rematch_start(GameState.PLAYER, GameState.BOT, snap)]:
 			_refused(Protocol.from_dict(message), "%s 在覆盖状态前拒绝损坏快照" % message["t"])
-	check(Protocol.decode(Protocol.encode(Protocol.seated(GameState.PLAYER, GameState.AI, source))).get("ok", false), "真实完整快照可以往返")
-	check(Protocol.decode(Protocol.encode(Protocol.seated(GameState.PLAYER, GameState.AI, StateCodec.snapshot(GameState.new())))).get("ok", false), "等候对手时的空桌快照可以往返")
+	check(Protocol.decode(Protocol.encode(Protocol.seated(GameState.PLAYER, GameState.BOT, source))).get("ok", false), "真实完整快照可以往返")
+	check(Protocol.decode(Protocol.encode(Protocol.seated(GameState.PLAYER, GameState.BOT, StateCodec.snapshot(GameState.new())))).get("ok", false), "等候对手时的空桌快照可以往返")
 
 func _rule_fingerprint_and_recordings() -> void:
 	var ap := IntentApply.new(_game())

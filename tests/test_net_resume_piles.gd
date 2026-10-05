@@ -37,7 +37,7 @@ extends "res://tests/harness.gd"
 
 const PORT_BASE := 47380
 const A := GameState.PLAYER
-const B := GameState.AI
+const B := GameState.BOT
 
 func _initialize() -> void:
 	print("=== 重连恢复摆放测试 ===")
@@ -187,7 +187,7 @@ func _t1_my_piles_come_back() -> void:
 ##
 ## 留下的那一位不会重发 —— 他的 _push_piles 比指纹去重，分组没变就一条都不发，
 ## 而「对手重连了」这件事在他那边不改变任何分组。于是重连这一位的 foe_piles
-## 是空的，settle_layout._layout_ai_zone 只能按「第几摞 / 共几摞」现算成整行居中：
+## 是空的，settle_layout._layout_bot_zone 只能按「第几摞 / 共几摞」现算成整行居中：
 ## 对手明明把组合拖到了桌角，我这边看到的是桌子正中间一排
 func _t2_foe_piles_come_back() -> void:
 	print("\n-- T2 重连回来，对手那些摞也在 --")

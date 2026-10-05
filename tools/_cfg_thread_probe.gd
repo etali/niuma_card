@@ -18,10 +18,10 @@ func _init() -> void:
 	for sd in range(1, 61):
 		var a := _first_snap(sd, {})
 		var b := _first_snap(sd, {
-			GameState.AI: AISearch.from_strength(AISearch.PRESETS["mid"]),
+			GameState.BOT: BOTSearch.from_strength(BOTSearch.PRESETS["mid"]),
 		})
 		var c := _first_snap(sd, {
-			GameState.AI: AISearch.from_strength(1.0),
+			GameState.BOT: BOTSearch.from_strength(1.0),
 		})
 		if a != b or a != c:
 			hits.append("种子 %d  默认低档=%s mid=%s 满档=%s" % [

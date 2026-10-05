@@ -35,7 +35,7 @@ func _run_one(rng_seed: int) -> Dictionary:
 	var g := {
 		"winner": "", "win_path": "超时", "rounds": 0,
 		"draw_first_won": false,
-		"diffs": [],              # 每回合结算后 玩家资金 - AI资金
+		"diffs": [],              # 每回合结算后 玩家资金 - BOT资金
 		"offered": 0, "bought": 0,
 		"combos": 0, "attacks": 0, "upgrades": 0, "productions": 0,
 		"protects": 0, "leaders": {}, "t2_made": 0, "t3_made": 0,
@@ -74,7 +74,7 @@ func _measure_poor(state: GameState, g: Dictionary) -> void:
 	var min_price := 999
 	for def_id in state.market:
 		min_price = mini(min_price, int(CardDB.get_def(def_id).get("price", 999)))
-	for who in [GameState.PLAYER, GameState.AI]:
+	for who in [GameState.PLAYER, GameState.BOT]:
 		g["side_rounds"] += 1
 		if min_price < 999 and state.resource_count(who, CardDB.RES_CASH) - 1 < min_price:
 			g["poor_rounds"] += 1
@@ -114,7 +114,7 @@ func _measure_combos(state: GameState, g: Dictionary) -> void:
 	# 两条一起看：只留 M13a 可以靠「用户总量压到很小」刷高比率，
 	# 只留 M13b 可以靠「大量用户但都不部署」蒙过去
 	var idle_now := 0
-	for who in [GameState.PLAYER, GameState.AI]:
+	for who in [GameState.PLAYER, GameState.BOT]:
 		for c in state.players[who]["cards"]:
 			var def: Dictionary = CardDB.get_def(c["def_id"])
 			if def.get("kind") == CardDB.KIND_UNIT and def.get("res") == CardDB.RES_USER:
@@ -136,7 +136,7 @@ func _measure_combos(state: GameState, g: Dictionary) -> void:
 ## 防御 Buff 在有效组合内立即保护；此处统计的是行动前仍有保护的生产组合。
 func _measure_seal(state: GameState, g: Dictionary) -> void:
 	var first_seen: Dictionary = g["first_seen"]
-	for who in [GameState.PLAYER, GameState.AI]:
+	for who in [GameState.PLAYER, GameState.BOT]:
 		# t0 的口径只看核心卡和 Buff，**不看单位卡**：双方开局就各有一把现金/用户卡，
 		# 算进去 t0 恒等于第 1 回合，M14 就退化成「第几回合成型」，量不到组装本身
 		for c in state.players[who]["cards"]:
@@ -160,7 +160,7 @@ func _measure_seal(state: GameState, g: Dictionary) -> void:
 ## 停在结算之后、推进下一回合之前 —— 量的是「这回合打完谁领先」
 func _measure_diff(state: GameState, g: Dictionary) -> void:
 	g["diffs"].append(state.resource_count(GameState.PLAYER, CardDB.RES_CASH)
-		- state.resource_count(GameState.AI, CardDB.RES_CASH))
+		- state.resource_count(GameState.BOT, CardDB.RES_CASH))
 
 # ---------- 汇总报告 ----------
 

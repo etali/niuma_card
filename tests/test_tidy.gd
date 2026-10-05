@@ -4,7 +4,7 @@
 
 extends "res://tests/harness.gd"
 
-## 理牌功能测试：玩家回合开始自动整理散牌 + AI 组合不越界进购牌区
+## 理牌功能测试：玩家回合开始自动整理散牌 + BOT 组合不越界进购牌区
 ## 运行：godot --headless -s tests/test_tidy.gd
 
 
@@ -135,19 +135,19 @@ func _initialize() -> void:
 		"散牌只占 %d 列（实际 %d 列：%s）" % [
 			idle_want.size(), idle_at.size(), str(idle_at)])
 
-	# --- 3. AI 长组合：分列摊开（列数按预算算）、不横着出格、不越进购牌区 ---
-	var a_core: Dictionary = state.add_card(GameState.AI, core_id)
+	# --- 3. BOT 长组合：分列摊开（列数按预算算）、不横着出格、不越进购牌区 ---
+	var a_core: Dictionary = state.add_card(GameState.BOT, core_id)
 	var a_e: CardEntity = main._spawn_entity(a_core, Vector3(0, 0.05, -3.6), false)
 	var a_users: Array = []
 	for k in seats:
-		var uc: Dictionary = state.add_card(GameState.AI, "user")
+		var uc: Dictionary = state.add_card(GameState.BOT, "user")
 		a_users.append(main._spawn_entity(uc, Vector3(0, 0.05, -3.6), false))
 	var combo_uids: Array = [a_core["uid"]]
 	for e in a_users:
 		combo_uids.append(e.uid)
-	var r: Dictionary = state.create_combo(GameState.AI, combo_uids)
-	check(r["ok"], "AI「%s+用户×%d」编组成立" % [CardDB.card_name(core_id), seats])
-	main.layout._layout_ai_zone()
+	var r: Dictionary = state.create_combo(GameState.BOT, combo_uids)
+	check(r["ok"], "BOT「%s+用户×%d」编组成立" % [CardDB.card_name(core_id), seats])
+	main.layout._layout_bot_zone()
 	await create_timer(0.6).timeout
 	for i in 5:
 		await physics_frame
@@ -162,7 +162,7 @@ func _initialize() -> void:
 		xs[snappedf(e.position.x, 0.1)] = true
 		min_z = minf(min_z, e.position.z)
 		max_z = maxf(max_z, e.position.z)
-	check(all_clamped, "AI 组合所有卡 z ≤ -2.0（不越进购牌区 MARKET_Z=-1.6）")
+	check(all_clamped, "BOT 组合所有卡 z ≤ -2.0（不越进购牌区 MARKET_Z=-1.6）")
 	# 原先这儿是「保持单列竖排」。那条连着让 8 张组合一律收拢成一块 ——
 	# z 向一列最多摊得开 4 张，而配方大多在 5 张以上，摊不开就退回收拢，
 	# 屏幕上只看得见最南那一张。现在长组合分列摊开，所以这条改成量
@@ -180,9 +180,9 @@ func _initialize() -> void:
 	# 一列之内仍然只占一张卡的纵深：摊开的那一列摊到标题带那条线为止，
 	# 摊过头就是整片牌往南长进货架里
 	check(max_z - min_z <= CardEntity.CARD_SIZE.z,
-		"AI 组合一列的纵深在一张卡以内（z 跨度 %.2f ≤ %.2f）" % [
+		"BOT 组合一列的纵深在一张卡以内（z 跨度 %.2f ≤ %.2f）" % [
 			max_z - min_z, CardEntity.CARD_SIZE.z])
-	check(main.layout._ai_pile_of_uid.has(a_core["uid"]), "AI 组合登记成摞（攻击阶段点摞顶能找到靶）")
+	check(main.layout._bot_pile_of_uid.has(a_core["uid"]), "BOT 组合登记成摞（攻击阶段点摞顶能找到靶）")
 
 	await _check_flight_clearance(main)
 
@@ -204,16 +204,16 @@ func _check_flight_clearance(main: Node) -> void:
 	# 蹭到别人。二十来张是一局打到中盘的常态
 	var thick: Array = []
 	for i in 20:
-		var c: Dictionary = state.add_card(GameState.AI, "cash")
+		var c: Dictionary = state.add_card(GameState.BOT, "cash")
 		thick.append(main._spawn_entity(c, Vector3(-7.0 + float(i) * 0.05, 3.0, -6.5), false))
-	main.layout._layout_ai_idle()
-	await ai_moves_landed(main)
+	main.layout._layout_bot_idle()
+	await bot_moves_landed(main)
 	await settle()
 
 	# --- 判据一：整条航迹上都不越线（按算式采样，不靠逐帧读） ---
 	# 逐帧读只采到帧率给的那几个点，短程的牌可能只被采到两三帧，
 	# 越线的那一小段正好落在两帧之间就漏掉了（memory: vacuous-mutation-two-flavors）。
-	# 直接问 _ai_arc「f 处在哪」，密度由这里说
+	# 直接问 _bot_arc「f 处在哪」，密度由这里说
 	var arc_bad: Array = []
 	# 「能动 y 的窗口从哪开始」这个数由判据**自己按定义算**（见下面 _gate_of），
 	# 不读 foot_gate()：读被测量等于判据和被测代码取了同一个值，改错了一起错
@@ -243,7 +243,7 @@ func _check_flight_clearance(main: Node) -> void:
 		# 盯「短程全程平飞」：平移的那张头顶上停着一张，一抬就撞
 		["平移的和它上面那张", slide_a, sits_above],
 	]
-	var lift: float = 2.0     # 比桌上最高的摞还高一截，照 _flush_ai_moves 的算法
+	var lift: float = 2.0     # 比桌上最高的摞还高一截，照 _flush_bot_moves 的算法
 	var steps := 400
 	for pr in pairs:
 		var name: String = pr[0]
@@ -332,7 +332,7 @@ func _check_flight_clearance(main: Node) -> void:
 
 	# --- 判据二之二：生产侧的闸门就是「占地最早分开的那一刻」 ---
 	#
-	# 前面几条都拿 _gate_of（判据自己抄的那份矩形算式）当闸门喂给 _ai_arc，
+	# 前面几条都拿 _gate_of（判据自己抄的那份矩形算式）当闸门喂给 _bot_arc，
 	# 所以生产侧的 foot_gate 写成什么形状它们一概看不见。第 3 节读生产侧，
 	# 但那儿的口径是「跨摞掠过 ≤7 对」—— 这一版把节距撑开之后，圆形闸门和
 	# 矩形闸门掠过的**是同一 7 对**（实测两边逐位同一组 uid，只有 y 差的小数不同），
@@ -382,7 +382,7 @@ func _check_flight_clearance(main: Node) -> void:
 
 	# --- 判据三：真跑一趟理牌，逐帧量整桌 ---
 	# 上面按算式量的是「航迹本身对不对」，这一条量的是「一趟里真的没有牌
-	# 被安排成互相穿过去」—— 一趟里谁跟谁同时在飞、飞去哪，是 _flush_ai_moves
+	# 被安排成互相穿过去」—— 一趟里谁跟谁同时在飞、飞去哪，是 _flush_bot_moves
 	# 决定的，算式那头看不见
 	# 核心卡不写死：这一趟必须**动到那一摞封了顶的**散资源摞，
 	# 否则摞底那一堆重合牌根本不在这一趟的飞行计划里，下面「重合牌确实出现了」
@@ -392,10 +392,10 @@ func _check_flight_clearance(main: Node) -> void:
 	check(core_id != "", "卡表里有一张吃「封了顶那一摞」的核心卡（没有的话这一节量不到重合）")
 	if core_id == "":
 		return
-	var p2: Dictionary = state.add_card(GameState.AI, core_id)
+	var p2: Dictionary = state.add_card(GameState.BOT, core_id)
 	# 出生点得挑一片**真空着**的地方，不能写死一个坐标：叠在别的牌上出生的话
 	# 出发时 y 差就是 0，量出来的越线是判据自己造的（实测在 x=11 上就撞上了
-	# 摊开的现金片 —— AI_SPREAD_MAX_X 是 12.4，那一片能长到那儿）
+	# 摊开的现金片 —— BOT_SPREAD_MAX_X 是 12.4，那一片能长到那儿）
 	var born: Vector3 = _empty_spot(main)
 	check(born != Vector3.INF, "给新卡找到了一块空地出生（找不到就说明桌面被铺满了）")
 	main._spawn_entity(p2, born, false)
@@ -408,38 +408,38 @@ func _check_flight_clearance(main: Node) -> void:
 		for u in combo["uids"]:
 			locked[u] = true
 	var uids2: Array = [p2["uid"]]
-	for c in state.players[GameState.AI]["cards"]:
+	for c in state.players[GameState.BOT]["cards"]:
 		if c["def_id"] == zk_unit and uids2.size() <= zk_n and not locked.has(c["uid"]):
 			uids2.append(c["uid"])
-	check(state.create_combo(GameState.AI, uids2).get("ok", false),
-		"又编一个组合（%s，AI 区多一摞 → 前行重新居中，这才是真在动的那一趟）" % core_id)
-	# 这一趟**出发前**谁在摞底那一堆重合牌里，得在 _layout_ai_idle 清登记表之前问。
+	check(state.create_combo(GameState.BOT, uids2).get("ok", false),
+		"又编一个组合（%s，BOT 区多一摞 → 前行重新居中，这才是真在动的那一趟）" % core_id)
+	# 这一趟**出发前**谁在摞底那一堆重合牌里，得在 _layout_bot_idle 清登记表之前问。
 	# 这趟刚拿走 3 张现金编了组合，后面的牌整体往下挪 3 级，原来重合的那几张
 	# 有的要爬出来 —— 它们的出发点就是那一堆，起飞瞬间 y 差本来就是 0。
 	# 只看落地那头的话，这几对会被记成「同摞压成平面」，红的却是上一趟
 	# 已经认下的那份重合在解开（见下面 heap_pre 的用法）
 	var heap_pre: Dictionary = _heap_members(main)
-	main.layout._layout_ai_idle()
+	main.layout._layout_bot_idle()
 	# 航迹按**算式密采**，不按物理帧采。
 	# 原先这儿是「逐物理帧扫整桌」。那样采不准：一趟 0.3 秒只落到十几帧上，
 	# 掠过一瞬的那种会不会被采到看帧的相位 —— 实测同一台机器上同一条判据
 	# 时而 2 对时而 4 对（其中 30|70、31|71 两对只在帧正好落进窗口时才现形）。
 	# 一条时而红时而绿的判据比没有更坏：它红的时候没人信，绿的时候也不能信
 	# （memory: sampling-cannot-see-jumps）。
-	# 现在从 _ai_flight（摆放那头登记的这一趟的 from/at/lift）拿到整趟的计划，
-	# 拿 _ai_arc 逐张按同一批 f 采 —— 同一时刻的整桌姿态是算得出来的
-	var flight: Dictionary = main.layout._ai_flight.duplicate(true)
+	# 现在从 _bot_flight（摆放那头登记的这一趟的 from/at/lift）拿到整趟的计划，
+	# 拿 _bot_arc 逐张按同一批 f 采 —— 同一时刻的整桌姿态是算得出来的
+	var flight: Dictionary = main.layout._bot_flight.duplicate(true)
 	check(flight.size() >= 2, "这一趟真的有牌在飞（计划里 %d 张，0~1 张就是判据白站）"
 		% flight.size())
 	var worst_pair := {}
 	_scan_flight(main, flight, worst_pair)
 	# 计划和实跑之间搭一句：牌真在这条曲线上飞。
-	# 少了这一句，上面那套判据只证明「计划是干净的」——_ai_fly 把 lift 丢了、
+	# 少了这一句，上面那套判据只证明「计划是干净的」——_bot_fly 把 lift 丢了、
 	# 或者把 from 传成落点，计划照旧干净，牌在屏幕上却是直接插过去的。
 	# 趁补间还在跑的时候采几帧，每帧问「离自己那条曲线最远多远」
 	var off := 0.0
 	var frames := 0
-	while main.layout.ai_moving() and frames < 60:
+	while main.layout.bot_moving() and frames < 60:
 		await physics_frame
 		frames += 1
 		off = maxf(off, _off_plan(main, flight))
@@ -458,9 +458,9 @@ func _check_flight_clearance(main: Node) -> void:
 	#         而各摞底座高度都是 0.05，横着进座位就一定从邻摞上面过。
 	#         航迹这头能做的已经做完了（foot_gate 按矩形算，14 对压到 7 对），
 	#         再往下要么把座位拉开、要么给降落留一条空走廊，
-	#         那是重排整个 AI 区（见 foot_gate 那段末尾）。
+	#         那是重排整个 BOT 区（见 foot_gate 那段末尾）。
 	#         所以这里不要求它为零，只钉住「不许变多」—— 一涨就说明又多了一类穿模
-	var pile_of: Dictionary = main.layout._ai_pile_of_uid
+	var pile_of: Dictionary = main.layout._bot_pile_of_uid
 	# 同摞那一类里挖掉一小块：收拢摞的台阶封顶在 back_pile_cap() 级
 	# （Board.capped_offset），第 cap 张往后都停在摞底那一级上，**故意**跟那一级
 	# 本来那张完全重合，y 差为 0。开这个口子是为了让一摞的占地不随张数长
@@ -511,7 +511,7 @@ func _check_flight_clearance(main: Node) -> void:
 	check(same_bad.is_empty(), "一趟理牌里同摞、占地重叠的牌 y 差都 > %.3f（越线的 %d 对：%s）" % [
 		CardEntity.FACE_SPAN_Y, same_bad.size(),
 		"无" if same_bad.is_empty() else ", ".join(same_bad.slice(0, 6))])
-	# 7 对是实测的残留：uid 30/31 两张现金飞进 ai_combo_1 的座位，而 ai_combo_0
+	# 7 对是实测的残留：uid 30/31 两张现金飞进 bot_combo_1 的座位，而 bot_combo_0
 	# 的东侧那一列（72/73/74）就停在它们进座位的路上，两处座位相距不足一张卡。
 	#
 	# 这个数从 2 改成 7 不是「变差了」，是**原先那个 2 是采样采出来的**：
@@ -522,13 +522,13 @@ func _check_flight_clearance(main: Node) -> void:
 	# 圆形闸门（2.08）密采下是 14 对，换成按矩形算的 foot_gate 之后 7 对。
 	#
 	# 注意这个 14 对 7 是**当时那个节距下**测的。后来把稀疏行的节距撑开到
-	# AI_SLOT_PITCH 之后航迹被拉开，圆形闸门在这一趟里也只掠过 7 对
+	# BOT_SLOT_PITCH 之后航迹被拉开，圆形闸门在这一趟里也只掠过 7 对
 	# （跟矩形是逐位同一组 uid，只有 y 差的小数不同）—— 所以这条判据现在
 	# 分不出闸门是什么形状了，别再拿它当闸门形状的防线。
 	# 钉闸门形状的是第 2 节的「闸门就是占地最早分开的那一刻」，那条按定义走线量
 	#
 	# 写成上限而不是等号：这一趟里有几对跨摞掠过跟牌面内容有关（配方大小、
-	# AI 手里恰好有什么），钉等号会变成一条改了卡表就红的判据。
+	# BOT 手里恰好有什么），钉等号会变成一条改了卡表就红的判据。
 	#
 	# 这个上限**跟着配方深度走**，不是一个魔数：新组合从散摞里抽走 recipe_n 张，
 	# 抽得越深、后面往前挪的牌越多、掠过的对数越多。实测两档：
@@ -563,19 +563,19 @@ func _check_flight_clearance(main: Node) -> void:
 	# 哪天摞不再封顶（重合消失），上面那条照旧全绿，而口子会静静留在判据里
 	# 等下一次误放行。「重合了几对」不在这儿钉：那个数由 cap 和摞里张数算得出，
 	# 拿它当判据等于把摆放那头的算式抄一遍再和自己比。摞的形状归
-	# tests/test_ai_pile.gd 的「占地不随张数长」那一节按真几何量
+	# tests/test_bot_pile.gd 的「占地不随张数长」那一节按真几何量
 	check(not coincide.is_empty(),
 		"摞底那一堆重合牌确实出现了（放行 %d 对；一对都没有说明摞不再封顶、口子该删）"
 			% coincide.size())
 	await settle()
 
 	# --- 判据四：没牌要动的那一趟，一条补间都不发 ---
-	# ai_moving() 是测试和 main 两头的同步条件（「摆完了没有」）。
+	# bot_moving() 是测试和 main 两头的同步条件（「摆完了没有」）。
 	# 每张牌都发一条补间的话，一趟里明明没牌换地方，这个问题在整个
-	# AI_MOVE_TIME 里都答「没有」—— 等的人白等一趟，而且掩盖了「这一趟
+	# BOT_MOVE_TIME 里都答「没有」—— 等的人白等一趟，而且掩盖了「这一趟
 	# 其实什么都没发生」这件事
-	main.layout._layout_ai_idle()
-	await ai_moves_landed(main)
+	main.layout._layout_bot_idle()
+	await bot_moves_landed(main)
 	await settle()
 	var before := {}
 	for uid in main.entities:
@@ -583,9 +583,9 @@ func _check_flight_clearance(main: Node) -> void:
 		if is_instance_valid(e):
 			before[uid] = e.position
 	# 再理一趟：上一趟已经把每张牌放到位了，这一趟每张牌的落点就是它现在站的地方
-	main.layout._layout_ai_idle()
-	check(not main.layout.ai_moving(),
-		"落点没变的那一趟不发补间（ai_moving 立刻是假，否则同步条件白等一趟）")
+	main.layout._layout_bot_idle()
+	check(not main.layout.bot_moving(),
+		"落点没变的那一趟不发补间（bot_moving 立刻是假，否则同步条件白等一趟）")
 	var drifted: Array = []
 	for uid in before:
 		var e: CardEntity = main.entities[uid]
@@ -617,7 +617,7 @@ func _empty_spot(main: Node) -> Vector3:
 func _arc_at(main: Node, from: Vector3, at: Vector3, gate: float,
 		lift: float, f: float) -> Vector3:
 	var span: float = Vector2(at.x - from.x, at.z - from.z).length()
-	return main.layout._ai_arc(from, at, span, gate, lift, f)
+	return main.layout._bot_arc(from, at, span, gate, lift, f)
 
 
 ## 「能动 y 的窗口从哪开始」——**判据自己按定义算**的那一份，不读 foot_gate()。
@@ -652,14 +652,14 @@ func _gate_of(from: Vector3, at: Vector3) -> float:
 func _core_pulling_capped_pile(main: Node) -> String:
 	var cap: int = main.layout.back_pile_cap()
 	var capped: Array = []
-	for key in main.layout._ai_pile_uids:
-		if not bool(main.layout._ai_pile_compact.get(key, false)):
+	for key in main.layout._bot_pile_uids:
+		if not bool(main.layout._bot_pile_compact.get(key, false)):
 			continue
-		if int(main.layout._ai_pile_uids[key].size()) <= cap:
+		if int(main.layout._bot_pile_uids[key].size()) <= cap:
 			continue
-		if str(key).begins_with("ai_cash"):
+		if str(key).begins_with("bot_cash"):
 			capped.append(CardDB.RES_CASH)
-		elif str(key).begins_with("ai_user"):
+		elif str(key).begins_with("bot_user"):
 			capped.append(CardDB.RES_USER)
 	# 配方最小的先挑：拿走的张数越少，剩下那一摞越可能还超着 cap
 	# （拿到不足 cap 的话重合整个消失，判据同样恒假）
@@ -681,10 +681,10 @@ func _core_pulling_capped_pile(main: Node) -> String:
 func _heap_members(main: Node) -> Dictionary:
 	var cap: int = main.layout.back_pile_cap()
 	var out := {}
-	for key in main.layout._ai_pile_uids:
-		if not bool(main.layout._ai_pile_compact.get(key, false)):
+	for key in main.layout._bot_pile_uids:
+		if not bool(main.layout._bot_pile_compact.get(key, false)):
 			continue
-		var order: Array = main.layout._ai_pile_uids[key]
+		var order: Array = main.layout._bot_pile_uids[key]
 		for i in range(maxi(cap - 1, 0), order.size()):
 			out[int(order[i])] = str(key)
 	return out
@@ -697,7 +697,7 @@ func _heap_members(main: Node) -> Dictionary:
 ## 600 点把一趟切成 0.0005 秒一格，最快的那张（长途 ~14 单位）一格走 0.023 单位，
 ## 比一张卡的短边（1.2）小两个量级。
 ##
-## 密采在这儿站得住，是因为**位置本身就是这条连续曲线**：_ai_arc 分三段、
+## 密采在这儿站得住，是因为**位置本身就是这条连续曲线**：_bot_arc 分三段、
 ## 接口处斜率连续，两个采样点之间牌不会跳到别处去。
 ## memory 里那条「采样看不见跳变」说的是位置会跳的那种（牌从桌面底下钻过去），
 ## 那种情形靠密度救不了，得改成查算式 —— 这里正是改成了查算式
@@ -737,7 +737,7 @@ func _plan_at(main: Node, plan: Dictionary, f: float) -> Vector3:
 	var from: Vector3 = plan["from"]
 	var at: Vector3 = plan["at"]
 	var span: float = Vector2(at.x - from.x, at.z - from.z).length()
-	return main.layout._ai_arc(from, at, span, main.layout.foot_gate(from, at),
+	return main.layout._bot_arc(from, at, span, main.layout.foot_gate(from, at),
 		float(plan["lift"]), f)
 
 
@@ -756,7 +756,7 @@ func _note_pair(worst: Dictionary, ua: int, pa: Vector3, ub: int, pb: Vector3) -
 ## 此刻在飞的牌离**自己那条计划航迹**最远有多远。
 ##
 ## 上面那套判据全是在计划上量的，它证明的是「计划里没有互相穿过去」。
-## 补间到底按不按计划飞，得另外问一句 —— 否则 _ai_fly 传错参数
+## 补间到底按不按计划飞，得另外问一句 —— 否则 _bot_fly 传错参数
 ## （比如把 lift 丢了、把 from 换成落点）在那套判据里一点动静都没有。
 ## 量「离曲线多远」而不是「某一时刻在哪」：补间的相位读不到，
 ## 而「在这条曲线上」跟相位无关

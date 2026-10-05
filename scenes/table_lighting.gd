@@ -74,7 +74,7 @@ func bind(board: Board) -> void:
 	process_priority = 80
 	_process(0.0)
 
-## 同一物理列里的重叠卡只投一次影；用实际位置而不是规则组，玩家/AI/
+## 同一物理列里的重叠卡只投一次影；用实际位置而不是规则组，玩家/BOT/
 ## 联网拖动和飞入动画都走同一条路径。每列按 z 排序，分开的两摞不会被
 ## 拉成一块大矩形。x 分桶限制每片影的宽度，横向铺开的多列各有独立的影。
 static func contact_footprints(cards: Array) -> Array:

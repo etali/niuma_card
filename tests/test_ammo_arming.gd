@@ -4,8 +4,8 @@
 
 extends "res://tests/harness.gd"
 
-const Actions = preload("res://engine/ai_actions.gd")
-const Env = preload("res://engine/ai_environment.gd")
+const Actions = preload("res://engine/bot_actions.gd")
+const Env = preload("res://engine/bot_environment.gd")
 
 ## 资源不对称和防御规则（README.md §「2.6 组合与结算」 付款时机 + balance.md §「Buff 卡」 即时保护）
 ##
@@ -48,7 +48,7 @@ func _blank_state() -> GameState:
 	var s := GameState.new()
 	s.players = {
 		GameState.PLAYER: { "cards": [] },
-		GameState.AI: { "cards": [] },
+		GameState.BOT: { "cards": [] },
 	}
 	s.draw_first = GameState.PLAYER
 	return s
@@ -220,30 +220,30 @@ func test_buff_protects_immediately() -> void:
 	var need := int(d["recipe_n"])
 
 	var s := _blank_state()
-	var core := s.add_card(GameState.AI, def_id)
-	var b := s.add_card(GameState.AI, buff_id)
+	var core := s.add_card(GameState.BOT, def_id)
+	var b := s.add_card(GameState.BOT, buff_id)
 	var feed: Array = []
-	for i in need: feed.append(s.add_card(GameState.AI, "cash")["uid"])
-	s.add_card(GameState.AI, "user")   # 防清零即胜误触发
-	var r := s.create_combo(GameState.AI, [core["uid"], b["uid"]] + feed)
+	for i in need: feed.append(s.add_card(GameState.BOT, "cash")["uid"])
+	s.add_card(GameState.BOT, "user")   # 防清零即胜误触发
+	var r := s.create_combo(GameState.BOT, [core["uid"], b["uid"]] + feed)
 	check(r["ok"], "带防御 Buff 的生产组合编组成立")
 	check(r["eval"].get("protect_cash", false), "组合带现金保护标记")
 
 	var round1 := 0
 	for u in feed:
-		if s.is_protected(GameState.AI, u, CardDB.RES_CASH):
+		if s.is_protected(GameState.BOT, u, CardDB.RES_CASH):
 			round1 += 1
 	check(round1 == need, "编组当回合 %d 张（配方量）受保护（实际 %d）" % [need, round1])
-	check(s.buff_armed(GameState.AI, b["uid"]), "防御 Buff 当回合已生效")
+	check(s.buff_armed(GameState.BOT, b["uid"]), "防御 Buff 当回合已生效")
 	check(not b.has("armed_round"), "新编组不再记录装机回合")
 
 	s.round_num += 1
 	var round2 := 0
 	for u in feed:
-		if s.is_protected(GameState.AI, u, CardDB.RES_CASH):
+		if s.is_protected(GameState.BOT, u, CardDB.RES_CASH):
 			round2 += 1
 	check(round2 == need, "下一回合仍有 %d 张（配方量）受保护（实际 %d）" % [need, round2])
-	check(s.buff_armed(GameState.AI, b["uid"]), "防御 Buff 下一回合仍生效")
+	check(s.buff_armed(GameState.BOT, b["uid"]), "防御 Buff 下一回合仍生效")
 
 
 ## 每回合 combos.clear() 后无保护；重注册立即恢复，额度不变
@@ -255,25 +255,25 @@ func test_protection_survives_recombo() -> void:
 	var need := int(d["recipe_n"])
 
 	var s := _blank_state()
-	var core := s.add_card(GameState.AI, def_id)
-	var b := s.add_card(GameState.AI, buff_id)
+	var core := s.add_card(GameState.BOT, def_id)
+	var b := s.add_card(GameState.BOT, buff_id)
 	var feed: Array = []
-	for i in need + 3: feed.append(s.add_card(GameState.AI, "cash")["uid"])
-	s.add_card(GameState.AI, "user")
+	for i in need + 3: feed.append(s.add_card(GameState.BOT, "cash")["uid"])
+	s.add_card(GameState.BOT, "user")
 	var uids: Array = [core["uid"], b["uid"]] + feed
-	check(s.create_combo(GameState.AI, uids)["ok"], "第 1 回合编组成立")
+	check(s.create_combo(GameState.BOT, uids)["ok"], "第 1 回合编组成立")
 
 	# 模拟一个回合过去：finalize 清空 combos，场景层从牌摞重新注册同一批 uid
 	Settle.finalize(s)
 	s.round_num += 1
 	check(s.combos.is_empty(), "finalize 清空了 combos")
-	check(not s.is_protected(GameState.AI, feed[0], CardDB.RES_CASH), "清组后的散卡不受保护")
-	check(s.create_combo(GameState.AI, uids)["ok"], "第 2 回合同一批卡重新注册成立")
-	check(s.buff_armed(GameState.AI, b["uid"]),
+	check(not s.is_protected(GameState.BOT, feed[0], CardDB.RES_CASH), "清组后的散卡不受保护")
+	check(s.create_combo(GameState.BOT, uids)["ok"], "第 2 回合同一批卡重新注册成立")
+	check(s.buff_armed(GameState.BOT, b["uid"]),
 		"重注册当回合立即恢复保护")
 	var prot := 0
 	for u in feed:
-		if s.is_protected(GameState.AI, u, CardDB.RES_CASH):
+		if s.is_protected(GameState.BOT, u, CardDB.RES_CASH):
 			prot += 1
 	check(prot == need, "重注册后照常保护 %d 张（实际 %d）" % [need, prot])
 
@@ -342,23 +342,23 @@ func test_generated_attack_respects_ammo() -> void:
 	var need := int(d["recipe_n"])
 	for extra in [0, 1]:
 		var s := _blank_state()
-		s.add_card(GameState.AI, id)
+		s.add_card(GameState.BOT, id)
 		for i in need + extra:
-			s.add_card(GameState.AI, CardDB.unit_id(CardDB.RES_CASH))
-		s.add_card(GameState.AI, CardDB.unit_id(CardDB.RES_USER))
+			s.add_card(GameState.BOT, CardDB.unit_id(CardDB.RES_CASH))
+		s.add_card(GameState.BOT, CardDB.unit_id(CardDB.RES_USER))
 		for i in int(d["attack_n"]) + 1:
 			s.add_card(GameState.PLAYER, CardDB.unit_id(str(d["attack_res"])))
 		s.add_card(GameState.PLAYER, CardDB.unit_id(CardDB.RES_USER))
 		s.add_card(GameState.PLAYER, CardDB.unit_id(CardDB.RES_CASH))
 		var built := false
-		for node in Actions.generate(s, GameState.AI, _candidate_profile()):
+		for node in Actions.generate(s, GameState.BOT, _candidate_profile()):
 			var candidate: GameState = node["state"]
 			if candidate.combos.is_empty():
 				continue
 			built = true
 			var replay := Env.copy(s)
 			check(Env.replay(replay, node["intents"]), "生成的攻击意图能通过环境回放")
-			var pool := replay.arm_attacks(GameState.AI)
+			var pool := replay.arm_attacks(GameState.BOT)
 			check(int(pool[d["attack_res"]]) == int(d["attack_n"]), "攻击候选均付得起弹药")
 		check(built == (extra == 1), "现金=配方+%d 时攻击候选存在=%s" % [extra, built])
 
@@ -366,30 +366,30 @@ func test_generated_cash_recipe_replays() -> void:
 	var id := _pick_by_recipe(CardDB.KIND_PRODUCT, CardDB.RES_CASH)
 	var d := CardDB.get_def(id)
 	var s := _blank_state()
-	s.add_card(GameState.AI, id)
-	for who in [GameState.AI, GameState.PLAYER]:
+	s.add_card(GameState.BOT, id)
+	for who in [GameState.BOT, GameState.PLAYER]:
 		s.add_card(who, CardDB.unit_id(CardDB.RES_USER))
 		s.add_card(who, CardDB.unit_id(CardDB.RES_CASH))
 	for i in int(d["recipe_n"]):
-		s.add_card(GameState.AI, CardDB.unit_id(CardDB.RES_CASH))
+		s.add_card(GameState.BOT, CardDB.unit_id(CardDB.RES_CASH))
 	var found := false
-	for node in Actions.generate(s, GameState.AI, _candidate_profile()):
+	for node in Actions.generate(s, GameState.BOT, _candidate_profile()):
 		var candidate: GameState = node["state"]
 		if candidate.combos.is_empty():
 			continue
 		found = true
 		var replay := Env.copy(s)
 		check(Env.replay(replay, node["intents"]), "现金配方的生成意图能回放")
-		var before := replay.resource_count(GameState.AI, str(d["output_res"]))
+		var before := replay.resource_count(GameState.BOT, str(d["output_res"]))
 		Settle.produce(replay)
 		var expected := before + int(d["output_n"])
 		if d["output_res"] == CardDB.RES_CASH:
 			expected -= int(d["recipe_n"])
-		check(replay.resource_count(GameState.AI, str(d["output_res"])) == expected,
+		check(replay.resource_count(GameState.BOT, str(d["output_res"])) == expected,
 			"现金配方候选按当前卡表付款并产出")
 	check(found, "料齐的现金配方仍存在合法生产候选")
 
 func _candidate_profile() -> Dictionary:
-	var profile := AISearch.from_model("ai", 0.0).resolved_parameters()
+	var profile := BOTSearch.from_model("bot", 0.0).resolved_parameters()
 	profile.merge({"plans": 64, "sales": 0, "buy_beam": 64, "build_beam": 64}, true)
 	return profile

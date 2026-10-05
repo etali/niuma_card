@@ -5,7 +5,7 @@
 class_name MatchSimulator
 extends RefCounted
 
-## 无头对局模拟器：不依赖场景树，双方都用 AI 策略打完整场
+## 无头对局模拟器：不依赖场景树，双方都用 BOT 策略打完整场
 ## 用于平衡性回归、逻辑验证、后续批量模拟：
 ##   godot --headless -s tests/test_simulator.gd
 ##
@@ -22,12 +22,12 @@ extends RefCounted
 ##   IntentApply    意图能不能落地（模拟器在 run_rounds 里也建一个，见那边的注释：
 ##                  谁往这里加一道判断，模拟器量的就得是同一个游戏）
 ##   Settle / GameState  状态怎么变。次序取自同一个 Settle.ordered_production_combos
-##   ComboRules / 注册的AI实现  组合怎么算、AI 怎么决策
+##   ComboRules / 注册的BOT实现  组合怎么算、BOT 怎么决策
 ## 不共用的只有「谁来推进」：这边是 Settle.run 一把跑完，
 ## 场景层逐组过 IntentApply（produce 一组、演一组，最后 finalize），
 ## 好在每步中间插补间。所以别把 Settle.run 当成两边的公共入口 —— 它只在这边
 
-## 回合上限取 data/ai.json 的 `simulation.max_rounds`（CardDB.sim_rules()）：
+## 回合上限取 data/bot.json 的 `simulation.max_rounds`（CardDB.sim_rules()）：
 ## 跑到那个回合还没分出胜负就判超时，tools/balance_report.gd 会报告未分胜负的局数和比例。
 ## 它只是模拟器的安全阀，不是游戏规则 —— 真人局（scenes/main.gd）不封顶，
 ## 所以在配置里单开 `_sim` 段，不混进 `_game`。
@@ -61,8 +61,8 @@ static func run_game(max_rounds := ROUNDS_FROM_CONFIG, rng_seed := 0,
 ## observers 支持采集钩子 before_action / intent / decision / settle；搜索副本不继承。
 ## tape可选录制整局，统一裁决器覆盖结算与回合推进；checkpoint在开局和每回合结束保存。
 ## first 指定开局抽卡先手，留空沿用 PLAYER。
-## cfgs：`{座位: AISearch}`，缺的座位使用当前实现强度0。
-## 两个座位各带一份是为了**档位对打** —— `ai.md` §「怎么判定搜索变强」：
+## cfgs：`{座位: BOTSearch}`，缺的座位使用当前实现强度0。
+## 两个座位各带一份是为了**档位对打** —— `bot.md` §「后续验证」：
 ## 每一方可以选择不同超参数，报表分别记录其解析后的profile。
 ## 不做成一个全局开关：全局开关只能让两边一起变强，而那量不出谁更强
 static func run_rounds(max_rounds := ROUNDS_FROM_CONFIG, rng_seed := 0,
@@ -77,7 +77,7 @@ static func run_rounds(max_rounds := ROUNDS_FROM_CONFIG, rng_seed := 0,
 	var recorded_applier: IntentApply = null
 	if observers.has("tape"):
 		recorded_applier = IntentApply.new(state)
-		(observers["tape"] as Tape).start(recorded_applier,"HTML AI对战")
+		(observers["tape"] as Tape).start(recorded_applier,"HTML BOT对战")
 		if observers.has("checkpoint"): observers["checkpoint"].call(state)
 	if max_rounds <= 0:
 		max_rounds = int(CardDB.sim_rules()["max_rounds"])
@@ -107,7 +107,7 @@ static func run_rounds(max_rounds := ROUNDS_FROM_CONFIG, rng_seed := 0,
 		if observers.has("checkpoint"): observers["checkpoint"].call(state)
 	return state
 
-## 从一个**行动阶段刚做完**的局面接着打下去（`AIPlan.rollout_score` 的前推用）。
+## 从一个**行动阶段刚做完**的局面接着打下去（`BOTPlan.rollout_score` 的前推用）。
 ##
 ## `just_acted` 是刚行动完的那一方。它决定「这个回合还剩什么」：
 ##   - 它是先手 → 对手还没行动，先让对手走一遍再结算
@@ -115,10 +115,10 @@ static func run_rounds(max_rounds := ROUNDS_FROM_CONFIG, rng_seed := 0,
 ## 判不对的话前推的第一个回合会凭空多一次或少一次行动，
 ## 而那正是要评估的那一步 —— 整个前推的读数会偏在最要紧的地方。
 ##
-## `cfgs`（`{座位: AISearch}`）是前推里**想象出来的那两个人**。缺座位 = 贪心。
+## `cfgs`（`{座位: BOTSearch}`）是前推里**想象出来的那两个人**。缺座位 = 贪心。
 ##
 ## cfgs 明确指定各座位的实现与超参数；缺省使用当前实现的最低强度。
-## 搜索内部的低预算前推由具体AI实现负责，避免无意递归完整搜索。
+## 搜索内部的低预算前推由具体BOT实现负责，避免无意递归完整搜索。
 ##
 ## `max_rounds` 是**往前推几个回合**，不是绝对回合号 —— 前推是从半局中间起步的
 static func continue_rounds(state: GameState, max_rounds: int, just_acted: String,
@@ -132,7 +132,7 @@ static func continue_rounds(state: GameState, max_rounds: int, just_acted: Strin
 		Settle.run(state, cfgs)
 	return _loop_rounds(state, max_rounds - 1, cfgs)
 
-## 从一个**攻击阶段正打到一半**的局面接着打下去（`AITurnPlan.target_picker` 的试算用）。
+## 从一个**攻击阶段正打到一半**的局面接着打下去（`BOTTurnPlan.target_picker` 的试算用）。
 ##
 ## 和 `continue_rounds` 的差别只在起点：那个从「行动阶段刚做完」起步，
 ## 这个从「我的点数池还剩几点」起步。所以它自己不装弹（`pools` 是调用方
@@ -145,11 +145,11 @@ static func continue_from_attack(state: GameState, who: String, pools: Dictionar
 		max_rounds: int, cfgs: Dictionary = {}) -> GameState:
 	if state.winner != "":
 		return state
-	Settle.spend_pool(state, who, pools, AIPlan.target_picker(cfgs.get(who),state,who))
+	Settle.spend_pool(state, who, pools, BOTPlan.target_picker(cfgs.get(who),state,who))
 	var opp := GameState.opponent(who)
 	# 我是先手 → 对手的攻击阶段还没打；我是后手 → 他已经打过了
 	if state.winner == "" and who == state.action_order()[0]:
-		Settle.attack_phase(state, opp, AIPlan.target_picker(cfgs.get(opp),state,opp))
+		Settle.attack_phase(state, opp, BOTPlan.target_picker(cfgs.get(opp),state,opp))
 	if state.winner == "":
 		Settle.produce(state)
 	Settle.finalize(state)
@@ -173,9 +173,9 @@ static func _loop_rounds(state: GameState, left: int, cfgs: Dictionary) -> GameS
 ## 单方行动：典当（先冲线后救急）→ 连续买卡直到放弃 → 组卡。
 ## 公开的（原先叫 _action_phase，但 tools/balance_report.gd 一直从外面调它，
 ## 下划线是句谎话）。场景层不调这个 —— 它那份要在每步之间等演出节拍
-## cfg：搜索强度（`engine/ai_search.gd`）。不传 = 当前实现强度0。
+## cfg：搜索强度（`engine/bot_search.gd`）。不传 = 当前实现强度0。
 ## 预算由传入profile决定；不读取屏幕偏好文件，便于离线复现。
-static func action_phase(state: GameState, who: String, cfg: AISearch = null,
+static func action_phase(state: GameState, who: String, cfg: BOTSearch = null,
 		on_intent: Callable = Callable(), on_decision: Callable = Callable(),
 		recorded_applier: IntentApply = null) -> void:
 	# 一个 applier 贯穿这三步，不是每步各开一个。
@@ -189,7 +189,7 @@ static func action_phase(state: GameState, who: String, cfg: AISearch = null,
 	var intent_observer := func(intent: Dictionary, result: Dictionary, _from: String) -> void:
 		on_intent.call(state, intent, result)
 	if on_intent.is_valid(): app.landed_intent.connect(intent_observer)
-	var agent := AIAgent.new(LocalTransport.new(app), who, cfg)
+	var agent := BOTAgent.new(LocalTransport.new(app), who, cfg)
 	agent.decision_observer = on_decision
 	agent.run_action_phase_sync()
 	if on_intent.is_valid(): app.landed_intent.disconnect(intent_observer)

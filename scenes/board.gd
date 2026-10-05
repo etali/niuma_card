@@ -146,7 +146,7 @@ func release_pointer(at: Vector2) -> void:
 		_end_drag()
 
 var attack_mode := false    # 攻击点选模式：点击 = 选靶，不触发拖拽
-var input_locked := false   # 输入锁：AI 行动/结算演出期间屏蔽玩家拖拽
+var input_locked := false   # 输入锁：BOT 行动/结算演出期间屏蔽玩家拖拽
 ## 窗口收起/切换/弹层独立于业务输入锁，控制器返回 true 时暂停桌面交互。
 var interaction_blocked := Callable()
 var hover_blocked := Callable()
@@ -1380,13 +1380,13 @@ const SIDE_TEXT_PIXEL := 0.0060
 ##
 ## 为什么要有上限：这一列竖排，行数直接变成列高（rows × SIDE_ROW_Z），
 ## 而它以摞顶为**中心**上下摊开（见 _place_side）—— 行数一多就两头一起探。
-## 最紧的一处是 AI 区的后行（摞心 z=-6.5）：北边是 AI 区北缘 -7.6，
-## 南边是前行组合的北沿（AI_ROW_Z[0] -4.1 减半张卡 0.85 = -4.95）。
+## 最紧的一处是 BOT 区的后行（摞心 z=-6.5）：北边是 BOT 区北缘 -7.6，
+## 南边是前行组合的北沿（BOT_ROW_Z[0] -4.1 减半张卡 0.85 = -4.95）。
 ## 居中摊开时北边先吃紧 —— 列高得 ≤ 2×(7.6-6.5) = 2.2，也就是 6 行。
 ##
 ## 不封顶会探出去多少：卡表里资源 2 种、buff 5 种、核心 24 种，
 ## 一摞全占上就是 31 行、列高 11.16，两头各探出 5.58 —— 整张桌子都不够长。
-## 拆掉这个封顶会被 tests/test_ai_pile.gd 那条「清单这一列留在后行带子里」抓住
+## 拆掉这个封顶会被 tests/test_bot_pile.gd 那条「清单这一列留在后行带子里」抓住
 ## （变异表里有这一条）。
 ## buff 那几行原先也没上限，只是核心卡当时一行都不出、凑不到这个行数
 const SIDE_MAX_ROWS := 6
@@ -1399,14 +1399,14 @@ const SIDE_MAX_ROWS := 6
 ## 组合摞正是这种（一张核心 + 一堆资源），那儿要的信息是「压着几张现金」。
 ## 两张以上就不一样了：摞顶只露得出其中一张，剩下的既看不见、又没有一行说得出
 ## （原先这个 match 根本不认核心卡，产品/攻击卡一行都不出）。
-## 实测真实对局里 AI 备牌能攥到 7 种，而备牌席位只摆得下 5 摞，
+## 实测真实对局里 BOT 备牌能攥到 7 种，而备牌席位只摆得下 5 摞，
 ## 多出来的会并成一摞（见 settle_layout 的 _merge_bench_overflow）——
 ## 那一摞不列核心的话，屏幕上就是「一张牌 + 什么提示都没有」，
 ## 正是报上来的「组合牌都摞在一块儿导致看不清」的最后一段
 ##
 ## 闸门数**张**不数种：这两个数只在「同名的核心卡不止一张」时才分岔，
-## 而那正是报上来的「AI 合成了 2 张独角兽，下一回合只看到 1 张」。
-## 备牌摞按 def_id 分摞（settle_layout 的 _ai_piles），两张独角兽必然同摞、
+## 而那正是报上来的「BOT 合成了 2 张独角兽，下一回合只看到 1 张」。
+## 备牌摞按 def_id 分摞（settle_layout 的 _bot_piles），两张独角兽必然同摞、
 ## 收拢后只露摞顶那张；原先按「种」判，1 种 → 核心一行都不出，
 ## 于是第二张既看不见、清单也不提 —— 屏幕上和「只合出一张」一模一样。
 ## 按张判则出一行「独角兽 ×2」，跟资源摞的 ×N 同一个口径
@@ -1559,8 +1559,8 @@ static func _build_side(parent: Node3D, spec: Array) -> Array:
 ## pin_y —— 高度只按 at 算，不扫周围的卡。调用方已经知道这条清单要盖住谁，
 ##   而 overlay_y 读的是**实时**坐标：一批牌正飞着的时候（开局发牌、结算产出），
 ##   路过头顶的那张会把清单顶到它半路的高度上，落地之后没人再把它放回来
-##   （resync_sides 只走 board.groups，AI 那几摞不在里面）。
-##   实测：AI 现金摞的 ×20 被顶到 y=4.45，投出去就在屏幕外
+##   （resync_sides 只走 board.groups，BOT 那几摞不在里面）。
+##   实测：BOT 现金摞的 ×20 被顶到 y=4.45，投出去就在屏幕外
 func _place_side(nodes: Array, rows: int, at: Vector3, pin_y := false) -> void:
 	if nodes.is_empty():
 		return
@@ -1600,7 +1600,7 @@ func _clear_side(g) -> void:
 	g["side"] = []
 	g["side_sig"] = ""
 
-## 给不属于 board.groups 的摞挂侧边清单（AI 的组合与理牌摞在 state.combos 里，
+## 给不属于 board.groups 的摞挂侧边清单（BOT 的组合与理牌摞在 state.combos 里，
 ## 不进 board.groups，但它们同样是收拢摞、同样需要这份清单）。
 ## key = 调用方自己的标识，同一个 key 反复调用只会更新不会堆积节点
 var _ext_side := {}
@@ -1621,7 +1621,7 @@ func show_side_badges(key: String, cards: Array, at: Vector3) -> void:
 func side_nodes_of(key: String) -> Array:
 	return _ext_side.get(key, {}).get("side", [])
 
-## 清掉某个 key 的清单；key 省略 = 清掉全部（AI 重排前先全清，避免上一轮的残留）
+## 清掉某个 key 的清单；key 省略 = 清掉全部（BOT 重排前先全清，避免上一轮的残留）
 func clear_side_badges(key := "") -> void:
 	if key != "":
 		if _ext_side.has(key):
@@ -1839,7 +1839,7 @@ func resync_sides() -> void:
 func _stack_offset(g, i: int) -> Vector3:
 	return _stack_offset_of(g, i)
 
-## 收拢态里第 i 张（共 n 张）的偏移。AI 侧的摞不进 board.groups，
+## 收拢态里第 i 张（共 n 张）的偏移。BOT 侧的摞不进 board.groups，
 ## 自己摆位置时要用同一份偏移，否则两边的「一摞」看起来不是一回事
 static func compact_offset(n: int, i: int) -> Vector3:
 	return COMPACT_GAP * (n - 1 - i)
@@ -1847,7 +1847,7 @@ static func compact_offset(n: int, i: int) -> Vector3:
 ## 同 compact_offset，但台阶最多只长 cap 级：**摞的占地不随张数无限长**。
 ##
 ## 为什么要有上限：compact_offset 每张给一级台阶，一摞的跨度就是
-## COMPACT_GAP × (n-1)，n 上没有任何约束。实测 AI 后行那摞现金：
+## COMPACT_GAP × (n-1)，n 上没有任何约束。实测 BOT 后行那摞现金：
 ## 40 张 z 跨 1.95 已经压进前行，100 张（= 胜利线 _game.win_cash）
 ## 爬到 y=4.5、南缘 -1.40 盖在货架牌上，240 张摞顶投到屏幕外。
 ## 一摞牌的意思是「一类东西收成一个对象」，它该有一个固定的占地。
@@ -2066,7 +2066,7 @@ func toggle_compact(card: CardEntity) -> bool:
 func _core_first(g) -> void:
 	g["cards"] = core_first_order(g["cards"])
 
-## 核心 → buff → 材料 的排序（AI 侧摆摞时复用；那边的卡不进 board.groups）
+## 核心 → buff → 材料 的排序（BOT 侧摆摞时复用；那边的卡不进 board.groups）
 static func core_first_order(cards: Array) -> Array:
 	var core: Array = []
 	var buffs: Array = []

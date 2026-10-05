@@ -52,7 +52,7 @@ extends "res://tests/harness.gd"
 ##      直接拿 Protocol.rematch_state(...) 的返回值判字段的写法看不见它
 
 const A := GameState.PLAYER
-const B := GameState.AI
+const B := GameState.BOT
 
 func _initialize() -> void:
 	print("=== 再来一局（rematch）测试 ===")
@@ -418,7 +418,7 @@ func _t5_scene_keeps_connection() -> void:
 
 	# 不带参数那条照旧断连接、退回单机局
 	main._reset_session_flags()
-	check(main.my_seat == GameState.PLAYER and main.foe_seat == GameState.AI,
+	check(main.my_seat == GameState.PLAYER and main.foe_seat == GameState.BOT,
 		"不带 keep_net 就退回单机那一对座位（%s/%s）" % [main.my_seat, main.foe_seat])
 	check(main.btn_net.visible, "联网入口放回来了")
 

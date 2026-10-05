@@ -549,9 +549,9 @@ func _t6_socket_takeover_before_action_opened() -> void:
 		check(not main.board.input_locked, "轮到我，输入开了")
 		check(not main.btn_pass.disabled, "结束回合按钮也点得动了")
 	else:
-		check(main.btn_pass.text == main.TXT_AI_ACTING,
+		check(main.btn_pass.text == main.TXT_BOT_ACTING,
 			"轮到对手，按钮上写着「%s」（实为「%s」）"
-				% [main.TXT_AI_ACTING, main.btn_pass.text])
+				% [main.TXT_BOT_ACTING, main.btn_pass.text])
 
 	b.close()
 	main.queue_free()

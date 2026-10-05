@@ -74,7 +74,7 @@ func _check_header(main: Node, prefix: String) -> void:
 		check(not label.clip_text and label.get_line_count() == 1, "%s：先手不裁字、不另占第二行" % context)
 		check(actual_width <= label.size.x + 0.5,
 			"%s：真实字体宽度%.1f不超过分配宽度%.1f" % [context, actual_width, label.size.x])
-		for company: Label in [main.lbl_player_res, main.lbl_ai_res]:
+		for company: Label in [main.lbl_player_res, main.lbl_bot_res]:
 			var surface: Control = company.get_parent()
 			check(not surface.get_global_rect().intersects(label_rect),
 				"%s：%s状态面板不遮挡先手文字" % [context, company.text])
@@ -174,11 +174,11 @@ func _check_join_panel(main: Node, prefix: String) -> void:
 		check(join._room_edit.text == "ABCD7" and join._url_edit.text == "ws://192.168.2.8:8910",
 			"%s：收放保留房间码和服务器输入" % context)
 		check(main.board.input_locked == initially_locked, "%s：收放保留原业务锁" % context)
-		# 打开表单后AI若接管行动，其设置的锁也不应被关闭表单恢复成旧值。
+		# 打开表单后BOT若接管行动，其设置的锁也不应被关闭表单恢复成旧值。
 		main.board.input_locked = true
 		join._on_cancel()
 		await process_frame
-		check(main.board.input_locked, "%s：关闭不会解除后来设置的AI业务锁" % context)
+		check(main.board.input_locked, "%s：关闭不会解除后来设置的BOT业务锁" % context)
 	main.board.input_locked = false
 
 func _check_save_notice(main: Node, prefix: String) -> void:

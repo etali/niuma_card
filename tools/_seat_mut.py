@@ -19,9 +19,9 @@ TEST = "tests/test_seat_map.gd"
 # (文件, 变异前, 变异后, 说明)
 MUTS = [
     ("scenes/main.gd", "my_seat", "GameState.PLAYER", "我方座位 → 硬编码 PLAYER"),
-    ("scenes/main.gd", "foe_seat", "GameState.AI", "对手座位 → 硬编码 AI"),
+    ("scenes/main.gd", "foe_seat", "GameState.BOT", "对手座位 → 硬编码 BOT"),
     ("scenes/settle_layout.gd", "_main.my_seat", "GameState.PLAYER", "落点我方 → 硬编码"),
-    ("scenes/settle_layout.gd", "_main.foe_seat", "GameState.AI", "落点对手 → 硬编码"),
+    ("scenes/settle_layout.gd", "_main.foe_seat", "GameState.BOT", "落点对手 → 硬编码"),
 ]
 
 

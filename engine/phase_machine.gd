@@ -12,7 +12,7 @@ extends RefCounted
 ## 那是**表现层**在拦。联网之后对手是另一个进程，它不受我这边的按钮禁用约束，
 ## 一个改过的客户端可以在对方回合里发 buy。
 ##
-## 但也不能把阶段塞进 IntentApply 就算完：那样单机局的 `_drive_ai_action`
+## 但也不能把阶段塞进 IntentApply 就算完：那样单机局的 `_drive_bot_action`
 ## （以服务器身份提交对手的意图）会被自己的阶段判定拦掉。所以分层是
 ##   IntentApply  = 这一步**合不合规则**（钱够不够、卡是不是你的）
 ##   PhaseMachine = 这一步**轮不轮到你**（次序）

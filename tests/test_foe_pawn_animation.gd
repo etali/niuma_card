@@ -14,7 +14,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	await _visible_pawn_and_handoff()
-	await _ai_waits_before_buy()
+	await _bot_waits_before_buy()
 	await _rapid_buy()
 	await _resign_midflight()
 	finish()
@@ -69,7 +69,7 @@ func _visible_pawn_and_handoff() -> void:
 	check(main.lbl_msg.text.contains(CardDB.card_name("yinqing996")) and main.lbl_msg.text.contains("×2")
 		and main.lbl_msg.text.contains("+6"), "提示说明卖掉的卡、数量和所得现金")
 	check(main.sfx.actions.count("pawn") == 1, "真实典当播放一次对应音效")
-	check(main._ai_beat(AIAgent.STEP_PAWN) is Signal, "AI典当节拍等待真实动画完成信号")
+	check(main._bot_beat(BOTAgent.STEP_PAWN) is Signal, "BOT典当节拍等待真实动画完成信号")
 	await main.pipe.submit(Intent.action_done(main.foe_seat))
 	await create_timer(0.25).timeout
 	check(main._actor == main.foe_seat and main.board.input_locked
@@ -86,7 +86,7 @@ func _visible_pawn_and_handoff() -> void:
 		and card._visual.scale.is_equal_approx(Vector3.ONE))), "全部回款落到对手区并恢复原尺寸")
 	check(main._actor == main.my_seat and main.sfx.actions.count("foe_action_done") == 1
 		and main.sfx.actions[-1] == "foe_action_done", "到账后交回玩家，完成提醒只在最后播放一次")
-	check(main._ai_beat(AIAgent.STEP_PAWN) == null, "没有动画时AI节拍不返回永远等不到的信号")
+	check(main._bot_beat(BOTAgent.STEP_PAWN) == null, "没有动画时BOT节拍不返回永远等不到的信号")
 	await _dispose(main)
 
 func _rapid_buy() -> void:
@@ -105,7 +105,7 @@ func _rapid_buy() -> void:
 		if record["def_id"] != "cash":
 			continue
 		cash += int(card != null and card.visible)
-		var at: Vector3 = main.layout._ai_flight.get(record["uid"], {}).get("at", card.position)
+		var at: Vector3 = main.layout._bot_flight.get(record["uid"], {}).get("at", card.position)
 		aligned = aligned and card.position.is_equal_approx(at) and card._visual.scale.is_equal_approx(Vector3.ONE)
 	check(cash == 14 and cash == main.state.resource_count(main.foe_seat, CardDB.RES_CASH),
 		"连续消费后现金无丢失或重复，实体与实际余额相同")
@@ -113,19 +113,19 @@ func _rapid_buy() -> void:
 	check(aligned, "后续买牌接管剩余现金落点，旧回款动画不拉回旧位置")
 	await _dispose(main)
 
-func _ai_waits_before_buy() -> void:
+func _bot_waits_before_buy() -> void:
 	var main := await _fixture()
 	var uids: Array = []
 	for card in main.state.players[main.foe_seat]["cards"]:
 		if card["def_id"] == "yinqing996":
 			uids.append(card["uid"])
-	var agent := AIAgent.new(main.pipe, main.foe_seat)
+	var agent := BOTAgent.new(main.pipe, main.foe_seat)
 	# 固定已选计划，只检查真实驱动的呈现节拍，不把搜索偏好引入场景测试。
 	agent._plan = {"intents": [Intent.pawn(main.foe_seat, uids), Intent.buy(main.foe_seat, 0)]}
 	var done := [false]
 	_drive(agent, main, done)
 	check(main._table_actions.pawn_busy() and main.state.market.size() == 1,
-		"真实AIAgent落地典当后暂停计划，没有立刻买掉商品")
+		"真实BOTAgent落地典当后暂停计划，没有立刻买掉商品")
 	await create_timer(0.25).timeout
 	check(main.state.market.size() == 1,
 		"卖牌仍在前往柜台时，后续购买不会盖掉典当提示和动画")
@@ -133,13 +133,13 @@ func _ai_waits_before_buy() -> void:
 	while not done[0] and Time.get_ticks_msec() < deadline:
 		await process_frame
 	check(done[0] and main.state.market.is_empty(),
-		"到账完成后真实AI计划继续购买并正常结束")
+		"到账完成后真实BOT计划继续购买并正常结束")
 	check(main.state.players[main.foe_seat]["cards"].any(func(card): return card["def_id"] == "pinshaoshao"),
 		"典当等待不吞掉后续购买意图")
 	await _dispose(main)
 
-func _drive(agent: AIAgent, main: Node, done: Array) -> void:
-	await agent.run_action_phase(main._ai_beat)
+func _drive(agent: BOTAgent, main: Node, done: Array) -> void:
+	await agent.run_action_phase(main._bot_beat)
 	done[0] = true
 
 func _resign_midflight() -> void:

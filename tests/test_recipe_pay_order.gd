@@ -26,8 +26,8 @@ extends "res://tests/harness.gd"
 ##   3. 进账排在付款前 —— 去掉分拨，编组次序决定谁死，且**只在混摞时现形**
 ##   4. 下标是稳的     —— 排序键要是掺了当前现金，结到一半 combo_idx 就错位，
 ##                      而 combo_idx 是过网线的东西（Intent.produce）
-##   5. AI 预判累计    —— 只问 resource_count 的话，本回合已编的组占掉的钱看不见，
-##                      AI 会连编两组吃现金的、后结那组必废（下面 T6 的原始现象）
+##   5. BOT 预判累计    —— 只问 resource_count 的话，本回合已编的组占掉的钱看不见，
+##                      BOT 会连编两组吃现金的、后结那组必废（下面 T6 的原始现象）
 ##   6. 累计不误伤     —— 修 5 的时候容易过头，把「有进账兜着」的组也一起挡掉
 ##
 ## 变异提示（每条都实跑验证过会红）：
@@ -37,8 +37,8 @@ extends "res://tests/harness.gd"
 const CardDB = preload("res://engine/card_db.gd")
 const GameState = preload("res://engine/game_state.gd")
 const Settle = preload("res://engine/settle.gd")
-const Actions = preload("res://engine/ai_actions.gd")
-const Env = preload("res://engine/ai_environment.gd")
+const Actions = preload("res://engine/bot_actions.gd")
+const Env = preload("res://engine/bot_environment.gd")
 
 func _initialize() -> void:
 	print("=== 配方付款护栏与结算次序 测试 ===\n")
@@ -48,8 +48,8 @@ func _initialize() -> void:
 	_t3_income_settles_before_payment()
 	_t4_order_stable_across_recompute()
 	_t5_income_counted_in_warning()
-	_t6_ai_predict_accumulates()
-	_t7_ai_predict_counts_income()
+	_t6_bot_predict_accumulates()
+	_t7_bot_predict_counts_income()
 	finish()
 
 
@@ -277,7 +277,7 @@ func _t5_income_counted_in_warning() -> void:
 
 # ---------- 候选付款：累计待付与先到收入 ----------
 
-func _t6_ai_predict_accumulates() -> void:
+func _t6_bot_predict_accumulates() -> void:
 	var s := _bare()
 	s.market = []
 	for id in ["waimai", "ditui"]:
@@ -300,7 +300,7 @@ func _t6_ai_predict_accumulates() -> void:
 		check(not voided, "累计付款候选没有整组作废")
 	check(built, "预判仍保留至少一个能生产的候选")
 
-func _t7_ai_predict_counts_income() -> void:
+func _t7_bot_predict_counts_income() -> void:
 	var s := _bare()
 	s.market = []
 	for id in ["yunketang", "chunwan"]:
@@ -327,6 +327,6 @@ func _t7_ai_predict_counts_income() -> void:
 	check(found, "生成器保留有进账兜底的付款组合")
 
 func _candidates(s: GameState) -> Array:
-	var profile := AISearch.from_model("ai", 0.0).resolved_parameters()
+	var profile := BOTSearch.from_model("bot", 0.0).resolved_parameters()
 	profile.merge({"plans": 64, "sales": 0, "buy_beam": 64, "build_beam": 64}, true)
 	return Actions.generate(s, GameState.PLAYER, profile)

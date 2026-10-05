@@ -48,12 +48,12 @@ func run_attack_turn(seat: String, body: Callable = Callable(), picker: Callable
 		result = await run_automatic_attack(seat, picker)
 	return result if active() else _cancelled_result()
 
-## AI 与无头使用同一选靶/余点/逐张扣牌循环；表现层可按同一摞插入瞄准和收尾。
+## BOT 与无头使用同一选靶/余点/逐张扣牌循环；表现层可按同一摞插入瞄准和收尾。
 func run_automatic_attack(seat: String, picker: Callable = Callable(),
 		before_batch: Callable = Callable(), after_batch: Callable = Callable(),
 		exhausted: Callable = Callable()) -> Dictionary:
 	if picker.is_null():
-		picker = AIPlan.target_picker()
+		picker = BOTPlan.target_picker()
 	var pending: Dictionary = {}
 	while active():
 		var transport = provider.call()

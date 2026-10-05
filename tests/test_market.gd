@@ -37,17 +37,17 @@ func _initialize() -> void:
 	check(main.market_cards.size() == CardDB.game_rules()["market_size"] - 1, "公共区实体同步减少")
 	check(main.entities.has(r.get("new_uid", -1)), "购入卡实体已映射")
 
-	# 走一遍 AI 采购再推回合，为的是让下面几条判据落在「两边都动过」的局面上。
-	# 买没买成不判：AI 手上钱不够就该什么都不买，两种结果都合法。
-	# 直接驱动 AIAgent 的买卡段（原先调的 main._ai_buy_once 已经不在仓里了，
-	# 决策次序整段搬去了 engine/ai_agent.gd）：next_step 一步一步走，
+	# 走一遍 BOT 采购再推回合，为的是让下面几条判据落在「两边都动过」的局面上。
+	# 买没买成不判：BOT 手上钱不够就该什么都不买，两种结果都合法。
+	# 直接驱动 BOTAgent 的买卡段（原先调的 main._bot_buy_once 已经不在仓里了，
+	# 决策次序整段搬去了 engine/bot_agent.gd）：next_step 一步一步走，
 	# 走到 STEP_BUY_DONE 就是「不买了」
-	var buy_agent := AIAgent.new(main.pipe, main.foe_seat, AISearch.from_strength(0.0))
+	var buy_agent := BOTAgent.new(main.pipe, main.foe_seat, BOTSearch.from_strength(0.0))
 	while true:
 		var st := buy_agent.next_step()
 		# STEP_DONE 也要出来：典当冲线定了 winner 的话根本走不到买卡那步，
 		# 只等 STEP_BUY_DONE 就死循环了
-		if st == AIAgent.STEP_BUY_DONE or st == AIAgent.STEP_DONE:
+		if st == BOTAgent.STEP_BUY_DONE or st == BOTAgent.STEP_DONE:
 			break
 
 	var round_before: int = state.round_num

@@ -6,7 +6,7 @@ extends RefCounted
 
 ## 市场、设施和装饰托盘的唯一几何配置。实际可拖放边界仍由 Board/镜头独立计算。
 const PLAYER_ZONE_Z := 1.8
-const AI_ZONE_Z := -4.5
+const BOT_ZONE_Z := -4.5
 const MARKET_GAP_MAX := 2.6
 const MAX_MARKET_SPAN := 18.4
 const MARKET_DEPTH := 2.35

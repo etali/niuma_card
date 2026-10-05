@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See LICENSE in the project root.
 
-"""核对配置变量引用、README数值展示与AI参数表。
+"""核对配置变量引用、README数值展示与BOT参数表。
 
 balance.md 只保存字段引用，由 check_card_table 检查字段存在性和覆盖。
-README 中明确展示的值仍与卡表核对；AI参数表按有效配置核对，不强迫复制fallback。
+README 中明确展示的值仍与卡表核对；BOT参数表按有效配置核对，不强迫复制fallback。
 手动调参的11项观测值由 tools/balance/scoring.gd 定义，不依赖阈值配置。
 
 锚点缺失或重复同样失败，避免正文重写后检查静默失效。validate(root)
@@ -259,39 +259,39 @@ def document_values(raw, spec):
         values.append(value)
     return values
 
-def check_ai_tables(root, ai_config, bad):
+def check_bot_tables(root, bot_config, bad):
     """校验合法配置及其文档值；显式配置允许覆盖规格默认值。"""
-    schema = read_parameter_schema((root / "engine" / "ai_turn_strategy.gd").read_text())
-    configured = ai_config["search"]["ai"]
-    lines = (root / "ai.md").read_text().splitlines()
+    schema = read_parameter_schema((root / "engine" / "bot_turn_strategy.gd").read_text())
+    configured = bot_config["search"]["bot"]
+    lines = (root / "bot.md").read_text().splitlines()
     headers = [i for i, line in enumerate(lines)
                if re.match(r"^\|\s*参数\s*\|\s*强度\s*0\s*\|\s*强度\s*0\.5\s*\|\s*强度\s*1\s*\|", line)]
     if len(headers) != 1:
-        raise ValueError("ai.md 强度参数表表头命中 %d 行，应为 1 行" % len(headers))
+        raise ValueError("bot.md 强度参数表表头命中 %d 行，应为 1 行" % len(headers))
     table_start = headers[0]
     count = 0
     unknown = set(configured) - set(schema) - {"profile_version"}
     unknown = {key for key in unknown if not key.startswith("_")}
     if unknown:
-        bad.append("data/ai.json.search.ai 包含未注册参数：%s" % "、".join(sorted(unknown)))
+        bad.append("data/bot.json.search.bot 包含未注册参数：%s" % "、".join(sorted(unknown)))
     for key, spec in schema.items():
         raw = configured.get(key, spec["strength_points"])
         _, problems = configuration_points(raw, spec)
         if problems:
-            bad.append("data/ai.json.search.ai.%s 配置无效：%s" % (key, "；".join(problems)))
+            bad.append("data/bot.json.search.bot.%s 配置无效：%s" % (key, "；".join(problems)))
             continue
         expected = document_values(raw, spec)
         hits = [(i, line) for i, line in enumerate(lines, 1)
                 if i > table_start and re.match(r"^\s*\|\s*`%s`\s*\|" % re.escape(key), line)]
         if len(hits) != 1:
-            bad.append("ai.md 参数表 `%s` 命中 %d 行，应为 1 行" % (key, len(hits)))
+            bad.append("bot.md 参数表 `%s` 命中 %d 行，应为 1 行" % (key, len(hits)))
             continue
         number, line = hits[0]
         columns = [part.strip().strip("`") for part in line.strip().strip("|").split("|")]
         for index, value in enumerate(expected, 1):
             label = "强度%g" % (0, 0.5, 1)[index - 1] if len(expected) == 3 else "默认值"
             if len(columns) <= index or not _same_number(columns[index], value):
-                bad.append("ai.md:%d 的 %s %s应是 %g（第%d列）" % (
+                bad.append("bot.md:%d 的 %s %s应是 %g（第%d列）" % (
                     number, key, label, value, index + 1))
             else:
                 count += 1
@@ -305,7 +305,7 @@ def validate(root=ROOT):
     try:
         data = json.loads((root / "data" / "cards.json").read_text())
         cards = {key: card for key, card in data.items() if not key.startswith("_")}
-        ai_config = json.loads((root / "data" / "ai.json").read_text())
+        bot_config = json.loads((root / "data" / "bot.json").read_text())
         f = facts(data, cards)
         reference_errors, card_count, reference_count = check_card_table.validate(root)
         bad.extend(reference_errors)
@@ -324,20 +324,20 @@ def validate(root=ROOT):
                             bad.append("%s:%d 的%s应是 %s" % (doc, number, label, want))
                         else:
                             n_ok += 1
-        ai_ok, ai_anchors = check_ai_tables(root, ai_config, bad)
+        bot_ok, bot_anchors = check_bot_tables(root, bot_config, bad)
         limit_anchor = "无头模拟上限："
-        limit_lines = [(i, line) for i, line in enumerate((root / "ai.md").read_text().splitlines(), 1)
+        limit_lines = [(i, line) for i, line in enumerate((root / "bot.md").read_text().splitlines(), 1)
                        if limit_anchor in line]
         if len(limit_lines) != 1:
-            bad.append("ai.md 里锚点「%s」命中 %d 行，应为 1 行" % (limit_anchor, len(limit_lines)))
+            bad.append("bot.md 里锚点「%s」命中 %d 行，应为 1 行" % (limit_anchor, len(limit_lines)))
         else:
             number, line = limit_lines[0]
-            limit = ai_config["simulation"]["max_rounds"]
+            limit = bot_config["simulation"]["max_rounds"]
             if not re.search(r"`simulation\.max_rounds\s*=\s*%s`" % re.escape(str(limit)), line):
-                bad.append("ai.md:%d 的 simulation.max_rounds应是 %s" % (number, limit))
+                bad.append("bot.md:%d 的 simulation.max_rounds应是 %s" % (number, limit))
             else:
-                ai_ok += 1
-        return bad, n_ok + ai_ok + reference_count, sum(len(table) for _, table in tables) + ai_anchors + 1 + card_count
+                bot_ok += 1
+        return bad, n_ok + bot_ok + reference_count, sum(len(table) for _, table in tables) + bot_anchors + 1 + card_count
     except (OSError, ValueError, KeyError, IndexError, TypeError, ZeroDivisionError) as error:
         bad.append("检查输入或参数规格无效：%s" % error)
         return bad, 0, 0
@@ -350,7 +350,7 @@ def main():
         for problem in bad:
             print("  - " + problem)
         return 1
-    print("balance.md 引用、README/AI 展示值及评估器参照通过"
+    print("balance.md 引用、README/BOT 展示值及评估器参照通过"
           "（%d 处引用，%d 条锚点）" % (references, anchors))
     return 0
 

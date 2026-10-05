@@ -24,13 +24,13 @@ func _initialize() -> void:
 	hook.m = main
 	hook.board = main.board
 
-	# settle 这一条动作面最宽：走 _sync_entities → layout._layout_ai_idle →
-	# layout._ai_piles → 真结算，把搬走的那一层从头到尾过一遍
+	# settle 这一条动作面最宽：走 _sync_entities → layout._layout_bot_idle →
+	# layout._bot_piles → 真结算，把搬走的那一层从头到尾过一遍
 	await hook._action("settle:20:12")
 	check(true, "settle:20:12 跑完没崩（layout.* 的名字运行时都找得到）")
 
-	var piles: Array = main.layout._ai_piles()
-	check(piles.size() > 0, "AI 摞得出东西：%d 坨" % piles.size())
+	var piles: Array = main.layout._bot_piles()
+	check(piles.size() > 0, "BOT 摞得出东西：%d 坨" % piles.size())
 
 	# 玩家侧：结算产出该摞在左边那一带
 	var left := 0

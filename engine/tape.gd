@@ -36,6 +36,7 @@ extends RefCounted
 const VERSION := 2
 const RecordingConfig = preload("res://engine/recording_config.gd")
 const JsonStore = preload("res://engine/json_store.gd")
+const LegacyNames = preload("res://engine/legacy_names.gd")
 
 ## 录像存哪儿：**家目录下的 `~/.niumapai_record`**（用户指定）。
 ##
@@ -96,6 +97,7 @@ var table: String = ""
 
 ## 人看的：什么时候录的、录的是哪一局。不参与重放
 var meta: Dictionary = {}
+var hash_encoding := "bot-seat-v1"
 
 var configuration: Dictionary = {}
 var head_view: Dictionary = {}
@@ -115,6 +117,7 @@ var _gesture: Dictionary = {}
 ## 那种磁带重放必然在第二条上就落不了地 —— 所以先 stop
 func start(applier: IntentApply, note := "") -> void:
 	stop()
+	hash_encoding = "bot-seat-v1"
 	_applier = applier
 	configuration = RecordingConfig.dump()
 	head_view = {}
@@ -158,19 +161,20 @@ func size() -> int:
 	return steps.size()
 
 ## 附加诊断不进入规则意图流，保留搜索时实际使用的强度，支持中局调参溯源。
-func record_ai_decision(state: GameState, who: String, decision: Dictionary) -> void:
+func record_bot_decision(state: GameState, who: String, decision: Dictionary) -> void:
 	if not recording(): return
-	if not meta.has("ai_decisions"): meta["ai_decisions"] = []
+	if not meta.has("bot_decisions"): meta["bot_decisions"] = []
 	var entry := decision.duplicate(true)
 	entry.merge({"before_step":steps.size()+1,"round":state.round_num,"seat":who,
 		"state_hash":StateCodec.state_hash(state),"rng":state.rng_snapshot()},true)
-	meta["ai_decisions"].append(entry)
+	meta["bot_decisions"].append(entry)
 
 # ---------- 落盘 ----------
 
 func to_dict() -> Dictionary:
 	return {
 		"version": VERSION,
+		"hash_encoding": hash_encoding,
 		"table": table,
 		"meta": meta,
 		"head": head,
@@ -218,6 +222,12 @@ static func load_from(path: String) -> Dictionary:
 	return from_dict(j.data)
 
 static func from_dict(d: Dictionary) -> Dictionary:
+	if d.get("hash_encoding","bot-seat-v1") not in ["bot-seat-v1",LegacyNames.HASH_ENCODING]:
+		return {"ok":false,"reason":"录像哈希编码不受支持"}
+	# 历史文件原样保留；只转换读入副本，旧哈希仍用当时的座位编码校验。
+	var legacy: bool = d.get("head",{}).get("players",{}).has(LegacyNames.OLD_SEAT) if d.get("head") is Dictionary and d.head.get("players") is Dictionary else false
+	legacy = legacy or d.get("hash_encoding","") == LegacyNames.HASH_ENCODING
+	if legacy: d = LegacyNames.normalize(d)
 	if not Intent.valid_integer(d.get("version", -1)):
 		return {"ok": false, "reason": "录像版本格式不正确"}
 	var v := int(d.get("version", -1))
@@ -228,6 +238,7 @@ static func from_dict(d: Dictionary) -> Dictionary:
 	if not d.get("meta", {}) is Dictionary or not d.get("head_pools", {}) is Dictionary or not d.get("steps", []) is Array:
 		return {"ok": false, "reason": "录像的步骤或附加信息格式不正确"}
 	var t := Tape.new()
+	t.hash_encoding = LegacyNames.HASH_ENCODING if legacy else "bot-seat-v1"
 	t.table = str(d.get("table", ""))
 	t.meta = (d.get("meta", {}) as Dictionary).duplicate(true)
 	t.head = (d["head"] as Dictionary).duplicate(true)
@@ -327,7 +338,7 @@ static func replay(t: Tape, upto := -1, on_step := Callable()) -> Dictionary:
 			return _fault(s, ap, i, it, "rejected",
 				str(r.get("reason", r.get("code", ""))), "落地", notes)
 		var want := str(e.get("hash", ""))
-		var got := StateCodec.state_hash(s)
+		var got := t.recorded_state_hash(s)
 		if want != "" and want != got:
 			return _fault(s, ap, i, it, "diverged",
 				want.substr(0, 8), got.substr(0, 8), notes)
@@ -335,6 +346,9 @@ static func replay(t: Tape, upto := -1, on_step := Callable()) -> Dictionary:
 			on_step.call(i, r)
 	return { "ok": true, "state": s, "applier": ap, "played": n,
 		"fault": {}, "notes": notes }
+
+func recorded_state_hash(state: GameState) -> String:
+	return LegacyNames.state_hash(state) if hash_encoding == LegacyNames.HASH_ENCODING else StateCodec.state_hash(state)
 
 static func _fault(s: GameState, ap: IntentApply, i: int, it: Dictionary,
 		kind: String, want: String, got: String, notes: Array) -> Dictionary:
@@ -379,6 +393,7 @@ static func apply_entry(ap: IntentApply, entry: Dictionary) -> Dictionary:
 
 func start_remote(net: NetTransport, note := "联网客户端") -> void:
 	stop()
+	hash_encoding = "bot-seat-v1"
 	_remote = net
 	head = StateCodec.snapshot(net.state())
 	head_pools = net.applier().pools_snapshot()

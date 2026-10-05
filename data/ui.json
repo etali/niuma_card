@@ -1,5 +1,5 @@
 {
-  "_说明": "游戏展示配置：defaults=启动默认值；palette=配色；resource_labels=资源计量名；sfx=音效与动作映射。规则和卡牌见 cards.json，AI 参数见 ai.json。",
+  "_说明": "游戏展示配置：defaults=启动默认值；palette=配色；resource_labels=资源计量名；sfx=音效与动作映射。规则和卡牌见 cards.json，BOT 参数见 bot.json。",
   "defaults": {
     "window_fraction": 0.75,
     "perspective_angle": 80.0,
@@ -11,7 +11,7 @@
     "hud": {
       "_说明": "双方资源卡的身份强调色；正文使用语义墨色保持可读性",
       "player": "#F2CC66",
-      "ai": "#5599FF"
+      "bot": "#5599FF"
     },
     "semantic": {
       "surface": "#F4EBD8",

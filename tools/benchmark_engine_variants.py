@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See LICENSE in the project root.
 
-"""同一PCK、固定AI局面/节点预算，交替顺序测量不同引擎编译配置的性能。"""
+"""同一PCK、固定BOT局面/节点预算，交替顺序测量不同引擎编译配置的性能。"""
 import argparse
 import json
 import hashlib

@@ -75,7 +75,7 @@ static func _card_out(c: Dictionary) -> Dictionary:
 ## state 的引用，换对象要把每个持有点都改一遍（而漏掉一个就是「界面还在读旧局」）。
 ## 重连的语义本来也是「这一局变成那样」，不是「换一局」
 static func restore(s: GameState, d: Dictionary) -> void:
-	s.ai_work_sessions.clear()
+	s.bot_work_sessions.clear()
 	var players := {}
 	var src: Dictionary = d.get("players", {})
 	for who in src:
@@ -113,12 +113,12 @@ static func snapshot_issue(value: Variant) -> String:
 	if issue != "": return issue
 	if not Intent.valid_integer(d["round_num"], 1) or not Intent.valid_integer(d["uid"], 0):
 		return "快照回合或下一张卡编号无效"
-	if d["draw_first"] not in [GameState.PLAYER, GameState.AI] or d["winner"] not in ["", GameState.PLAYER, GameState.AI]:
+	if d["draw_first"] not in [GameState.PLAYER, GameState.BOT] or d["winner"] not in ["", GameState.PLAYER, GameState.BOT]:
 		return "快照座位无效"
 	if not d["players"] is Dictionary or not d["market"] is Array or not d["combos"] is Array or not d["log"] is Array:
 		return "快照卡牌、市场、组合或日志格式错误"
 	var players: Dictionary = d["players"]
-	if not players.is_empty() and (players.size() != 2 or not players.has(GameState.PLAYER) or not players.has(GameState.AI)):
+	if not players.is_empty() and (players.size() != 2 or not players.has(GameState.PLAYER) or not players.has(GameState.BOT)):
 		return "快照缺少双方卡牌"
 	if players.is_empty() and (not d["market"].is_empty() or not d["combos"].is_empty()):
 		return "空桌不能包含市场或组合"
@@ -162,7 +162,7 @@ static func log_issue(value: Variant) -> String:
 	var args: Array = value.get("args", [])
 	for arg in args:
 		if arg is Dictionary:
-			if arg.size() != 1 or arg.get("seat") not in [GameState.PLAYER, GameState.AI]: return "日志座位无效"
+			if arg.size() != 1 or arg.get("seat") not in [GameState.PLAYER, GameState.BOT]: return "日志座位无效"
 		elif not arg is String and not Intent.valid_number(arg):
 			return "日志参数格式错误"
 	# 无参数日志按纯文本显示，其中的百分号不参与格式化。
@@ -188,7 +188,7 @@ static func log_issue(value: Variant) -> String:
 static func pools_issue(value: Variant) -> String:
 	if not value is Dictionary: return "攻击点数必须是对象"
 	for seat in value:
-		if seat not in [GameState.PLAYER, GameState.AI] or not value[seat] is Dictionary:
+		if seat not in [GameState.PLAYER, GameState.BOT] or not value[seat] is Dictionary:
 			return "攻击点数座位或格式无效"
 		var pool: Dictionary = value[seat]
 		for res in [CardDB.RES_CASH, CardDB.RES_USER]:
@@ -200,7 +200,7 @@ static func pools_issue(value: Variant) -> String:
 static func combo_issue(value: Variant) -> String:
 	if not value is Dictionary or not value.get("owner") is String or not value.get("uids") is Array:
 		return "组合格式错误"
-	if value["owner"] not in [GameState.PLAYER, GameState.AI]: return "组合座位无效"
+	if value["owner"] not in [GameState.PLAYER, GameState.BOT]: return "组合座位无效"
 	var issue := Intent.field_types(value, ["owner"], ["order"], ["uids"])
 	if issue != "": return issue
 	if not GameState.validate_unique_uids(value["uids"]).is_empty(): return "组合含重复卡牌编号"
@@ -312,7 +312,7 @@ static func canon(v) -> String:
 ## 联网会把它放大成「两个人在玩不同的游戏」：价格、权重、产出全不一样，
 ## 而且**不会报错**，只表现为「对手那边怎么比我便宜」。
 ##
-## AI 超参数不改变合法动作及其结果，因此不属于游戏规则指纹。
+## BOT 超参数不改变合法动作及其结果，因此不属于游戏规则指纹。
 static func table_hash() -> String:
 	return canon_hash(rules_snapshot())
 

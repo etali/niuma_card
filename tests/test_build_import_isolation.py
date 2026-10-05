@@ -30,7 +30,7 @@ class BuildImportIsolationTest(unittest.TestCase):
             (engine / 'old.svg').write_text(svg)
             (root / 'runtime.svg').write_text(svg)
             shutil.copy2(ROOT / 'assets/fonts/NotoSansSC.ttf', root / 'assets/fonts/NotoSansSC.ttf')
-            for name in ('font_subset.sh', 'godot_build.sh'):
+            for name in ('font_subset.sh', 'godot_build.sh', 'project_paths.py'):
                 shutil.copy2(ROOT / 'tools' / name, root / 'tools' / name)
 
             # 复现以前已经被扫描到的缓存，不能只测首次干净导入。

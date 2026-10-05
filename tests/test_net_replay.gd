@@ -373,11 +373,11 @@ func _t6_uids_are_ints() -> void:
 		[typeof(uids[0]), typeof(uids[1]), typeof(uids[2])]])
 
 	# 典当和买卡的 uid 数组走同一条路，一起判 —— 漏一条就等于这条判据没测那条
-	var pawn: Dictionary = Intent.decode('{"op":"pawn","seat":"ai","uids":[2,5]}')
+	var pawn: Dictionary = Intent.decode('{"op":"pawn","seat":"bot","uids":[2,5]}')
 	check(pawn.get("ok", false) and typeof((pawn["intent"]["uids"] as Array)[0]) == TYPE_INT,
 		"pawn 的 uids 是 int")
 	var buy: Dictionary = Intent.decode(
-		'{"op":"buy","seat":"ai","market_idx":1,"pay_uids":[4,9]}')
+		'{"op":"buy","seat":"bot","market_idx":1,"pay_uids":[4,9]}')
 	check(buy.get("ok", false) and typeof((buy["intent"]["pay_uids"] as Array)[0]) == TYPE_INT,
 		"buy 的 pay_uids 是 int")
 	check(buy.get("ok", false) and typeof(buy["intent"]["market_idx"]) == TYPE_INT,

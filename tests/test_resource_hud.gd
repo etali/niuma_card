@@ -13,9 +13,9 @@ func _initialize() -> void:
 		finish()
 		return
 	var player: ResourceHUD = main.hud_player_card
-	var ai: ResourceHUD = main.hud_ai_card
-	check(player != null and ai != null, "双方各有一张资源状态卡")
-	check(player.summary == main.lbl_player_res and ai.summary == main.lbl_ai_res,
+	var bot: ResourceHUD = main.hud_bot_card
+	check(player != null and bot != null, "双方各有一张资源状态卡")
+	check(player.summary == main.lbl_player_res and bot.summary == main.lbl_bot_res,
 		"保留旧摘要 Label 引用供抽屉复用")
 	check(player.cash_value != null and player.user_value != null,
 		"资金与用户使用独立数值控件")
@@ -41,7 +41,7 @@ func _initialize() -> void:
 	check(safe.has_point(camera.unproject_position(main._pawn_position())), "典当行设施处于HUD与底栏之间")
 	check(player.cash_value.text.is_valid_int() and player.user_value.text.is_valid_int(),
 		"我方资金/用户显示为纯数值")
-	check(ai.cash_value.text.is_valid_int() and ai.user_value.text.is_valid_int(),
+	check(bot.cash_value.text.is_valid_int() and bot.user_value.text.is_valid_int(),
 		"对手资金/用户显示为纯数值")
 	check(player.due_value.text.begins_with("待付"), "待付状态卡保留明确标签")
 	check(player.deployment.text.contains("在岗") and player.deployment.text.contains("闲置"),

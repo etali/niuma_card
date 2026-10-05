@@ -7,7 +7,7 @@ extends "res://tests/harness.gd"
 class GuardMain extends "res://scenes/main.gd":
 	var handed_to_foe := false
 	func _foe_action() -> void:
-		handed_to_foe = true  # 只观察交接，避免测试后半段启动无关AI。
+		handed_to_foe = true  # 只观察交接，避免测试后半段启动无关BOT。
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -38,7 +38,7 @@ func _pile(state: GameState, who: String, id: String) -> Dictionary:
 	return {"uids": uids}
 
 func _check_engine_preview() -> void:
-	for who in [GameState.PLAYER, GameState.AI]:
+	for who in [GameState.PLAYER, GameState.BOT]:
 		for id in CardDB.all_cards():
 			var def := CardDB.get_def(id)
 			if def.get("recipe_res") != CardDB.RES_CASH or int(def.get("recipe_n", 0)) <= 0:
@@ -135,7 +135,7 @@ func _check_button() -> void:
 		check(is_zero_approx(main.btn_pass.rotation) and main.btn_pass.position.is_equal_approx(pos), "震动后按钮归位且连续点击不漂移")
 		check(main.phase == main.PHASE_ACTION and main._actor == main.my_seat and not main.btn_pass.disabled and not main.board.input_locked, "拒绝后仍可拖牌调整，行动权不交接")
 		check(main.tape.size() == before_tape and StateCodec.snapshot(main.state) == initial, "拒绝不注册组合、不消耗牌、不新增录像操作")
-		check(group["cards"].map(func(c): return c.uid) == card_order and not main.handed_to_foe, "拒绝不擅自拆组合或触发AI")
+		check(group["cards"].map(func(c): return c.uid) == card_order and not main.handed_to_foe, "拒绝不擅自拆组合或触发BOT")
 	main.sfx.set_user_muted(true)
 	var muted_slot: int = main.sfx._next
 	main.btn_pass.pressed.emit()
