@@ -69,6 +69,10 @@ static func choose_plan(state: GameState, who: String, cfg: AISearch) -> Diction
 				if heavy < 2 or queue[i].kind not in ["generation","refinement","future"]:
 					next = i
 					break
+			# 宽回应按已完成基础评价挑选挑战者；已启动任务仍轮转，不能独占计算。
+			if next >= 0 and queue[next].kind == "refinement":
+				for i in queue.size():
+					if queue[i].kind == "refinement" and Capabilities.compare_nodes(queue[i].candidate,queue[next].candidate,who,"score",configured): next = i
 			if next < 0: break
 			var spec: Dictionary = queue[next]
 			queue.remove_at(next)
@@ -120,7 +124,7 @@ static func choose_plan(state: GameState, who: String, cfg: AISearch) -> Diction
 		if active.is_empty():
 			if not future_started and not ranked.is_empty() and int(configured.future_rounds) > 0:
 				future_started = true
-				future_contenders = _finalists(ranked,int(configured.finalists),configured,who)
+				future_contenders = _finalists(_comparable_current_candidates(ranked,who),int(configured.finalists),configured,who)
 				for candidate in future_contenders: future_replies.append(_future_responses(candidate,configured))
 			if future_started and not future_failed and future_depth <= int(configured.future_rounds):
 				future_values.clear()
@@ -149,14 +153,8 @@ static func choose_plan(state: GameState, who: String, cfg: AISearch) -> Diction
 		if committed.is_empty() and task.progress.has("operating") and not task.progress.operating.is_empty():
 			committed = {"node":_fallback(task.progress.operating,state,who,configured),"score":null}
 		if task.kind == "refinement" and task.progress.has("response_score"):
-			for candidate in ranked:
-				if candidate.node == task.node:
-					if float(task.progress.response_score) < float(candidate.score):
-						candidate.score = task.progress.response_score
-						candidate.state = task.progress.response_state
-						candidate.responses.append(task.progress.response_state)
-			ranked.sort_custom(func(a,b):return Capabilities.compare_nodes(a,b,who,"score",configured))
-			if not ranked.is_empty(): committed = ranked[0]
+			# 部分回应只给出上界，不与完成检查的分数混排，也不改写基础评价。
+			row["known_response_upper_bound"] = task.progress.response_score
 
 		if task.done:
 			task.stop()
@@ -181,7 +179,7 @@ static func choose_plan(state: GameState, who: String, cfg: AISearch) -> Diction
 					var candidate := {"node":task.node,"state":resolved.state,"score":resolved.score,"responses":resolved.responses,"baseline":task.node.get("baseline",false)}
 					if task.kind == "evaluation":
 						ranked.append(candidate)
-						queue.append({"kind":"refinement","node":task.node})
+						queue.append({"kind":"refinement","node":task.node,"candidate":candidate})
 					else:
 						for i in ranked.size():
 							if ranked[i].node == task.node:
@@ -191,7 +189,8 @@ static func choose_plan(state: GameState, who: String, cfg: AISearch) -> Diction
 								candidate.responses.append_array(ranked[i].responses)
 								ranked[i] = candidate
 						task.node["_refined"] = true
-						ranked.sort_custom(func(a,b): return Capabilities.compare_nodes(a,b,who,"score",configured))
+					# 已完成宽回应的方案优先；同层内才按分数比较。
+					_sort_current_candidates(ranked,who,configured)
 					committed = ranked[0]
 					# 仅真实行动已经获胜时提前停止；有限回应的+T不是证明。
 					proven_win = task.node.state.winner == who
@@ -256,6 +255,7 @@ static func choose_plan(state: GameState, who: String, cfg: AISearch) -> Diction
 		"evaluations":evaluations,"candidate_expansions":expansions,"expanded_nodes":meter.used,
 		"generation_nodes":generation_work,"current_nodes":current_work,"future_nodes":future_work,
 		"score":committed.get("score"),"selected_evaluation_complete":not ranked.is_empty(),
+		"current_comparison_level":"proven_win" if proven_win else ("wide" if committed.get("node",{}).get("_refined",false) else ("basic" if not ranked.is_empty() else "fallback")),
 		"selected_refinement_complete":committed.get("node",{}).get("_refined",false),"future_started":future_started,"fallback_used":ranked.is_empty(),
 		"future_complete_layers":future.complete_layers,"future_depth":future.depth,"future_samples":future.samples,
 		"future_value":future.get("value"),"future_evaluations":future.evaluations,"future_layers":future.trace,"future_incomplete":int(configured.future_rounds) > 0 and not proven_win and (not future_started or future_pending > 0 or future_failed),
@@ -267,6 +267,22 @@ static func _enqueue_candidates(nodes: Array, published: Array, queue: Array) ->
 		if not node.has("_scheduled"):
 			node["_scheduled"] = true
 			queue.append({"kind":"evaluation","node":node})
+
+## 已完成更宽检查的候选不能被仍带乐观基础分的候选挤掉。
+## 真实行动已经获胜无需等待回应；其余候选只在同一检查规格内比较。
+static func _has_wide_evaluation(candidate: Dictionary, who: String) -> bool:
+	return bool(candidate.node.get("_refined",false)) or candidate.node.state.winner == who
+
+static func _sort_current_candidates(ranked: Array, who: String, p: Dictionary) -> void:
+	ranked.sort_custom(func(a,b):
+		var wide_a := _has_wide_evaluation(a,who)
+		var wide_b := _has_wide_evaluation(b,who)
+		if wide_a != wide_b: return wide_a
+		return Capabilities.compare_nodes(a,b,who,"score",p))
+
+static func _comparable_current_candidates(ranked: Array, who: String) -> Array:
+	var wide := ranked.filter(func(candidate):return _has_wide_evaluation(candidate,who))
+	return wide if not wide.is_empty() else ranked
 
 ## 整个共同层完成才选赢家；每个候选取已经完整计算的回应均值之最小值。
 static func _completed_future_layer(contenders: Array, response_values: Array, who: String, p: Dictionary) -> Dictionary:

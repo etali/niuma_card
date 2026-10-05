@@ -1,0 +1,456 @@
+{
+	"reference_intents": [
+		{
+			"op": "create_combo",
+			"seat": "ai",
+			"uids": [
+				63,
+				32,
+				82,
+				58
+			]
+		},
+		{
+			"op": "create_combo",
+			"seat": "ai",
+			"uids": [
+				57,
+				81
+			]
+		}
+	],
+	"source": "seed1003 round4, B=0.76: completed productive candidate was replaced by idle plan",
+	"state": {
+		"combos": [],
+		"draw_first": "ai",
+		"log": [],
+		"market": [
+			"touliu",
+			"ditui",
+			"shuabuting",
+			"liebian",
+			"heigongguan",
+			"touliu",
+			"shuabuting",
+			"yunketang"
+		],
+		"players": {
+			"ai": {
+				"cards": [
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 32
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 33
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 34
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 35
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 36
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 37
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 38
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 39
+					},
+					{
+						"def_id": "yunketang",
+						"locked": false,
+						"uid": 57
+					},
+					{
+						"def_id": "yinqing996",
+						"locked": false,
+						"uid": 58
+					},
+					{
+						"def_id": "xufei",
+						"locked": false,
+						"uid": 63
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 70
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 71
+					},
+					{
+						"def_id": "yunketang",
+						"locked": false,
+						"uid": 81
+					},
+					{
+						"def_id": "liebian",
+						"locked": false,
+						"uid": 82
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 100
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 101
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 102
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 103
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 104
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 105
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 106
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 107
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 108
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 109
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 110
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 111
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 112
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 113
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 114
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 115
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 116
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 117
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 118
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 119
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 120
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 121
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 122
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 123
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 124
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 125
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 126
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 127
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 128
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 129
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 130
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 131
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 132
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 133
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 134
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 135
+					}
+				]
+			},
+			"player": {
+				"cards": [
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 15
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 16
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 17
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 18
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 19
+					},
+					{
+						"def_id": "jiaolv",
+						"locked": false,
+						"uid": 44
+					},
+					{
+						"def_id": "touliu",
+						"locked": false,
+						"uid": 62
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 76
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 77
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 78
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 79
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 80
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 83
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 84
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 85
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 86
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 87
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 88
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 89
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 90
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 91
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 92
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 93
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 94
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 95
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 96
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 97
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 98
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 99
+					}
+				]
+			}
+		},
+		"rng": {
+			"seed": "1003",
+			"state": "-7579642569817951743"
+		},
+		"round_num": 4,
+		"uid": 136,
+		"win_reason": "",
+		"winner": ""
+	}
+}

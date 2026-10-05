@@ -1,0 +1,238 @@
+{
+	"safe_intents": [
+		{
+			"op": "create_combo",
+			"seat": "ai",
+			"uids": [
+				43,
+				33,
+				34,
+				35,
+				36,
+				37,
+				38,
+				39
+			]
+		}
+	],
+	"source": "seed1017 round2: shallow optimistic candidate replaced completed safe response evaluation",
+	"state": {
+		"combos": [],
+		"draw_first": "ai",
+		"log": [],
+		"market": [
+			"touliu",
+			"baoyue",
+			"yunketang",
+			"eryouxuan",
+			"waimai",
+			"chunwan",
+			"waimai",
+			"touliu"
+		],
+		"players": {
+			"ai": {
+				"cards": [
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 33
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 34
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 35
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 36
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 37
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 38
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 39
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 40
+					},
+					{
+						"def_id": "xinxijianfang",
+						"locked": false,
+						"uid": 43
+					}
+				]
+			},
+			"player": {
+				"cards": [
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 0
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 1
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 2
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 3
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 4
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 5
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 6
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 7
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 8
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 9
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 10
+					},
+					{
+						"def_id": "cash",
+						"locked": false,
+						"uid": 11
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 12
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 13
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 14
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 15
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 16
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 17
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 18
+					},
+					{
+						"def_id": "user",
+						"locked": false,
+						"uid": 19
+					}
+				]
+			}
+		},
+		"rng": {
+			"seed": "1017",
+			"state": "3829712382802873447"
+		},
+		"round_num": 2,
+		"uid": 44,
+		"win_reason": "",
+		"winner": ""
+	},
+	"unsafe_intents": [
+		{
+			"op": "pawn",
+			"seat": "ai",
+			"uids": [
+				33.0,
+				34.0,
+				35.0
+			]
+		},
+		{
+			"op": "pawn",
+			"seat": "ai",
+			"uids": [
+				43.0
+			]
+		},
+		{
+			"market_idx": 1.0,
+			"op": "buy",
+			"pay_uids": [],
+			"seat": "ai"
+		},
+		{
+			"market_idx": 1.0,
+			"op": "buy",
+			"pay_uids": [],
+			"seat": "ai"
+		},
+		{
+			"op": "create_combo",
+			"seat": "ai",
+			"uids": [
+				53.0,
+				36.0,
+				37.0,
+				38.0,
+				39.0
+			]
+		}
+	]
+}
