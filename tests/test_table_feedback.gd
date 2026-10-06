@@ -184,11 +184,12 @@ func _attack_and_shield() -> void:
 	var before := StateCodec.state_hash(arena.state)
 	var at: Vector3 = target.position
 	arena._table_actions.attack_feedback(at, arena.my_seat, str(arena.demo["effect"]["attack_res"]))
-	var trace: MeshInstance3D = arena.get_node_or_null("Trace_attack")
-	check(trace != null and trace.get_meta("to").distance_to(at) < 0.2, "攻击笔触落向真实受击卡，而不是固定桌面位置")
+	var impact: MeshInstance3D = arena.get_node_or_null("Outline_impact")
+	check(impact != null and impact.position.distance_to(at) < 0.2, "攻击轮廓落向真实受击卡")
+	check(arena.get_node_or_null("Trace_attack") == null, "攻击不再从武器发射光束")
 	var weapon: CardEntity = arena._input_cards[0]
-	check(weapon.feedback_event == "attack" and trace.get_meta("from").distance_to(weapon.position) < 0.2,
-		"过网络JSON快照后实际已装弹武器仍响应并连接攻击目标")
+	check(weapon.feedback_event == "attack",
+		"过网络JSON快照后实际已装弹武器仍响应")
 	check(StateCodec.state_hash(arena.state) == before, "命中笔触本身不扣血、不消耗额外点数")
 	arena.queue_free()
 	await process_frame

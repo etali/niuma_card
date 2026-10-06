@@ -191,6 +191,50 @@ def check_manifest(errors: list[str], warnings: list[str]) -> None:
                     with Image.open(target) as illustration:
                         if illustration.mode != "RGBA" or illustration.getchannel("A").getextrema()[0] != 0:
                             errors.append(f"{label} 必须为保留透明底的 RGBA 插画")
+    hover = manifest.get("hover", {})
+    if not isinstance(hover, dict):
+        errors.append("ui.art.hover 必须是对象")
+        hover = {}
+    fps = hover.get("fps", 12)
+    if not isinstance(fps, (int, float)) or fps <= 0:
+        errors.append("ui.art.hover.fps 必须为正数")
+    animations = hover.get("cards", {})
+    if not isinstance(animations, dict):
+        errors.append("ui.art.hover.cards 必须是对象")
+        animations = {}
+    for name, entry in animations.items():
+        label = f"ui.art.hover.cards.{name}"
+        if not isinstance(entry, dict):
+            errors.append(f"{label} 必须是对象")
+            continue
+        filename = entry.get("file", "")
+        if not isinstance(filename, str) or not filename.strip():
+            errors.append(f"{label}.file 必须是非空路径字符串")
+            continue
+        relative = PurePosixPath(filename)
+        if (relative.is_absolute() or ".." in relative.parts or "\\" in filename
+                or ":" in filename or "\0" in filename):
+            errors.append(f"{label}.file 必须是 assets/art 内的相对路径")
+            continue
+        cell, content = entry.get("cell_size"), entry.get("content_size")
+        columns, frames = entry.get("columns"), entry.get("frames")
+        sizes_ok = all(isinstance(size, list) and len(size) == 2
+                       and all(isinstance(n, int) and n > 0 for n in size)
+                       for size in (cell, content))
+        if (not sizes_ok or not isinstance(columns, int) or columns <= 0
+                or not isinstance(frames, int) or frames <= 0):
+            errors.append(f"{label} 的帧尺寸、列数、帧数必须为正整数")
+            continue
+        if any(content[i] > cell[i] for i in range(2)):
+            errors.append(f"{label}.content_size 不能大于 cell_size")
+        count += 1
+        target = ART / filename
+        expected = (cell[0] * columns, cell[1] * ((frames + columns - 1) // columns))
+        if not check_one(target, expected, errors, label="动作图集"):
+            continue
+        with Image.open(target) as atlas:
+            if atlas.mode != "RGBA" or atlas.getchannel("A").getextrema()[0] != 0:
+                errors.append(f"{label} 必须保留 RGBA 透明底")
     print(f"ui.art：已核对 {count} 个文件引用")
 
 

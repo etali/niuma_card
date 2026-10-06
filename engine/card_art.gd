@@ -44,6 +44,36 @@ static var _art: Dictionary = {}
 static var _tex_cache: Dictionary = {}
 static var _loaded := false
 
+static func hover_config(def_id: String) -> Dictionary:
+	_ensure_loaded()
+	return _art.get("hover", {}).get("cards", {}).get(def_id, {})
+
+static var _hover_cache: Dictionary = {}
+
+static func hover_fps() -> float:
+	_ensure_loaded()
+	return maxf(float(_art.get("hover", {}).get("fps", 12)), 1.0)
+
+static func hover_frames(def_id: String) -> Array:
+	if _hover_cache.has(def_id):
+		return _hover_cache[def_id]
+	var config := hover_config(def_id)
+	var frames: Array = []
+	if not config.is_empty():
+		var atlas := _load_tex(ART_DIR + str(config.get("file", "")))
+		if atlas != null:
+			var cell: Array = config.get("cell_size", [320, 320])
+			var columns := maxi(int(config.get("columns", 4)), 1)
+			for index in int(config.get("frames", 16)):
+				var frame := AtlasTexture.new()
+				frame.atlas = atlas
+				frame.region = Rect2((index % columns) * float(cell[0]),
+					floori(float(index) / columns) * float(cell[1]), cell[0], cell[1])
+				frame.filter_clip = true
+				frames.append(frame)
+	_hover_cache[def_id] = frames
+	return frames
+
 static func _ensure_loaded() -> void:
 	if _loaded:
 		return

@@ -102,6 +102,46 @@ class ArtAssetsTest(unittest.TestCase):
         self.assertEqual(status, 1, output)
         self.assertIn("icon_future_card.png", output)
 
+    def test_hover_atlas_reference_is_checked(self):
+        entry = {"file": "icon/hover/missing.png", "cell_size": [32, 32],
+                 "content_size": [24, 24], "columns": 4, "frames": 16}
+        self.manifest["hover"] = {"fps": 12, "cards": {"new_card": entry}}
+        self.write_json(self.manifest_path, self.manifest)
+        status, output = self.run_check()
+        self.assertEqual(status, 1, output)
+        self.assertIn("动作图集缺失", output)
+        target = self.art / entry["file"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with Image.new("RGBA", (128, 128), (0, 0, 0, 0)) as image:
+            image.save(target)
+        status, output = self.run_check()
+        self.assertEqual(status, 0, output)
+        entry["file"] = "../outside.png"
+        self.write_json(self.manifest_path, self.manifest)
+        status, output = self.run_check()
+        self.assertEqual(status, 1, output)
+        self.assertIn("ui.art.hover.cards.new_card.file 必须是 assets/art 内的相对路径", output)
+
+    def test_hover_atlas_layout_and_speed_are_checked(self):
+        entry = {"file": "icon/hover/test.png", "cell_size": [32, 32],
+                 "content_size": [24, 24], "columns": 4, "frames": 16}
+        self.manifest["hover"] = {"fps": 12, "cards": {"new_card": entry}}
+        target = self.art / entry["file"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with Image.new("RGBA", (64, 64), (0, 0, 0, 0)) as image:
+            image.save(target)
+        self.write_json(self.manifest_path, self.manifest)
+        status, output = self.run_check()
+        self.assertEqual(status, 1, output)
+        self.assertIn("动作图集尺寸不符", output)
+        self.manifest["hover"]["fps"] = 0
+        entry["cell_size"] = [0, 32]
+        self.write_json(self.manifest_path, self.manifest)
+        status, output = self.run_check()
+        self.assertEqual(status, 1, output)
+        self.assertIn("fps 必须为正数", output)
+        self.assertIn("帧尺寸、列数、帧数必须为正整数", output)
+
     def test_manifest_parse_and_reference_failures(self):
         cases = [
             ("{", "无法读取 JSON"),

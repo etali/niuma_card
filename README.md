@@ -323,7 +323,15 @@ Web 使用常驻完整牌桌，复用规则书、选项、静音和录像入口�
 
 维护素材时可继续使用 `tools/build_art.py` 和 `tools/build_android_icons.py` 等生成工具。修改后的素材、清单与对应 `.import` 导入设置一起提交到 Git，游戏构建和发布会使用仓库中的素材。
 
-新版卡牌直接覆盖 `assets/art/icon/icon_*.png`，通过 `data/ui.json` 的 `art.illustrations` 登记。29 张功能卡使用透明手绘简笔画；现金牌用没有表情的单枚硬币与 ¥ 符号，用户牌用呆萌圆头、豆形身体和线条四肢的全身小人；两者均采用不规则墨线和奶油色填充。资源牌主图、配方和产出图标共用 `assets/art/icon/icon_cash.png` 与 `icon_user.png`，仅显示尺寸不同；对应 SVG 仅作为可编辑源稿；资源牌没有底部配方和产出，主图向下居中平衡留白。插画中的金币和用户统一参考这两份资源图标，人物姿势和情绪随场景变化；运行时没有另一套旧卡牌素材。素材由内置 ImageGen 生成，风格参考《Stacklands》的简洁手绘感觉，插画以关键物件和动作为主体，需要人物时使用无身份特征的圆头小人，完整生成提示词保存在 `assets/art/icon/prompts.json`。`tools/build_art.py` 重建素材时会保留新版图标和插画登记，不会将新版覆盖回旧线稿。
+新版卡牌直接覆盖 `assets/art/icon/icon_*.png`，通过 `data/ui.json` 的 `art.illustrations` 登记。29 张功能卡使用透明手绘简笔画；现金牌用没有表情的单枚硬币与 ¥ 符号，用户牌用呆萌圆头、豆形身体和线条四肢的全身小人；两者均采用不规则墨线和奶油色填充。资源牌主图、配方和产出图标共用 `assets/art/icon/icon_cash.png` 与 `icon_user.png`，仅显示尺寸不同；对应 SVG 仅作为可编辑源稿；资源牌没有底部配方和产出，主图向下居中平衡留白。插画中的金币和用户统一参考这两份资源图标，人物姿势和情绪随场景变化；运行时没有另一套旧卡牌素材。素材由内置 ImageGen 生成，风格参考《Stacklands》的简洁手绘感觉，插画以关键物件和动作为主体，需要人物时使用无身份特征的圆头小人，完整生成提示词保存在 `build/art_generation/icon_prompts.json`。`tools/build_art.py` 重建素材时会保留新版图标和插画登记，不会将新版覆盖回旧线稿。
+
+双击项目根目录的 `启动动画预览.command` 可独立打开动画验收窗口，不需要进入牌局。默认使用已构建的应用；也可用 `GODOT=/Applications/Godot.app/Contents/MacOS/Godot ./启动动画预览.command` 从源码运行。悬停页在左侧选择全部 31 张牌（支持方向键切换），右侧展示正式卡面，鼠标移入播放、移出还原；撕牌页可选现金/用户、1～10 张及摞起/摊开，点击卡牌或播放按钮测试，并可反复播放。预览使用正式 `CardEntity`、`CardMotion.tear_batch` 与 `TableHands`，不启动 AI、联网或修改玩家存档。
+
+全部 31 张牌恢复上一版多帧动画：正式图集位于 `assets/art/icon/hover/`，每张 16 帧，播放配置集中在 `data/ui.json.art.hover`，以 12 fps 直接切换动作帧，不混帧、不使用分层运动。静止图保持原来的 `assets/art/icon/icon_<id>.png`，起止直接复用原图；指针进入延迟 150 ms，动作结束停顿 650 ms 后循环。拖动、翻面、移开、撕毁都会停止动作并恢复原图。配方、产出和价签继续共用静态资源图标。
+
+`启动动画预览.command` 提供全部卡牌、正常速度、¼ 慢放、暂停与逐帧时间轴、原图对照和重播，也可切换到一次撕开多张牌的攻击检查。生成记录与被回退的分层方案保存在忽略的 `build/art_generation/` 下；[anime.md](anime.md) 中原分层规划标记为历史记录。
+
+游戏区域的光标使用奶油色填充和深墨线简笔手，指向合法攻击目标时呈现愤怒手势。一次攻击的受击卡先抓成一叠，再由一双手同时撕开；玩家、AI、联机和录像共享整批演出，一批只响一次撕纸声，张数不增加动画次数。悬停介绍不重复展示插画，采用卡名、趣味说明、实体进度、配方/效果/典当两列信息和补充规则。
 
 底板按功能分色：现金为黄、用户为蓝、变现为草绿、拉新为较深的蓝、传奇为白金、攻击为橙、增强为紫、防御为灰绿。卡面、卡背及典当行的全部运行时颜色均由 `data/ui.json.palette` 提供，通过现有 `Palette` 取色、保存、恢复和广播刷新；素材清单不再保存这些颜色。
 
@@ -331,7 +339,7 @@ Web 使用常驻完整牌桌，复用规则书、选项、静音和录像入口�
 
 选项菜单中的“UI”统一收纳显示与配色设置。“UI → 配色 → 背景纹理”可实时调整密度、图案间隔及纹理颜色；密度越大则重复次数越多，间隔控制平铺单元的额外留白。默认值在 `data/ui.json.palette.pattern`，与现有配色共用保存和还原逻辑，保存至 `user://palette.json`。
 
-状态覆盖图直接维护在 `assets/art/overlay/overlay_shield.png` 与 `overlay_void_stamp.png`：护盾使用粗墨线浅蓝盾牌及奶油色勾，位于标题带下方；作废框中心透明，与独立文字一起倾斜，颜色跟随 `Palette.semantic("danger")`。两张图由内置 ImageGen 重绘，提示词记录在 `assets/art/overlay/prompts.json`，旧素材重建会保留已登记的新版。
+状态覆盖图直接维护在 `assets/art/overlay/overlay_shield.png` 与 `overlay_void_stamp.png`：护盾使用粗墨线浅蓝盾牌及奶油色勾，位于标题带下方；作废框中心透明，与独立文字一起倾斜，颜色跟随 `Palette.semantic("danger")`。两张图由内置 ImageGen 重绘，提示词记录在 `build/art_generation/overlay_prompts.json`，旧素材重建会保留已登记的新版。
 
 游戏图标使用用户牌同款全身小人，姿势为无辜地抬手摸头。可编辑源稿为 `assets/art/app_icon.svg`；运行 `Godot --headless --path . --script tools/export_app_icon.gd` 导出 `assets/art/app_icon.png`、`assets/app_icon.png` 及现金/用户共享 PNG，再运行 `python3 tools/build_android_icons.py` 更新 Android 图标和启动图。游戏标题、抽屉角色、结算界面与各平台应用图标共用这套形象。
 

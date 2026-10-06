@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="牛马牌"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/boot.tscn"
 ; 关闭引擎启动 Logo，加载完成后直接进入游戏。
 boot_splash/show_image=false
 ; macOS 原生窗口在场景脚本运行前就会创建；透明清屏可避免启动瞬间闪出黑色矩形。

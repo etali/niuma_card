@@ -102,12 +102,12 @@ func _run() -> void:
 	check(not main._replay_busy, "一次点击自动播完整段攻击，无需第二次输入")
 	check(locked, "全部攻击动画结束前前后步进与跳转控件一直锁定")
 	check(torn.size() == hits, "每张受击卡实际进入正式撕牌动画")
-	check(sound.hits.size() == hits, "每次攻击都实际发出撕牌声音")
-	for i in sound.hits.size():
-		check(sound.hits[i]["points"] == points - cost * (i + 1) and sound.hits[i]["cash"] == cash - i - 1,
-			"第%d次撕牌时攻击点和牌桌状态同步逐次更新" % (i + 1))
-		check(("%s%d" % [CardDB.res_label(CardDB.RES_CASH), cash - i - 1]) in sound.hits[i]["hud"],
-			"第%d击资源栏显示当前金额，不提前跳到最终金额" % (i + 1))
+	check(sound.hits.size() == 1, "同摞录像只发出一次整批撕纸声音")
+	if not sound.hits.is_empty():
+		check(sound.hits[0]["points"] == points - cost * hits and sound.hits[0]["cash"] == cash - hits,
+			"整批撕纸时点数与移除数量对应完整裁决结果")
+		check(("%s%d" % [CardDB.res_label(CardDB.RES_CASH), cash - hits]) in sound.hits[0]["hud"],
+			"整批动画的资源栏显示本次攻击结算金额")
 	check(session.cursor == attack_start + hits and session.action_cursor == 2 and main.state.resource_count(main.foe_seat, CardDB.RES_CASH) == cash - hits,
 		"一次点击后真实牌桌停在整摞攻击结束处")
 	check(main.pipe.applier().pools(main.my_seat)[CardDB.RES_CASH] == points - cost * hits and not main.btn_pass.disabled,

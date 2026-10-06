@@ -124,6 +124,15 @@ func _session_current(generation: int) -> bool:
 
 func _invalidate_session() -> void:
 	_session_generation += 1
+	for card in _foe_tear_cards:
+		if is_instance_valid(card):
+			card.queue_free()
+	_foe_tear_cards.clear()
+	_foe_tear_uids.clear()
+	_foe_tear_batch = ""
+	_foe_tear_target.clear()
+	if is_instance_valid(table_hands):
+		table_hands.clear()
 	if is_instance_valid(_table_actions):
 		_table_actions.cancel_pawn()
 	if pipe != null and pipe.applied.is_connected(_on_intent_applied):
@@ -296,6 +305,12 @@ func _render_log(entry: Dictionary) -> String:
 var board: Board
 var drawer_window: DrawerWindow
 var drawer_presentation: DrawerPresentation
+var table_hands: Node
+var _foe_tear_uids: Array = []
+var _foe_tear_cards: Array = []
+var _foe_tear_center := Vector3.ZERO
+var _foe_tear_batch := ""
+var _foe_tear_target: Dictionary = {}
 ## 有头与无头使用相同的布局路径；回归测试显式打开此项。
 var force_drawer_layout := false
 ## Android/iOS 使用横屏完整牌桌；测试可在桌面用此开关模拟移动模式。
@@ -552,6 +567,9 @@ func _setup_drawer_presentation() -> void:
 	drawer_presentation = DrawerPresentation.new()
 	add_child(drawer_presentation)
 	drawer_presentation.bind(self)
+	table_hands = preload("res://scenes/table_hands.gd").new()
+	add_child(table_hands)
+	table_hands.bind(self)
 	board.interaction_blocked = _drawer_input_blocked
 	board.hover_blocked = func(): return drawer_presentation.pointer_over_panels(board.pointer_position())
 
@@ -1966,6 +1984,8 @@ func _on_intent_applied(r: Dictionary) -> void:
 			_render_foe_combo(r)
 		Intent.OP_ATTACK:
 			_render_foe_attack(r)
+		Intent.OP_ATTACK_DONE:
+			_flush_foe_attack()
 		Intent.OP_ACTION_DONE:
 			# 没有画面 —— 这条意图不改状态（见 Intent.OP_ACTION_DONE 的说明）。
 			# 它的收信人是**次序**：联网局里 _await_foe_action 等的就是它
@@ -2051,22 +2071,48 @@ func _render_foe_combo(_r: Dictionary) -> void:
 	_foe_combo_shown += 1
 	_show_message("对手编成了 %d 个组合" % _foe_combo_shown, Palette.semantic("warning"))
 
-## 对手打掉了我这边的一批卡。瞄准的高亮和节拍留在驱动侧
-## （单机局的 _foe_attack_turn 里），这里只画「打掉了」这件事本身。
-##
-## 同 _settle_attack 要 await：这一批撕完之前不能进下一拍。
-## 不等的话对手连点两下（或者紧接着进结算）时，前一批还没撕完的卡
-## 会被下一次重画一起清掉 —— 我这边看到的是「他打了三张，只撕了一张」
+## 同摞的连续裁决先退出交互，再持有全部实体，批次收尾时统一演一次撕纸。
 func _render_foe_attack(r: Dictionary) -> void:
-	var session := _session_generation
-	# 命中音和爆花按**摞**报一次，不按张（见 _impact_once）：
-	# 一摞 N 张现在是 N 条意图，各报一次就是 N 声 N 朵花，
-	# 而玩家点同一摞是一声一朵 —— 那正是两边看起来不一样的地方
-	_impact_once(_target_center(r.get("target", {})), foe_seat, str(r.get("target", {}).get("res", "")))
-	await _await_removed(r.get("removed", []), true)
-	if not _session_current(session):
+	var target: Dictionary = r.get("target", {})
+	var batch := GameState.target_batch(target)
+	if not _foe_tear_uids.is_empty() and (batch == "" or batch != _foe_tear_batch):
+		_flush_foe_attack()
+	if _foe_tear_cards.is_empty():
+		_foe_tear_center = _target_center(target)
+	_foe_tear_batch = batch
+	_foe_tear_target = target.duplicate(true)
+	_foe_tear_uids.append_array(r.get("removed", []))
+	for uid in r.get("removed", []):
+		if entities.has(uid) and is_instance_valid(entities[uid]):
+			var card: CardEntity = entities[uid]
+			_foe_tear_cards.append(card)
+			entities.erase(uid)
+			board.drop_card(card)
+			card.reset_interaction_visual()
+			card.freeze = true
+			card.collision_layer = 0
+			card.collision_mask = 0
+	if batch == "":
+		_flush_foe_attack()
+
+func _flush_foe_attack() -> void:
+	if _foe_tear_uids.is_empty():
 		return
-	_update_hud()
+	var session := _session_generation
+	var removed := _foe_tear_uids.duplicate()
+	var cards := _foe_tear_cards.duplicate()
+	_foe_tear_cards.clear()
+	var center := _foe_tear_center
+	var target := _foe_tear_target.duplicate(true)
+	_foe_tear_uids.clear()
+	_foe_tear_batch = ""
+	_foe_tear_target.clear()
+	_impact_once(center, foe_seat, str(target.get("res", "")))
+	var duration := _animate_removed(removed, true, cards)
+	if duration > 0.0:
+		await _drawer_timer(duration).timeout
+	if _session_current(session):
+		_update_hud()
 
 # ---------- 拖拽广播（scenes/main.gd 的拖拽广播与租约处理）----------
 
@@ -3628,6 +3674,7 @@ func _play_attack_turn(who: String, pools: Dictionary) -> Dictionary:
 			await _await_foe_attack(who)
 			if not _session_current(session):
 				return Intent.err("cancelled", "牌局已切换")
+		await _flush_foe_attack()
 		_hide_attack_label()
 	else:
 		# 玩家互动点选：点数必须花完（点不起任何目标时自动结束，余点作废）
@@ -3674,8 +3721,8 @@ func _drive_bot_attack(who: String, pools: Dictionary) -> Dictionary:
 		await _drawer_timer(BEAT_ATTACK_BOTM).timeout
 	var after := func(target: Dictionary) -> void:
 		_hl_target(target, false)
+		await _flush_foe_attack()
 		_show_attack_label(_attack_label_text(TXT_ATTACK_FOE, pools), false)
-		await _drawer_timer(BEAT_ATTACK_HIT).timeout
 	var exhausted := func(): _show_message("对手剩余点数点不起任何目标，余点作废", Palette.semantic("muted"))
 	var flow := _round_flow()
 	var result: Dictionary = await flow.run_automatic_attack(who, choose, before, after, exhausted)
@@ -4010,65 +4057,33 @@ func _target_center(target: Dictionary) -> Vector3:
 			return entities[u].global_position + Vector3(0, 0.5, 0)
 	return Vector3(0, 1.0, 0.0)
 
-## 被移除的卡逐张飞出，拆除音效连发。
-## 一个靶现在只有一张卡（核心/富余/散卡一律逐张计价），所以这条排队逻辑
-## 平时只跑一张；留着是因为它同样服务连点：玩家连点几下，每下各排一张，
-## 而下面那段「谁重画桌子就吃掉后面的补间」的坑对连点一样成立
-## 飞出是 0.08s 一张地排队、每张再飞 0.4s，但「这张牌已经不算在场上了」必须当场生效：
-## board.drop_card 立刻把它从所在摞里摘掉并让剩下的合上空档。
-## 交给 _fly_out 里的 unregister_card 就晚了半秒，而且它只刷标签不重排，
-## 摞里会留着被扣掉那几张的空层
-##
-## **要 await**：撕牌的补间是 bind_node 到卡本身的（见 _delayed_flyout），
-## 谁在这段时间里重画桌子（_layout_bot_zone / _sync_entities / 照快照重建），
-## 排在后面那几张就连补间带卡一起没了 —— 屏幕上只看见第一张（delay 0）被撕掉，
-## 剩下的凭空消失。调用方 await 完再往下走，一组三张就是三张挨个撕。
-## 返回整批撕完要多久，调用方要接着排别的节拍时不必自己算
-func _animate_removed(removed: Array, toward_bot: bool) -> float:
-	# 起飞时刻排在**同一条队**上，不是每次调用各从 0 数。
-	# 核心逐张计价之后一摞是 N 条意图（一条一张），对手侧每条各走一次
-	# _render_foe_attack —— 各从 0 数的话这 N 张会同时撕开，读作一团，
-	# 数不出撕了几张。接着上一批的尾巴排，撕出来就和玩家点一摞一样是
-	# 「刺啦刺啦刺啦」一串（玩家那边攒成一批进来，天然就在同一条队上）
-	var now := _animation_now_ms()
-	var slot := maxi(_tear_slot_ms, now)
-	var i := 0
-	for u in removed:
-		if entities.has(u):
-			var e: CardEntity = entities[u]
-			entities.erase(u)
-			board.drop_card(e)
-			var dir := Vector3(0, 4, -2) if toward_bot else Vector3(0, 4, 2)
-			_delayed_flyout(e, dir, float(slot - now) / 1000.0)
-			slot += int(TEAR_STAGGER * 1000.0)
-			i += 1
-	if i == 0:
+## 同一次攻击命中的全部卡共用抓握、撕开和退场节拍，数量不增加动画次数。
+func _animate_removed(removed: Array, toward_ai: bool, held_cards: Array = []) -> float:
+	var cards: Array = held_cards.filter(func(card): return is_instance_valid(card))
+	for uid in removed:
+		if entities.has(uid) and is_instance_valid(entities[uid]):
+			cards.append(entities[uid])
+	if cards.is_empty():
 		return 0.0
-	_tear_slot_ms = slot
-	var last := slot - int(TEAR_STAGGER * 1000.0)   # 最后一张起飞的时刻
-	# 记下「这批什么时候撕完」，让不认识这次调用的人也能等（见 _tears_drained）：
-	# 对手那一击是从信号回调里画的（_on_intent_applied → _render_foe_attack），
-	# 回合驱动那边 await 不到它
-	_tear_until_ms = maxi(_tear_until_ms, last + int(TEAR_TIME * 1000.0))
-	return float(_tear_until_ms - now) / 1000.0
+	for card in cards:
+		entities.erase(card.uid)
+	_card_motion.sfx = sfx
+	var dir := Vector3(0, 4, -2) if toward_ai else Vector3(0, 4, 2)
+	var duration: float = _card_motion.tear_batch(cards, table_hands, dir)
+	var until := _animation_now_ms() + int(duration * 1000.0)
+	_tear_slot_ms = until
+	_tear_until_ms = maxi(_tear_until_ms, until)
+	return duration
 
-## 逐张撕的间隔。0.08s：连起来是「刺啦刺啦刺啦」一串，
-## 不是三声分开的撕纸 —— 一次点击是一次攻击（见 _attack_pile）
+## 结算消耗仍可错开；攻击不再逐张排队。
 const TEAR_STAGGER := UIMotion.STAGGER
 
-## 最后一张撕完的时刻（Time.get_ticks_msec 口径）。0 = 没有在撕的
+## 整批演出结束时刻；同步结算消耗与攻击的等待边界。
 var _tear_until_ms := 0
-
-## 下一张该在什么时刻起飞。逐张错开的队尾（见 _animate_removed）：
-## 一摞 N 张分 N 次调进来时，靠它接上上一批的尾巴而不是各自从 0 起
 var _tear_slot_ms := 0
 
-## 这一串撕牌演过命中音和爆花了吗（同一摞只报一次）。
-## 判据是「此刻还有没有在撕的」——一摞 N 张分 N 条意图进来，
-## 每条各响一声就是 N 声 N 朵花，而玩家点一摞是一声一朵
+## 每个完整攻击批次只调用一次命中反馈。
 func _impact_once(center: Vector3, attacker := "", resource := "") -> void:
-	if _tear_slot_ms > _animation_now_ms():
-		return          # 上一张还在队里 → 同一摞的后续，不再报
 	_table_actions.attack_feedback(center, attacker, resource)
 
 ## 整批撕完（含最后一张撕开的 TEAR_TIME）。调用方 await 它，
@@ -4089,6 +4104,7 @@ func _await_removed(removed: Array, toward_bot: bool) -> void:
 ## 随时会被 queue_free，拿着一把可能已经失效的 Tween 去问 is_running
 ## 反而会漏等。时刻是纯数，谁被释放都不影响
 func _tears_drained() -> void:
+	await _flush_foe_attack()
 	while true:
 		var left: int = _tear_until_ms - _animation_now_ms()
 		if left <= 0:
@@ -4313,7 +4329,7 @@ func _sync_entities(from_pos = null) -> void:
 	# 正常受击、付款和升级已分别由撕毁、付款吸入、材料收束处理。
 	# 差分兜底中尚未移除的卡仍用逐张撕开，避免快照修复时残留实体。
 	#
-	# **逐张错开，和攻击一个节奏**（同 _animate_removed）：一次吃掉 N 张
+	# 结算消耗逐张错开；攻击则把命中的 N 张抓成一叠同时撕开。一次吃掉 N 张
 	# 全部同时撕开的话读作一团，数不出吃了几张。
 	# 同时把这一批登记进 _tear_until_ms —— 这条路没有调用方 await 它，
 	# 靠的是 _tears_drained 兜住（结算重画桌子前会等），

@@ -66,7 +66,11 @@ var _bot: Control
 var _detail: PanelContainer
 var _detail_title: Label
 var _detail_text: Label
-var _detail_icon: TextureRect
+var _detail_flavor: Label
+var _detail_status: Label
+var _detail_facts: GridContainer
+var _detail_effect: Label
+var _detail_scroll: ScrollContainer
 var _detail_id := ""
 var _detail_market := false
 var _ui_icon_cache: Dictionary = {}
@@ -1298,17 +1302,28 @@ func _build_details() -> void:
 	_detail_title = _label("", 17)
 	_detail_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(_detail_title)
-	_detail_icon = TextureRect.new()
-	_detail_icon.custom_minimum_size = Vector2.ZERO
-	_detail_icon.visible = false
-	_detail_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_detail_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_detail_icon.modulate = Palette.get_color("card", "body")
-	_detail_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	column.add_child(_detail_icon)
-	_detail_text = _label("", 15)
+	_detail_flavor = _label("", 13)
+	_detail_flavor.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(_detail_flavor)
+	_detail_status = _label("", 14)
+	_detail_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(_detail_status)
+	_detail_facts = GridContainer.new()
+	_detail_facts.columns = 2
+	_detail_facts.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_detail_facts.add_theme_constant_override("h_separation", 16)
+	_detail_facts.add_theme_constant_override("v_separation", 5)
+	column.add_child(_detail_facts)
+	var separator := HSeparator.new()
+	separator.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(separator)
+	_detail_scroll = ScrollContainer.new()
+	_detail_scroll.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	column.add_child(_detail_scroll)
+	_detail_text = _label("", 13)
 	_detail_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	column.add_child(_detail_text)
+	_detail_scroll.add_child(_detail_text)
 	_detail.hide()
 
 func _process(_delta: float) -> void:
@@ -1348,38 +1363,64 @@ func _process(_delta: float) -> void:
 		return
 	show_card_detail(card, mouse)
 
+func _detail_fact(key: String, value: String) -> void:
+	var caption := _label(key, 14)
+	var content := _label(value, 14)
+	content.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	content.custom_minimum_size.x = _px(145)
+	_detail_facts.add_child(caption)
+	_detail_facts.add_child(content)
+
 func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 	var id := card.def_id
+	var def: Dictionary = CardDB.get_def(id)
 	if id != _detail_id or card.is_market != _detail_market:
 		_detail_id = id
 		_detail_market = card.is_market
 		_detail_title.text = CardDB.card_name(id)
-		_detail_icon.texture = CardArt.illustration_texture(id)
-		_detail_icon.modulate = Color.WHITE
-		if _detail_icon.texture == null:
-			_detail_icon.texture = CardArt.icon_texture(id)
-			_detail_icon.modulate = CardArt.icon_tint(_detail_icon.texture, CardArt.ink_color(id))
-		_detail.reset_size()
-	# 同名卡可以属于不同组合；每次取被指实体的真实状态，不能只按卡名缓存。
-	var description: String = _main.board.hover_desc_text(id)
-	if card.is_market:
-		description = "购买价 %d 资金\n%s" % [CardDB.get_def(id).get("price", 0), description]
-	elif card.recipe_status_text() != "":
-		description = card.recipe_status_text() + "\n" + description
-	if description != _detail_text.text:
-		_detail_text.text = description
-		_detail.reset_size()
+		_detail_flavor.text = str(def.get("flavor", ""))
+		_detail_effect = null
+		for child in _detail_facts.get_children():
+			_detail_facts.remove_child(child)
+			child.queue_free()
+		if card.is_market:
+			_detail_fact("购买", "%d 资金" % int(def.get("price", 0)))
+		if def.get("kind", "") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
+			_detail_fact("配方", "%s × %d" % [CardDB.card_label(str(def.recipe_res)), int(def.recipe_n)])
+			if def.kind == CardDB.KIND_PRODUCT:
+				_detail_fact("产出", "每回合 %s + %d" % [CardDB.res_label(str(def.output_res)), int(def.output_n)])
+			else:
+				_detail_fact("攻击", "移除对方%s × %d" % [CardDB.card_label(str(def.attack_res)), int(def.attack_n)])
+			_detail_effect = _detail_facts.get_child(_detail_facts.get_child_count() - 1)
+		var pawn := CardDB.pawn_value(id)
+		if pawn > 0:
+			_detail_fact("典当", "资金 + %d" % pawn)
+		_detail_scroll.scroll_vertical = 0
+	if _detail_effect != null:
+		var value := int(def.get("output_n", def.get("attack_n", 0))) * card.effect_mult()
+		_detail_effect.text = "每回合 %s + %d" % [CardDB.res_label(str(def.output_res)), value] if def.kind == CardDB.KIND_PRODUCT else "移除对方%s × %d" % [CardDB.card_label(str(def.attack_res)), value]
+	# 进度属于当前实体，不能沿用同名卡另一组的状态。
+	_detail_status.text = "购入后拖入理牌区组合" if card.is_market else card.recipe_status_text()
+	_detail_status.visible = _detail_status.text != ""
+	_detail_flavor.visible = _detail_flavor.text != ""
+	var notes: String = _main.board.describe_def(id)
+	if def.get("kind", "") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
+		notes = "\n".join(notes.split("\n").slice(2))
+	_detail_text.text = notes.replace("\n→ ", " → ").replace("\n张数须精确\n不能夹杂其他牌", "\n须精确张数，不混入其他牌")
+	_detail.reset_size()
 	_place_detail(mouse)
 
 func show_facility_detail(mouse: Vector2) -> void:
-	if _detail_id != "@pawnshop":
-		_detail_id = "@pawnshop"
-		_detail_market = false
-		_detail_title.text = "典当行 · 公共设施"
-		_detail_text.text = "不需购买，拖入非现金卡换现金。\n现金卡不收；至少保留一个用户。"
-		_detail_icon.texture = null
-		_detail_icon.hide()
-		_detail.reset_size()
+	_detail_id = "@pawnshop"
+	_detail_market = false
+	_detail_title.text = "典当行 · 公共设施"
+	_detail_flavor.hide()
+	_detail_status.hide()
+	for child in _detail_facts.get_children():
+		_detail_facts.remove_child(child)
+		child.queue_free()
+	_detail_text.text = "不需购买，拖入非现金卡换现金。\n现金卡不收；至少保留一个用户。"
+	_detail.reset_size()
 	_place_detail(mouse)
 
 func _place_detail(mouse: Vector2) -> void:
@@ -1403,25 +1444,28 @@ func _fit_detail_content() -> void:
 	var max_width := minf(_px(300), _last_size.x / 3.0)
 	var limit := maxf(1.0, max_width - style.get_minimum_size().x)
 	var natural := 0.0
-	for label in [_detail_title, _detail_text]:
+	for label in [_detail_title, _detail_flavor, _detail_status, _detail_text]:
 		var font: Font = label.get_theme_font("font")
 		var font_size: int = label.get_theme_font_size("font_size")
 		for line in label.text.split("\n"):
 			natural = maxf(natural, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x)
 	var width := minf(ceilf(natural), limit)
-	for label in [_detail_title, _detail_text]:
+	for label in [_detail_title, _detail_flavor, _detail_status, _detail_text]:
 		label.custom_minimum_size = Vector2(width, 0.0)
 		label.size = Vector2(width, 0.0)
 		# 换宽度后立即刷新排版结果，避免首帧用上一张卡的换行高度撑大面板。
 		label.get_minimum_size()
 		label.update_minimum_size()
 		label.reset_size()
-	# 插画利用剩余高度，手机窄窗优先保留规则文字，避免详情越出牌桌。
-	var text_height := _detail_title.get_combined_minimum_size().y + _detail_text.get_combined_minimum_size().y
-	var available := _content.size.y - text_height - style.get_minimum_size().y - _px(28)
-	var art_height := minf(_px(100), available)
-	_detail_icon.visible = _detail_icon.texture != null and art_height >= _px(48)
-	_detail_icon.custom_minimum_size = Vector2(0, maxf(0.0, art_height)) if _detail_icon.visible else Vector2.ZERO
+	_detail_flavor.modulate = Color(1,1,1,0.68)
+	_detail_status.modulate = Palette.semantic("pending")
+	var above := _detail_title.get_combined_minimum_size().y + _detail_facts.get_combined_minimum_size().y
+	if _detail_flavor.visible:
+		above += _detail_flavor.get_combined_minimum_size().y
+	if _detail_status.visible:
+		above += _detail_status.get_combined_minimum_size().y
+	var available := maxf(_px(28), _content.size.y - above - style.get_minimum_size().y - _px(55))
+	_detail_scroll.custom_minimum_size = Vector2(width, minf(_detail_text.get_combined_minimum_size().y, available))
 	_detail.reset_size()
 
 func _on_size_changed() -> void:

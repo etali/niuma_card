@@ -186,8 +186,6 @@ func attack_feedback(at: Vector3, attacker := "", resource := "") -> void:
 				if int(record.get("fired_round", -1)) != host.state.round_num:
 					continue
 				card.pulse_feedback("attack")
-				Feedback.trace(host, "attack", host.board.rest_pos(card) + Vector3.UP * 0.12,
-					at + Vector3.UP * 0.10, Palette.semantic("danger"), Motion.ANTICIPATE + Motion.STAGGER)
 				break
 
 func shield_feedback(cards: Array) -> void:

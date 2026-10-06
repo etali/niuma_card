@@ -498,6 +498,414 @@
       "jiangjia": {
         "file": "icon/icon_jiangjia.png"
       }
+    },
+    "hover": {
+      "fps": 12,
+      "cards": {
+        "baiyibutie": {
+          "file": "icon/hover/baiyibutie.png",
+          "cell_size": [
+            358,
+            358
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "banxiaoshi": {
+          "file": "icon/hover/banxiaoshi.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "baoyue": {
+          "file": "icon/hover/baoyue.png",
+          "cell_size": [
+            320,
+            299
+          ],
+          "content_size": [
+            256,
+            235
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "butie": {
+          "file": "icon/hover/butie.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "cash": {
+          "file": "icon/hover/cash.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "chaping": {
+          "file": "icon/hover/chaping.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "chunwan": {
+          "file": "icon/hover/chunwan.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "ditui": {
+          "file": "icon/hover/ditui.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "dujiaoshou": {
+          "file": "icon/hover/dujiaoshou.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "eryouxuan": {
+          "file": "icon/hover/eryouxuan.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "guomin": {
+          "file": "icon/hover/guomin.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "heigongguan": {
+          "file": "icon/hover/heigongguan.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "jiangjia": {
+          "file": "icon/hover/jiangjia.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "jiaolv": {
+          "file": "icon/hover/jiaolv.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "liebian": {
+          "file": "icon/hover/liebian.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "liulianghe": {
+          "file": "icon/hover/liulianghe.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "pinshaoshao": {
+          "file": "icon/hover/pinshaoshao.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "resou": {
+          "file": "icon/hover/resou.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "shangshi": {
+          "file": "icon/hover/shangshi.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "shanzhai": {
+          "file": "icon/hover/shanzhai.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "shuabuting": {
+          "file": "icon/hover/shuabuting.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "touliu": {
+          "file": "icon/hover/touliu.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "tuanzhang": {
+          "file": "icon/hover/tuanzhang.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "tuisong": {
+          "file": "icon/hover/tuisong.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "user": {
+          "file": "icon/hover/user.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "waimai": {
+          "file": "icon/hover/waimai.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "xinxijianfang": {
+          "file": "icon/hover/xinxijianfang.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "xufei": {
+          "file": "icon/hover/xufei.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "yinqing996": {
+          "file": "icon/hover/yinqing996.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "yunketang": {
+          "file": "icon/hover/yunketang.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        },
+        "zuokong": {
+          "file": "icon/hover/zuokong.png",
+          "cell_size": [
+            320,
+            320
+          ],
+          "content_size": [
+            256,
+            256
+          ],
+          "columns": 4,
+          "frames": 16
+        }
+      }
     }
   }
 }

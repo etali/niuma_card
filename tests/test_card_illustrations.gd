@@ -155,10 +155,10 @@ func _real_group_and_details() -> void:
 	check(card._recipe_blob.modulate == CardArt.accent_color("baoyue"), "配方凑齐通过徽标强调色呈现")
 	var detail: Node = main.drawer_presentation
 	detail.show_card_detail(card, Vector2(400, 350))
-	check(detail._detail_text.text.contains("可生产") and detail._detail_text.text.contains("用户保留"), "详情解释当前状态与用户保留规则")
+	check(detail._detail_status.text.contains("可生产") and detail._detail_text.text.contains("用户保留"), "详情解释当前状态与用户保留规则")
 	detail.show_card_detail(other, Vector2(400, 350))
-	check(detail._detail_text.text.contains("还缺") and not detail._detail_text.text.contains("可生产"), "同名散牌不会沿用另一组的已配齐状态")
-	check(detail._detail_icon.texture == CardArt.illustration_texture("baoyue"), "详情使用与桌面相同的原色漫画")
+	check(detail._detail_status.text.contains("还缺") and not detail._detail_status.text.contains("可生产"), "同名散牌不会沿用另一组的已配齐状态")
+	check(detail._detail_facts.get_child_count() >= 4, "详情按配方与产出分栏，不再重复插画")
 	root.size = Vector2i(900, 600)
 	for i in 3:
 		await process_frame
@@ -167,7 +167,7 @@ func _real_group_and_details() -> void:
 	check(detail._detail.position.y + detail._detail.size.y <= detail._content.position.y + detail._content.size.y + 1,
 		"窄窗的长卡说明保持在牌桌内，不盖住回合操作栏")
 	detail.show_facility_detail(Vector2(400, 350))
-	check(not detail._detail_icon.visible, "典当行详情不残留前一张卡的插画")
+	check(not detail._detail_flavor.visible and not detail._detail_status.visible, "典当行详情不残留前一张卡的状态")
 	check(StateCodec.state_hash(main.state) == state_hash, "说明和动效不改对局规则状态")
 	main.queue_free()
 	await process_frame

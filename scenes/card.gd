@@ -150,6 +150,50 @@ var _visual: Node3D = null
 var _drag_visual_tween: Tween = null
 var _visual_dragging := false
 var _visual_hovered := false
+var _hover_elapsed := 0.0
+var _hover_original: Texture2D
+var _hover_pixel_size := 0.0
+var _hover_frames: Array = []
+var _hover_frame := 0
+var hover_animation_duration := 0.0
+var hover_animation_paused := false
+var hover_animation_speed := 1.0
+
+func _stop_hover_animation() -> void:
+	set_process(false)
+	_hover_elapsed = 0.0
+	_hover_frame = 0
+	if _icon:
+		_icon.material_override = null
+	if _icon and _hover_original:
+		_icon.texture = _hover_original
+		_icon.pixel_size = _hover_pixel_size
+
+func _process(delta: float) -> void:
+	if not _visual_hovered or _visual_dragging or _visual_retired or _face_down:
+		_stop_hover_animation()
+		return
+	if hover_animation_paused:
+		return
+	_hover_elapsed += delta * hover_animation_speed
+	seek_hover_animation(hover_animation_time())
+
+func hover_animation_time() -> float:
+	return minf(fmod(maxf(_hover_elapsed - 0.15, 0.0), hover_animation_duration + 0.65), hover_animation_duration)
+
+func seek_hover_animation(seconds: float) -> void:
+	if _icon == null or _hover_frames.is_empty():
+		return
+	# 时间轴每步为 1/fps，容忍浮点舍入，避免整帧边界被读成上一帧。
+	_hover_frame = clampi(floori(seconds * CardArt.hover_fps() + 0.00001), 0, _hover_frames.size() - 1)
+	# 图集起止两帧就是缩小后的原图；直接显示原尺寸原图，避免静止轮廓和清晰度跳变。
+	if _hover_frame < 2 or _hover_frame >= _hover_frames.size() - 2:
+		_icon.texture = _hover_original
+		_icon.pixel_size = _hover_pixel_size
+	else:
+		_icon.texture = _hover_frames[_hover_frame]
+		var content: Array = CardArt.hover_config(def_id).get("content_size", [256, 256])
+		_icon.pixel_size = _hover_pixel_size * _hover_original.get_width() / float(content[0])
 var _hover_lift_allowed := true
 var _visual_retired := false
 var _feedback_tween: Tween
@@ -233,6 +277,10 @@ func setup(p_uid: int, p_def_id: String) -> void:
 		_icon.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
 		_add_visual(_icon)
 		_face_elems.append(_icon)
+		_hover_original = icon_tex
+		_hover_pixel_size = _icon.pixel_size
+		_hover_frames = CardArt.hover_frames(def_id)
+		hover_animation_duration = float(_hover_frames.size()) / CardArt.hover_fps()
 
 	# 卡名（A 位）：底板墨色，落在标题带上
 	label = Label3D.new()
@@ -629,6 +677,7 @@ func _stop_visual_tween() -> void:
 	_drag_visual_tween = null
 
 func set_drag_visual(on: bool) -> void:
+	_stop_hover_animation()
 	if _visual == null or _visual_retired:
 		return
 	_visual_dragging = on
@@ -654,6 +703,15 @@ func set_hover_visual(on: bool, lift_allowed := true) -> void:
 	if _visual == null or _visual_retired or _visual_dragging 			or (_visual_hovered == on and _hover_lift_allowed == lift_allowed):
 		return
 	_visual_hovered = on
+	if on and _icon and not _face_down:
+		if _hover_original == null:
+			_hover_original = _icon.texture
+			_hover_pixel_size = _icon.pixel_size
+		seek_hover_animation(0.0)
+		_hover_elapsed = 0.0
+		set_process(not _hover_frames.is_empty())
+	else:
+		_stop_hover_animation()
 	_hover_lift_allowed = lift_allowed
 	_set_market_price_hover(on)
 	_set_handling_light(0.35 if on else 0.0)
@@ -665,6 +723,7 @@ func set_hover_visual(on: bool, lift_allowed := true) -> void:
 	_drag_visual_tween.tween_property(_visual, "rotation", Vector3.ZERO, 0.12)
 
 func pulse_landed() -> void:
+	_stop_hover_animation()
 	if _visual == null or _visual_retired:
 		return
 	_visual_dragging = false
@@ -680,6 +739,7 @@ func pulse_landed() -> void:
 
 ## 飞走/撕开前清空交互通道。子元素位置始终是卡面局部坐标，撕片分配接口不变。
 func reset_interaction_visual() -> void:
+	_stop_hover_animation()
 	_set_market_price_hover(false)
 	_reset_art_motion()
 	_stop_visual_tween()
@@ -928,6 +988,7 @@ func set_dimmed(on: bool) -> void:
 
 ## 正背轮廓共用同一几何；无卡背插画时仍能翻成程序化卡背。
 func set_face_down(on: bool) -> void:
+	_stop_hover_animation()
 	if _plate == null or _visual_retired or on == _face_down:
 		return
 	if on:

@@ -511,24 +511,9 @@ func _tear(n: int, at: float) -> void:
 		c.freeze = true
 		c.position = Vector3(x0 + i * 1.5, 0.05, m.PLAYER_ZONE_Z - 1.0)
 	await m.get_tree().create_timer(0.3).timeout
-	var tracked: Array = []      # [卡, [左片, 右片]]，抓拍时报它们的屏幕位置
-	for c in victims:
-		m.entities.erase(c.uid)
-		# 两片是 Node3D 容器（里面装旋转好的半卡网格），不是 MeshInstance3D
-		var before: Array = c.get_children()
-		m._tear_out(c, Vector3(0, 0, 1.0))
-		var halves: Array = []
-		for kid in c.get_children():
-			if before.has(kid) or not (kid is Node3D):
-				continue
-			if kid.get_child_count() > 0 and kid.get_child(0) is MeshInstance3D:
-				halves.append(kid)
-		tracked.append([c, halves])
-	await m.get_tree().create_timer(m.TEAR_TIME * clampf(at, 0.0, 1.0)).timeout
-	print("TEAR 撕了 %d 张，抓拍于 %.0f%%（撕开总时长 %.2fs）" % [
-		victims.size(), at * 100.0, m.TEAR_TIME])
-	for t in tracked:
-		_report_halves(t[0], t[1])
+	m._animate_removed([], false, victims)
+	await m.get_tree().create_timer(0.16 + m.TEAR_TIME * clampf(at, 0.0, 1.0)).timeout
+	print("TEAR 批次 %d 张，一双手同步撕开" % victims.size())
 
 func _report_halves(c: CardEntity, halves: Array) -> void:
 	if not is_instance_valid(c) or halves.size() != 2:
