@@ -7,6 +7,8 @@ extends Node3D
 const Motion = preload("res://scenes/card_motion.gd")
 const Hands = preload("res://scenes/table_hands.gd")
 const ButtonTheme = preload("res://scenes/ui_button_theme.gd")
+const ArtResolution = preload("res://scenes/preview_art_resolution.gd")
+const PreviewCard = preload("res://scenes/preview_card.gd")
 var board: Board
 var drawer_presentation: Node
 var table_hands: Node
@@ -43,8 +45,26 @@ var _scale_factor := 1.0
 var _hover_controls: VBoxContainer
 var _hover_pause: CheckButton
 var _hover_slow: CheckButton
+var _hover_speed_slider: HSlider
+var _hover_speed_value: Label
+var _hover_speed := 1.0
 var _hover_original: CheckButton
 var _hover_seek: HSlider
+var _hover_replay: Button
+var _resolution: OptionButton
+var _resolution_note: Label
+var _resolution_limit := 0
+var _resolution_busy := false
+var _resolution_generation := 0
+var _resolution_cache: Dictionary = {}
+var _resolution_lru: Array[int] = []
+var _resolution_tasks: Dictionary = {}
+
+func _exit_tree() -> void:
+	_resolution_generation += 1
+	for task in _resolution_tasks:
+		WorkerThreadPool.wait_for_task_completion(task)
+	_resolution_tasks.clear()
 
 class PreviewSurface extends Node:
 	var host: Node
@@ -66,6 +86,15 @@ func _ready() -> void:
 	window.min_size = Vector2i(960, 680)
 	window.size = Vector2i(1440, 960)
 	_ids = CardDB.all_cards().keys()
+	# 交付每五张时可以只列本批；普通预览仍包含全部卡牌。
+	var review_batch := OS.get_environment("CARD_PREVIEW_BATCH")
+	if not review_batch.is_empty():
+		var selected: Array[String] = []
+		for id in review_batch.split(",", false):
+			if _ids.has(id) and not selected.has(id):
+				selected.append(id)
+		if not selected.is_empty():
+			_ids = selected
 	board = Board.new()
 	add_child(board)
 	board.set_process(false)
@@ -98,11 +127,15 @@ func _ready() -> void:
 	add_child(table_hands)
 	table_hands.bind(self)
 	table_hands.cursor_enabled = false
+	_hover_speed = UIConfig.validated_defaults(UIConfig.read_section("defaults"))["hover_animation_speed"]
 	_build_ui()
 	window.size_changed.connect(_relayout)
 	_relayout()
 	var first_card := OS.get_environment("CARD_PREVIEW_CARD")
-	show_card(first_card if _ids.has(first_card) else "user")
+	show_card(first_card if _ids.has(first_card) else ("user" if _ids.has("user") else _ids[0]))
+	var requested_resolution := OS.get_environment("CARD_PREVIEW_RESOLUTION")
+	if not requested_resolution.is_empty():
+		set_resolution(int(requested_resolution))
 	if OS.get_environment("CARD_PREVIEW_SHOT") != "":
 		_capture_preview()
 
@@ -142,6 +175,14 @@ func _build_ui() -> void:
 	_tabs.add_child(_button("悬停动画", func(): set_page(0)))
 	_tabs.add_child(_button("攻击撕牌", func(): set_page(1)))
 	_tabs.get_child(0).set_meta("ui_role", "primary")
+	column.add_child(_label("插画分辨率 · 最长边", 17))
+	_resolution = OptionButton.new()
+	for limit in ArtResolution.LIMITS:
+		_resolution.add_item(ArtResolution.option_label(Vector2i.ZERO, limit), limit)
+	_resolution.item_selected.connect(func(index): set_resolution(_resolution.get_item_id(index)))
+	column.add_child(_resolution)
+	_resolution_note = _label("", 14)
+	column.add_child(_resolution_note)
 	_list = ScrollContainer.new()
 	_list.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -190,20 +231,43 @@ func _build_ui() -> void:
 	_hover_controls.add_theme_constant_override("separation", 6)
 	column.add_child(_hover_controls)
 	_hover_controls.add_child(_label("逐牌 · 多帧动画检查", 17))
+	var speed_row := HBoxContainer.new()
+	_hover_controls.add_child(speed_row)
+	var speed_label := _label("播放速度", 17)
+	speed_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	speed_row.add_child(speed_label)
+	_hover_speed_value = _label("", 17)
+	_hover_speed_value.name = "HoverAnimationSpeedValue"
+	_hover_speed_value.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_hover_speed_value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_hover_speed_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	speed_row.add_child(_hover_speed_value)
+	var speed_control := UIConfig.hover_speed_control()
+	_hover_speed_slider = HSlider.new()
+	_hover_speed_slider.name = "HoverAnimationSpeed"
+	_hover_speed_slider.min_value = speed_control["min"]
+	_hover_speed_slider.max_value = speed_control["max"]
+	_hover_speed_slider.step = speed_control["step"]
+	_hover_speed_slider.custom_minimum_size.y = 28
+	_hover_speed_slider.set_value_no_signal(_hover_speed)
+	_hover_speed_slider.tooltip_text = "调整后立即生效，保留当前动作进度"
+	_hover_speed_slider.accessibility_name = "卡牌插画播放速度"
+	_hover_speed_slider.value_changed.connect(set_hover_animation_speed)
+	_hover_controls.add_child(_hover_speed_slider)
 	_hover_pause = CheckButton.new()
 	_hover_pause.text = "暂停动作"
 	_hover_pause.toggled.connect(func(on):
 		if not _cards.is_empty(): _cards[0].hover_animation_paused = on)
 	_hover_controls.add_child(_hover_pause)
 	_hover_slow = CheckButton.new()
-	_hover_slow.text = "慢放（¼ 速度）"
-	_hover_slow.toggled.connect(func(on):
-		if not _cards.is_empty(): _cards[0].hover_animation_speed = 0.25 if on else 1.0)
+	_hover_slow.text = "¼ 慢放"
+	_hover_slow.tooltip_text = "按当前所选速度的四分之一播放，便于查看细节"
+	_hover_slow.toggled.connect(func(_on): _apply_hover_speed())
 	_hover_controls.add_child(_hover_slow)
 	_hover_original = CheckButton.new()
 	_hover_original.text = "只看原图"
 	_hover_original.toggled.connect(func(on):
-		if _cards.is_empty() or _cards[0]._hover_frames.is_empty(): return
+		if _cards.is_empty(): return
 		var card := _cards[0]
 		card.set_hover_visual(false, false)
 		_hover = null
@@ -221,7 +285,7 @@ func _build_ui() -> void:
 	_hover_seek.max_value = 1.8
 	_hover_seek.step = 1.0 / CardArt.hover_fps()
 	_hover_seek.value_changed.connect(func(value):
-		if _cards.is_empty() or _cards[0]._hover_frames.is_empty(): return
+		if _cards.is_empty(): return
 		_hover_original.set_pressed_no_signal(false)
 		_hover_pause.set_pressed_no_signal(true)
 		var card := _cards[0]
@@ -231,7 +295,8 @@ func _build_ui() -> void:
 		card.seek_hover_animation(value)
 		_hover = card)
 	_hover_controls.add_child(_hover_seek)
-	_hover_controls.add_child(_button("重新播放动作", replay_motion))
+	_hover_replay = _button("重新播放动作", replay_motion)
+	_hover_controls.add_child(_hover_replay)
 	column.add_child(_label("悬停页可用 ← / → 切换卡牌。", 14))
 	_heading = _label("", 27)
 	_hint = _label("", 17)
@@ -299,7 +364,7 @@ func _relayout() -> void:
 func _position_cards() -> void:
 	_camera.size = maxf(4.8, (1.35 * _cards.size() + 1.0) * get_viewport().get_visible_rect().size.y / _surface.size.x) \
 		if _page == 1 and _spread.button_pressed else 4.8
-	if _page == 0 and not _cards.is_empty() and not _cards[0]._hover_frames.is_empty():
+	if _page == 0 and not _cards.is_empty() and _cards[0].hover_animation_duration > 0.0:
 		_camera.size = 2.8
 	var ray := _camera.project_ray_origin(_surface.get_center())
 	for i in _cards.size():
@@ -312,6 +377,10 @@ func _position_cards() -> void:
 
 func _clear_cards() -> void:
 	_generation += 1
+	_resolution_generation += 1
+	_set_resolution_busy(false)
+	_resolution_cache.clear()
+	_resolution_lru.clear()
 	if is_instance_valid(_hover):
 		_hover.set_hover_visual(false, false)
 	_hover = null
@@ -326,7 +395,7 @@ func _clear_cards() -> void:
 	_cards.clear()
 
 func _spawn(id: String) -> void:
-	var card := CardEntity.new()
+	var card := PreviewCard.new()
 	_uid += 1
 	card.setup(_uid, id)
 	_stage.add_child(card)
@@ -359,22 +428,161 @@ func show_card(id: String) -> void:
 	_clear_cards()
 	_spawn(_ids[_selection])
 	_hover_pause.set_pressed_no_signal(false)
-	_hover_slow.set_pressed_no_signal(false)
+	_apply_hover_speed()
 	_hover_original.set_pressed_no_signal(false)
 	_hover_seek.set_value_no_signal(0)
-	if not _cards[0]._hover_frames.is_empty():
-		_hover_seek.max_value = _cards[0].hover_animation_duration
-	_hover_controls.visible = _page == 0 and not _cards[0]._hover_frames.is_empty()
+	_hover_seek.max_value = _cards[0].hover_animation_duration
+	_hover_controls.visible = _page == 0 and _cards[0].hover_animation_duration > 0.0
 	_heading.text = "%s · %d / %d" % [CardDB.card_name(_ids[_selection]), _selection + 1, _ids.size()]
-	_hint.text = "上一版动作图集 · %d 帧 · %d fps · 鼠标悬停播放。" % [_cards[0]._hover_frames.size(), int(CardArt.hover_fps())]
+	var config := CardArt.hover_config(_ids[_selection])
+	var kind := "完整帧动画" if config.has("files") or config.get("codec", "") == "hdelta-v1" else "待修复图集"
+	_hint.text = "%s · %d 帧 · %d fps · 鼠标悬停播放。" % [kind, int(config.get("frames", 0)), int(CardArt.hover_fps())]
 	for i in _buttons.size():
 		_buttons[i].set_meta("ui_role", "primary" if i == _selection else "tool")
 		ButtonTheme.apply(_buttons[i], _scale_factor, 8, 8)
 	_list.ensure_control_visible(_buttons[_selection])
 	_relayout()
+	set_resolution(_resolution_limit)
+
+func set_hover_animation_speed(value: float) -> void:
+	_hover_speed = UIConfig.validated_defaults({"hover_animation_speed": value})["hover_animation_speed"]
+	_hover_speed_slider.set_value_no_signal(_hover_speed)
+	_apply_hover_speed()
+
+func _apply_hover_speed() -> void:
+	_hover_speed_value.text = UIConfig.hover_speed_text(_hover_speed)
+	if _page == 0:
+		for card in _cards:
+			card.hover_animation_speed = _hover_speed * (0.25 if _hover_slow.button_pressed else 1.0)
+
+## 只准备当前卡的变体。后台缩放、逐帧上传，旧请求不能覆盖新的选择。
+func set_resolution(limit: int) -> void:
+	if not limit in ArtResolution.LIMITS or _player_attack_busy != 0:
+		return
+	_resolution_limit = limit
+	_resolution.select(ArtResolution.LIMITS.find(limit))
+	_resolution_generation += 1
+	var generation := _resolution_generation
+	if _cards.is_empty():
+		return
+	for card in _cards:
+		if not card.has_meta("resolution_resume_process"):
+			card.set_meta("resolution_resume_process", card.is_processing())
+		card.set_process(false)
+	_set_resolution_busy(true)
+	_update_resolution_note("准备中")
+	var first := _cards[0]
+	var source_size := Vector2i(first._hover_original.get_size())
+	# 正式素材已缩至 384；更高档位不造出假高清，也不提前加载整段动作。
+	if ArtResolution.target_size(source_size, limit) == source_size:
+		_finish_resolution({}, generation)
+		return
+	if _resolution_cache.has(limit):
+		_touch_resolution(limit)
+		_finish_resolution(_resolution_cache[limit], generation)
+		return
+	var sources: Array = [first._hover_original]
+	if first.hover_animation_duration > 0.0:
+		CardArt.request_hover_frames(first.def_id, first.get_instance_id())
+		var deadline := Time.get_ticks_msec() + 30000
+		while CardArt.hover_frames(first.def_id).is_empty():
+			await get_tree().process_frame
+			if not is_inside_tree() or generation != _resolution_generation:
+				return
+			if Time.get_ticks_msec() >= deadline:
+				_finish_resolution({}, generation)
+				_resolution_note.text = "动作帧尚未就绪，请重新选择分辨率。"
+				return
+		sources.append_array(CardArt.hover_frames(first.def_id))
+	var unique: Dictionary = {}
+	for texture in sources:
+		if texture != null:
+			unique[texture] = true
+	var mapping: Dictionary = {}
+	var completed := 0
+	for texture: Texture2D in unique:
+		if not is_inside_tree() or generation != _resolution_generation:
+			return
+		var size := Vector2i(texture.get_width(), texture.get_height())
+		if ArtResolution.target_size(size, limit) == size:
+			mapping[texture] = texture
+		else:
+			# get_image/upload 留在主线程；重采样与 mipmap 在后台完成。
+			var result := {"image": texture.get_image()}
+			var task := WorkerThreadPool.add_task(func():
+				result.image = ArtResolution.resize_image(result.image, limit))
+			_resolution_tasks[task] = true
+			while not WorkerThreadPool.is_task_completed(task):
+				await get_tree().process_frame
+				if not is_inside_tree():
+					return
+			WorkerThreadPool.wait_for_task_completion(task)
+			_resolution_tasks.erase(task)
+			if not is_inside_tree() or generation != _resolution_generation:
+				return
+			mapping[texture] = ImageTexture.create_from_image(result.image)
+		completed += 1
+		_update_resolution_note("准备中 %d / %d" % [completed, unique.size()])
+		await get_tree().process_frame
+	if not is_inside_tree() or generation != _resolution_generation:
+		return
+	_resolution_cache[limit] = mapping
+	_touch_resolution(limit)
+	_finish_resolution(mapping, generation)
+
+func _touch_resolution(limit: int) -> void:
+	_resolution_lru.erase(limit)
+	_resolution_lru.append(limit)
+	# 留最近两档方便来回比较；换牌时清空，避免累积整套高清动画。
+	while _resolution_lru.size() > 1 and (_resolution_lru.size() > 2 or _resolution_cache_bytes() > 134217728):
+		_resolution_cache.erase(_resolution_lru.pop_front())
+
+func _resolution_cache_bytes() -> int:
+	var textures: Dictionary = {}
+	var bytes := 0
+	for mapping in _resolution_cache.values():
+		for original in mapping:
+			var texture: Texture2D = mapping[original]
+			if texture == original or textures.has(texture):
+				continue
+			textures[texture] = true
+			bytes += int(texture.get_width() * texture.get_height() * 4.0 * 4.0 / 3.0)
+	return bytes
+
+func _finish_resolution(mapping: Dictionary, generation: int) -> void:
+	if generation != _resolution_generation:
+		return
+	for card in _cards:
+		card.set_preview_textures(mapping)
+		card.set_process(bool(card.get_meta("resolution_resume_process", false)))
+		card.remove_meta("resolution_resume_process")
+	_set_resolution_busy(false)
+	_update_resolution_note()
+
+func _set_resolution_busy(busy: bool) -> void:
+	_resolution_busy = busy
+	for toggle in [_hover_pause, _hover_slow, _hover_original]:
+		toggle.disabled = busy
+	_hover_seek.editable = not busy
+	_hover_replay.disabled = busy
+	_play.disabled = busy or _player_attack_busy != 0
+
+func _update_resolution_note(progress := "") -> void:
+	if _cards.is_empty():
+		return
+	var texture: Texture2D = _cards[0]._hover_original
+	var source := Vector2i(texture.get_width(), texture.get_height())
+	var target := ArtResolution.target_size(source, _resolution_limit)
+	for index in _resolution.item_count:
+		var limit := _resolution.get_item_id(index)
+		_resolution.set_item_text(index, ArtResolution.option_label(source, limit))
+	_resolution_note.text = "%d × %d · %s" % [target.x, target.y,
+		progress if not progress.is_empty() else "正式原图" if target == source else "预览缩小"]
+	if _resolution_limit > maxi(source.x, source.y):
+		_resolution_note.text += "\n高于源图的档位不放大。"
 
 func replay_motion() -> void:
-	if _cards.is_empty() or _cards[0]._hover_frames.is_empty(): return
+	if _cards.is_empty() or _cards[0].hover_animation_duration <= 0.0: return
 	_hover_original.set_pressed_no_signal(false)
 	_hover_pause.set_pressed_no_signal(false)
 	_hover_seek.set_value_no_signal(0.0)
@@ -397,6 +605,7 @@ func reset_attack() -> void:
 	_hint.text = "指向卡牌时手会生气；点击卡牌或“播放撕牌”查看整批效果。"
 	_status.text = "准备就绪 · 一次抓成一叠，一次撕开。"
 	_relayout()
+	set_resolution(_resolution_limit)
 
 func _set_busy(busy: bool) -> void:
 	_player_attack_busy = 1 if busy else 0
@@ -405,14 +614,20 @@ func _set_busy(busy: bool) -> void:
 	_resource.disabled = busy
 	_count.editable = not busy
 	_spread.disabled = busy
+	_resolution.disabled = busy
 	for button in _tabs.get_children():
 		button.disabled = busy
 
 func play_attack() -> void:
-	if _page != 1 or _player_attack_busy != 0:
+	if _page != 1 or _player_attack_busy != 0 or _resolution_busy:
 		return
 	if _cards.is_empty() or not is_instance_valid(_cards[0]):
 		reset_attack()
+		var waiting_generation := _generation
+		while _resolution_busy:
+			await get_tree().process_frame
+			if not is_inside_tree() or waiting_generation != _generation or _page != 1:
+				return
 	var generation := _generation
 	var count := _cards.size()
 	_set_busy(true)
@@ -434,7 +649,10 @@ func _process(_delta: float) -> void:
 	_update_hover(get_viewport().get_mouse_position())
 
 func _update_hover(pointer: Vector2) -> void:
-	if _page == 0 and not _cards.is_empty() and not _cards[0]._hover_frames.is_empty():
+	if _resolution_busy:
+		_status.text = "正在准备当前分辨率 · 动作进度已保留"
+		return
+	if _page == 0 and not _cards.is_empty():
 		if _hover_original.button_pressed:
 			_status.text = "原图对照 · 原静止插画"
 			return
@@ -442,6 +660,9 @@ func _update_hover(pointer: Vector2) -> void:
 			_status.text = "动作已暂停 · %.2f 秒 · 可拖动时间轴" % _hover_seek.value
 			return
 	var card: CardEntity = board._pick_card(pointer) if _surface.has_point(pointer) else null
+	# 操作侧栏时继续保留当前动作，便于暂停、切换分辨率对照同一帧。
+	if _page == 0 and is_instance_valid(_hover) and _sidebar.get_global_rect().has_point(pointer):
+		card = _hover
 	if card != _hover:
 		if is_instance_valid(_hover):
 			_hover.set_hover_visual(false, false)
@@ -449,10 +670,15 @@ func _update_hover(pointer: Vector2) -> void:
 		if _hover != null:
 			_hover.set_hover_visual(true, false)
 	if _page == 0:
-		if not _cards.is_empty() and not _cards[0]._hover_frames.is_empty():
-			_status.text = "多帧动画 · 12 fps · %s" % ("¼ 速度" if _hover_slow.button_pressed else "正常速度") if _hover != null else "静止原图 · 把鼠标放到卡面上播放"
+		if not _cards.is_empty() and _cards[0].hover_animation_duration > 0.0:
+			_status.text = "静止原图 · 把鼠标放到卡面上播放"
 			if _hover != null:
-				_hover_seek.set_value_no_signal(_hover.hover_animation_time())
+				if _hover._hover_frames.is_empty():
+					_status.text = "正在后台准备动作帧 · 保持静止原图"
+				else:
+					_status.text = "多帧动画 · 基准 %d fps · 当前 %s%s" % [int(CardArt.hover_fps()),
+						UIConfig.hover_speed_text(_hover.hover_animation_speed), " · ¼ 慢放" if _hover_slow.button_pressed else ""]
+					_hover_seek.set_value_no_signal(_hover.hover_animation_time())
 		else:
 			_status.text = "当前卡牌没有登记动作图集"
 
@@ -478,6 +704,8 @@ func _capture_preview() -> void:
 		set_page(1)
 		if spec.size() > 2:
 			_count.value = clampi(int(spec[2]), 1, 10)
+		while _resolution_busy:
+			await get_tree().process_frame
 		await get_tree().physics_frame
 		get_window().grab_focus()
 		get_viewport().warp_mouse(_camera.unproject_position(_cards.back().global_position))
@@ -489,14 +717,24 @@ func _capture_preview() -> void:
 	else:
 		if spec.size() > 1:
 			show_card(spec[1])
+		while _resolution_busy:
+			await get_tree().process_frame
 		await get_tree().physics_frame
 		get_window().grab_focus()
 		get_viewport().warp_mouse(_camera.unproject_position(_cards[0].global_position))
 		await get_tree().create_timer(0.75).timeout
+		for attempt in 180:
+			if not _cards[0]._hover_frames.is_empty():
+				break
+			await get_tree().process_frame
 		if spec.size() > 2 and not _cards[0]._hover_frames.is_empty():
 			_cards[0].set_hover_visual(true, false)
 			_cards[0].hover_animation_paused = true
-			_cards[0].seek_hover_animation(float(spec[2]))
+			var time := float(spec[2])
+			_hover_pause.set_pressed_no_signal(true)
+			_hover_seek.set_value_no_signal(time)
+			_cards[0]._hover_elapsed = time + 0.15
+			_cards[0].seek_hover_animation(time)
 			await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(spec[0])

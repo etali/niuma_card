@@ -19,6 +19,12 @@ import json
 import sys
 from pathlib import Path, PurePosixPath
 
+# 支持命令行运行与通过 tests 动态载入此检查器。
+try:
+    from tools.hover_delta_codec import decode_file as decode_hover_delta
+except ModuleNotFoundError:
+    from hover_delta_codec import decode_file as decode_hover_delta
+
 try:
     from PIL import Image
 except ImportError as exc:
@@ -126,15 +132,98 @@ def check_icons(card_ids: list[str], errors: list[str], warnings: list[str]) -> 
     extras = sorted(actual_names - expected_names)
     if extras:
         warnings.append("素材目录存在未被 cards.json 引用的图标：" + ", ".join(extras))
-    # 新版情景图直接覆盖旧图标，保留生成图原生尺寸与比例；卡牌按纹理宽度缩放。
-    # 旧线稿仍采用原有 1024×1024 规范，透明度与实际路径由 ui.art 检查。
+    # 正式小图与差分帧共享尺寸；旧 PNG 序列和旧线稿仍保留兼容检查。
     try:
-        illustrated = load_object(UI_JSON).get("art", {}).get("illustrations", {})
+        art = load_object(UI_JSON).get("art", {})
+        illustrated = art.get("illustrations", {})
+        animations = art.get("hover", {}).get("cards", {})
     except (ValueError, OSError, AttributeError):
         illustrated = {}
+        animations = {}
+    if not isinstance(illustrated, dict):
+        illustrated = {}
     for card_id in card_ids:
-        check_one(icon_dir / f"icon_{card_id}.png", None if card_id in illustrated else (1024, 1024), errors,
+        config = animations.get(card_id, {}) if isinstance(animations, dict) else {}
+        size = config.get("frame_size") if isinstance(config, dict) and config.get("codec") == "hdelta-v1" else None
+        expected = (None if card_id in illustrated else (1024, 1024))
+        if isinstance(size, list) and len(size) == 2 and all(type(n) is int and n > 0 for n in size):
+            expected = tuple(size)
+        check_one(icon_dir / f"icon_{card_id}.png", expected, errors,
                   label=f"卡牌图标 {card_id}")
+
+
+def check_delta_animation(name: str, entry: dict, manifest: dict,
+                          errors: list[str]) -> int:
+    """解码正式差分素材，校验显示顺序、静止起点和稳定终态。"""
+    label = f"ui.art.hover.cards.{name}"
+    if entry.get("codec") != "hdelta-v1":
+        errors.append(f"{label}.codec 不支持：{entry.get('codec')!r}")
+        return 0
+    if "files" in entry:
+        errors.append(f"{label} 差分动画不能同时登记 files")
+        return 0
+    filename = entry.get("file")
+    if not isinstance(filename, str) or not filename.strip():
+        errors.append(f"{label}.file 必须是非空路径字符串")
+        return 0
+    relative = PurePosixPath(filename)
+    if (relative.is_absolute() or ".." in relative.parts or "\\" in filename
+            or ":" in filename or "\0" in filename):
+        errors.append(f"{label}.file 必须是 assets/art 内的相对路径")
+        return 0
+    if relative.suffix != ".hdelta":
+        errors.append(f"{label}.file 差分素材必须使用 .hdelta 扩展名")
+        return 0
+    size, count = entry.get("frame_size"), entry.get("frames")
+    if (not isinstance(size, list) or len(size) != 2
+            or not all(type(n) is int and 0 < n <= 384 for n in size)
+            or type(count) is not int or count <= 0):
+        errors.append(f"{label} 差分帧尺寸必须为 1～384 的整数，帧数必须为正整数")
+        return 0
+    target = ART / filename
+    if not target.is_file():
+        errors.append(f"差分动画缺失：{rel(target)}")
+        return 0
+    try:
+        decoded = decode_hover_delta(target)
+    except (OSError, ValueError) as exc:
+        errors.append(f"差分动画无法解码：{rel(target)}（{exc}）")
+        return 0
+    timeline, frames = decoded["timeline"], decoded["frames"]
+    if (decoded["width"], decoded["height"]) != tuple(size) or len(timeline) != count:
+        errors.append(f"{label} 差分文件与登记的帧尺寸或帧数不一致")
+        return 0
+    if (not frames or any(len(raw) != size[0] * size[1] * 4 for raw in frames)
+            or any(type(index) is not int or not 0 <= index < len(frames) for index in timeline)):
+        errors.append(f"{label} 差分帧 RGBA 长度或显示索引不合法")
+        return 0
+    if any(min(raw[3::4]) != 0 for raw in frames):
+        errors.append(f"{label} 必须保留 RGBA 透明底")
+    icons = manifest.get("icons", {})
+    still_entry = icons.get(name, {}) if isinstance(icons, dict) else {}
+    still_filename = still_entry.get("file", f"icon/icon_{name}.png") if isinstance(still_entry, dict) else f"icon/icon_{name}.png"
+    if (not isinstance(still_filename, str) or not still_filename
+            or PurePosixPath(still_filename).is_absolute()
+            or ".." in PurePosixPath(still_filename).parts
+            or any(char in still_filename for char in "\\:\0")):
+        errors.append(f"{label} 静止 icon 必须是 assets/art 内的相对路径")
+        return 0
+    still_path = ART / still_filename
+    try:
+        with Image.open(still_path) as still:
+            if still.size != tuple(size) or still.convert("RGBA").tobytes() != frames[timeline[0]]:
+                errors.append(f"{label} 第一帧必须与静止 icon 的 RGBA 一致")
+    except (OSError, ValueError, SyntaxError) as exc:
+        errors.append(f"{label} 静止 icon 无法读取（{exc}）")
+    if len(timeline) >= 4 and any(frames[index] != frames[timeline[0]] for index in timeline[:4]):
+        errors.append(f"{label} 前四帧必须保持静止 icon")
+    if (entry.get("play_mode", "loop") == "once" and len(timeline) >= 3
+            and any(frames[index] != frames[timeline[-1]] for index in timeline[-3:])):
+        errors.append(f"{label} 最后三帧必须保持完整终态")
+    if entry.get("play_mode", "loop") == "loop" and frames[timeline[-1]] != frames[timeline[0]]:
+        errors.append(f"{label} 循环动画末帧必须恢复静止 icon")
+    print(f"  OK   {rel(target)}  {size[0]}×{size[1]} RGBA，{len(timeline)} 帧 / {len(frames)} 个无损姿势")
+    return 1
 
 
 def check_manifest(errors: list[str], warnings: list[str]) -> None:
@@ -206,6 +295,44 @@ def check_manifest(errors: list[str], warnings: list[str]) -> None:
         label = f"ui.art.hover.cards.{name}"
         if not isinstance(entry, dict):
             errors.append(f"{label} 必须是对象")
+            continue
+        if entry.get("play_mode", "loop") not in ("loop", "once"):
+            errors.append(f"{label}.play_mode 必须是 loop 或 once")
+        if "codec" in entry:
+            count += check_delta_animation(name, entry, manifest, errors)
+            continue
+        if "files" in entry:
+            files, size, frames = entry["files"], entry.get("frame_size"), entry.get("frames")
+            if (not isinstance(files, list) or not files
+                    or not all(isinstance(file, str) and file for file in files)
+                    or not isinstance(frames, int) or frames != len(files)
+                    or not isinstance(size, list) or len(size) != 2
+                    or not all(isinstance(n, int) and n > 0 for n in size)):
+                errors.append(f"{label} 的完整帧路径数量、帧数与原生尺寸不一致")
+                continue
+            valid_paths = True
+            for filename in dict.fromkeys(str(file) for file in files):
+                relative = PurePosixPath(filename)
+                if (relative.is_absolute() or ".." in relative.parts or "\\" in filename
+                        or ":" in filename or "\0" in filename or not filename):
+                    errors.append(f"{label}.files 必须是 assets/art 内的相对路径")
+                    valid_paths = False
+                    continue
+                target = ART / filename
+                if not check_one(target, tuple(size), errors, label="完整动作帧"):
+                    valid_paths = False
+                    continue
+                with Image.open(target) as image:
+                    if image.mode != "RGBA" or image.getchannel("A").getextrema()[0] != 0:
+                        errors.append(f"{label} 必须保留 RGBA 透明底")
+            if valid_paths:
+                still_entry = manifest.get("icons", {}).get(name, {})
+                still_path = ART / still_entry.get("file", f"icon/icon_{name}.png")
+                if still_path.is_file():
+                    with Image.open(still_path) as still, Image.open(ART / files[0]) as first:
+                        if still.size != tuple(size) or still.convert("RGBA").tobytes() != first.convert("RGBA").tobytes():
+                            errors.append(f"{label} 第一帧必须与静止 icon 的原生 RGBA 一致")
+            count += len(set(files))
             continue
         filename = entry.get("file", "")
         if not isinstance(filename, str) or not filename.strip():

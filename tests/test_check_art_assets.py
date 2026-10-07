@@ -7,6 +7,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,9 @@ from PIL import Image
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "check_art_assets.py"
+sys.path.insert(0, str(SCRIPT.parent))
+from hover_delta_codec import encode_frames
+
 SPEC = importlib.util.spec_from_file_location("check_art_assets", SCRIPT)
 checker = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(checker)
@@ -122,6 +126,39 @@ class ArtAssetsTest(unittest.TestCase):
         self.assertEqual(status, 1, output)
         self.assertIn("ui.art.hover.cards.new_card.file 必须是 assets/art 内的相对路径", output)
 
+    def test_native_frames_require_full_resolution_and_original_first_frame(self):
+        source = self.art / "icon/icon_cash.png"
+        target = self.art / "icon/hover/native.png"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with Image.new("RGBA", (1024, 1024), (0, 0, 0, 0)) as image:
+            image.putpixel((512, 512), (100, 80, 60, 255))
+            image.save(source)
+            image.putpixel((500, 500), (100, 80, 60, 255))
+            image.save(target)
+        entry = {"files": ["icon/icon_cash.png", "icon/hover/native.png"],
+                 "frames": 2, "frame_size": [1024, 1024], "play_mode": "once"}
+        self.manifest["hover"] = {"fps": 12, "cards": {"cash": entry}}
+        self.write_json(self.manifest_path, self.manifest)
+        status, output = self.run_check()
+        self.assertEqual(status, 0, output)
+        entry["files"][0] = entry["files"][1]
+        self.write_json(self.manifest_path, self.manifest)
+        status, output = self.run_check()
+        self.assertEqual(status, 1, output)
+        self.assertIn("第一帧必须与静止 icon 的原生 RGBA 一致", output)
+        entry["files"][0] = "icon/icon_cash.png"
+        with Image.new("RGBA", (256, 256), (0, 0, 0, 0)) as image:
+            image.save(target)
+        self.write_json(self.manifest_path, self.manifest)
+        status, output = self.run_check()
+        self.assertEqual(status, 1, output)
+        self.assertIn("完整动作帧尺寸不符", output)
+        entry["frames"] = 3
+        self.write_json(self.manifest_path, self.manifest)
+        status, output = self.run_check()
+        self.assertEqual(status, 1, output)
+        self.assertIn("完整帧路径数量、帧数与原生尺寸不一致", output)
+
     def test_hover_atlas_layout_and_speed_are_checked(self):
         entry = {"file": "icon/hover/test.png", "cell_size": [32, 32],
                  "content_size": [24, 24], "columns": 4, "frames": 16}
@@ -141,6 +178,87 @@ class ArtAssetsTest(unittest.TestCase):
         self.assertEqual(status, 1, output)
         self.assertIn("fps 必须为正数", output)
         self.assertIn("帧尺寸、列数、帧数必须为正整数", output)
+
+    def write_delta_fixture(self, size=(384, 352), play_mode="once"):
+        source = self.art / "icon/icon_cash.png"
+        with Image.new("RGBA", size, (0, 0, 0, 0)) as image:
+            image.putpixel((10, 10), (100, 80, 60, 255))
+            image.save(source)
+            first = image.tobytes()
+            image.putpixel((11, 10), (100, 80, 60, 255))
+            second = image.tobytes()
+        entry = {"codec": "hdelta-v1", "file": "icon/hover/cash.hdelta",
+                 "frame_size": list(size), "frames": 8, "play_mode": play_mode}
+        timeline = [first] * 4 + [second] * 4
+        target = self.art / entry["file"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(encode_frames(timeline, *size))
+        self.manifest["hover"] = {"fps": 12, "cards": {"cash": entry}}
+        self.write_json(self.manifest_path, self.manifest)
+        return entry, target, first, second
+
+    def test_delta_small_frames_decode_with_original_start_and_aspect_ratio(self):
+        entry, target, first, second = self.write_delta_fixture()
+        status, output = self.run_check()
+        self.assertEqual(status, 0, output)
+        self.assertIn("384×352 RGBA，8 帧 / 2 个无损姿势", output)
+        decoded = checker.decode_hover_delta(target)
+        self.assertEqual(decoded["frames"], [first, second])
+        self.assertEqual(decoded["timeline"], [0] * 4 + [1] * 4)
+
+    def test_delta_metadata_path_and_codec_are_checked(self):
+        entry, target, first, second = self.write_delta_fixture()
+        good = dict(entry)
+        for changes, message in (
+            ({"codec": "future-v2"}, ".codec 不支持"),
+            ({"files": []}, "不能同时登记 files"),
+            ({"file": ""}, "必须是非空路径字符串"),
+            ({"file": "../outside.hdelta"}, "必须是 assets/art 内的相对路径"),
+            ({"file": "icon/hover/cash.png"}, "必须使用 .hdelta 扩展名"),
+            ({"file": "icon/hover/missing.hdelta"}, "差分动画缺失"),
+            ({"frame_size": [385, 352]}, "差分帧尺寸必须为 1～384"),
+            ({"frame_size": [384, True]}, "差分帧尺寸必须为 1～384"),
+            ({"frames": 0}, "帧数必须为正整数"),
+            ({"frames": 9}, "登记的帧尺寸或帧数不一致"),
+            ({"frame_size": [384, 351]}, "登记的帧尺寸或帧数不一致"),
+        ):
+            with self.subTest(changes=changes):
+                entry.clear()
+                entry.update(good | changes)
+                self.write_json(self.manifest_path, self.manifest)
+                status, output = self.run_check()
+                self.assertEqual(status, 1, output)
+                self.assertIn(message, output)
+
+    def test_delta_corruption_is_rejected(self):
+        entry, target, first, second = self.write_delta_fixture()
+        valid = target.read_bytes()
+        for corrupted in (b"bad", valid[:-1], valid + b"trailing"):
+            with self.subTest(length=len(corrupted)):
+                target.write_bytes(corrupted)
+                status, output = self.run_check()
+                self.assertEqual(status, 1, output)
+                self.assertIn("差分动画无法解码", output)
+
+    def test_delta_start_pause_terminal_and_loop_are_checked(self):
+        entry, target, first, second = self.write_delta_fixture()
+        for frames, mode, message in (
+            ([second] * 8, "once", "第一帧必须与静止 icon 的 RGBA 一致"),
+            ([first] * 3 + [second] * 5, "once", "前四帧必须保持静止 icon"),
+            ([first] * 4 + [second] * 3 + [first], "once", "最后三帧必须保持完整终态"),
+            ([first] * 4 + [second] * 4, "loop", "循环动画末帧必须恢复静止 icon"),
+        ):
+            with self.subTest(message=message):
+                entry["play_mode"] = mode
+                self.write_json(self.manifest_path, self.manifest)
+                target.write_bytes(encode_frames(frames, *entry["frame_size"]))
+                status, output = self.run_check()
+                self.assertEqual(status, 1, output)
+                self.assertIn(message, output)
+        target.write_bytes(encode_frames([first] * 4 + [second] + [first] * 3,
+                                        *entry["frame_size"]))
+        status, output = self.run_check()
+        self.assertEqual(status, 0, output)
 
     def test_manifest_parse_and_reference_failures(self):
         cases = [

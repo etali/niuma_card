@@ -19,6 +19,10 @@ func _init() -> void:
 			quit(1)
 			return
 	for id in ["cash", "user"]:
+		var ui: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/ui.json"))
+		if ui.get("art", {}).get("hover", {}).get("cards", {}).get(id, {}).get("codec", "") == "hdelta-v1":
+			# 静止图与差分首帧必须成套更新，导出应用图标不单独覆盖它们。
+			continue
 		var resource_image := Image.new()
 		if resource_image.load_svg_from_string(FileAccess.get_file_as_string("res://assets/art/icon/icon_" + id + ".svg"), 2.0) != OK \
 				or resource_image.save_png("res://assets/art/icon/icon_" + id + ".png") != OK:

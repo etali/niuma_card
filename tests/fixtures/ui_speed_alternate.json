@@ -1,0 +1,12 @@
+{
+  "defaults": {
+    "hover_animation_speed": 2.25
+  },
+  "controls": {
+    "hover_animation_speed": {
+      "min": 0.25,
+      "max": 3.0,
+      "step": 0.25
+    }
+  }
+}

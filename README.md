@@ -327,9 +327,14 @@ Web 使用常驻完整牌桌，复用规则书、选项、静音和录像入口�
 
 双击项目根目录的 `启动动画预览.command` 可独立打开动画验收窗口，不需要进入牌局。默认使用已构建的应用；也可用 `GODOT=/Applications/Godot.app/Contents/MacOS/Godot ./启动动画预览.command` 从源码运行。悬停页在左侧选择全部 31 张牌（支持方向键切换），右侧展示正式卡面，鼠标移入播放、移出还原；撕牌页可选现金/用户、1～10 张及摞起/摊开，点击卡牌或播放按钮测试，并可反复播放。预览使用正式 `CardEntity`、`CardMotion.tear_batch` 与 `TableHands`，不启动 AI、联网或修改玩家存档。
 
-全部 31 张牌恢复上一版多帧动画：正式图集位于 `assets/art/icon/hover/`，每张 16 帧，播放配置集中在 `data/ui.json.art.hover`，以 12 fps 直接切换动作帧，不混帧、不使用分层运动。静止图保持原来的 `assets/art/icon/icon_<id>.png`，起止直接复用原图；指针进入延迟 150 ms，动作结束停顿 650 ms 后循环。拖动、翻面、移开、撕毁都会停止动作并恢复原图。配方、产出和价签继续共用静态资源图标。
+悬停配置集中在 `data/ui.json.art.hover`。正式 31 张牌的静止 icon 和动画统一为最长边 **384 像素**，连续包月保持非正方形比例；1418 个显示帧仍按 12 fps 播放。动画用 `assets/art/icon/hover/<卡牌 ID>.hdelta` 保存无损帧间差分，恢复后的每一帧与缩小后的完整画面逐像素一致。首帧、起始停顿和循环回位共用对应静止 icon，不重绘动作、不改变帧序或时长。高清制作稿、完整 PNG 候选与转换记录仅存放于忽略的 `build/art_generation/`，正式素材没有另一套高清动画副本。广告投流、焦虑贩卖机、推送弹窗的语义修正及各牌动作保持已制作版本。
+资源牌由 `tools/render_resource_hover.gd` 从已有完整 SVG 源稿绘制；云课堂使用 `tools/render_cloud_hover.py`；第一批五张使用 `tools/render_hover_batch01.py`；其余 23 张使用 `tools/render_hover_group_a.py`、`tools/render_hover_group_b.py` 和 `tools/render_hover_group_c.py`。这些工具在固定画布内绘制活动姿态，补齐遮挡后显露的背景，导出完整 PNG；没有运行时部件运动或混帧。候选先写入忽略的 `build/art_generation/`，通过检查后由 `tools/install_native_hover.py` 统一登记到 `data/ui.json`。正式安装经 `tools/pack_hover_animations.py` 用 Godot cubic 缩到 384 后编码并校验差分包；正式目录只留每牌一个 `.hdelta`。制作工具读取高清归档，不以 384 成品作为重绘底稿。
 
-`启动动画预览.command` 提供全部卡牌、正常速度、¼ 慢放、暂停与逐帧时间轴、原图对照和重播，也可切换到一次撕开多张牌的攻击检查。生成记录与被回退的分层方案保存在忽略的 `build/art_generation/` 下；[anime.md](anime.md) 中原分层规划标记为历史记录。
+卡牌创建时只读静止图，悬停时后台解压差分、校验每帧 SHA256 并生成 mipmap，主线程分批上传。缓存最多保留三套并受 96 MiB 预算约束；移开可取消尚未使用的结果，退出回收后台任务。缩小采样图在运行时生成，不为每帧重复存入安装包。播放器支持不同帧数、循环停顿及一次播放后保留终态。拖动、翻面、移开、撕毁都会停止动作并恢复原图；配方、产出和价签继续共用静态资源图标。
+
+游戏内“选项 → UI → 卡牌插画速度”可在 0.5×～2.0× 之间调节，默认 2.0×。拖动后立即从当前进度改变速度，无需重新悬停；底部“保存”记住下次启动设置，“还原默认”立即恢复配置默认值。默认倍率由 `data/ui.json.defaults.hover_animation_speed` 提供，范围与步长由 `controls.hover_animation_speed` 提供。此项仅控制悬停插画。独立动画预览使用同一配置的默认值和范围，调速单独生效，不写入游戏偏好。
+
+`启动动画预览.command` 提供全部 31 张卡牌、0.5×～2.0× 播放速度、¼ 慢放、暂停与逐帧时间轴、原图对照和重播，也可切换到一次撕开多张牌的攻击检查。左侧“插画分辨率”显示实际尺寸；正式原图现为 384，选择 512/768/1024 会明确保持原尺寸、不放大，256 档可继续比较缩小效果。暂停后切换可对照同一帧；预览保持卡面显示大小、动作进度与 mipmap 过滤，不修改正式素材。准备过程中保留当前画面，换牌或换档会丢弃旧请求，侧栏操作期间保留当前动作。播放速度默认 2.0×，拖动后从当前进度立即生效，换牌与重播保留所选速度；¼ 慢放按所选倍率的四分之一播放，底部显示实际倍率。[anime.md](anime.md) 记录完整动作方案与执行状态。制作候选和源图备份在 `build/art_generation/`，像素回归、关键帧与实际应用检查记录在 `build/animation_checks/`。可用 `CARD_PREVIEW_BATCH=baoyue,pinshaoshao,shuabuting,ditui,waimai ./启动动画预览.command` 只看第一批，普通预览列出全部卡牌。
 
 游戏区域的光标使用奶油色填充和深墨线简笔手，指向合法攻击目标时呈现愤怒手势。一次攻击的受击卡先抓成一叠，再由一双手同时撕开；玩家、AI、联机和录像共享整批演出，一批只响一次撕纸声，张数不增加动画次数。悬停介绍不重复展示插画，采用卡名、趣味说明、实体进度、配方/效果/典当两列信息和补充规则。
 
@@ -341,7 +346,7 @@ Web 使用常驻完整牌桌，复用规则书、选项、静音和录像入口�
 
 状态覆盖图直接维护在 `assets/art/overlay/overlay_shield.png` 与 `overlay_void_stamp.png`：护盾使用粗墨线浅蓝盾牌及奶油色勾，位于标题带下方；作废框中心透明，与独立文字一起倾斜，颜色跟随 `Palette.semantic("danger")`。两张图由内置 ImageGen 重绘，提示词记录在 `build/art_generation/overlay_prompts.json`，旧素材重建会保留已登记的新版。
 
-游戏图标使用用户牌同款全身小人，姿势为无辜地抬手摸头。可编辑源稿为 `assets/art/app_icon.svg`；运行 `Godot --headless --path . --script tools/export_app_icon.gd` 导出 `assets/art/app_icon.png`、`assets/app_icon.png` 及现金/用户共享 PNG，再运行 `python3 tools/build_android_icons.py` 更新 Android 图标和启动图。游戏标题、抽屉角色、结算界面与各平台应用图标共用这套形象。
+游戏图标使用用户牌同款全身小人，姿势为无辜地抬手摸头。可编辑源稿为 `assets/art/app_icon.svg`；运行 `Godot --headless --path . --script tools/export_app_icon.gd` 导出 `assets/art/app_icon.png`、`assets/app_icon.png`，再运行 `python3 tools/build_android_icons.py` 更新 Android 图标和启动图。已采用差分动画的现金/用户牌由完整动画制作和安装流程成套更新静止图，导出应用图标时不会单独覆盖它们。游戏标题、抽屉角色、结算界面与各平台应用图标共用这套形象。
 
 用 `Godot -s tools/visual_preview.gd -- --render /绝对路径/cards.png` 查看正式卡面的七卡样张；末尾加 `--all` 可查看全套卡牌。卡面仅保留卡名、插画与资源数值，按“配方 → 结果”排列；用途和消耗规则放在悬停说明，显示当前材料缺口、有效产出及资源消耗时机。插画事件动作和生产、升级、攻击回执共用真实对局结果，仅作用于表现层。
 

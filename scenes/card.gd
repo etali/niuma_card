@@ -159,8 +159,13 @@ var hover_animation_duration := 0.0
 var hover_animation_paused := false
 var hover_animation_speed := 1.0
 
+func _exit_tree() -> void:
+	CardArt.release_hover_frames(def_id, get_instance_id())
+
 func _stop_hover_animation() -> void:
 	set_process(false)
+	CardArt.release_hover_frames(def_id, get_instance_id())
+	_hover_frames = []
 	_hover_elapsed = 0.0
 	_hover_frame = 0
 	if _icon:
@@ -173,26 +178,42 @@ func _process(delta: float) -> void:
 	if not _visual_hovered or _visual_dragging or _visual_retired or _face_down:
 		_stop_hover_animation()
 		return
+	if _hover_frames.is_empty():
+		_hover_frames = CardArt.hover_frames(def_id)
+		if _hover_frames.is_empty():
+			return
+		if not hover_animation_paused:
+			_hover_elapsed = 0.0
+		seek_hover_animation(hover_animation_time())
 	if hover_animation_paused:
 		return
-	_hover_elapsed += delta * hover_animation_speed
+	_hover_elapsed += delta * hover_animation_speed * _configured_hover_speed()
 	seek_hover_animation(hover_animation_time())
 
+func _configured_hover_speed() -> float:
+	return UIConfig.get_hover_animation_speed()
+
 func hover_animation_time() -> float:
-	return minf(fmod(maxf(_hover_elapsed - 0.15, 0.0), hover_animation_duration + 0.65), hover_animation_duration)
+	var time := maxf(_hover_elapsed - 0.15, 0.0)
+	var config := CardArt.hover_config(def_id)
+	if config.get("play_mode", "loop") == "once":
+		return minf(time, hover_animation_duration)
+	return minf(fmod(time, hover_animation_duration + float(config.get("loop_pause", 0.65))), hover_animation_duration)
 
 func seek_hover_animation(seconds: float) -> void:
 	if _icon == null or _hover_frames.is_empty():
 		return
 	# 时间轴每步为 1/fps，容忍浮点舍入，避免整帧边界被读成上一帧。
 	_hover_frame = clampi(floori(seconds * CardArt.hover_fps() + 0.00001), 0, _hover_frames.size() - 1)
-	# 图集起止两帧就是缩小后的原图；直接显示原尺寸原图，避免静止轮廓和清晰度跳变。
-	if _hover_frame < 2 or _hover_frame >= _hover_frames.size() - 2:
+	var config := CardArt.hover_config(def_id)
+	# 兼容旧图集起止。新完整帧不替换终态，不裁切、变形或混帧。
+	if not config.has("files") and config.get("codec", "") != "hdelta-v1" \
+			and (_hover_frame < 2 or _hover_frame >= _hover_frames.size() - 2):
 		_icon.texture = _hover_original
 		_icon.pixel_size = _hover_pixel_size
 	else:
 		_icon.texture = _hover_frames[_hover_frame]
-		var content: Array = CardArt.hover_config(def_id).get("content_size", [256, 256])
+		var content: Array = config.get("frame_size", config.get("content_size", [256, 256]))
 		_icon.pixel_size = _hover_pixel_size * _hover_original.get_width() / float(content[0])
 var _hover_lift_allowed := true
 var _visual_retired := false
@@ -279,8 +300,7 @@ func setup(p_uid: int, p_def_id: String) -> void:
 		_face_elems.append(_icon)
 		_hover_original = icon_tex
 		_hover_pixel_size = _icon.pixel_size
-		_hover_frames = CardArt.hover_frames(def_id)
-		hover_animation_duration = float(_hover_frames.size()) / CardArt.hover_fps()
+		hover_animation_duration = float(CardArt.hover_config(def_id).get("frames", 0)) / CardArt.hover_fps()
 
 	# 卡名（A 位）：底板墨色，落在标题带上
 	label = Label3D.new()
@@ -707,9 +727,11 @@ func set_hover_visual(on: bool, lift_allowed := true) -> void:
 		if _hover_original == null:
 			_hover_original = _icon.texture
 			_hover_pixel_size = _icon.pixel_size
+		CardArt.request_hover_frames(def_id, get_instance_id())
+		_hover_frames = CardArt.hover_frames(def_id)
 		seek_hover_animation(0.0)
 		_hover_elapsed = 0.0
-		set_process(not _hover_frames.is_empty())
+		set_process(hover_animation_duration > 0.0)
 	else:
 		_stop_hover_animation()
 	_hover_lift_allowed = lift_allowed

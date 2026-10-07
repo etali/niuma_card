@@ -4,7 +4,16 @@
     "window_fraction": 0.75,
     "perspective_angle": 80.0,
     "icon_scale": 0.75,
-    "table_zoom": 1.0
+    "table_zoom": 1.0,
+    "hover_animation_speed": 2.0
+  },
+  "controls": {
+    "_说明": "UI 页的可调范围。hover_animation_speed 仅控制卡牌插画播放倍率，修改后立即生效。",
+    "hover_animation_speed": {
+      "min": 0.5,
+      "max": 2.0,
+      "step": 0.1
+    }
   },
   "palette": {
     "_说明": "全局配色。卡牌用程序化圆角框架，卡面、标题带、边框颜色由这里决定。改这个文件或用游戏内右上角选色面板即可换色；面板保存时写 user://palette.json 覆盖本文件，不动仓库。",
@@ -503,409 +512,351 @@
       "fps": 12,
       "cards": {
         "baiyibutie": {
-          "file": "icon/hover/baiyibutie.png",
-          "cell_size": [
-            358,
-            358
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 48,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/baiyibutie.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "banxiaoshi": {
-          "file": "icon/hover/banxiaoshi.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 42,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/banxiaoshi.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "baoyue": {
-          "file": "icon/hover/baoyue.png",
-          "cell_size": [
-            320,
-            299
-          ],
-          "content_size": [
-            256,
-            235
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 34,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/baoyue.hdelta",
+          "frame_size": [
+            384,
+            352
+          ]
         },
         "butie": {
-          "file": "icon/hover/butie.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 49,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/butie.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "cash": {
-          "file": "icon/hover/cash.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 24,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/cash.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "chaping": {
-          "file": "icon/hover/chaping.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 25,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/chaping.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "chunwan": {
-          "file": "icon/hover/chunwan.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 36,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/chunwan.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "ditui": {
-          "file": "icon/hover/ditui.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 42,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/ditui.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "dujiaoshou": {
-          "file": "icon/hover/dujiaoshou.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 42,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/dujiaoshou.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "eryouxuan": {
-          "file": "icon/hover/eryouxuan.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 37,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/eryouxuan.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "guomin": {
-          "file": "icon/hover/guomin.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 42,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/guomin.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "heigongguan": {
-          "file": "icon/hover/heigongguan.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 49,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/heigongguan.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "jiangjia": {
-          "file": "icon/hover/jiangjia.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 37,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/jiangjia.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "jiaolv": {
-          "file": "icon/hover/jiaolv.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 56,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/jiaolv.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "liebian": {
-          "file": "icon/hover/liebian.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 62,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/liebian.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "liulianghe": {
-          "file": "icon/hover/liulianghe.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 84,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/liulianghe.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "pinshaoshao": {
-          "file": "icon/hover/pinshaoshao.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 34,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/pinshaoshao.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "resou": {
-          "file": "icon/hover/resou.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 49,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/resou.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "shangshi": {
-          "file": "icon/hover/shangshi.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 42,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/shangshi.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "shanzhai": {
-          "file": "icon/hover/shanzhai.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 62,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/shanzhai.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "shuabuting": {
-          "file": "icon/hover/shuabuting.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 34,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/shuabuting.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "touliu": {
-          "file": "icon/hover/touliu.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 72,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/touliu.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "tuanzhang": {
-          "file": "icon/hover/tuanzhang.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 48,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/tuanzhang.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "tuisong": {
-          "file": "icon/hover/tuisong.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 60,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/tuisong.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "user": {
-          "file": "icon/hover/user.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 36,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/user.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "waimai": {
-          "file": "icon/hover/waimai.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 34,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/waimai.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "xinxijianfang": {
-          "file": "icon/hover/xinxijianfang.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 50,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/xinxijianfang.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "xufei": {
-          "file": "icon/hover/xufei.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 54,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/xufei.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "yinqing996": {
-          "file": "icon/hover/yinqing996.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 49,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/yinqing996.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "yunketang": {
-          "file": "icon/hover/yunketang.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 42,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/yunketang.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         },
         "zuokong": {
-          "file": "icon/hover/zuokong.png",
-          "cell_size": [
-            320,
-            320
-          ],
-          "content_size": [
-            256,
-            256
-          ],
-          "columns": 4,
-          "frames": 16
+          "frames": 43,
+          "play_mode": "once",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/zuokong.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
         }
-      }
+      },
+      "cache_cards": 3,
+      "cache_bytes": 100663296,
+      "max_dimension": 384,
+      "_说明": "12fps；最长边384；hdelta-v1无损帧间差分；首帧复用静止图，后台解码并生成mipmap。"
     }
   }
 }

@@ -7,7 +7,9 @@ extends "res://tests/harness.gd"
 const Config = preload("res://engine/ui_config.gd")
 const Drawer = preload("res://scenes/drawer_window.gd")
 const Presentation = preload("res://scenes/drawer_presentation.gd")
+const PreviewCard = preload("res://scenes/preview_card.gd")
 const ALTERNATE := "res://tests/fixtures/ui_alternate.json"
+const SPEED_ALTERNATE := "res://tests/fixtures/ui_speed_alternate.json"
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -19,6 +21,8 @@ func _run() -> void:
 	check(defaults["window_fraction"] == 0.75, "窗口默认75%来自配置")
 	check(defaults["perspective_angle"] == 80.0, "透视默认80度来自配置")
 	check(defaults["icon_scale"] == 0.75, "入口默认75%来自同一配置")
+	check(defaults["hover_animation_speed"] == 2.0, "悬停插画默认二倍速来自同一配置")
+	_check_speed_config()
 
 	# 换文件即换启动值：验证窗口和显示层都读取配置，没有各写一个固定默认数。
 	for config in [[Config.PATH, 0.75, 80.0, 0.75, Vector2i(1485, 900)], [ALTERNATE, 0.85, 55.0, 1.25, Vector2i(1683, 1020)]]:
@@ -55,10 +59,126 @@ func _run() -> void:
 	var slider: HSlider = main.drawer_presentation._utility_body.find_child("PerspectiveAngle", true, false)
 	check(slider != null and slider.value == defaults["perspective_angle"], "UI滑块与配置初始角度一致")
 	_check_pattern_controls(main)
+	await _check_speed_controls(main)
 	_check_shared_ui_actions(main)
 	main.queue_free()
 	await process_frame
 	finish()
+
+func _check_speed_config() -> void:
+	var control := Config.hover_speed_control()
+	check(control["min"] == 0.5 and control["max"] == 2.0 and control["step"] == 0.1,
+		"插画速度范围和步进从UI配置读取")
+	for invalid in ["fast", true, NAN, INF, -INF]:
+		check(Config.validated_defaults({"hover_animation_speed": invalid})["hover_animation_speed"] == 2.0,
+			"非法动画速度 %s 不污染有效配置" % str(invalid))
+	check(Config.validated_defaults({"hover_animation_speed": 0.1})["hover_animation_speed"] == 0.5
+		and Config.validated_defaults({"hover_animation_speed": 8.0})["hover_animation_speed"] == 2.0,
+		"配置速度受滑块范围约束")
+	Config.set_hover_animation_speed(1.5)
+	for invalid in [NAN, INF, -INF]:
+		Config.set_hover_animation_speed(invalid)
+		var safe := Config.get_hover_animation_speed()
+		check(is_finite(safe) and safe >= 0.5 and safe <= 2.0,
+			"实时接口拒绝非有限速度 %s" % str(invalid))
+	Config.reset_cache()
+	Config._source = SPEED_ALTERNATE
+	control = Config.hover_speed_control()
+	check(control["min"] == 0.25 and control["max"] == 3.0 and control["step"] == 0.25,
+		"外置UI文件可以同时调整动画速度范围和步进")
+	check(Config.read_defaults()["hover_animation_speed"] == 2.25
+		and Config.get_hover_animation_speed() == 2.25,
+		"外置动画速度默认值进入真实运行状态")
+	Config.set_hover_animation_speed(9.0)
+	check(Config.get_hover_animation_speed() == 3.0, "实时速度跟随外置配置范围截断")
+	Config.restore_preferences()
+	check(Config.get_hover_animation_speed() == 2.25, "还原默认恢复外置UI指定的速度")
+	var malformed_path := "user://invalid_speed_controls.json"
+	for invalid in [false, {"min": 0.0, "max": INF, "step": "small"},
+			{"min": 3.0, "max": 1.0}, {"step": 10.0}]:
+		Config._cache[malformed_path] = {"controls": {"hover_animation_speed": invalid}}
+		control = Config.hover_speed_control(malformed_path)
+		check(control["min"] == 0.5 and control["max"] == 2.0 and control["step"] == 0.1,
+			"无效速度控件配置 %s 回退到可用范围" % str(invalid))
+	Config.reset_cache()
+	check(Config.get_hover_animation_speed() == 2.0, "重新载入内置配置恢复二倍速并清除旧的实时速度缓存")
+
+func _check_speed_controls(main: Node) -> void:
+	var page: Node = main.drawer_presentation
+	var speed: HSlider = page._utility_body.find_child("HoverAnimationSpeed", true, false)
+	var value: Label = page._utility_body.find_child("HoverAnimationSpeedValue", true, false)
+	if not need(speed != null and value != null, "选项→UI包含插画速度滑块和倍速读数"):
+		return
+	check(speed.min_value == 0.5 and speed.max_value == 2.0 and is_equal_approx(speed.step, 0.1)
+		and speed.value == 2.0, "速度滑块使用配置范围、步进和默认二倍速")
+	# 以下比较明确从一倍速起步，不把产品默认速度当作测试前提。
+	speed.value = 1.0
+	var engine_speed := Engine.time_scale
+	var card := CardEntity.new()
+	card.freeze = true
+	root.add_child(card)
+	card.setup(998800, "user")
+	card.set_hover_visual(true, false)
+	card.set_process(false)
+	var deadline := Time.get_ticks_msec() + 10000
+	while CardArt.hover_frames("user").is_empty() and Time.get_ticks_msec() < deadline:
+		await process_frame
+	card._process(0)
+	if not need(not card._hover_frames.is_empty(), "实时速度回归加载真实用户牌动画"):
+		card.queue_free()
+		return
+	card._process(0.65)
+	var elapsed: float = card._hover_elapsed
+	var texture: Texture2D = card._icon.texture
+	var frame: int = card._hover_frame
+	speed.value = 2.0
+	check(Config.get_hover_animation_speed() == 2.0 and value.text.contains("2.0"),
+		"拖动滑块立即更新运行速度和倍速读数，无需保存")
+	check(card._hover_elapsed == elapsed and card._hover_frame == frame and card._icon.texture == texture,
+		"切换速度保持当前进度和画面，不重启动画")
+	card._process(0.1)
+	check(is_equal_approx(card._hover_elapsed, elapsed + 0.2)
+		and card._hover_frame == 8 and card._icon.texture == card._hover_frames[8],
+		"正在悬停的插画下一次更新即按二倍速度推进到正确帧")
+	elapsed = card._hover_elapsed
+	speed.value = 0.5
+	card._process(0.2)
+	check(is_equal_approx(card._hover_elapsed, elapsed + 0.1) and card._hover_frame == 9,
+		"同一次悬停改为半速后立即减速，保持动作连续")
+	check(not FileAccess.file_exists(Config.USER_PATH), "实时调速不会提前写入玩家保存文件")
+	page.close_panels()
+	page._open_utility(3)
+	speed = page._utility_body.find_child("HoverAnimationSpeed", true, false)
+	check(speed.value == 0.5 and Config.get_hover_animation_speed() == 0.5,
+		"关闭再打开UI保留尚未保存的实时速度")
+	var another_page := Presentation.new()
+	check(Config.get_hover_animation_speed() == 0.5, "新建显示层不把尚未保存的实时速度重置")
+	another_page.free()
+	card.hover_animation_paused = true
+	elapsed = card._hover_elapsed
+	speed.value = 2.0
+	card._process(0.2)
+	check(card._hover_elapsed == elapsed, "暂停时调速不会偷偷推进插画")
+	card.hover_animation_paused = false
+	card._process(0.1)
+	check(is_equal_approx(card._hover_elapsed, elapsed + 0.2), "继续播放立即采用暂停期间设定的新速度")
+	var preview := PreviewCard.new()
+	preview.freeze = true
+	root.add_child(preview)
+	preview.setup(998801, "user")
+	preview.set_hover_visual(true, false)
+	preview.set_process(false)
+	preview._process(0)
+	preview._process(0.4)
+	check(is_equal_approx(preview._hover_elapsed, 0.4), "独立预览正常速度不叠乘游戏中的二倍速")
+	preview.hover_animation_speed = 0.25
+	elapsed = preview._hover_elapsed
+	preview._process(0.4)
+	check(is_equal_approx(preview._hover_elapsed, elapsed + 0.1), "独立预览四分之一慢放保持自身倍率")
+	check(Engine.time_scale == engine_speed, "插画速度设置不修改全局时间或撕牌速度")
+	preview.queue_free()
+	card.queue_free()
+	await process_frame
 
 func _check_pattern_controls(main: Node) -> void:
 	var page: Node = main.drawer_presentation._utility_body
@@ -108,6 +228,7 @@ func _check_shared_ui_actions(main: Node) -> void:
 		"UI没有仅还原镜头的独立按钮")
 	page.set_perspective_angle(55)
 	page.set_table_zoom(1.5)
+	page.set_hover_animation_speed(1.7)
 	main.drawer_window.set_size_fraction(0.85)
 	main.drawer_window.set_icon_scale(1.25)
 	Palette.set_number("pattern", "density", 2.0)
@@ -115,8 +236,11 @@ func _check_shared_ui_actions(main: Node) -> void:
 	page._ui_footer.get_node("SaveUISettings").pressed.emit()
 	var saved := Config.read_defaults()
 	check(saved["perspective_angle"] == 55.0 and saved["table_zoom"] == 1.5
-		and saved["window_fraction"] == 0.85 and saved["icon_scale"] == 1.25,
-		"统一保存覆盖透视、缩放、窗口比例及入口大小")
+		and saved["window_fraction"] == 0.85 and saved["icon_scale"] == 1.25
+		and is_equal_approx(saved["hover_animation_speed"], 1.7),
+		"统一保存覆盖透视、缩放、窗口比例、入口大小及插画速度")
+	Config.reset_cache()
+	check(is_equal_approx(Config.get_hover_animation_speed(), 1.7), "重新加载时读取已保存的插画速度")
 	var next_window := Drawer.new()
 	var next_page := Presentation.new()
 	check(next_window.get_size_ratio() == 0.85 and next_window.get_icon_scale() == 1.25
@@ -135,7 +259,9 @@ func _check_shared_ui_actions(main: Node) -> void:
 	check(page.perspective_angle == defaults["perspective_angle"]
 		and page.camera_view.zoom == defaults["table_zoom"]
 		and main.drawer_window.get_size_ratio() == defaults["window_fraction"]
-		and main.drawer_window.get_icon_scale() == defaults["icon_scale"],
+		and main.drawer_window.get_icon_scale() == defaults["icon_scale"]
+		and Config.get_hover_animation_speed() == 2.0
+		and page._utility_body.find_child("HoverAnimationSpeed", true, false).value == 2.0,
 		"统一还原即时恢复所有显示参数")
 	check(Palette.get_number("pattern", "density") == 1.0
 		and page._utility_body.find_child("PatternDensity", true, false).value == 1.0,

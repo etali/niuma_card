@@ -1,5 +1,6 @@
 #!/bin/bash
 # 独立预览窗口，默认使用构建好的应用，不进入牌局。
+# 窗口左侧可切换原始 / 1024 / 768 / 512 / 384 / 256 分辨率，仅影响预览。
 set -eu
 cd "$(dirname "$0")"
 preview_binary="$PWD/build/牛马牌.app/Contents/MacOS/牛马牌"

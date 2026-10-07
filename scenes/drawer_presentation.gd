@@ -89,6 +89,8 @@ var _perspective_value: Label
 var camera_view := CameraView.new()
 var _zoom_slider: HSlider
 var _zoom_value: Label
+var _hover_speed_slider: HSlider
+var _hover_speed_value: Label
 var _card_config_status: Label
 var _card_config_path: LineEdit
 var _card_config_drop: PanelContainer
@@ -754,6 +756,29 @@ func _open_utility(id: int) -> void:
 				button.set_pressed_no_signal(is_equal_approx(ratio, _main.drawer_window.get_size_ratio()))
 				ratio_row.add_child(button)
 				_bind_ratio_button(button, ratio)
+		var speed_row := HBoxContainer.new()
+		speed_row.add_theme_constant_override("separation", 8)
+		_utility_body.add_child(speed_row)
+		speed_row.add_child(_label("卡牌插画速度", UI_FONT_BODY))
+		_hover_speed_value = _label("", UI_FONT_BODY)
+		_hover_speed_value.name = "HoverAnimationSpeedValue"
+		_hover_speed_value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_hover_speed_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		speed_row.add_child(_hover_speed_value)
+		var speed_control := UIConfig.hover_speed_control()
+		_hover_speed_slider = HSlider.new()
+		_hover_speed_slider.name = "HoverAnimationSpeed"
+		_hover_speed_slider.min_value = speed_control["min"]
+		_hover_speed_slider.max_value = speed_control["max"]
+		_hover_speed_slider.step = speed_control["step"]
+		_hover_speed_slider.custom_minimum_size = Vector2(250, 40)
+		_hover_speed_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_hover_speed_slider.tooltip_text = "调整后立即改变卡牌插画的播放速度"
+		_hover_speed_slider.accessibility_name = "卡牌插画播放速度"
+		_hover_speed_slider.set_value_no_signal(UIConfig.get_hover_animation_speed())
+		_hover_speed_value.text = UIConfig.hover_speed_text(UIConfig.get_hover_animation_speed())
+		_hover_speed_slider.value_changed.connect(set_hover_animation_speed)
+		_utility_body.add_child(_hover_speed_slider)
 		var angle_row := HBoxContainer.new()
 		angle_row.add_theme_constant_override("separation", 8)
 		_utility_body.add_child(angle_row)
@@ -864,6 +889,7 @@ func _save_ui_settings() -> void:
 	var values := UIConfig.read_defaults()
 	values["perspective_angle"] = perspective_angle
 	values["table_zoom"] = camera_view.zoom
+	values["hover_animation_speed"] = UIConfig.get_hover_animation_speed()
 	if _main.drawer_window != null:
 		values["window_fraction"] = _main.drawer_window.get_size_ratio()
 		values["icon_scale"] = _main.drawer_window.get_icon_scale()
@@ -886,6 +912,16 @@ func _reset_ui_settings() -> void:
 	_open_utility(page)
 	relayout()
 	_ui_status.text = "已还原"
+
+func set_hover_animation_speed(value: float) -> void:
+	UIConfig.set_hover_animation_speed(value)
+	var current := UIConfig.get_hover_animation_speed()
+	if is_instance_valid(_hover_speed_slider):
+		_hover_speed_slider.set_value_no_signal(current)
+	if is_instance_valid(_hover_speed_value):
+		_hover_speed_value.text = UIConfig.hover_speed_text(current)
+	if is_instance_valid(_ui_status):
+		_ui_status.text = "已生效，尚未保存"
 
 func _mount_palette() -> void:
 	_palette.show()

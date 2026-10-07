@@ -79,6 +79,19 @@ var socket := WebSocketPeer.new()
         self.assertIn('project.godot', plan['scanned_files'])
         self.assertTrue(plan['scons_options']['module_raycast_enabled'])
 
+    def test_byte_stream_delta_codec_does_not_enable_gpu_texture_encoders(self):
+        code = self.root / 'scenes/main.gd'
+        base = code.read_text()
+        code.write_text(base + '\nvar raw = bytes.decompress(589824, FileAccess.COMPRESSION_DEFLATE)\n'
+                        'var packed = bytes.compress(FileAccess.COMPRESSION_DEFLATE)\n')
+        options = slim.make_plan(self.root, self.capabilities)['scons_options']
+        self.assertFalse(options['module_astcenc_enabled'])
+        self.assertFalse(options['module_basis_universal_enabled'])
+        code.write_text(base + '\nimage.decompress()\n')
+        options = slim.make_plan(self.root, self.capabilities)['scons_options']
+        self.assertTrue(options['module_astcenc_enabled'])
+        self.assertTrue(options['module_basis_universal_enabled'])
+
     def test_keep_module_overrides_detected_absence(self):
         for name in ['raycast', 'vhacd', 'meshoptimizer', 'msdfgen', 'svg', 'astcenc', 'basis_universal']:
             self.assertTrue(slim.make_plan(self.root, self.capabilities, [name])['scons_options'][f'module_{name}_enabled'])
