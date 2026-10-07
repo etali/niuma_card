@@ -108,8 +108,8 @@ func _run() -> void:
 
 	# 设置入口必须仍可打开；关闭后不得残留 modal，避免抽屉被 can_collapse 永久阻塞。
 	presentation._open_utility(0)
-	check(presentation.panels_open(), "配色设置入口可打开")
-	_assert_drawer_theme(presentation, "配色")
+	check(presentation.panels_open(), "旧配色入口定位到UI")
+	_assert_drawer_theme(presentation, "UI配色")
 	presentation.close_panels()
 	presentation._open_utility(1)
 	check(presentation.panels_open(), "BOT强度设置入口可打开")
@@ -139,6 +139,15 @@ func _run() -> void:
 		drawer.expand()
 		await _wait_transition_process(drawer)
 		check(main.board.input_locked, "抽屉收放保留业务输入锁（原true）")
+
+	if main.drawer_window:
+		main.drawer_window.start_collapsed()
+		main.drawer_window._transitioning = true
+		main.drawer_window._expanded = true
+		main._on_drawer_expanded_changed(true)
+		check(not presentation._handle.visible and presentation._header.visible and presentation._footer.visible,
+			"展开开始立即隐藏入口并显示上下横条，不等待动画结束")
+		main.drawer_window._finish_transition(true)
 
 	if main.sfx:
 		main.sfx.set_muted(true)

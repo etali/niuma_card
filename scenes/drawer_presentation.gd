@@ -17,7 +17,7 @@ const UTILITY_RULEBOOK := 7
 const UTILITY_REPLAY := 8
 const UTILITY_CARDS := 9
 const UTILITY_PAGES := [
-	[0, "配色"], [1, "BOT 强度"], [2, "提示记录"],
+	[1, "BOT 强度"], [2, "提示记录"],
 	[3, "UI"], [4, "入口大小"], [5, "存录像"], [UTILITY_REPLAY, "读入录像"], [6, "局域网对战"], [UTILITY_CARDS, "卡牌配置"],
 ]
 
@@ -57,6 +57,8 @@ var _utility_title: Label
 var _utility_body: VBoxContainer
 var _rulebook_button: Button
 var _utility_scroll: ScrollContainer
+var _ui_footer: HBoxContainer
+var _ui_status: Label
 var _active_utility_id := -1
 var _rulebook: Control
 var _palette: Control
@@ -64,7 +66,11 @@ var _bot: Control
 var _detail: PanelContainer
 var _detail_title: Label
 var _detail_text: Label
-var _detail_icon: TextureRect
+var _detail_flavor: Label
+var _detail_status: Label
+var _detail_facts: GridContainer
+var _detail_effect: Label
+var _detail_scroll: ScrollContainer
 var _detail_id := ""
 var _detail_market := false
 var _ui_icon_cache: Dictionary = {}
@@ -83,13 +89,17 @@ var _perspective_value: Label
 var camera_view := CameraView.new()
 var _zoom_slider: HSlider
 var _zoom_value: Label
+var _hover_speed_slider: HSlider
+var _hover_speed_value: Label
 var _card_config_status: Label
 var _card_config_path: LineEdit
 var _card_config_drop: PanelContainer
 
 
 func _init(config_path: String = "") -> void:
-	perspective_angle = UIConfig.read_defaults(config_path)["perspective_angle"]
+	var defaults := UIConfig.read_defaults(config_path)
+	perspective_angle = defaults["perspective_angle"]
+	camera_view.zoom = defaults["table_zoom"]
 
 func _window_blocked() -> bool:
 	return _main.drawer_window != null and (not _main.drawer_window.is_expanded() or _main.drawer_window.is_transitioning())
@@ -369,6 +379,8 @@ func _apply_tree_theme(root: Control) -> void:
 		root.add_theme_color_override("default_color", ink)
 	elif root is PanelContainer:
 		root.add_theme_stylebox_override("panel", _style(root.get_meta("drawer_surface", Palette.get_color("world", "table_frame")), int(root.get_meta("drawer_margin_base", 10))))
+	elif root is SpinBox:
+		_apply_tree_theme(root.get_line_edit())
 	elif root is LineEdit:
 		root.add_theme_font_override("font", Fonts.zh())
 		root.add_theme_font_size_override("font_size", _responsive_font(UI_FONT_BODY))
@@ -433,6 +445,14 @@ func _build_header() -> void:
 	_title_row = title_row
 	title_row.add_theme_constant_override("separation", 4)
 	_header_rows.add_child(title_row)
+	var brand := TextureRect.new()
+	brand.name = "BrandMascot"
+	brand.texture = load("res://assets/app_icon.png")
+	brand.custom_minimum_size = Vector2(32, 32)
+	brand.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	brand.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	brand.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_row.add_child(brand)
 	title_row.add_child(_label("牛马牌", 24))
 	_adopt(_main.lbl_round, title_row)
 	_main.lbl_round.set_meta("drawer_font_base", UI_FONT_BODY)
@@ -629,11 +649,31 @@ func _build_utility() -> void:
 	_utility_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_utility_scroll.add_child(_utility_body)
 	_utility_body.minimum_size_changed.connect(_relayout_utility)
+	_ui_footer = HBoxContainer.new()
+	_ui_footer.name = "UISettingsActions"
+	_ui_footer.add_theme_constant_override("separation", 8)
+	column.add_child(_ui_footer)
+	var save_ui := _button("保存")
+	save_ui.name = "SaveUISettings"
+	save_ui.pressed.connect(_save_ui_settings)
+	_ui_footer.add_child(save_ui)
+	var reset_ui := _button("还原默认")
+	reset_ui.name = "ResetUISettings"
+	reset_ui.pressed.connect(_reset_ui_settings)
+	_ui_footer.add_child(reset_ui)
+	_ui_status = _label("", UI_FONT_SMALL)
+	_ui_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ui_footer.add_child(_ui_status)
+	_ui_footer.hide()
 	_utility.hide()
 
 func _open_utility(id: int) -> void:
+	# 旧配色入口仍能定位到合并后的 UI 页，但选项菜单只保留 UI。
+	if id == 0:
+		id = 3
 	close_panels()
 	_active_utility_id = id
+	_ui_footer.visible = id in [3, 4]
 	if id == UTILITY_RULEBOOK:
 		_utility_title.text = "规则书"
 		_utility_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -652,18 +692,20 @@ func _open_utility(id: int) -> void:
 		_main._open_join_panel()
 		return
 	if id == 2:
-		_apply_tree_theme(_main.msg_log._frame)
+		_utility_title.text = "提示记录"
 		_main.msg_log.show()
 		if not _main.msg_log.expanded():
 			_main.msg_log._toggle_body()
-		_position_log()
+		_main.msg_log.embedded = true
+		_mount_frame(_main.msg_log)
+		_utility.show()
+		_apply_tree_theme(_utility)
+		_relayout_utility()
 		return
 	if id == 5:
 		_utility_title.text = "存录像"
 		var save := _button("下载当前录像" if _main.web_mode else "保存当前对局", 18)
-		save.pressed.connect(func():
-			close_panels()
-			_main._save_replay())
+		save.pressed.connect(_main._save_replay)
 		_utility_body.add_child(save)
 		_utility.show()
 		_apply_tree_theme(_utility)
@@ -714,6 +756,29 @@ func _open_utility(id: int) -> void:
 				button.set_pressed_no_signal(is_equal_approx(ratio, _main.drawer_window.get_size_ratio()))
 				ratio_row.add_child(button)
 				_bind_ratio_button(button, ratio)
+		var speed_row := HBoxContainer.new()
+		speed_row.add_theme_constant_override("separation", 8)
+		_utility_body.add_child(speed_row)
+		speed_row.add_child(_label("卡牌插画速度", UI_FONT_BODY))
+		_hover_speed_value = _label("", UI_FONT_BODY)
+		_hover_speed_value.name = "HoverAnimationSpeedValue"
+		_hover_speed_value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_hover_speed_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		speed_row.add_child(_hover_speed_value)
+		var speed_control := UIConfig.hover_speed_control()
+		_hover_speed_slider = HSlider.new()
+		_hover_speed_slider.name = "HoverAnimationSpeed"
+		_hover_speed_slider.min_value = speed_control["min"]
+		_hover_speed_slider.max_value = speed_control["max"]
+		_hover_speed_slider.step = speed_control["step"]
+		_hover_speed_slider.custom_minimum_size = Vector2(250, 40)
+		_hover_speed_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_hover_speed_slider.tooltip_text = "调整后立即改变卡牌插画的播放速度"
+		_hover_speed_slider.accessibility_name = "卡牌插画播放速度"
+		_hover_speed_slider.set_value_no_signal(UIConfig.get_hover_animation_speed())
+		_hover_speed_value.text = UIConfig.hover_speed_text(UIConfig.get_hover_animation_speed())
+		_hover_speed_slider.value_changed.connect(set_hover_animation_speed)
+		_utility_body.add_child(_hover_speed_slider)
 		var angle_row := HBoxContainer.new()
 		angle_row.add_theme_constant_override("separation", 8)
 		_utility_body.add_child(angle_row)
@@ -757,10 +822,8 @@ func _open_utility(id: int) -> void:
 		_zoom_slider.custom_minimum_size = Vector2(250, 40)
 		_zoom_slider.value_changed.connect(set_table_zoom)
 		_utility_body.add_child(_zoom_slider)
-		var reset := _button("还原全桌")
-		reset.name = "ResetTableView"
-		reset.pressed.connect(reset_table_view)
-		_utility_body.add_child(reset)
+		_utility_body.add_child(_label("配色", UI_FONT_TITLE))
+		_mount_palette()
 	elif id == 4:
 		var intro := _label("选择收起后显示的入口图标大小", 15)
 		intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -779,6 +842,103 @@ func _open_utility(id: int) -> void:
 	_apply_tree_theme(_utility)
 	_relayout_utility()
 
+
+## 原面板继续保留数据、复制和保存动作，只把内容放入统一选项页。
+func _mount_frame(source: CanvasLayer) -> void:
+	var frame: Control = source.get_node("Frame")
+	var inner_header: Control = frame.get_child(0).get_child(0)
+	if source == _main.msg_log:
+		inner_header.hide()
+		_utility.set_meta("hidden_header", inner_header)
+	frame.reparent(_utility_body)
+	frame.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	frame.position = Vector2.ZERO
+	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_utility.set_meta("source", source)
+	_utility.set_meta("frame", frame)
+
+func show_record_result(path: String, steps: int, failed := false) -> void:
+	if _active_utility_id != 5 or not _utility.visible:
+		_open_utility(5)
+	var notice: SaveNotice = _main.save_notice
+	if failed:
+		notice.show_failed(path)
+	else:
+		notice.show_saved(path, steps)
+	if not _utility.has_meta("source"):
+		notice.set_embedded(true)
+		_mount_frame(notice)
+	_apply_tree_theme(_utility)
+	_relayout_utility()
+
+func show_record_download(ok: bool) -> void:
+	if _active_utility_id != 5 or not _utility.visible:
+		_open_utility(5)
+	var status := _utility_body.get_node_or_null("DownloadStatus") as Label
+	if status == null:
+		status = _label("", UI_FONT_BODY)
+		status.name = "DownloadStatus"
+		status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_utility_body.add_child(status)
+	status.text = "已发起录像下载，请在浏览器下载列表查看。" if ok else "浏览器下载不可用，请允许此页面下载文件后重试。"
+	status.set_meta("drawer_ink", Palette.semantic("success" if ok else "danger"))
+	_apply_tree_theme(_utility)
+	_relayout_utility()
+
+func _save_ui_settings() -> void:
+	var values := UIConfig.read_defaults()
+	values["perspective_angle"] = perspective_angle
+	values["table_zoom"] = camera_view.zoom
+	values["hover_animation_speed"] = UIConfig.get_hover_animation_speed()
+	if _main.drawer_window != null:
+		values["window_fraction"] = _main.drawer_window.get_size_ratio()
+		values["icon_scale"] = _main.drawer_window.get_icon_scale()
+	var display_saved := UIConfig.save_preferences(values)
+	var palette_saved := Palette.save()
+	_ui_status.text = "已保存" if display_saved and palette_saved else "保存失败"
+
+func _reset_ui_settings() -> void:
+	var defaults := UIConfig.restore_preferences()
+	Palette.restore_defaults()
+	_palette._sync_pickers()
+	perspective_angle = defaults["perspective_angle"]
+	camera_view.reset()
+	camera_view.zoom = defaults["table_zoom"]
+	if _main.drawer_window != null:
+		_main.drawer_window.set_size_fraction(defaults["window_fraction"])
+		_main.drawer_window.set_icon_scale(defaults["icon_scale"])
+	# 重建显示控件回填所有读数，配色仍复用原控件与原配置。
+	var page := _active_utility_id
+	_open_utility(page)
+	relayout()
+	_ui_status.text = "已还原"
+
+func set_hover_animation_speed(value: float) -> void:
+	UIConfig.set_hover_animation_speed(value)
+	var current := UIConfig.get_hover_animation_speed()
+	if is_instance_valid(_hover_speed_slider):
+		_hover_speed_slider.set_value_no_signal(current)
+	if is_instance_valid(_hover_speed_value):
+		_hover_speed_value.text = UIConfig.hover_speed_text(current)
+	if is_instance_valid(_ui_status):
+		_ui_status.text = "已生效，尚未保存"
+
+func _mount_palette() -> void:
+	_palette.show()
+	if not _palette._body.visible:
+		_palette._on_toggle()
+	_palette.set_embedded(true)
+	var frame: Control = _palette.get_node("Frame")
+	var inner_header: Control = frame.get_child(0).get_child(0)
+	inner_header.hide()
+	_utility.set_meta("hidden_header", inner_header)
+	frame.reparent(_utility_body)
+	frame.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	frame.position = Vector2.ZERO
+	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_palette.hide()
+	_utility.set_meta("source", _palette)
+	_utility.set_meta("frame", frame)
 
 ## 保存当前运行期间的视角选择；与窗口比例共用同一次镜头/可拖放范围重算。
 func set_perspective_angle(value: float) -> void:
@@ -838,6 +998,8 @@ func close_panels() -> void:
 	_suspended_panels.erase(_utility)
 	_suspended_panels.erase(_main.msg_log)
 	_active_utility_id = -1
+	_ui_footer.hide()
+	_ui_status.text = ""
 	_rulebook = null
 	if _utility_scroll:
 		_utility_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
@@ -851,10 +1013,16 @@ func close_panels() -> void:
 		inner_header.show()
 		_utility.remove_meta("hidden_header")
 	if _utility and _utility.has_meta("source"):
-		var source: Control = _utility.get_meta("source")
+		var source: Node = _utility.get_meta("source")
 		var frame: Control = _utility.get_meta("frame")
 		frame.reparent(source)
-		source.hide()
+		if source == _palette:
+			_palette.set_embedded(false)
+		elif source == _main.msg_log:
+			_main.msg_log.embedded = false
+		elif source == _main.save_notice:
+			_main.save_notice.set_embedded(false)
+		source.call("hide")
 		_utility.remove_meta("source")
 		_utility.remove_meta("frame")
 	for child in _utility_body.get_children() if _utility_body else []:
@@ -937,6 +1105,9 @@ func _guard_table_panel(panel: Node, restore_on_expand: bool) -> void:
 func _on_table_panel_visibility_changed(panel: Node, restore_on_expand: bool) -> void:
 	if not is_instance_valid(panel) or panel.is_queued_for_deletion() or not panel.visible:
 		return
+	# 上下横条是展开画面的一部分；工具弹层仍等过渡完成后再恢复。
+	if panel in [_header, _footer] and not _collapsed and _main.drawer_window != null and _main.drawer_window.is_expanded():
+		return
 	if _table_panels_blocked():
 		if restore_on_expand:
 			_suspend_panel(panel)
@@ -947,19 +1118,19 @@ func _relayout_utility() -> void:
 	if not is_instance_valid(_utility_body) or not _utility.visible:
 		return
 	var body := _utility_body.get_combined_minimum_size()
-	var available := _last_size - Vector2.ONE * _px(PAD * 2)
+	var available := _content.size
 	var desired: Vector2
 	if _active_utility_id == UTILITY_RULEBOOK:
 		desired = available if _main.mobile_mode else Vector2(minf(_px(780), available.x), minf(_px(660), available.y))
 	else:
 		desired = Vector2(minf(maxf(_px(380), body.x + _px(28)), available.x),
-			minf(body.y + _px(82), available.y))
+			minf(body.y + _px(82) + (_ui_footer.get_combined_minimum_size().y + _px(10) if _ui_footer.visible else 0.0), available.y))
 	_utility.size = desired
-	_utility.position = Vector2(maxf(_px(PAD), _last_size.x - desired.x - _px(PAD)),
-		minf(_content.position.y, maxf(_px(PAD), _last_size.y - desired.y - _px(PAD))))
+	# 起点始终贴内容区右上角；上下各有 8px 缝隙，长内容由内部滚动承载。
+	_utility.position = Vector2(_content.end.x - desired.x, _content.position.y)
 
 func _position_log() -> void:
-	if _main.msg_log == null or not _main.msg_log.visible:
+	if _main.msg_log == null or not _main.msg_log.visible or _main.msg_log.embedded:
 		return
 	if not _main.msg_log.expanded():
 		_main.msg_log.hide()
@@ -1167,17 +1338,28 @@ func _build_details() -> void:
 	_detail_title = _label("", 17)
 	_detail_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(_detail_title)
-	_detail_icon = TextureRect.new()
-	_detail_icon.custom_minimum_size = Vector2.ZERO
-	_detail_icon.visible = false
-	_detail_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_detail_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_detail_icon.modulate = Palette.get_color("card", "body")
-	_detail_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	column.add_child(_detail_icon)
-	_detail_text = _label("", 15)
+	_detail_flavor = _label("", 13)
+	_detail_flavor.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(_detail_flavor)
+	_detail_status = _label("", 14)
+	_detail_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(_detail_status)
+	_detail_facts = GridContainer.new()
+	_detail_facts.columns = 2
+	_detail_facts.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_detail_facts.add_theme_constant_override("h_separation", 16)
+	_detail_facts.add_theme_constant_override("v_separation", 5)
+	column.add_child(_detail_facts)
+	var separator := HSeparator.new()
+	separator.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(separator)
+	_detail_scroll = ScrollContainer.new()
+	_detail_scroll.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	column.add_child(_detail_scroll)
+	_detail_text = _label("", 13)
 	_detail_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	column.add_child(_detail_text)
+	_detail_scroll.add_child(_detail_text)
 	_detail.hide()
 
 func _process(_delta: float) -> void:
@@ -1217,26 +1399,64 @@ func _process(_delta: float) -> void:
 		return
 	show_card_detail(card, mouse)
 
+func _detail_fact(key: String, value: String) -> void:
+	var caption := _label(key, 14)
+	var content := _label(value, 14)
+	content.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	content.custom_minimum_size.x = _px(145)
+	_detail_facts.add_child(caption)
+	_detail_facts.add_child(content)
+
 func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 	var id := card.def_id
+	var def: Dictionary = CardDB.get_def(id)
 	if id != _detail_id or card.is_market != _detail_market:
 		_detail_id = id
 		_detail_market = card.is_market
 		_detail_title.text = CardDB.card_name(id)
-		_detail_text.text = _main.board.hover_desc_text(id).replace("\n→ ", " → ")
+		_detail_flavor.text = str(def.get("flavor", ""))
+		_detail_effect = null
+		for child in _detail_facts.get_children():
+			_detail_facts.remove_child(child)
+			child.queue_free()
 		if card.is_market:
-			_detail_text.text = "售价 %d\n%s" % [CardDB.get_def(id).get("price", 0), _detail_text.text]
-		_detail_icon.texture = CardArt.icon_texture(id)
-		_detail.reset_size()
+			_detail_fact("购买", "%d 资金" % int(def.get("price", 0)))
+		if def.get("kind", "") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
+			_detail_fact("配方", "%s × %d" % [CardDB.card_label(str(def.recipe_res)), int(def.recipe_n)])
+			if def.kind == CardDB.KIND_PRODUCT:
+				_detail_fact("产出", "每回合 %s + %d" % [CardDB.res_label(str(def.output_res)), int(def.output_n)])
+			else:
+				_detail_fact("攻击", "移除对方%s × %d" % [CardDB.card_label(str(def.attack_res)), int(def.attack_n)])
+			_detail_effect = _detail_facts.get_child(_detail_facts.get_child_count() - 1)
+		var pawn := CardDB.pawn_value(id)
+		if pawn > 0:
+			_detail_fact("典当", "资金 + %d" % pawn)
+		_detail_scroll.scroll_vertical = 0
+	if _detail_effect != null:
+		var value := int(def.get("output_n", def.get("attack_n", 0))) * card.effect_mult()
+		_detail_effect.text = "每回合 %s + %d" % [CardDB.res_label(str(def.output_res)), value] if def.kind == CardDB.KIND_PRODUCT else "移除对方%s × %d" % [CardDB.card_label(str(def.attack_res)), value]
+	# 进度属于当前实体，不能沿用同名卡另一组的状态。
+	_detail_status.text = "购入后拖入理牌区组合" if card.is_market else card.recipe_status_text()
+	_detail_status.visible = _detail_status.text != ""
+	_detail_flavor.visible = _detail_flavor.text != ""
+	var notes: String = _main.board.describe_def(id)
+	if def.get("kind", "") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
+		notes = "\n".join(notes.split("\n").slice(2))
+	_detail_text.text = notes.replace("\n→ ", " → ").replace("\n张数须精确\n不能夹杂其他牌", "\n须精确张数，不混入其他牌")
+	_detail.reset_size()
 	_place_detail(mouse)
 
 func show_facility_detail(mouse: Vector2) -> void:
-	if _detail_id != "@pawnshop":
-		_detail_id = "@pawnshop"
-		_detail_market = false
-		_detail_title.text = "典当行 · 公共设施"
-		_detail_text.text = "不需购买，拖入非现金卡换现金。\n现金卡不收；至少保留一个用户。"
-		_detail.reset_size()
+	_detail_id = "@pawnshop"
+	_detail_market = false
+	_detail_title.text = "典当行 · 公共设施"
+	_detail_flavor.hide()
+	_detail_status.hide()
+	for child in _detail_facts.get_children():
+		_detail_facts.remove_child(child)
+		child.queue_free()
+	_detail_text.text = "不需购买，拖入非现金卡换现金。\n现金卡不收；至少保留一个用户。"
+	_detail.reset_size()
 	_place_detail(mouse)
 
 func _place_detail(mouse: Vector2) -> void:
@@ -1250,7 +1470,7 @@ func _place_detail(mouse: Vector2) -> void:
 	if at.x + extent.x > _last_size.x - _px(PAD):
 		at.x = mouse.x - extent.x - _px(14)
 	at.x = clampf(at.x, _px(PAD), maxf(_px(PAD), _last_size.x - extent.x - _px(PAD)))
-	at.y = clampf(at.y, _content.position.y, maxf(_content.position.y, _last_size.y - extent.y - _px(PAD)))
+	at.y = clampf(at.y, _content.position.y, maxf(_content.position.y, _content.position.y + _content.size.y - extent.y))
 	_detail.position = at
 
 ## 使用当前字号测量最长一行，短说明收窄；长说明只在窗口允许的上限处换行。
@@ -1260,19 +1480,28 @@ func _fit_detail_content() -> void:
 	var max_width := minf(_px(300), _last_size.x / 3.0)
 	var limit := maxf(1.0, max_width - style.get_minimum_size().x)
 	var natural := 0.0
-	for label in [_detail_title, _detail_text]:
+	for label in [_detail_title, _detail_flavor, _detail_status, _detail_text]:
 		var font: Font = label.get_theme_font("font")
 		var font_size: int = label.get_theme_font_size("font_size")
 		for line in label.text.split("\n"):
 			natural = maxf(natural, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x)
 	var width := minf(ceilf(natural), limit)
-	for label in [_detail_title, _detail_text]:
+	for label in [_detail_title, _detail_flavor, _detail_status, _detail_text]:
 		label.custom_minimum_size = Vector2(width, 0.0)
 		label.size = Vector2(width, 0.0)
 		# 换宽度后立即刷新排版结果，避免首帧用上一张卡的换行高度撑大面板。
 		label.get_minimum_size()
 		label.update_minimum_size()
 		label.reset_size()
+	_detail_flavor.modulate = Color(1,1,1,0.68)
+	_detail_status.modulate = Palette.semantic("pending")
+	var above := _detail_title.get_combined_minimum_size().y + _detail_facts.get_combined_minimum_size().y
+	if _detail_flavor.visible:
+		above += _detail_flavor.get_combined_minimum_size().y
+	if _detail_status.visible:
+		above += _detail_status.get_combined_minimum_size().y
+	var available := maxf(_px(28), _content.size.y - above - style.get_minimum_size().y - _px(55))
+	_detail_scroll.custom_minimum_size = Vector2(width, minf(_detail_text.get_combined_minimum_size().y, available))
 	_detail.reset_size()
 
 func _on_size_changed() -> void:

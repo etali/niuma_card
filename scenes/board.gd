@@ -959,14 +959,16 @@ func describe_def(def_id: String) -> String:
 	match str(def.get("kind", "")):
 		CardDB.KIND_PRODUCT:
 			# 普通升级仍须同名；传说路线则可搭配同档的其他生产卡。
-			return "%s×%d\n→ 每回合%s+%d%s" % [
+			return "配齐%s×%d\n→ 每回合%s+%d\n%s%s" % [
 				CardDB.card_label(def["recipe_res"]), int(def["recipe_n"]),
 				CardDB.res_label(def["output_res"]), int(def["output_n"]),
+				"资金结算时花掉" if def["recipe_res"] == CardDB.RES_CASH else "用户保留，持续生产",
 				_upgrade_line(def_id)]
 		CardDB.KIND_ATTACK:
-			return "%s×%d\n→ 移除对方%s×%d" % [
+			return "配齐%s×%d\n→ 移除对方%s×%d\n%s" % [
 				CardDB.card_label(def["recipe_res"]), int(def["recipe_n"]),
-				CardDB.card_label(def["attack_res"]), int(def["attack_n"])]
+				CardDB.card_label(def["attack_res"]), int(def["attack_n"]),
+				"资金装弹时花掉" if def["recipe_res"] == CardDB.RES_CASH else "用户保留，参与攻击"]
 		CardDB.KIND_LEGEND:
 			var routes: PackedStringArray = []
 			for tier in [1, 2]:
@@ -1034,12 +1036,29 @@ func hover_desc_text(def_id: String) -> String:
 ## 每帧都跑：光标一离开卡（_pick_card 打空）说明立刻收掉
 func _set_hover_card(card: CardEntity) -> void:
 	if card == _hover_card:
+		if is_instance_valid(card):
+			card.set_hover_visual(true, _hover_can_lift(card))
 		return
 	if is_instance_valid(_hover_card):
 		_hover_card.set_hover_visual(false)
 	_hover_card = card
 	if is_instance_valid(_hover_card):
-		_hover_card.set_hover_visual(true)
+		_hover_card.set_hover_visual(true, _hover_can_lift(_hover_card))
+
+## 多张牌共享组合/叠放位置时，悬停只高亮，不移动其中单独一张。
+func _hover_can_lift(card: CardEntity) -> bool:
+	if card.is_market:
+		return true
+	if card.hover_stack_member:
+		return false
+	var group: Variant = group_of(card)
+	if group != null and group["cards"].size() > 1:
+		return false
+	# 对手组合与理牌摞不在 groups 中，使用同一份真实牌清单判断。
+	for pile in _ext_side.values():
+		if pile["cards"].size() > 1 and card in pile["cards"]:
+			return false
+	return true
 
 func _update_hover_hint() -> void:
 	if hover_blocked.is_valid() and hover_blocked.call():
@@ -1050,6 +1069,9 @@ func _update_hover_hint() -> void:
 	_set_hover_card(picked)
 	if picked != null:
 		var t := hover_desc_text(picked.def_id)
+		var status := picked.recipe_status_text()
+		if status != "" and not picked.is_market:
+			t = status + "\n" + t
 		if t != "":
 			# 说明的纵向跟着光标在桌面上的落点走（见 _show_desc）
 			var mp := _mouse_table_point()
@@ -1525,7 +1547,7 @@ static func _build_side(parent: Node3D, spec: Array) -> Array:
 			ic = Sprite3D.new()
 			ic.texture = tex
 			ic.pixel_size = SIDE_ICON / float(tex.get_width())
-			ic.modulate = Color(0.16, 0.14, 0.12)
+			ic.modulate = CardArt.icon_tint(tex, Color(0.16, 0.14, 0.12))
 			ic.rotation_degrees = Vector3(-90, 0, 0)
 			ic.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 			ic.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED

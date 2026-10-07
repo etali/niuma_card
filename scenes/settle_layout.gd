@@ -1476,6 +1476,7 @@ func _spread_bot_combo(pile: Dictionary, at: Vector3, step: float, cols: int) ->
 	var per: int = ceili(float(n) / float(maxi(cols, 1)))
 	for j in n:
 		var e: CardEntity = cards[j]
+		e.hover_stack_member = n > 1
 		# 座次翻过来：cards 是 core_first_order 排的（index 0 是核心卡），
 		# 而收拢态里 compact_offset 把 index 0 推到最南、最高 —— 那是唯一
 		# 完整露出来的一张，核心卡就该在那儿。摊开态的台阶是 +z*j 往南长、
@@ -1518,6 +1519,7 @@ func _place_bot_pile(pile: Dictionary, at: Vector3) -> void:
 	var cap: int = back_pile_cap()
 	for j in n:
 		var e: CardEntity = cards[j]
+		e.hover_stack_member = n > 1
 		e.freeze = true
 		_bot_move(e, at + Board.capped_offset(n, j, cap))
 		_bot_pile_of_uid[e.uid] = key

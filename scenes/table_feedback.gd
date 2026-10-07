@@ -42,6 +42,47 @@ void fragment() {
 static var _trace_shader: Shader
 static var _outline_shader: Shader
 
+## 一次结算只出一张小回执；展示实际结果，无碰撞，不增加流程等待。
+static func receipt(parent: Node3D, event: String, center: Vector3, text: String,
+		color: Color) -> Node3D:
+	var receipt := Node3D.new()
+	receipt.name = "Receipt_" + event
+	receipt.set_meta("motion_event", event)
+	receipt.position = center + Vector3(0, 0.16, -0.78)
+	parent.add_child(receipt)
+	var label := Label3D.new()
+	label.text = text
+	label.font = Fonts.zh_bold()
+	label.font_size = 64
+	label.pixel_size = 0.0025
+	label.outline_size = 0
+	label.modulate = Palette.readable_ink(color, Palette.semantic("surface"))
+	label.rotation_degrees = Vector3(-90, 0, 0)
+	label.position.y = 0.006
+	label.render_priority = 2
+	receipt.add_child(label)
+	var backing := MeshInstance3D.new()
+	var plane := PlaneMesh.new()
+	var size := label.font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, label.font_size) * label.pixel_size
+	plane.size = size + Vector2(0.22, 0.09)
+	backing.mesh = plane
+	backing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_color = Palette.semantic("surface")
+	backing.material_override = material
+	receipt.add_child(backing)
+	receipt.scale = Vector3.ONE * 0.72
+	var tween := receipt.create_tween().bind_node(receipt)
+	tween.tween_property(receipt, "scale", Vector3.ONE, Motion.ANTICIPATE + Motion.STAGGER).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_interval(Motion.ACT * 0.7)
+	tween.tween_property(receipt, "position:z", receipt.position.z - 0.20, Motion.SETTLE)
+	tween.parallel().tween_property(label, "modulate:a", 0.0, Motion.SETTLE)
+	tween.parallel().tween_property(material, "albedo_color:a", 0.0, Motion.SETTLE)
+	tween.tween_callback(receipt.queue_free)
+	return receipt
+
 static func trace(parent: Node3D, event: String, from: Vector3, to: Vector3,
 		color: Color, duration := Motion.ACT) -> MeshInstance3D:
 	if from == Vector3.INF or to == Vector3.INF or from.distance_to(to) < 0.15:

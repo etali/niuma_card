@@ -71,6 +71,8 @@ var _cover_layer: CanvasLayer
 var _cover: TextureRect
 var _snapshot: ImageTexture
 var _original_disable_3d := false
+var _warming := false
+var _open_after_warmup := false
 var _attention_until := -1
 var _attention_announced := false
 var _handle_hovered := false
@@ -127,11 +129,47 @@ func setup(use_os_window := true, usable_rect := Rect2i()) -> void:
 	_collapse_at = -1
 
 ## 主场景完成构造后调用。直接进入透明入口，启动问候只播放一次。
-func start_collapsed() -> void:
+func start_collapsed(prewarm := false) -> void:
 	if not _enabled:
 		return
 	set_pinned(false)
+	if prewarm and _use_os_window:
+		_warming = true
+		_prewarm_first_open()
+	else:
+		_finish_transition(false)
+
+## 在真实窗口视口预渲染，连原生视口的首次初始化也在启动时完成。
+## 最高层遮罩直接清空输出的 RGBA，牌桌照常绘制但不会闪到桌面上。
+func _prewarm_first_open() -> void:
+	var shader := Shader.new()
+	shader.code = """shader_type canvas_item;
+render_mode blend_disabled;
+void fragment() { COLOR = vec4(0.0); }
+"""
+	var mask := ShaderMaterial.new()
+	mask.shader = shader
+	_cover.material = mask
+	_cover.texture = handle_texture
+	_cover.stretch_mode = TextureRect.STRETCH_SCALE
+	_cover.size = Vector2(get_expanded_size())
+	_cover.show()
+	_window.mouse_passthrough = true
+	for i in 3:
+		await RenderingServer.frame_post_draw
+	# 不交换系统窗口的前后缓冲，仅在 GPU 上绘制完整画面并读取快照。
+	await get_tree().process_frame
+	_cover.hide()
+	RenderingServer.force_draw(false)
+	_capture_snapshot()
+	_cover.material = null
+	_cover.stretch_mode = TextureRect.STRETCH_KEEP
 	_finish_transition(false)
+	_window.mouse_passthrough = false
+	_warming = false
+	if _open_after_warmup:
+		_open_after_warmup = false
+		expand()
 
 func _announce_handle() -> void:
 	if not _enabled or _expanded or _attention_announced:
@@ -208,7 +246,7 @@ func set_icon_scale(value: float) -> void:
 		roundi(PEEK_HEIGHT * _display_scale * _icon_scale)))
 
 func _process(_delta: float) -> void:
-	if not _enabled:
+	if not _enabled or _warming:
 		return
 	var now := Time.get_ticks_msec()
 	if _use_os_window:
@@ -228,7 +266,7 @@ func _process(_delta: float) -> void:
 	_tick_at(now)
 
 func _input(event: InputEvent) -> void:
-	if not _enabled or _transitioning:
+	if not _enabled or _transitioning or _warming:
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		var pointer := DisplayServer.mouse_get_position() if _use_os_window else Vector2i(event.position)
@@ -386,6 +424,9 @@ func _on_mouse_exited() -> void:
 		_collapse_at = Time.get_ticks_msec() + int(LEAVE_DELAY * 1000.0)
 
 func expand() -> void:
+	if _warming:
+		_open_after_warmup = true
+		return
 	if not _enabled:
 		return
 	_collapse_at = -1
@@ -530,7 +571,7 @@ func _start_transition(expanded: bool) -> void:
 	if expanded:
 		_expanded = true
 		if _use_os_window:
-			_window.disable_3d = _original_disable_3d
+			_window.disable_3d = true if _snapshot else _original_disable_3d
 		if not previous:
 			expanded_changed.emit(true)
 	if not _use_os_window or not animations_enabled:

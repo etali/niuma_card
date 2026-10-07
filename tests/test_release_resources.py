@@ -37,7 +37,8 @@ class ReleaseResourcesTest(unittest.TestCase):
                 parts = {x.strip() for x in includes.split(',')}
                 self.assertNotIn('*.json', parts)
                 self.assertIn('data/*.json', parts)
-                self.assertIn('assets/art/art_manifest.json', parts)
+                self.assertNotIn('assets/art/art_manifest.json', parts)
+                self.assertFalse((ROOT / 'assets/art/art_manifest.json').exists())
                 if config.get(name, 'platform') == '"macOS"':
                     self.assertEqual(config.get(name + '.options', 'binary_format/architecture'), '"universal"')
 

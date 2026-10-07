@@ -21,6 +21,11 @@ func _run() -> void:
 	print("=== 生产卡功能配色 ===")
 	CardDB.load_default()
 	Palette.restore_defaults()
+	for pair in [["cash", "shangshi"], ["user", "ditui"], ["yunketang", "ditui"]]:
+		var first := CardArt.face_color(pair[0])
+		var second := CardArt.face_color(pair[1])
+		check(Vector3(first.r, first.g, first.b).distance_to(Vector3(second.r, second.g, second.b)) > 0.12,
+			"%s 与 %s 的默认底板不再是相近纸色" % pair)
 	check(CardArt.plate_slot("yunketang") == "plate_t1_money"
 			and CardArt.plate_slot("ditui") == "plate_t1_growth"
 			and not CardArt.face_color("yunketang").is_equal_approx(CardArt.face_color("ditui")),
@@ -50,6 +55,7 @@ func _run() -> void:
 	for id in OTHER_SLOTS:
 		check(CardArt.plate_slot(id) == OTHER_SLOTS[id], "%s 保留非生产卡原有类别配色" % id)
 	_check_custom_colors(world)
+	_check_shared_palette(world)
 	check(StateCodec.table_hash() == original_hash, "修改生产功能色不改变卡牌规则指纹")
 	_check_imported_directions()
 	world.queue_free()
@@ -119,3 +125,40 @@ func _check_imported_directions() -> void:
 	_check_same_colors("xinxijianfang", "ditui")
 	_check_same_colors("imported_money", "yunketang")
 	_check_same_colors("imported_growth", "ditui")
+
+func _check_shared_palette(world: Node3D) -> void:
+	var card := _card(world, "cash")
+	card.set_face_down(true)
+	var table := preload("res://scenes/table_scene.gd").new(world, false)
+	table._setup_pawnshop_card()
+	var changes := {
+		"back_face": Color("#285E83"), "back_ink": Color("#FFF0B0"),
+		"facility_face": Color("#CEEAC0"), "facility_band": Color("#A0C885"),
+		"facility_ink": Color("#26351B"),
+	}
+	for key in changes:
+		Palette.set_color("card", key, changes[key])
+	check(Palette.save(), "卡背及设施使用原有配色保存逻辑")
+	Palette._loaded = false
+	Palette._cfg = {}
+	card.refresh_palette()
+	table.refresh_palette()
+	check((card._back_mat.get_shader_parameter("face_color") as Color).is_equal_approx(changes["back_face"])
+			and (card._back_mat.get_shader_parameter("artwork_ink") as Color).is_equal_approx(changes["back_ink"]),
+		"已翻面的卡牌实时应用从同一配置重载的卡背色")
+	var facility := world.get_node("MarketFacility")
+	var mat := facility.get_node("PawnshopFacilityCard").material_override as ShaderMaterial
+	check((mat.get_shader_parameter("face_color") as Color).is_equal_approx(changes["facility_face"])
+			and (mat.get_shader_parameter("band_color") as Color).is_equal_approx(changes["facility_band"])
+			and facility.get_node("FacilityName").modulate.is_equal_approx(changes["facility_ink"]),
+		"典当行的底板、标题带和文字应用原有配色刷新逻辑")
+	var editable: Array = []
+	for group in Palette.editable_groups():
+		for item in group["items"]:
+			if item["section"] == "card":
+				editable.append(item["key"])
+	check(changes.keys().all(func(key): return key in editable), "卡背及设施颜色均可在现有选色面板调整")
+	Palette.restore_defaults()
+	card.refresh_palette()
+	check((card._back_mat.get_shader_parameter("face_color") as Color).is_equal_approx(Color(Palette.DEFAULTS["card"]["back_face"])),
+		"恢复默认同时还原卡背颜色")

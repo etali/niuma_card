@@ -49,10 +49,7 @@ static func _ensure_loaded() -> void:
 
 ## 读一份 JSON 表，缺文件 / 打不开 / 解不出字典一律静默返回 {}。
 ##
-## 公开的，因为 CardArt 读 art_manifest.json 也是这一套口径（缺素材就降级，
-## 见 card_art.gd 顶部）。两边各写一份的话，其中一份哪天改成 push_error
-## 就会让「素材没出齐也能开局」这条只在一半路径上成立。
-## 不叫 CardDB.load_from 那种写法：缺 cards.json 是致命的，它得报错并返回 false
+## 可选配色文件缺失时降级为默认配色；展示配置的合并由 UIConfig 处理。
 static func read_json(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
 		return {}
@@ -115,6 +112,32 @@ static func get_string(section: String, key: String) -> String:
 	var d: Dictionary = DEFAULTS.get(section, {})
 	return str(d.get(key, ""))
 
+## 纹理数值也随配色一起实时广播、保存和还原，默认值只来自 ui.json。
+static func get_number(section: String, key: String) -> float:
+	_ensure_loaded()
+	var fallback := float(DEFAULTS.get(section, {}).get(key, 0.0))
+	var value: Variant = _cfg.get(section, {}).get(key, fallback)
+	if typeof(value) not in [TYPE_INT, TYPE_FLOAT] or not is_finite(float(value)):
+		return fallback
+	return _bounded_number(section, key, float(value))
+
+static func _bounded_number(section: String, key: String, value: float) -> float:
+	if section == "pattern":
+		if key == "density":
+			return clampf(value, 0.25, 4.0)
+		if key == "spacing":
+			return clampf(value, 0.0, 1.0)
+	return value
+
+static func set_number(section: String, key: String, value: float) -> void:
+	if not is_finite(value):
+		return
+	_ensure_loaded()
+	if typeof(_cfg.get(section)) != TYPE_DICTIONARY:
+		_cfg[section] = {}
+	_cfg[section][key] = _bounded_number(section, key, value)
+	bus().changed.emit(section, key)
+
 ## 底板槽位色：slot 形如 "plate_cash"，key 为 face/band/accent/ink
 static func plate_color(slot: String, key: String) -> Color:
 	_ensure_loaded()
@@ -174,6 +197,11 @@ static func restore_defaults() -> void:
 ## 分组顺序即面板里的排列顺序
 static func editable_groups() -> Array:
 	return [
+		{ "title": "背景纹理", "items": [
+			{ "section": "pattern", "key": "density", "label": "纹理密度", "type": "number", "min": 0.25, "max": 4.0, "step": 0.05, "suffix": "倍", "hint": "越大，单位面积内的图案越多" },
+			{ "section": "pattern", "key": "spacing", "label": "图案间隔", "type": "number", "min": 0.0, "max": 1.0, "step": 0.05, "suffix": "", "hint": "平铺单元的额外留白比例；0 为紧密排列，1 为留白最多" },
+			{ "section": "pattern", "key": "ink", "label": "纹理颜色" },
+		] },
 		{ "title": "HUD 读数", "items": [
 			{ "section": "hud", "key": "player", "label": "我方公司" },
 			{ "section": "hud", "key": "bot",     "label": "对手公司" },
@@ -199,6 +227,11 @@ static func editable_groups() -> Array:
 		{ "title": "卡牌通用", "items": [
 			{ "section": "card", "key": "frame", "label": "卡牌框架" },
 			{ "section": "card", "key": "body", "label": "卡牌侧壁" },
+			{ "section": "card", "key": "back_face", "label": "卡背底色" },
+			{ "section": "card", "key": "back_ink", "label": "卡背图案" },
+			{ "section": "card", "key": "facility_face", "label": "典当行卡面" },
+			{ "section": "card", "key": "facility_band", "label": "典当行标题带" },
+			{ "section": "card", "key": "facility_ink", "label": "典当行文字" },
 			{ "section": "icon", "key": "foreground", "label": "图标前景" },
 		] },
 		{ "title": "底板", "items": _plate_items() },

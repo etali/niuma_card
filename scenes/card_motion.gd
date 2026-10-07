@@ -11,6 +11,8 @@ const SPAWN_FLY_TIME := UIMotion.ACT
 const SPAWN_FLY_SPREAD := 0.3
 const SPAWN_FLY_RING := 0.85
 const TEAR_TIME := UIMotion.TEAR
+const BATCH_GRIP := 0.16
+const BATCH_DURATION := 0.74
 const SUCK_TIME := UIMotion.TRANSFER
 const PAWN_TRAVEL_TIME := UIMotion.ANTICIPATE + UIMotion.ACT + UIMotion.SETTLE + UIMotion.SETTLE + SUCK_TIME
 var board: Board
@@ -21,6 +23,34 @@ func bind(target_board: Board, sound: Sfx, clamp_player := false) -> void:
 	board = target_board
 	sfx = sound
 	clamp_to_player = clamp_player
+
+## 正式对局和独立预览共享整叠抓握、同步撕开及一次音效。
+func tear_batch(members: Array, hands: Node, direction := Vector3(0, 4, 2)) -> float:
+	var cards := members.filter(func(card): return is_instance_valid(card))
+	if cards.is_empty():
+		return 0.0
+	var center := Vector3.ZERO
+	for card in cards:
+		center += card.global_position
+	center /= float(cards.size())
+	var packet: Array[Vector3] = []
+	for i in cards.size():
+		packet.append(center + Vector3((i - (cards.size() - 1) * 0.5) * 0.10, i * 0.008, i * 0.035))
+	if is_instance_valid(hands):
+		hands.tear(cards, packet)
+	for i in cards.size():
+		var card: CardEntity = cards[i]
+		board.drop_card(card)
+		card.reset_interaction_visual()
+		_cancel_fly(card)
+		card.freeze = true
+		card.collision_layer = 0
+		card.collision_mask = 0
+		card.create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT) \
+			.tween_property(card, "global_position", packet[i], BATCH_GRIP)
+		delayed_tear(card, direction, BATCH_GRIP, false)
+	delayed_sound("attack_tear", BATCH_GRIP)
+	return BATCH_DURATION
 
 func _fly_from(e: CardEntity, from_pos: Vector3, to_pos: Vector3,
 		idx: int = 0, total: int = 1, delay := 0.0) -> Tween:

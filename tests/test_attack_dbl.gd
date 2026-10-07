@@ -905,11 +905,8 @@ func _b8_tear_is_symmetric() -> void:
 	# 报出来的却是「声数不对」—— 先把前提钉在这儿，坏了直接说是配置改了
 	check(str(Sfx.action("attack").get("sound", "")) == str(Sfx.action("attack_tear").get("sound", "")),
 		"命中音和逐张拆除音共用一个 wav（_sfx.actions 里两个动作同 sound）")
-	# 1 声按摞的命中音（_impact_once）+ 每张一声逐张拆除音（_delayed_flyout）。
-	# 逐张那几声是故意的：听到几声就是撕了几张
-	check(a["atk"] == seats + 1, "玩家点一摞响 %d 声（1 声命中 + %d 声逐张，实 %d）" % [
-		seats + 1, seats, a["atk"]])
-	check(b["atk"] == seats + 1, "BOT 啃同一摞也响 %d 声（实 %d）" % [seats + 1, b["atk"]])
+	check(a["atk"] == 2, "玩家一批只响一次命中、一次撕纸（实 %d）" % a["atk"])
+	check(b["atk"] == 2, "BOT 一批只响一次命中、一次撕纸（实 %d）" % b["atk"])
 	check(a["burst"] == 1, "玩家侧 1 朵爆花（实 %d）" % a["burst"])
 	check(b["burst"] == 1, "BOT 侧也只 1 朵，不是一张一朵（实 %d）" % b["burst"])
 	var gap: float = absf(float(a["ms"]) - float(b["ms"]))
@@ -982,14 +979,12 @@ func _n_particles(main: Node) -> int:
 			n += 1
 	return n
 
-# ---------- B9. 分次进来的撕牌也要逐张错开 ----------
-
-## 一摞 N 张现在是 N 条意图，对手侧每条各走一次 _render_foe_attack。
-## 起飞时刻各从 0 数的话这 N 张会**同时**撕开，读作一团、数不出几张 ——
-## 所以队尾（_tear_slot_ms）要跨调用累计
+# ---------- B9. 同批七张同时撕，不增加七次动画 ----------
 func _b9_stagger_across_calls() -> void:
-	print("--- B9. 分 7 次进来的撕牌，起飞时刻照样逐张错开 ---")
-	var main: Node = await boot_main()
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	main.force_drawer_layout = true
+	root.add_child(main)
+	_booted = main
 	await settle()
 	await main._tears_drained()
 	var uids: Array = []
@@ -998,33 +993,11 @@ func _b9_stagger_across_calls() -> void:
 	main._sync_entities()
 	await settle()
 	await main._tears_drained()
-
-	var slots: Array = []
-	for u in uids:
-		main._animate_removed([u], true)
-		slots.append(int(main._tear_slot_ms))
-	var ok := true
-	for i in range(1, slots.size()):
-		var step: int = slots[i] - slots[i - 1]
-		if step < 60 or step > 100:
-			ok = false
-	check(ok, "队尾逐张往后推 ~80ms（TEAR_STAGGER），不是每次都回到「现在」")
-	var span: int = slots[slots.size() - 1] - slots[0]
-	check(span >= 400, "7 张铺开 %d ms（6×80=480 上下）" % span)
-
-	# 一次 7 张（玩家点一摞）铺开的宽度要一样
-	var main2: Node = await boot_main()
-	await settle()
-	await main2._tears_drained()
-	var u2: Array = []
-	for i in 7:
-		u2.append(int(main2.state.add_card(main2.my_seat, "user", true)["uid"]))
-	main2._sync_entities()
-	await settle()
-	await main2._tears_drained()
-	var t0 := Time.get_ticks_msec()
-	var dur: float = main2._animate_removed(u2, false)
-	check(absf(dur - 0.94) < 0.12,
-		"整批 %.3f 秒 ≈ 6×0.08 + 0.46 = 0.94（和分次那边同一个式子）" % dur)
-	check(int(main2._tear_slot_ms) - t0 >= 500,
-		"一次进来也铺开 %d ms" % (int(main2._tear_slot_ms) - t0))
+	var count: int = main.table_hands.batch_count
+	var dur: float = main._animate_removed(uids, false)
+	check(absf(dur - 0.74) < 0.01, "七张与一张使用同一时长，不按张数排队")
+	check(main.table_hands.batch_count == count + 1, "七张只创建一双撕纸手")
+	check(main.table_hands._batches.back().count == 7, "一双手覆盖本批七张牌")
+	for uid in uids:
+		check(not main.entities.has(uid), "被移除的牌立即退出交互")
+	await main._tears_drained()

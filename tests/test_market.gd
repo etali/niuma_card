@@ -109,7 +109,7 @@ func _initialize() -> void:
 	# 攻击段：卡名 + ×N。补贴大战本轮从打现金改成打用户，所以币种也从卡表取
 	var want_atk := "移除对方%s×%d" % [CardDB.card_name(d_atk["attack_res"]), int(d_atk["attack_n"])]
 	check(want_atk in hint_cash, "攻击段用卡名：移除的是牌不是计量（%s）" % want_atk)
-	check(not "资金" in hint_cash, "补贴大战全是按卡算的，不出现计量名")
+	check("资金装弹时花掉" in hint_cash, "攻击说明补充资金消耗时机，避免把现金配方理解为持续保留")
 	# 报错和悬停必须念同一个词
 	var miss: String = ComboRules.evaluate([{ "uid": 0, "def_id": "butie" }]).get("reason", "")
 	print("       配方不足报错：%s" % miss)

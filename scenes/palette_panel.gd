@@ -23,6 +23,9 @@ var _body: VBoxContainer            # 折叠时隐藏的部分（列表 + 页脚
 var _toggle: Button
 var _status: Label
 var _pickers: Array = []            # [{btn, section, key, slot}]，restore 后要整体回填
+var _number_inputs: Array[Dictionary] = []
+var _list: ScrollContainer
+var _footer: HBoxContainer
 var _syncing := false               # 见类注释第 2 点
 
 
@@ -62,13 +65,14 @@ func _build() -> void:
 	root.add_child(_body)
 
 	_body.add_child(_build_list())
-	_body.add_child(_build_footer())
+	_footer = _build_footer()
+	_body.add_child(_footer)
 
 
 func _build_header() -> HBoxContainer:
 	var hb := HBoxContainer.new()
 	var title := Label.new()
-	title.text = "配色"
+	title.text = "UI"
 	title.add_theme_font_override("font", Fonts.zh())
 	title.add_theme_font_size_override("font_size", 16)
 	title.add_theme_color_override("font_color", Color(0.95, 0.93, 0.88))
@@ -86,6 +90,7 @@ func _build_header() -> HBoxContainer:
 
 func _build_list() -> ScrollContainer:
 	var sc := ScrollContainer.new()
+	_list = sc
 	sc.custom_minimum_size = Vector2(268, LIST_H)
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 
@@ -121,6 +126,21 @@ func _build_row(item: Dictionary) -> HBoxContainer:
 	lbl.add_theme_color_override("font_color", Color(0.88, 0.86, 0.82))
 	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hb.add_child(lbl)
+
+	if item.get("type") == "number":
+		var input := SpinBox.new()
+		input.name = "Pattern" + key.capitalize()
+		input.min_value = float(item["min"])
+		input.max_value = float(item["max"])
+		input.step = float(item["step"])
+		input.suffix = str(item["suffix"])
+		input.custom_minimum_size = Vector2(114, ROW_H)
+		input.value = Palette.get_number(section, key)
+		input.tooltip_text = str(item["hint"])
+		input.value_changed.connect(_on_number_changed.bind(section, key))
+		hb.add_child(input)
+		_number_inputs.append({"input": input, "section": section, "key": key})
+		return hb
 
 	var btn := ColorPickerButton.new()
 	btn.custom_minimum_size = Vector2(SWATCH_W, ROW_H)
@@ -180,6 +200,18 @@ func _on_color_changed(c: Color, section: String, key: String, slot: String) -> 
 	_status.text = ""
 
 
+func _on_number_changed(value: float, section: String, key: String) -> void:
+	if _syncing:
+		return
+	Palette.set_number(section, key, value)
+	_status.text = ""
+
+## 嵌入 UI 时由外层滚动，避免两层滚动框争抢滚轮。
+func set_embedded(embedded: bool) -> void:
+	_footer.visible = not embedded
+	_list.custom_minimum_size.y = 0 if embedded else LIST_H
+	_list.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED if embedded else ScrollContainer.SCROLL_MODE_AUTO
+
 ## 显隐、按钮文案、框子尺寸同一帧做完，不许 await 一帧去等 min size ——
 ## 理由写在 bot_panel.gd 的 _on_toggle 上（这块是同一个 bug 的两处）
 func _on_toggle() -> void:
@@ -205,6 +237,9 @@ func _sync_pickers() -> void:
 		var btn: ColorPickerButton = p["btn"]
 		if is_instance_valid(btn):
 			btn.color = _current(str(p["section"]), str(p["key"]), str(p["slot"]))
+	for item in _number_inputs:
+		var input: SpinBox = item["input"]
+		input.set_value_no_signal(Palette.get_number(item["section"], item["key"]))
 	_syncing = false
 
 

@@ -13,6 +13,18 @@ func bind(main: Node) -> void:
 	host = main
 
 func play_group(frames: Array) -> void:
+	# 录像中的同摞连续意图也是一次整批撕纸，不把逐条裁决变成 N 次动作。
+	if frames.size() > 1 and frames.all(func(frame): return frame.intent.op == Intent.OP_ATTACK):
+		var merged: Dictionary = frames.back().duplicate()
+		merged.result = frames.front().result.duplicate(true)
+		merged.result.removed = []
+		for frame in frames:
+			merged.result.removed.append_array(frame.result.get("removed", []))
+		host.state = merged.state
+		host.pipe = LocalTransport.new(merged.applier)
+		host._update_hud()
+		await play(merged, frames.front().before_state)
+		return
 	for index in frames.size():
 		var frame: Dictionary = frames[index]
 		host.state = frame["state"]

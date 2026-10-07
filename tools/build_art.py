@@ -19,7 +19,7 @@
 不依赖 plate_master.png；颜色来自 data/ui.json 的 palette 段。
 换色和卡框几何修改由 shader 实现，素材和 shader/include/UID 均由 Git 管理。
 
-manifest 仍写 assets/art/art_manifest.json（图标度量 + 整卡素材的色板/带位）。
+素材登记写入 data/ui.json 的 art 段，保留其他展示配置。
 """
 import argparse
 import colorsys
@@ -351,6 +351,12 @@ def main():
 
     name_to_id = load_name_to_id()
     manifest = {"icons": {}, "misc": {}}
+    # 新版插画直接覆盖 icon 目录，旧素材构建不得把它们还原成旧线稿。
+    ui_path = os.path.join(ROOT, "data", "ui.json")
+    with open(ui_path, encoding="utf-8") as existing:
+        ui = json.load(existing)
+    existing_manifest = ui.get("art", {})
+    manifest.update(existing_manifest)
     warnings = []
 
     # ---------- 图标 ----------
@@ -365,6 +371,10 @@ def main():
             def_id = name_to_id.get(zh)
             if def_id is None:
                 warnings.append(f"图标 {fn} 在 cards.json 里找不到同名卡牌，已跳过")
+                continue
+            current_icon = f"icon/icon_{def_id}.png"
+            if (def_id in ("cash", "user") or def_id in manifest.get("illustrations", {})) \
+                    and os.path.isfile(os.path.join(OUT, current_icon)):
                 continue
             im, bbox, sw = normalize_icon(os.path.join(icon_dir, fn))
             save(im, "icon", f"icon_{def_id}", dry, log)
@@ -390,6 +400,10 @@ def main():
     print("\n其余素材 →")
     log = []
     for rel, (subdir, name, size) in sorted(MISC_MAP.items(), key=lambda kv: kv[1][1]):
+        current = existing_manifest.get("misc", {}).get(name, {})
+        if current.get("hand_drawn") and os.path.isfile(os.path.join(OUT, current.get("file", ""))):
+            manifest["misc"][name] = current
+            continue
         p = os.path.join(SRC, rel)
         if not os.path.exists(p):
             warnings.append(f"缺 {rel} → {subdir}/{name}.png（引擎回退程序化）")
@@ -398,7 +412,7 @@ def main():
         info = {"file": f"{subdir}/{name}.png"}
         # 典当行是整卡素材（同一张底板母版画的），一样要实测色板和标题带位置，
         # 否则牌名还是按定位表摆，压在分隔线上
-        if size == PLATE_SIZE:
+        if size == PLATE_SIZE and name not in ("card_back", "pawnshop"):
             info.update(measure_plate(im))
         if im.size != size:
             im = im.resize(size, Image.LANCZOS)
@@ -407,11 +421,13 @@ def main():
     print("\n".join(log))
 
     # ---------- manifest ----------
-    mp = os.path.join(OUT, "art_manifest.json")
+    mp = ui_path
     if not dry:
         os.makedirs(OUT, exist_ok=True)
         with open(mp, "w", encoding="utf-8") as f:
-            json.dump(manifest, f, ensure_ascii=False, indent=2, sort_keys=True)
+            ui["art"] = manifest
+            json.dump(ui, f, ensure_ascii=False, indent=2)
+            f.write("\n")
     print(f"\n色板实测（写入 {os.path.relpath(mp, ROOT)}）：")
     print(f"  {'整卡素材':<18} {'卡面':>9} {'标题带':>9} {'强调':>9} {'墨色':>9}  卡名对比度")
     for name, v in sorted(manifest["misc"].items()):

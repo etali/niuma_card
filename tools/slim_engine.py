@@ -174,7 +174,13 @@ def make_plan(root, capabilities, keep_modules=()):
         'importer="texture"' in (body := (root / name).read_text()) and
         re.search(r'compress/mode\s*=\s*[24]\b', body)
         for name in used['files'] if name.endswith('.import'))
-    dynamic_compression = bool(re.search(r'\.(?:compress|compress_from_channels|decompress)\s*\(', used['text']))
+    compression_calls = re.findall(r'\.(compress|compress_from_channels|decompress)\s*\(([^)]*)\)', used['text'])
+    # Image.decompress() 没有参数；PackedByteArray.decompress(size, mode) 是核心
+    # zlib/zstd 字节流解压，不需要 ASTC/Basis 纹理编码器。
+    dynamic_compression = any(
+        (not arguments.strip() if method == 'decompress' else
+         not arguments.strip().startswith('FileAccess.COMPRESSION_'))
+        for method, arguments in compression_calls)
     for module in ['astcenc', 'basis_universal']:
         enabled = bool(texture_compressed or dynamic_compression or module in keep_modules)
         options[f'module_{module}_enabled'] = enabled

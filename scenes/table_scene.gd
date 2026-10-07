@@ -5,6 +5,7 @@
 extends RefCounted
 
 ## 正式对局和规则演示共用的牌桌构造。托盘、市场、典当设施、灯光及卡面只建这一份。
+const PriceTag = preload("res://scenes/market_price_tag.gd")
 const TableSurface = preload("res://scenes/table_surface.gd")
 const TableRegions = preload("res://scenes/table_regions.gd")
 const TableLighting = preload("res://scenes/table_lighting.gd")
@@ -17,6 +18,7 @@ var _env: Environment
 var _table_mat: StandardMaterial3D
 var _table_frame_mat: StandardMaterial3D
 var _table_felt_lit := false
+var _felt_material: ShaderMaterial
 
 func _init(parent: Node3D, drawer: bool) -> void:
 	host = parent
@@ -29,6 +31,10 @@ func create_board() -> Board:
 	board.player_min_z = 0.0
 	board.player_max_z = 5.2
 	host.add_child(board)
+	for name in ["PlayerZoneTray", "FoeZoneTray"]:
+		var tray := host.get_node_or_null(name)
+		if tray:
+			tray.bind_board(board)
 	if drawer_mode:
 		var lighting := TableLighting.new()
 		host.add_child(lighting)
@@ -54,6 +60,20 @@ func refresh_palette() -> void:
 		_table_mat.albedo_color = Palette.get_color("world", "table_felt_lit" if _table_felt_lit else "table_felt")
 	if _table_frame_mat:
 		_table_frame_mat.albedo_color = Palette.get_color("world", "table_frame")
+	if _felt_material:
+		_felt_material.set_shader_parameter("felt_color", Palette.get_color("world", "table_felt"))
+		_felt_material.set_shader_parameter("doodle_ink", Palette.get_color("pattern", "ink"))
+		_felt_material.set_shader_parameter("pattern_density", Palette.get_number("pattern", "density"))
+		_felt_material.set_shader_parameter("pattern_spacing", Palette.get_number("pattern", "spacing"))
+	var facility := host.get_node_or_null("MarketFacility")
+	if facility:
+		var mat := facility.get_node("PawnshopFacilityCard").material_override as ShaderMaterial
+		mat.set_shader_parameter("face_color", Palette.get_color("card", "facility_face"))
+		mat.set_shader_parameter("band_color", Palette.get_color("card", "facility_band"))
+		mat.set_shader_parameter("ink_color", CardArt.frame_color())
+		for label_name in ["FacilityName", "FacilityBadge"]:
+			facility.get_node(label_name).modulate = Palette.get_color("card", "facility_ink")
+		facility.get_node("FacilityAction").modulate = Palette.get_color("card", "body")
 
 func _setup_environment() -> void:
 	var cam := Camera3D.new()
@@ -124,6 +144,24 @@ func _setup_table() -> void:
 		felt.rotation_degrees = Vector3(-90, 0, 0)
 		felt.position = Vector3(0, -0.024, 0)
 		host.add_child(felt)
+	else:
+		var felt := MeshInstance3D.new()
+		felt.name = "PaperDesktop"
+		var surface := PlaneMesh.new()
+		surface.size = Vector2(60, 60) if drawer_mode else Vector2(34, 22)
+		felt.mesh = surface
+		_felt_material = ShaderMaterial.new()
+		_felt_material.shader = load("res://shaders/table_felt.gdshader")
+		_felt_material.set_shader_parameter("extent", surface.size)
+		_felt_material.set_shader_parameter("doodle_pattern", preload("res://assets/art/table/user_cash_pattern.svg"))
+		_felt_material.set_shader_parameter("felt_color", Palette.get_color("world", "table_felt"))
+		_felt_material.set_shader_parameter("doodle_ink", Palette.get_color("pattern", "ink"))
+		_felt_material.set_shader_parameter("pattern_density", Palette.get_number("pattern", "density"))
+		_felt_material.set_shader_parameter("pattern_spacing", Palette.get_number("pattern", "spacing"))
+		felt.material_override = _felt_material
+		felt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		felt.position.y = -0.024
+		host.add_child(felt)
 
 	_setup_table_decor()
 
@@ -143,6 +181,7 @@ func _add_zone_tray(mine: bool) -> void:
 	var rect := TableRegions.zone_rect(mine, drawer_mode, int(CardDB.game_rules()["market_size"]))
 	var tray := TableSurface.new()
 	tray.configure(rect.size, "zone", CardArt.table_texture("zone_tray"))
+	tray.set_zone_owner("player" if mine else "ai")
 	tray.name = "PlayerZoneTray" if mine else "FoeZoneTray"
 	tray.position = Vector3(rect.get_center().x, 0.0, rect.get_center().y)
 	host.add_child(tray)
@@ -153,6 +192,15 @@ func _add_market_tray() -> void:
 	tray.configure(rect.size, "market")
 	tray.position = Vector3(rect.get_center().x, 0.006, rect.get_center().y)
 	host.add_child(tray)
+	# 柜台与商品之间留一条短手绘分隔线。
+	var count := int(CardDB.game_rules()["market_size"])
+	var facility := _pawn_position()
+	var last := _market_slot(maxi(count - 1, 0), count)
+	var divider := TableSurface.new()
+	divider.configure(Vector2(0.07, 1.70), "divider")
+	divider.name = "MarketFacilityDivider"
+	divider.position = Vector3((last.x + facility.x) * 0.5, 0.015, facility.z)
+	host.add_child(divider)
 
 func _setup_table_decor() -> void:
 	if drawer_mode:
@@ -205,8 +253,8 @@ func _setup_pawnshop_card() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = load(CardEntity.PLATE_SHADER)
 	CardArt.configure_frame(mat)
-	mat.set_shader_parameter("face_color", CardArt.misc_color("pawnshop", "face", Palette.get_color("world", "table_frame")))
-	mat.set_shader_parameter("band_color", CardArt.misc_color("pawnshop", "band", Palette.get_color("world", "table_frame")))
+	mat.set_shader_parameter("face_color", Palette.get_color("card", "facility_face"))
+	mat.set_shader_parameter("band_color", Palette.get_color("card", "facility_band"))
 	mat.set_shader_parameter("ink_color", CardArt.frame_color())
 	var art := CardArt.table_texture("pawnshop")
 	mat.set_shader_parameter("has_artwork", art != null)
@@ -233,6 +281,7 @@ func _setup_pawnshop_card() -> void:
 	facility.add_child(badge)
 	var action := _facility_label("拖牌换现", 200)
 	action.name = "FacilityAction"
+	action.name = "FacilityAction"
 	action.position = Vector3(0, 0.15, 1.10)
 	action.modulate = Palette.get_color("card", "body")
 	facility.add_child(action)
@@ -243,7 +292,7 @@ func _facility_label(text: String, size: int) -> Label3D:
 	label.font = Fonts.zh_bold()
 	label.font_size = CardEntity._raster()
 	label.pixel_size = CardEntity._text_scale(size)
-	label.modulate = CardArt.misc_ink_color("pawnshop")
+	label.modulate = Palette.get_color("card", "facility_ink")
 	label.outline_size = 0
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.rotation_degrees = Vector3(-90, 0, 0)
@@ -282,22 +331,14 @@ func spawn_market_card(board: Board, idx: int, def_id: String, slot: Vector3) ->
 		e.freeze = true
 		e.remove_meta("dest_pos"))
 
-	# 标价画在牌外的浮动价签上，不占卡面墨团：卡面右下（D 位）现在是配方进度，
-	# 左下（C 位）是产出/攻击——这两个买之后一直要看，标价只在货架上有意义。
-	# 价签用「¥N」而不是「标价 N」，同样是为了不往卡桌上堆中文
-	var def: Dictionary = CardDB.get_def(def_id)
-	var lb := Label3D.new()
-	lb.text = "¥%d" % def.get("price", 0)
-	lb.font = Fonts.zh_bold()
-	lb.pixel_size = 0.014
-	lb.font_size = 36
-	lb.outline_size = 4   # 见 _setup_pawnshop：描边超字号 12% 就成空心字
-	lb.outline_modulate = Color(0, 0, 0, 0.9)
-	lb.modulate = Color(0.95, 0.8, 0.4)
-	lb.rotation_degrees = Vector3(-90 if drawer_mode else -65, 0, 0)
-	lb.position = slot + Vector3(0, 0.15, 1.1)
-	host.add_child(lb)
-	return {"card": e, "price": lb}
+	# 卡、纸签和价签金币分别绘制，价格始终读取当前卡表。
+	var tag := PriceTag.new()
+	tag.name = "MarketPriceTag_%d" % idx
+	tag.position = slot + Vector3(0, 0.15, 1.0)
+	host.add_child(tag)
+	tag.configure(int(CardDB.get_def(def_id).get("price", 0)), e, board)
+	e.set_meta("price_tag", weakref(tag))
+	return {"card": e, "price": tag}
 
 func spawn_card(board: Board, record: Dictionary, at: Vector3, draggable: bool) -> CardEntity:
 	var card := CardEntity.new()
