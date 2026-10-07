@@ -4,7 +4,7 @@
 [![Godot: 4.7.1](https://img.shields.io/badge/Godot-4.7.1-478CBF.svg?logo=godotengine&logoColor=white)](https://godotengine.org/)
 [![Platforms: macOS / Web / Android](https://img.shields.io/badge/Platforms-macOS%20%7C%20Web%20%7C%20Android-606060.svg)](#4-构建打包测试)
 
-![example](ref_image/example.png)
+![example](ref_image/example.jpeg)
 
 牛马题材的轻量卡牌对战游戏。玩家经营自己的公司，与 BOT 或另一名玩家争夺同一批市场卡牌，通过生产、升级、攻击和资源管理取得胜利。
 
