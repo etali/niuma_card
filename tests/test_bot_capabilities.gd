@@ -59,6 +59,7 @@ func _initialize() -> void:
 	_test_timing(p)
 	_test_modes(p)
 	_test_small_space(p)
+	_test_response_retention(p)
 	_test_resale(p)
 	finish()
 func state() -> GameState:
@@ -127,14 +128,38 @@ func _test_small_space(parameters: Dictionary) -> void:
 			if not sold.is_empty(): next.pawn("bot",sold)
 			reference[Cap.signature(next)] = true
 	check(actual == reference and actual.size()==16,"小局面联合融资覆盖全部16种数量组合，对照独立穷举")
-	var paid := state()
-	var roots := BOTActions.generate(paid,"bot",BOTSearch.from_strength(0.5).resolved_parameters())
-	var leaf := Env.copy(roots[0].state)
-	var old := BOTSearch.from_strength(0.5).resolved_parameters()
-	var enhanced := parameters.duplicate()
-	var r0 := BOTTurnPlan.resolve_current(leaf,"bot",old)
-	var r1 := BOTTurnPlan.resolve_current(leaf,"bot",enhanced)
-	check(r0.responses.size()>1 and r1.responses.size()>1,"回应局面保留到后续比较入口")
+
+func _test_response_retention(parameters: Dictionary) -> void:
+	# 回应保留只需两种合法资源状态；大型终局策略已在入口用真实胜负验证。
+	var s := GameState.new()
+	s.set_seed(4321)
+	s.players = {"bot":{"cards":[]},"player":{"cards":[]}}
+	s.draw_first = "bot"
+	for who in s.players:
+		s.add_card(who,"cash")
+		s.add_card(who,"user")
+	var extra_user := s.add_card("player","user")
+	var before := StateCodec.state_hash(s)
+	var kept := Env.copy(s)
+	var sold := Env.copy(s)
+	check(Env.replay(sold,[Intent.pawn("player",[extra_user.uid])]),"小回应夹具可合法典当一个用户")
+	Env.settle(kept,Callable())
+	Env.settle(sold,Callable())
+	var expected := {Cap.signature(kept):true,Cap.signature(sold):true}
+	check(expected.size()==2 and kept.winner=="" and sold.winner=="","保留与典当形成两种非终局语义状态")
+	var p := parameters.duplicate()
+	var resolved := BOTTurnPlan.resolve_current(s,"bot",p)
+	check(resolved.complete and not resolved.coverage_limited,"小局面完整评价全部规定回应")
+	check(resolved.responses.size()==2 and _response_signatures(resolved.responses)==expected,
+		"当前回应精确保留独立规则执行的两种状态")
+	var future := BOTTurnPlan._future_responses(resolved,p)
+	check(future.size()==2 and _response_signatures(future)==expected,"两种回应均保留到后续比较入口")
+	check(StateCodec.state_hash(s)==before,"回应评价与后续筛选不改变输入状态")
+
+func _response_signatures(responses: Array) -> Dictionary:
+	var signatures := {}
+	for response in responses: signatures[Cap.signature(response)] = true
+	return signatures
 
 func _test_resale(parameters: Dictionary) -> void:
 	CardDB.CARDS["resale_a"] = {"kind":"product","tier":1,"price":4,"pawn":2,"recipe_res":"user","recipe_n":1,"output_res":"cash","output_n":1}

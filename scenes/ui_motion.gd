@@ -4,6 +4,8 @@
 
 extends RefCounted
 
+const Materials = preload("res://scenes/effect_materials.gd")
+
 ## 语义动作的共享节拍；卡牌移动和角色反馈都以准备、执行、收尾组织。
 const ANTICIPATE := 0.10
 const ACT := 0.34
@@ -53,12 +55,7 @@ static func play(parent: Node3D, event: String, pos: Vector3, color: Color, amou
 		p.initial_velocity_max = 1.5
 		p.gravity = Vector3.ZERO
 	p.mesh = mesh
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.vertex_color_use_as_albedo = true
-	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mesh.material = material
+	mesh.material = Materials.particles()
 	p.angular_velocity_min = -80
 	p.angular_velocity_max = 80
 	var fade := Gradient.new()
@@ -83,10 +80,7 @@ static func _upgrade_ring(parent: Node3D, pos: Vector3, color: Color) -> Node3D:
 	mesh.rings = 32
 	mesh.ring_segments = 8
 	ring.mesh = mesh
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.albedo_color = color
+	var material := Materials.flat(color)
 	ring.material_override = material
 	ring.position = pos
 	ring.scale = Vector3.ONE * 0.5

@@ -4,6 +4,24 @@ extends Node3D
 
 ## 价签只表达商品价格和交互反馈，不参与拾取与购买规则。
 const Surface = preload("res://scenes/table_surface.gd")
+const Materials = preload("res://scenes/effect_materials.gd")
+const HOLE_SHADER := """shader_type spatial;
+render_mode unshaded, cull_disabled;
+uniform vec4 ink : source_color;
+uniform vec4 paper : source_color;
+uniform float opacity = 1.0;
+void fragment() {
+	float r = length(UV - vec2(0.5));
+	if (r > 0.5) { discard; }
+	// 深色孔心、浅色切口与细墨线，保持简笔画的纸张质感。
+	vec3 color = mix(ink.rgb, paper.rgb, smoothstep(0.28, 0.33, r));
+	color = mix(color, ink.rgb, smoothstep(0.43, 0.48, r));
+	ALBEDO = color;
+	ALPHA = opacity * (1.0 - smoothstep(0.48, 0.5, r));
+}
+"""
+# 各价签只改自己的材质参数；程序跨售空/补货保留，不逐张重新编译。
+static var _hole_shader: Shader
 # 在右下角内侧留出纸边，同时避开产出墨团。坐标相对卡牌中心。
 const CARD_HOLE := Vector3(0.48, CardEntity.Y_PLATE + 0.004, 0.735)
 const CARD_HOLE_RADIUS := 0.026
@@ -105,10 +123,7 @@ func _add_string() -> void:
 	thread.name = "TagString"
 	thread.mesh = rope
 	thread.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_string_material = StandardMaterial3D.new()
-	_string_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_string_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_string_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_string_material = Materials.flat(Palette.get_color("card", "frame"), true)
 	thread.material_override = _string_material
 	_presentation.add_child(thread)
 	# 细纸边与内凹阴影表现穿孔，绳端穿进孔心，替代角上的实心绳结。
@@ -119,24 +134,11 @@ func _add_string() -> void:
 	eyelet.mesh = disc
 	eyelet.rotation_degrees.x = -90
 	eyelet.position = corner - Vector3(0.0, 0.001, 0.0)
-	var shader := Shader.new()
-	shader.code = """shader_type spatial;
-render_mode unshaded, cull_disabled;
-uniform vec4 ink : source_color;
-uniform vec4 paper : source_color;
-uniform float opacity = 1.0;
-void fragment() {
-	float r = length(UV - vec2(0.5));
-	if (r > 0.5) { discard; }
-	// 深色孔心、浅色切口与细墨线，保持简笔画的纸张质感。
-	vec3 color = mix(ink.rgb, paper.rgb, smoothstep(0.28, 0.33, r));
-	color = mix(color, ink.rgb, smoothstep(0.43, 0.48, r));
-	ALBEDO = color;
-	ALPHA = opacity * (1.0 - smoothstep(0.48, 0.5, r));
-}
-"""
+	if _hole_shader == null:
+		_hole_shader = Shader.new()
+		_hole_shader.code = HOLE_SHADER
 	_hole_material = ShaderMaterial.new()
-	_hole_material.shader = shader
+	_hole_material.shader = _hole_shader
 	eyelet.material_override = _hole_material
 	eyelet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_presentation.add_child(eyelet)

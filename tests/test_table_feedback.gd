@@ -20,6 +20,7 @@ func _run() -> void:
 	await _main_upgrade()
 	await _attack_and_shield()
 	await _feedback_lifecycle()
+	await _effect_material_lifecycle()
 	finish()
 
 func _material_lifecycle() -> void:
@@ -57,9 +58,14 @@ func _material_lifecycle() -> void:
 	card.set_face_down(false)
 	check(float((card._plate.material_override as ShaderMaterial).get_shader_parameter("feedback_phase")) < 1.0,
 		"翻面后反馈仍位于正确的正面材质，未污染卡背")
+	var back_program: WeakRef = weakref(card._back_mat.shader)
+	var halves := card.tear_apart()
+	var tear_program: WeakRef = weakref(halves[0].get_child(0).material_override.shader)
 	card.queue_free()
 	await process_frame
 	check(not shield_tween.is_valid(), "卡牌释放后绑定反馈一同释放")
+	check(back_program.get_ref() != null and tear_program.get_ref() != null,
+		"最后一张翻背/撕毁牌释放后着色器仍保留，后续动作无需重新加载编译")
 
 func _arena(section: String, mode: String) -> Node:
 	var example: Dictionary = {}
@@ -234,5 +240,29 @@ func _feedback_lifecycle() -> void:
 	await process_frame
 	await process_frame
 	check(added.all(func(tween): return not tween.is_valid()), "切换规则页提前销毁特效时，不回调已释放的节点")
+	stage.queue_free()
+	await process_frame
+
+func _effect_material_lifecycle() -> void:
+	var stage := Node3D.new()
+	root.add_child(stage)
+	var first := Motion.play(stage, "production", Vector3.ZERO, Color.RED) as CPUParticles3D
+	var particle_material: WeakRef = weakref(first.mesh.material)
+	await create_timer(Motion.ACT + Motion.SETTLE + 0.1).timeout
+	check(not is_instance_valid(first) and particle_material.get_ref() != null,
+		"粒子节点结束释放，材质保留给下次反馈，避免每组结算重新编译")
+	var second := Motion.play(stage, "pawn", Vector3.ZERO, Color.BLUE) as CPUParticles3D
+	check(second.mesh.material == particle_material.get_ref() and second.color == Color.BLUE,
+		"不同事件共享粒子材质，颜色仍取本次粒子顶点色")
+	var receipt := Feedback.receipt(stage, "production", Vector3.ZERO, "+3 资金", Color.RED)
+	var ring := Motion.play(stage, "upgrade", Vector3.ZERO, Color.BLUE) as MeshInstance3D
+	var receipt_material := receipt.get_child(1).material_override as StandardMaterial3D
+	var ring_material := ring.material_override as StandardMaterial3D
+	receipt_material.albedo_color.a = 0.0
+	check(receipt_material != ring_material and ring_material.albedo_color == Color.BLUE,
+		"回执淡出不污染并发升级光环的颜色或透明度")
+	var next := Feedback.receipt(stage, "production", Vector3.ZERO, "+4 资金", Color.RED)
+	check(next.get_child(1).material_override.albedo_color == Palette.semantic("surface"),
+		"后续回执从当前主题色开始，不继承前一张的淡出值")
 	stage.queue_free()
 	await process_frame

@@ -4,10 +4,12 @@
 
 """真实执行统一入口，验证自动发现、零匹配、错误/超时/取消及用户数据隔离。"""
 import importlib.util
+import fcntl
 import json
 import os
 from pathlib import Path
 import signal
+import re
 import subprocess
 import sys
 import tempfile
@@ -28,6 +30,13 @@ class TestRunnerTest(unittest.TestCase):
         self.godot = self.root / "fixture-godot"
         self.godot.write_text("#!" + sys.executable + "\n" + '''
 import os,pathlib,subprocess,sys,time
+if '--import' in sys.argv:
+    pathlib.Path('imported').write_text('ready')
+    config=pathlib.Path('import-mode')
+    mode=config.read_text() if config.exists() else 'pass'
+    if mode == 'error': print('ERROR: fixture import failure')
+    if mode == 'hang': time.sleep(60)
+    sys.exit(0)
 script=pathlib.Path(sys.argv[sys.argv.index('-s')+1])
 mode=script.read_text().strip()
 print('PROJECT_FILE=' + str(pathlib.Path.cwd() / 'private-source.gd'), flush=True)
@@ -93,6 +102,117 @@ class NewFeature(unittest.TestCase):
         result = self.run_runner("missing-test")
         self.assertEqual(result.returncode, 2)
         self.assertIn("没有匹配的测试", result.stderr)
+
+    def test_suite_list_unions_without_duplicates_then_intersects_filter(self):
+        for name in ("test_drawer_one.gd", "test_bot_two.gd", "test_engine.gd", "test_fixture.py"):
+            (self.root / "tests" / name).write_text("pass")
+        self.env["GODOT"] = str(self.root / "missing-godot")
+        result = self.run_runner("--suite", "gd", "--suite", "drawer", "--list")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["tests/test_bot_two.gd", "tests/test_drawer_one.gd", "tests/test_engine.gd"])
+        narrowed = self.run_runner("--suite", "gd", "drawer", "--list")
+        self.assertEqual(narrowed.stdout.splitlines(), ["tests/test_drawer_one.gd"])
+        self.assertFalse(self.logs.exists(), "列举无需资源导入、日志或 Godot 安装")
+
+    def test_class_skip_is_reported_but_empty_python_file_fails(self):
+        cases = {
+            "skip": """import unittest
+class OptionalFixture(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls): raise unittest.SkipTest('optional asset unavailable')
+    def test_fixture(self): self.fail('must be skipped')
+""",
+            "empty": "import unittest\n",
+        }
+        for name, source in cases.items():
+            with self.subTest(name=name):
+                (self.root / "tests/test_fixture.py").write_text(source)
+                result = self.run_runner()
+                report = json.loads((self.logs / "results.json").read_text())
+                self.assertEqual(result.returncode, 0 if name == "skip" else 1, result.stdout + result.stderr)
+                self.assertEqual(report["python"]["passed"], 0)
+                self.assertEqual(report["python"]["skipped"], int(name == "skip"))
+                if name == "empty":
+                    self.assertEqual(report["results"][0]["reason"], "没有执行 Python 用例")
+
+    def test_mixed_setup_skip_and_method_skip_do_not_swallow_passed_tests(self):
+        for setup in ("class", "module"):
+            with self.subTest(setup=setup):
+                prefix = """import unittest
+class OptionalFixture(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls): raise unittest.SkipTest('optional class')
+    def test_fixture(self): self.fail('must be skipped')
+""" if setup == "class" else """import unittest
+def setUpModule(): raise unittest.SkipTest('optional module')
+class OptionalFixture(unittest.TestCase):
+    def test_fixture(self): self.fail('must be skipped')
+"""
+                (self.root / "tests/test_skipped.py").write_text(prefix)
+                (self.root / "tests/test_passing.py").write_text("""import unittest
+class StandardFixture(unittest.TestCase):
+    def test_pass(self): self.assertEqual(2 + 2, 4)
+    @unittest.skip('optional method')
+    def test_skip(self): self.fail('must be skipped')
+""")
+                # 一份入口显式汇集两个模块，复现同一 unittest 运行中同时有整类/模块和方法跳过。
+                (self.root / "tests/test_fixture.py").write_text("""import unittest
+def load_tests(loader, tests, pattern):
+    suite = unittest.TestSuite()
+    for module in ('test_skipped', 'test_passing'):
+        suite.addTests(loader.loadTestsFromName(module))
+    return suite
+""")
+                result = self.run_runner("test_fixture.py")
+                report = json.loads((self.logs / "results.json").read_text())
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(report["python"], {"passed": 1, "failed": 0, "skipped": 2})
+
+    def test_resource_import_error_and_timeout_do_not_launch_tests(self):
+        (self.root / "tests/test_fixture.gd").write_text("pass")
+        for mode, expected in (("error", "Godot 导入报错"), ("hang", "超时")):
+            with self.subTest(mode=mode):
+                (self.root / "import-mode").write_text(mode)
+                result = self.run_runner("--timeout", "0.3")
+                report = json.loads((self.logs / "results.json").read_text())
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(expected, report["preparation"]["reason"])
+                self.assertEqual(report["not_run_files"], 1)
+                self.assertEqual(report["results"], [])
+                self.assertTrue((self.logs / "prepare_resources.log").is_file())
+                self.assertFalse((self.logs / "tests__test_fixture.gd.log").exists())
+
+    def test_import_waits_for_build_resource_lock_with_timeout(self):
+        (self.root / "tests/test_fixture.gd").write_text("pass")
+        (self.root / "build").mkdir()
+        with (self.root / "build/.font-transaction.lock").open("a+b") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            result = self.run_runner("--timeout", "0.2")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("等待资源导入锁超时", result.stdout)
+        self.assertFalse((self.root / "imported").exists(), "持有构建锁时不能写共享缓存")
+        self.assertEqual(self.run_runner().returncode, 0, "释放构建锁后可以导入并运行")
+
+    def test_cancelling_resource_import_retains_report_without_launching_tests(self):
+        (self.root / "tests/test_fixture.gd").write_text("pass")
+        (self.root / "import-mode").write_text("hang")
+        process = subprocess.Popen(self.command(), env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        try:
+            deadline = time.monotonic() + 5
+            while not (self.root / "imported").exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.assertTrue((self.root / "imported").exists())
+            process.send_signal(signal.SIGTERM)
+            output = process.communicate(timeout=5)[0]
+            self.assertEqual(process.returncode, 143, output)
+            report = json.loads((self.logs / "results.json").read_text())
+            self.assertEqual(report["preparation"]["status"], "cancelled")
+            self.assertEqual(report["not_run_files"], 1)
+            self.assertEqual(report["results"], [])
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
 
     def test_runtime_error_overrules_success_tally(self):
         (self.root / "tests/test_fixture.gd").write_text("error")
@@ -171,6 +291,42 @@ class RuntimeRequestPathsTest(unittest.TestCase):
 
 
 class GodotIsolationTest(unittest.TestCase):
+    def test_runner_imports_fresh_project_and_repairs_missing_texture_cache(self):
+        godot = os.environ.get("CARD_TEST_REAL_GODOT") or os.environ.get("GODOT", "/Applications/Godot.app/Contents/MacOS/Godot")
+        if not Path(godot).is_file():
+            self.skipTest("需要 Godot 验证首次导入与缓存修复")
+        with tempfile.TemporaryDirectory(prefix="runner-import-") as temporary:
+            root = Path(temporary)
+            (root / "tests").mkdir()
+            (root / "tests/.gdignore").touch()
+            (root / "project.godot").write_text('config_version=5\n[application]\nconfig/name="import fixture"\n')
+            (root / "icon.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="red"/></svg>')
+            (root / "tests/test_texture.gd").write_text('''extends SceneTree
+const ICON = preload("res://icon.svg")
+func _initialize() -> void:
+    if ICON is Texture2D and ICON.get_width() == 8:
+        print("=== 结果：1 通过 / 0 失败 ===")
+        quit(0)
+    else:
+        quit(1)
+''')
+            original = (root / "project.godot").read_bytes()
+            for missing_cache in (False, True):
+                with self.subTest(missing_cache=missing_cache):
+                    if missing_cache:
+                        import_config = (root / "icon.svg.import").read_text()
+                        cache = re.search(r'^path="res://(.+)"$', import_config, re.M)[1]
+                        (root / cache).unlink()
+                    logs = root / "build/results"
+                    result = subprocess.run([sys.executable, str(RUNNER), "--root", str(root), "--log-dir", str(logs)],
+                                            env=dict(os.environ, GODOT=godot), capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    report = json.loads((logs / "results.json").read_text())
+                    self.assertEqual(report["preparation"]["status"], "passed")
+                    self.assertEqual(report["gd"]["passed"], 1)
+                    self.assertTrue((root / "build/.gdignore").exists())
+                    self.assertEqual((root / "project.godot").read_bytes(), original)
+
     def test_finish_drains_audio_and_preserves_assertion_count_and_exit_code(self):
         godot = os.environ.get("CARD_TEST_REAL_GODOT") or os.environ.get("GODOT", "/Applications/Godot.app/Contents/MacOS/Godot")
         if not Path(godot).is_file():

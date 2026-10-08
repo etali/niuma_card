@@ -17,6 +17,11 @@ const PLATE_ART_INSET := 0.05
 const PLATE_SHADER := "res://shaders/card_face.gdshader"
 const TEAR_SHADER := "res://shaders/card_tear.gdshader"
 const BACK_SHADER := "res://shaders/card_back.gdshader"
+## 特效结束后仍持有着色器。仅在材质上 load 的资源会随最后一张离场牌释放，
+## 下一次翻背/撕牌又触发驱动编译，Compatibility 下每次会停顿约 100ms。
+const _PLATE_PROGRAM = preload(PLATE_SHADER)
+const _TEAR_PROGRAM = preload(TEAR_SHADER)
+const _BACK_PROGRAM = preload(BACK_SHADER)
 
 ## 卡名的行盒占「实测标题带高」的比例（见 _fit_label_in_band）。
 ## 注意这个比例卡的是行盒（ascent+descent），不是肉眼看到的墨迹。实测 NotoSansSC
@@ -609,7 +614,7 @@ func recipe_status_text() -> String:
 ## 卡面材质不使用 mask/PNG；所有卡都走相同的圆角与标题分隔线。
 func _make_plate_material() -> ShaderMaterial:
 	var material := ShaderMaterial.new()
-	material.shader = load(PLATE_SHADER)
+	material.shader = _PLATE_PROGRAM
 	CardArt.configure_frame(material)
 	material.set_shader_parameter("tint", Vector3.ONE)
 	material.set_shader_parameter("handling_light", 0.0)
@@ -619,7 +624,7 @@ func _make_plate_material() -> ShaderMaterial:
 
 func _make_back_material() -> ShaderMaterial:
 	var material := ShaderMaterial.new()
-	material.shader = load(BACK_SHADER)
+	material.shader = _BACK_PROGRAM
 	CardArt.configure_frame(material)
 	var art := CardArt.table_texture("card_back")
 	material.set_shader_parameter("has_artwork", art != null)
@@ -930,7 +935,7 @@ func tear_apart() -> Array:
 		quad.size = Vector2(CARD_SIZE.x, CARD_SIZE.z)
 		half.mesh = quad
 		var mat := ShaderMaterial.new()
-		mat.shader = load(TEAR_SHADER)
+		mat.shader = _TEAR_PROGRAM
 		# 正面与撕片携带同一份几何参数与配色。
 		for key in CardArt.FRAME_PARAMETERS:
 			mat.set_shader_parameter(key, src.get_shader_parameter(key))

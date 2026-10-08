@@ -27,7 +27,7 @@ extends RefCounted
 ##   _uid 不带 → 重连后新发的卡 uid 从 0 重来，和场上现有的卡撞号，
 ##     而 uid 是归属校验和攻击目标引用的唯一凭据，撞号是静默的错
 ##   rng 状态不带 → 重连后公共区刷新走另一条随机流，两端从此看到不同的牌
-static func snapshot(s: GameState) -> Dictionary:
+static func snapshot(s: GameState, include_log := true) -> Dictionary:
 	var players := {}
 	for who in s.players:
 		var cards: Array = []
@@ -49,7 +49,7 @@ static func snapshot(s: GameState) -> Dictionary:
 		"draw_first": s.draw_first,
 		"winner": s.winner,
 		"win_reason": s.win_reason,
-		"log": s.log.duplicate(true),
+		"log": s.log.duplicate(true) if include_log else [],
 		"uid": s.peek_uid(),
 		"rng": s.rng_snapshot(),
 	}
@@ -242,7 +242,8 @@ static func state_hash(s: GameState) -> String:
 ## 哈希前的那份纯数据。判据红了的时候拿它 diff ——
 ## 只有哈希的话，「两端不一样」查不出是哪儿不一样
 static func _hash_payload(s: GameState) -> Dictionary:
-	var d := snapshot(s)
+	# 日志不参与哈希，不能先深拷贝整场历史再丢掉：每条录像操作都会算哈希。
+	var d := snapshot(s, false)
 	d.erase("log")   # 见文件头：日志是视角量 + 文案会改
 	# 开火历史只用于表现，不改变后续合法动作；沿用旧录像的规则哈希口径。
 	for player in d["players"].values():

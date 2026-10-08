@@ -368,8 +368,10 @@ tools/run_tests.sh
 ```
 
 入口自动发现 `tests/test_*.gd` 和 `tests/test_*.py`，再执行文档/脚本静态检查；
-手动调参的 Python 测试包含 Node 网页行为回归。需要 Python 3、Pillow、fonttools、Node.js
+手动调参的 Python 测试包含 Node 网页行为回归。需要 Python 3、Pillow、fonttools、numpy、Node.js
 和匹配项目版本的 Godot。报告分别统计 GDScript 断言、Python 用例和静态检查，跳过用例单独列出。
+Python 依赖可在虚拟环境中用 `pip install -r requirements-test.txt` 安装。
+测试分层、公共夹具和覆盖边界见 [测试说明](tests/README.md)。
 
 只运行匹配名称的测试：
 
@@ -377,12 +379,16 @@ tools/run_tests.sh
 tools/run_tests.sh arrivals
 TEST_SPEED=1 tools/run_tests.sh
 tools/run_tests.sh android_signing
+tools/run_tests.sh --suite drawer --list
+tools/run_tests.sh --suite bot --suite network
 JOBS=4 TEST_TIMEOUT=180 tools/run_tests.sh --log-dir build/test-results/local
 ```
 
 筛选没有匹配项时返回失败。每个测试默认最多运行 180 秒，超时或取消会停止其进程与子进程；
 详细日志和 `results.json` 保存在打印出的 `build/test-results/` 目录。每个 Godot 进程使用临时
 项目入口和独立用户数据目录，Python 测试启动的游戏进程也继承此隔离，不覆盖玩家设置。
+并行测试前会串行导入 Godot 资源并复用构建资源锁，修复首次运行或丢失的缓存；
+导入失败单独记录在准备日志中，用例记为未运行。`--list` 和纯静态检查不会启动 Godot。
 
 构建、测试和评估报告中的项目文件路径以项目根目录为基准，家目录内的其他位置显示为 `~/…`。
 工具输出与归档日志会移除本机项目目录和家目录前缀；SDK 和签名配置仍保留实际运行所需的路径。

@@ -61,6 +61,8 @@ var _pickup_quiet := false
 var _grab_offset := Vector3.ZERO   # 点击瞬间：鼠标点 → 被点卡中心 的偏移
 var _hover_group = null
 var _hover_card: CardEntity = null
+## 抽屉已有屏幕空间说明，只保留拾取和卡面悬停，不再建立被立即隐藏的 3D 文案。
+var hover_description_enabled := true
 
 var camera: Camera3D
 
@@ -1067,6 +1069,9 @@ func _update_hover_hint() -> void:
 		return
 	var picked := _pick_card(get_viewport().get_mouse_position())
 	_set_hover_card(picked)
+	if not hover_description_enabled:
+		_hide_desc()
+		return
 	if picked != null:
 		var t := hover_desc_text(picked.def_id)
 		var status := picked.recipe_status_text()

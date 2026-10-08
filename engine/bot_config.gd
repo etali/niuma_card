@@ -5,6 +5,8 @@
 class_name BOTConfig
 extends RefCounted
 
+const ConfigData = preload("res://engine/config_data.gd")
+
 ## BOT 出厂参数。模拟参数供无头驱动使用，各实现的超参数独立读取，
 ## 不读取任何玩家偏好，也不依赖 CardDB、Palette 或 UIConfig，避免加载环。
 const PATH := "res://data/bot.json"
@@ -31,7 +33,7 @@ static func read_section(key: String, path := "") -> Dictionary:
 	var builtin := builtin_section(key)
 	if resolved == PATH:
 		return builtin
-	return _merge(builtin, _raw_section(key, resolved))
+	return ConfigData.overlay(builtin, _raw_section(key, resolved))
 
 ## 外置配置缺项时取内置值，返回独立副本。
 static func builtin_section(key: String) -> Dictionary:
@@ -43,16 +45,6 @@ static func _raw_section(key: String, path: String) -> Dictionary:
 	var section: Variant = (_cache[path] as Dictionary).get(key, {})
 	var result := (section as Dictionary).duplicate(true) if section is Dictionary else {}
 	return result
-
-static func _merge(base: Dictionary, over: Dictionary) -> Dictionary:
-	var merged := base.duplicate(true)
-	for key in over:
-		var value: Variant = over[key]
-		if value is Dictionary and merged.get(key) is Dictionary:
-			merged[key] = _merge(merged[key], value)
-		else:
-			merged[key] = value.duplicate(true) if value is Dictionary or value is Array else value
-	return merged
 
 static func _config_candidates() -> Array[String]:
 	var exe_dir := OS.get_executable_path().get_base_dir()
@@ -66,21 +58,7 @@ static func _config_candidates() -> Array[String]:
 ## 可选文件缺失时不警告；必需的出厂配置由调用方指定 warn_missing。
 ## FileAccess 同时支持 res:// 导出包内文件与外置绝对路径。
 static func read_json(path: String, warn_missing := false) -> Dictionary:
-	if not FileAccess.file_exists(path):
-		if warn_missing:
-			push_warning("找不到 BOT 配置：%s" % path)
-		return {}
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		if warn_missing:
-			push_warning("无法读取 BOT 配置：%s" % path)
-		return {}
-	var parsed: Variant = JSON.parse_string(file.get_as_text())
-	if parsed is Dictionary:
-		return parsed
-	if warn_missing:
-		push_warning("BOT 配置必须是 JSON 字典：%s" % path)
-	return {}
+	return ConfigData.read_dictionary(path, warn_missing, "BOT 配置")
 
 ## 配置热重载/测试时使用，只清理出厂参数缓存，不重置本次运行的玩家设置。
 static func reset_cache() -> void:

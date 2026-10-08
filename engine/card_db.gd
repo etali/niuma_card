@@ -5,6 +5,8 @@
 class_name CardDB
 extends RefCounted
 
+const ConfigData = preload("res://engine/config_data.gd")
+
 ## 卡牌数据库：全部卡面参数外置在 JSON 配置里（效果/文案/价格/配方一处改）
 ## 加载优先级（找到即止）：
 ##   1. 可执行文件旁的 cards.json        —— 发布版：不重新打包即可改配置
@@ -118,23 +120,12 @@ static func load_from(path: String) -> bool:
 ## 兼容旧配置，不再要求新 cards.json 重复保存展示或 BOT 参数。
 static func _runtime_sections(parsed: Dictionary) -> Dictionary:
 	var sections := parsed.duplicate(true)
-	sections[SECTION_SFX] = _overlay_section(UIConfig.read_section("sfx"), parsed.get(SECTION_SFX))
-	sections[SECTION_SIM] = _overlay_section(BOTConfig.read_section("simulation"), parsed.get(SECTION_SIM))
-	var game := _overlay_section({}, parsed.get(SECTION_GAME))
-	game["res_labels"] = _overlay_section(UIConfig.read_section("resource_labels"), game.get("res_labels"))
+	sections[SECTION_SFX] = ConfigData.overlay(UIConfig.read_section("sfx"), parsed.get(SECTION_SFX))
+	sections[SECTION_SIM] = ConfigData.overlay(BOTConfig.read_section("simulation"), parsed.get(SECTION_SIM))
+	var game := ConfigData.overlay({}, parsed.get(SECTION_GAME))
+	game["res_labels"] = ConfigData.overlay(UIConfig.read_section("resource_labels"), game.get("res_labels"))
 	sections[SECTION_GAME] = game
 	return sections
-
-static func _overlay_section(base: Dictionary, over: Variant) -> Dictionary:
-	var result := base.duplicate(true)
-	if over is Dictionary:
-		for key in over:
-			var value: Variant = over[key]
-			if value is Dictionary and result.get(key) is Dictionary:
-				result[key] = _overlay_section(result[key], value)
-			else:
-				result[key] = value.duplicate(true) if value is Dictionary or value is Array else value
-	return result
 
 ## 内置配置的某一段，作为外置配置缺键时的兜底来源。
 ##

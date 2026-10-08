@@ -44,12 +44,25 @@ func _run() -> void:
 		grouped_session._index_action(index, indexed_results[index])
 	check(grouped_session.action_count() == 5 and grouped_session.action_groups[1]["end"] - grouped_session.action_groups[1]["start"] == 2,
 		"同摞连续攻击合并，换目标、结束攻击或换攻击方时独立计步")
+	var first_frame: Dictionary = {}
+	var first_frame_before := ""
+	var first_frame_after := ""
+	var before_states_match := true
 	for step in source.size():
+		var prior_hash := StateCodec.state_hash(session.state)
 		var result: Dictionary = session.advance()
 		var expected := Tape.replay(source, step + 1)
 		check(result.get("ok", false) and session.cursor == step + 1, "每次执行且仅执行一步：%d" % (step + 1))
+		before_states_match = before_states_match and StateCodec.state_hash(result["before_state"]) == prior_hash
 		check(StateCodec.state_hash(session.state) == StateCodec.state_hash(expected["state"])
 			and session.applier.pools_snapshot() == expected["applier"].pools_snapshot(), "第%d步资源、组合、攻击点与原录像一致" % (step + 1))
+		if step == 0:
+			first_frame = result
+			first_frame_before = prior_hash
+			first_frame_after = StateCodec.state_hash(result["state"])
+	check(before_states_match, "每步演出保留推进前的状态")
+	check(StateCodec.state_hash(first_frame["before_state"]) == first_frame_before
+		and StateCodec.state_hash(first_frame["state"]) == first_frame_after, "后续播放不修改已返回帧的前后状态")
 	var final_hash := StateCodec.state_hash(session.state)
 	check(not session.advance()["ok"] and StateCodec.state_hash(session.state) == final_hash, "播放完毕后继续点击不改变末态")
 	_check_seek_actions(session, source)

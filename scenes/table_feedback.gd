@@ -6,6 +6,7 @@ extends RefCounted
 
 ## 对局/规则书/录像共用的桌面笔触。只画视觉，无碰撞、无状态写入、无额外等待。
 const Motion = preload("res://scenes/ui_motion.gd")
+const Materials = preload("res://scenes/effect_materials.gd")
 const TRACE_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, blend_mix;
@@ -67,10 +68,7 @@ static func receipt(parent: Node3D, event: String, center: Vector3, text: String
 	plane.size = size + Vector2(0.22, 0.09)
 	backing.mesh = plane
 	backing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.albedo_color = Palette.semantic("surface")
+	var material := Materials.flat(Palette.semantic("surface"))
 	backing.material_override = material
 	receipt.add_child(backing)
 	receipt.scale = Vector3.ONE * 0.72

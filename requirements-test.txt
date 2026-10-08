@@ -1,0 +1,4 @@
+# Python dependencies for tools/run_tests.sh; Godot and Node.js are installed separately.
+Pillow
+fonttools
+numpy

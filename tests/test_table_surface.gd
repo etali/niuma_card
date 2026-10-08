@@ -43,6 +43,7 @@ func _run() -> void:
 		"换色仅刷新绘制，不重建节点或移动卡槽")
 	check(main._table_mat.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED,
 		"台面按色板平涂，光照不再将底色推亮")
+	await _check_tag_resources(main)
 	finish()
 
 func _check_paper_interaction(main: Node) -> void:
@@ -150,3 +151,30 @@ func _check_tag_ink_bounds(main: Node) -> void:
 					contained = contained and safe.has_point(Vector2(point.x, point.z))
 			check(contained, "%s 的%s完整位于吊牌留白范围内" % [tag.text, "数字" if item == tag._label else "金币"])
 		tag.queue_free()
+
+func _check_tag_resources(main: Node) -> void:
+	var first: Node3D = main.market_price_labels[0]
+	var second: Node3D = main.market_price_labels[1]
+	check(first._hole_material.shader == second._hole_material.shader,
+		"同批市场价签共享穿孔Shader，避免逐张重复编译")
+	check(first._hole_material != second._hole_material and first._string_material != second._string_material,
+		"穿孔和挂绳各有独立材质，颜色与透明度可分别更新")
+	first._fade(0.25)
+	# 未覆盖的参数在无头渲染器返回 null，使用 shader 中的默认 opacity=1。
+	check(is_equal_approx(float(first._hole_material.get_shader_parameter("opacity")), 0.25)
+		and second._hole_material.get_shader_parameter("opacity") in [null, 1.0]
+		and is_equal_approx(second._string_material.albedo_color.a, 1.0),
+		"一个价签淡出不影响相邻商品的穿孔或挂绳")
+	check(first._string_material.cull_mode == BaseMaterial3D.CULL_DISABLED,
+		"共享模板保留挂绳双面可见")
+	var program: WeakRef = weakref(first._hole_material.shader)
+	main._clear_market()
+	await process_frame
+	await process_frame
+	check(program.get_ref() != null, "市场价签全部释放后穿孔Shader仍保留供补货复用")
+	main._respawn_market()
+	var refreshed: Node3D = main.market_price_labels[0]
+	check(refreshed._hole_material.shader == program.get_ref()
+		and refreshed._hole_material.get_shader_parameter("opacity") in [null, 1.0]
+		and is_equal_approx(refreshed._string_material.albedo_color.a, 1.0),
+		"补货价签沿用既有Shader，透明度从完整可见重新开始")

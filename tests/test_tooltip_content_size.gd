@@ -40,13 +40,16 @@ func _run() -> void:
 			check(actual.is_equal_approx(initial_size), "%s%s：首帧与稳定后尺寸相同" % [prefix, cards[index].def_id])
 			var style: StyleBox = view._detail.get_theme_stylebox("panel")
 			var natural := 0.0
-			for label: Label in [view._detail_title, view._detail_text]:
+			for label: Label in [view._detail_title, view._detail_flavor, view._detail_status, view._detail_text]:
 				var font := label.get_theme_font("font")
 				var fs := label.get_theme_font_size("font_size")
 				for line in label.text.split("\n"):
 					natural = maxf(natural, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x)
-			var expected := minf(ceilf(natural) + style.get_minimum_size().x, minf(view._px(300), root.size.x / 3.0))
-			check(absf(actual.x - expected) <= 1.0, "%s%s：宽度等于文字实测与边距，长文按上限换行" % [prefix, cards[index].def_id])
+			var maximum := minf(view._px(300), root.size.x / 3.0)
+			var expected := maxf(minf(ceilf(natural) + style.get_minimum_size().x, maximum),
+				view._detail_facts.get_combined_minimum_size().x + style.get_minimum_size().x)
+			check(absf(actual.x - expected) <= 1.0, "%s%s：宽度容纳文案、事实行和边距，长文按上限换行" % [prefix, cards[index].def_id])
+			check(actual.x <= maximum + 1.0, "%s%s：事实行没有重复乘 DPI 撑破详情宽度上限" % [prefix, cards[index].def_id])
 			check(Rect2(Vector2.ZERO, Vector2(root.size)).grow(1).encloses(view._detail.get_global_rect()), "%s%s：悬浮说明完整位于窗口内" % [prefix, cards[index].def_id])
 			check(view._detail_text.get_global_transform_with_canvas().get_scale().is_equal_approx(Vector2.ONE), "%s%s：按原生字号排版而不缩放文字" % [prefix, cards[index].def_id])
 			if index == 0:
@@ -59,10 +62,12 @@ func _run() -> void:
 		# 同名市场卡和自有卡应刷新是否显示价格，不能只按def_id缓存。
 		long_card.is_market = true
 		view.show_card_detail(long_card, Vector2(5, 150))
-		check(view._detail_text.text.begins_with("售价"), "%s同名卡切到市场时显示价格" % prefix)
+		check(view._detail_facts.get_child(0).text == "购买"
+			and view._detail_facts.get_child(1).text == "%d 资金" % int(CardDB.get_def(long_card.def_id).price),
+			"%s同名卡切到市场时显示实际购买价格" % prefix)
 		long_card.is_market = false
 		view.show_card_detail(long_card, Vector2(5, 150))
-		check(not view._detail_text.text.begins_with("售价"), "%s同名卡切回手牌不残留售价" % prefix)
+		check(view._detail_facts.get_child(0).text != "购买", "%s同名卡切回手牌不残留售价" % prefix)
 		main.queue_free()
 		await process_frame
 		await process_frame

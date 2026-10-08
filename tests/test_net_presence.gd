@@ -32,9 +32,34 @@ func _initialize() -> void:
 	print("=== 入座后的对手在线状态测试 ===")
 	CardDB.ensure_loaded()
 	_replaced_connection_is_not_departure()
+	_presence_across_packet_boundaries()
 	await _reconnect_while_foe_absent()
 	net_stop()
 	finish()
+
+## 入座检查点已含 phase，不代表紧随其后的在线状态消息也已收齐。
+## 明确分开这两个包，覆盖接管早于/晚于 FOE_LEFT 的两种合法网络时序。
+func _presence_across_packet_boundaries() -> void:
+	var room := NetRoom.new("BOUNDARY", 778)
+	room.seat_peer(101)
+	room.seat_peer(102)
+	room.start_if_ready()
+	for before_handoff in [true, false]:
+		var client := NetTransport.new()
+		var events: Array[String] = []
+		client.defer_scene_events()
+		client.connected.connect(func(_mine: String, _foe: String): events.append("seated"))
+		client.foe_left.connect(func(): events.append("left"))
+		client._on_text(Protocol.encode(room.seated_msg(GameState.PLAYER)))
+		check(client.phase() != "" and events == ["seated"], "仅入座包已提供阶段，不能据此假定离线包到达")
+		if before_handoff:
+			client._on_text(Protocol.encode(Protocol.foe_left()))
+			check(events == ["seated"], "接管前到达的离线包暂存，不提前发布")
+		client.resume_scene_events()
+		if not before_handoff:
+			client._on_text(Protocol.encode(Protocol.foe_left()))
+		client.resume_scene_events()
+		check(events == ["seated", "left"], "离线包在接管%s到达仍按序仅发布一次" % ("前" if before_handoff else "后"))
 
 func _reconnect_while_foe_absent() -> void:
 	if not net_boot(PORT_BASE, 20260918):
@@ -84,6 +109,12 @@ func _reconnect_while_foe_absent() -> void:
 	check(resumed.my_seat == my_seat and resumed.has_dealt_state(),
 		"重连坐回原座并保留双方牌面，未另开新局")
 	check(resumed_events == ["seated"], "候选连接先完成入座，离线状态等待场景接管")
+	# SEATED 的 recovery 已使 phase 非空；TCP 可以把 FOE_LEFT 留到下次 poll。
+	# 本段验证已排队事件的回放，所以须等待该包本身，而不是等待一个更早的阶段值。
+	if not need(await net_until([first, resumed], func():
+		return resumed._scene_events.any(func(msg): return msg["t"] == Protocol.FOE_LEFT)),
+		"离线状态消息已到达候选队列"):
+		return
 	resumed.resume_scene_events()
 	check(resumed_events == ["seated", "left"],
 		"场景接管后恰好回放一次当前对手离线，且在入座之后")

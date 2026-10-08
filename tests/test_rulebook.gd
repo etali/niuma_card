@@ -185,13 +185,15 @@ func _check_rulebook(main: Node, context: String) -> void:
 	check(menu.get_meta("drawer_icon_button", false) and menu.get_theme_stylebox("normal") is StyleBoxEmpty, "%s：齿轮按钮无外边框" % context)
 	check(popup.get_item_index(7) == -1 and popup.get_item_index(8) >= 0,
 		"%s：选项提供读入录像，规则书移到主操作旁" % context)
-	var existing := {0: "配色", 1: "BOT 强度", 2: "提示记录", 3: "UI",
+	# 配色已经并入 UI，菜单保留现有业务 ID，旧 ID 0 的兼容跳转在下面另验。
+	var existing := {1: "BOT 强度", 2: "提示记录", 3: "UI",
 		4: "入口大小", 5: "存录像", 6: "局域网对战", 8: "读入录像", 9: "卡牌配置"}
 	var old_routes_intact := popup.get_item_count() == existing.size()
 	for id in existing:
 		var index := popup.get_item_index(id)
 		old_routes_intact = old_routes_intact and index >= 0 and popup.get_item_text(index) == existing[id]
-	check(old_routes_intact, "%s：原有工具页名称与业务ID保持可达" % context)
+	check(old_routes_intact and popup.get_item_index(0) == -1,
+		"%s：工具页名称与业务ID保持可达，配色不重复占用菜单入口" % context)
 	presentation._rulebook_button.pressed.emit()
 	await _layout(main)
 	var book: Control = presentation.get("_rulebook")
@@ -250,6 +252,10 @@ func _check_rulebook(main: Node, context: String) -> void:
 		"%s：Esc关闭规则书且保持抽屉展开" % context)
 	presentation._open_utility(0)
 	await _layout(main)
+	check(presentation._active_utility_id == 3 and presentation._utility_title.text == "UI"
+		and presentation._utility.get_meta("source", null) == presentation._palette
+		and presentation._utility.get_meta("frame").is_visible_in_tree(),
+		"%s：旧配色业务ID打开合并后的UI页并显示真实配色控件" % context)
 	check(rulebook_button.is_visible_in_tree(), "%s：规则书独立入口始终可达" % context)
 	rulebook_button.pressed.emit()
 	await _layout(main)

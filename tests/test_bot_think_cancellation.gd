@@ -3,6 +3,7 @@
 extends "res://tests/harness.gd"
 const Cancellation = preload("res://engine/bot_cancellation.gd")
 func _initialize() -> void:
+	await _sync_cancel()
 	await _long_once()
 	await _cancel()
 	await _flush()
@@ -10,6 +11,27 @@ func _initialize() -> void:
 	await _actual_running()
 	_allocation_cancel()
 	finish()
+
+func _sync_cancel() -> void:
+	var think := BOTThink.new()
+	var calls := [0]
+	var stopped := [false]
+	var probe := func(): return stopped[0]
+	var result = await think.run(func(check_cancelled: Callable):
+		calls[0] += 1
+		check(check_cancelled.is_valid() and not check_cancelled.call(), "同步任务也收到调用方取消探针")
+		stopped[0] = true
+		return {"stale": true}
+	, null, probe)
+	check(result == {} and calls[0] == 1, "同步降级任务运行中取消后丢弃旧结果")
+	result = await think.run(func(check_cancelled: Callable):
+		calls[0] += 1
+		return check_cancelled.is_valid()
+	, null, probe)
+	check(result == {} and calls[0] == 1, "同步预取消不执行任务")
+	result = await think.run(func(check_cancelled: Callable): return check_cancelled.is_valid(), null)
+	check(result == false and not think.busy(), "未提供取消探针时仍满足任务必需参数且不遗留线程")
+
 func _long_once() -> void:
 	var t := BOTThink.new()
 	var calls := [0]

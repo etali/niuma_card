@@ -2,15 +2,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See LICENSE in the project root.
 
-extends "res://tests/harness.gd"
+extends "res://tests/support/drawer_fixture.gd"
 
 ## 真实抽屉场景的状态栏回归：长消息不能把顶部撑高，重复布局不能累积改变主题。
 ## 尺寸均为输出像素；2560×1600@2x 对应 1280×800 逻辑像素。
-const CASES := [
-	{ "pixels": Vector2i(1280, 800), "dpi": 1.0, "name": "1280x800@1x" },
-	{ "pixels": Vector2i(1920, 1200), "dpi": 1.0, "name": "1920x1200@1x" },
-	{ "pixels": Vector2i(2560, 1600), "dpi": 2.0, "name": "2560x1600@2x" },
-]
 const LONG_MESSAGE := "资金不足，购买未完成；本回合仍可调整组合、补充现金或典当闲置卡牌。"
 const MULTILINE_MESSAGE := "对手已经离线，请等待重新连接。\n当前回合、攻击点数和已经放好的组合均已保留。\n连接恢复后可以继续当前对局。"
 
@@ -21,14 +16,14 @@ func _run() -> void:
 	print("=== 抽屉顶部与单行状态栏回归 ===")
 	# 只改进程内主题，确保判的是奶油底；不读取截图流程，也不写用户配置或字体资源。
 	Palette.set_color("world", "table_frame", Color("#F0E8D4"))
-	for spec in CASES:
+	for spec in DRAWER_VIEWPORT_CASES:
 		var pixels: Vector2i = spec["pixels"]
 		var dpi: float = spec["dpi"]
-		var main: Node = await _boot_drawer(pixels, dpi)
-		if not need(main != null and main.drawer_presentation != null,
+		var main: Node = await boot_drawer(pixels, dpi)
+		if not need(is_instance_valid(main) and main.drawer_presentation != null,
 				"%s：force_drawer_layout 建立真实展示层" % spec["name"]):
 			if main != null:
-				await _dispose(main)
+				await dispose_drawer(main)
 			continue
 		await _exercise_messages(main, dpi, "%s 初始化" % spec["name"])
 
@@ -37,27 +32,8 @@ func _run() -> void:
 		await _resize(main, pixels)
 		check(root.size == pixels, "%s：resize 后处于目标输出尺寸" % spec["name"])
 		await _exercise_messages(main, dpi, "%s resize后" % spec["name"])
-		await _dispose(main)
+		await dispose_drawer(main)
 	finish()
-
-func _boot_drawer(pixels: Vector2i, dpi: float) -> Node:
-	paused = false
-	root.size = pixels
-	root.content_scale_size = Vector2i.ZERO
-	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	var main: Node = load("res://scenes/main.tscn").instantiate()
-	main.force_drawer_layout = true
-	main.drawer_ui_scale = dpi
-	root.add_child(main)
-	_booted = main
-	for frame in 180:
-		await physics_frame
-		if frame > 12 and not _anim_busy(main):
-			break
-	_assert_booted(main)
-	for frame in 3:
-		await process_frame
-	return main
 
 func _resize(main: Node, pixels: Vector2i) -> void:
 	root.size = pixels
@@ -164,11 +140,3 @@ func _contrast(ink: Color, surface: Color) -> float:
 	var ink_luminance := _luminance(ink)
 	var surface_luminance := _luminance(surface)
 	return (maxf(ink_luminance, surface_luminance) + 0.05) / (minf(ink_luminance, surface_luminance) + 0.05)
-
-func _dispose(main: Node) -> void:
-	paused = false
-	if main.sfx:
-		main.sfx.set_muted(true)
-	main.queue_free()
-	for frame in 3:
-		await process_frame

@@ -48,6 +48,7 @@ var _instances: MultiMeshInstance3D
 var _multimesh: MultiMesh
 var _capacity := 0
 var _last_data: Array = []
+var _last_positions := PackedVector3Array()
 var _prepared_cards := {}
 
 func bind(board: Board) -> void:
@@ -78,7 +79,11 @@ func bind(board: Board) -> void:
 ## 联网拖动和飞入动画都走同一条路径。每列按 z 排序，分开的两摞不会被
 ## 拉成一块大矩形。x 分桶限制每片影的宽度，横向铺开的多列各有独立的影。
 static func contact_footprints(cards: Array) -> Array:
-	var buckets := {}
+	return _positions_footprints(_contact_positions(cards))
+
+## 每帧只采样真实位置与显隐；静止牌桌无需重复建桶、排序和分配阴影字典。
+static func _contact_positions(cards: Array) -> PackedVector3Array:
+	var positions := PackedVector3Array()
 	for value in cards:
 		var card := value as CardEntity
 		if not is_instance_valid(card) or card.is_queued_for_deletion() \
@@ -89,6 +94,12 @@ static func contact_footprints(cards: Array) -> Array:
 			pos.y += card._visual.position.y
 		if pos.y > MAX_HEIGHT + REST_Y:
 			continue
+		positions.append(pos)
+	return positions
+
+static func _positions_footprints(positions: PackedVector3Array) -> Array:
+	var buckets := {}
+	for pos in positions:
 		var key := roundi(pos.x / COLUMN_TOLERANCE)
 		var samples: Array = buckets.get(key, [])
 		samples.append(pos)
@@ -154,7 +165,11 @@ func _process(_delta: float) -> void:
 	# Compatibility 下保留光源原有的 shadow pass，桌面受光/原色才一致；
 	# 只让卡的网格退出硬投影。每张卡新建时做一次，后续帧无需遍历子节点。
 	_prepare_new_cards()
-	var data := contact_footprints(_board.cards)
+	var positions := _contact_positions(_board.cards)
+	if positions == _last_positions:
+		return
+	_last_positions = positions
+	var data := _build_contacts(positions)
 	if data == _last_data:
 		return
 	_last_data = data
@@ -171,3 +186,6 @@ func _process(_delta: float) -> void:
 		_multimesh.set_instance_transform(i, Transform3D(basis, contact["center"]))
 		_multimesh.set_instance_custom_data(i,
 			Color(extent.x, extent.y, contact["softness"], contact["opacity"]))
+
+func _build_contacts(positions: PackedVector3Array) -> Array:
+	return _positions_footprints(positions)

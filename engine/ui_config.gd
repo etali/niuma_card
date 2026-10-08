@@ -5,6 +5,8 @@
 class_name UIConfig
 extends RefCounted
 
+const ConfigData = preload("res://engine/config_data.gd")
+
 ## 展示配置统一入口：启动默认值、配色、素材呈现、资源名称与音效。
 ## 独立于 CardDB / Palette，避免加载环；玩家偏好仍由各自的设置模块覆盖。
 const PATH := "res://data/ui.json"
@@ -73,7 +75,7 @@ static func read_section(key: String, path := "") -> Dictionary:
 	var builtin := builtin_section(key)
 	if resolved == PATH:
 		return builtin
-	return _merge(builtin, _raw_section(key, resolved))
+	return ConfigData.overlay(builtin, _raw_section(key, resolved))
 
 ## 缺键兜底只取内置值，不混入外置 UI 参数。
 static func builtin_section(key: String) -> Dictionary:
@@ -84,16 +86,6 @@ static func _raw_section(key: String, path: String) -> Dictionary:
 		_cache[path] = read_json(path, true)
 	var section: Variant = (_cache[path] as Dictionary).get(key, {})
 	return (section as Dictionary).duplicate(true) if section is Dictionary else {}
-
-static func _merge(base: Dictionary, over: Dictionary) -> Dictionary:
-	var merged := base.duplicate(true)
-	for key in over:
-		var value: Variant = over[key]
-		if value is Dictionary and merged.get(key) is Dictionary:
-			merged[key] = _merge(merged[key], value)
-		else:
-			merged[key] = value.duplicate(true) if value is Dictionary or value is Array else value
-	return merged
 
 static func _config_candidates() -> Array[String]:
 	var exe_dir := OS.get_executable_path().get_base_dir()
@@ -107,21 +99,7 @@ static func _config_candidates() -> Array[String]:
 ## 缺失的玩家偏好不警告；必需的出厂配置由调用方指定 warn_missing。
 ## FileAccess 同时支持 res:// 导出包内文件与外置绝对路径。
 static func read_json(path: String, warn_missing := false) -> Dictionary:
-	if not FileAccess.file_exists(path):
-		if warn_missing:
-			push_warning("找不到 UI 配置：%s" % path)
-		return {}
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		if warn_missing:
-			push_warning("无法读取 UI 配置：%s" % path)
-		return {}
-	var parsed: Variant = JSON.parse_string(file.get_as_text())
-	if parsed is Dictionary:
-		return parsed
-	if warn_missing:
-		push_warning("UI 配置必须是 JSON 字典：%s" % path)
-	return {}
+	return ConfigData.read_dictionary(path, warn_missing, "UI 配置")
 
 ## 配置热重载/测试时使用，不触碰 user://palette.json。
 static func reset_cache() -> void:
@@ -134,7 +112,7 @@ static func read_defaults(path: String = "") -> Dictionary:
 	if path.is_empty():
 		var user: Variant = read_json(USER_PATH).get("defaults", {})
 		if user is Dictionary:
-			values = _merge(values, user)
+			values = ConfigData.overlay(values, user)
 	return validated_defaults(values, path)
 
 static func save_preferences(values: Dictionary) -> bool:

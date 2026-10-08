@@ -11,6 +11,7 @@ const TableRegions = preload("res://scenes/table_regions.gd")
 const TableLighting = preload("res://scenes/table_lighting.gd")
 const DrawerLayout = preload("res://scenes/drawer_table_layout.gd")
 const FullLayout = preload("res://scenes/settle_layout.gd")
+const RenderWarmup = preload("res://scenes/table_render_warmup.gd")
 var host: Node3D
 var drawer_mode: bool
 var camera: Camera3D
@@ -25,6 +26,7 @@ func _init(parent: Node3D, drawer: bool) -> void:
 	drawer_mode = drawer
 
 func create_board() -> Board:
+	RenderWarmup.prepare(host)
 	var board := Board.new()
 	board.camera = camera
 	board.pawn_pos = _pawn_position()

@@ -5,6 +5,8 @@
 class_name Palette
 extends RefCounted
 
+const ConfigData = preload("res://engine/config_data.gd")
+
 ## 全局配色表：配置文件 → 运行时颜色
 ##
 ## 卡牌填充、标题带、边框统一由程序 Shader 绘制，颜色仍由本表提供。
@@ -51,34 +53,15 @@ static func _ensure_loaded() -> void:
 ##
 ## 可选配色文件缺失时降级为默认配色；展示配置的合并由 UIConfig 处理。
 static func read_json(path: String) -> Dictionary:
-	if not FileAccess.file_exists(path):
-		return {}
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return {}
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
-	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
+	return ConfigData.read_dictionary(path)
 
-## 两层深合并：section → key。够用了，配色表就两层
+## 配色顶层只接受分区；分区内使用与 UI/BOT 相同的独立深合并。
 static func _merge(base: Dictionary, over: Dictionary) -> Dictionary:
-	var out := base.duplicate(true)
-	for sec in over:
-		var v: Variant = over[sec]
-		if typeof(v) != TYPE_DICTIONARY:
-			continue
-		if typeof(out.get(sec)) != TYPE_DICTIONARY:
-			out[sec] = {}
-		var dst: Dictionary = out[sec]
-		for k in v:
-			var vv: Variant = v[k]
-			# plates 是三层（plates → 槽位 → face/band/...）
-			if typeof(vv) == TYPE_DICTIONARY and typeof(dst.get(k)) == TYPE_DICTIONARY:
-				var inner: Dictionary = dst[k]
-				for kk in vv:
-					inner[kk] = vv[kk]
-			else:
-				dst[k] = vv
-	return out
+	var sections := {}
+	for key in over:
+		if over[key] is Dictionary:
+			sections[key] = over[key]
+	return ConfigData.overlay(base, sections)
 
 ## 取一个颜色。section 形如 "world"/"card"/"icon"，plates 用 plate_color()
 static func get_color(section: String, key: String) -> Color:

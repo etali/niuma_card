@@ -112,10 +112,12 @@ func _check_card_tooltip(main: Node, dpi: float, prefix: String) -> void:
 	presentation.show_card_detail(card, Vector2(content.end.x - 8, content.position.y + 20))
 	var detail: Control = presentation._detail
 	check(detail.visible, "%s悬停详情可见" % prefix)
-	check(not presentation._detail_icon.visible and presentation._detail_icon.custom_minimum_size == Vector2.ZERO,
+	# 详情已移除图片节点；直接检查真实子树，不再引用已删除的 _detail_icon 成员。
+	var images := detail.find_children("*", "TextureRect", true, false)
+	check(images.all(func(image): return not image.is_visible_in_tree() or image.size == Vector2.ZERO),
 		"%s悬停详情不为重复大图占用空间" % prefix)
 	check(presentation._detail_title.get_theme_font_size("font_size") > presentation._detail_text.get_theme_font_size("font_size"),
-		"%s悬停详情按标题17/正文15层级排版" % prefix)
+		"%s悬停详情标题字号大于正文" % prefix)
 	_check_text_tree(detail, dpi, "%s悬停详情" % prefix)
 	var width: float = detail.get_combined_minimum_size().x
 	check(width <= 300 * dpi and width <= root.size.x / 3.0,

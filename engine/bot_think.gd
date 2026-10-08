@@ -67,7 +67,7 @@ func run(job: Callable, tree: SceneTree, cancelled: Callable = Callable()) -> Va
 	if cancelled.is_valid() and cancelled.call():
 		return {}
 	if tree == null:
-		return job.call()
+		return _run_sync(job, cancelled)
 	# 上一份还在跑就先等它。整个场景共用一个 BOTThink，而 `_thread` 只有一格：
 	# 不等就直接覆盖，旧的那个再没人 wait_to_finish（正是这个类要防的
 	# 「Thread must be disposed」）。今天两处调用是前后脚的，撞不上；
@@ -100,8 +100,7 @@ func run(job: Callable, tree: SceneTree, cancelled: Callable = Callable()) -> Va
 	_control = control
 	_box = box
 	_thread = th
-	# 线程体只做两件事：算，然后把结果塞进信箱。**信箱的写入必须是最后一步** ——
-	# 主线程靠 `box.is_empty()` 判完成，先写信箱再算的话它会读到半成品
+	# 工作线程独占写入信箱；主线程等线程结束并 join 后再读结果。
 	var body := func() -> void:
 		var r: Variant = job.call(control.is_cancelled) if control != null else job.call()
 		box.append(r)
@@ -111,10 +110,11 @@ func run(job: Callable, tree: SceneTree, cancelled: Callable = Callable()) -> Va
 		# 单线程导出的 Web 版走的就是这条
 		push_warning("BOTThink：线程起不来（%d），退回同步" % err)
 		_release(th)
-		return job.call()
+		return _run_sync(job, cancelled)
 
 	var discarded := false
-	while box.is_empty():
+	# 以线程完成为同步边界，不能在工作线程写 Array 时并发读取它。
+	while th.is_alive():
 		await tree.process_frame
 		if cancelled.is_valid() and cancelled.call():
 			discarded = true
@@ -124,6 +124,12 @@ func run(job: Callable, tree: SceneTree, cancelled: Callable = Callable()) -> Va
 
 	_release(th)
 	return {} if discarded else box[0]
+
+
+## 无场景树与线程创建失败共用同一调用约定，仍向可取消任务传递探针。
+func _run_sync(job: Callable, cancelled: Callable) -> Variant:
+	var result: Variant = job.call(cancelled) if job.get_argument_count() > 0 else job.call()
+	return {} if cancelled.is_valid() and cancelled.call() else result
 
 
 ## 收掉自己起的那条线程，并且**只在 `_thread` 还指着它时**才清那一格。

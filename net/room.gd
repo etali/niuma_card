@@ -322,6 +322,11 @@ func _advance(seat: String, op: String) -> Array:
 				out.append(_all(Protocol.phase(phase.phase, phase.actor)))
 		Intent.OP_ATTACK_DONE:
 			out.append_array(_after_attack_turn())
+		Intent.OP_ATTACK:
+			if state.winner != "":
+				# 致胜后 ATTACK_DONE 已被 game_over 拒绝，不能再等收手来收尾。
+				# 客户端会在撕牌演出后消费 FINALIZE；缺失时要白等一个超时窗口。
+				out.append(_applied(applier.apply(Intent.finalize())))
 	if state.winner != "":
 		phase.begin_over()
 		out.append(_all(Protocol.phase(PhaseMachine.OVER, state.winner)))

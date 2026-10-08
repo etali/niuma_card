@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See LICENSE in the project root.
 
-extends "res://tests/harness.gd"
+extends "res://tests/support/drawer_fixture.gd"
 
 ## 通过真实菜单按钮检查抽屉比例设置与入口显示尺寸，防止只改变原生窗口而裁切图标。
 ## 在普通屏和 Retina 屏各走一遍，UI、入口视觉和窗口几何必须使用同一套缩放。
@@ -17,41 +17,24 @@ func _initialize() -> void:
 func _run() -> void:
 	print("=== 抽屉入口与比例设置集成 ===")
 	for dpi in [1.0, 2.0]:
-		var main := await _boot_scaled_drawer(float(dpi))
-		if not need(main != null, "抽屉场景在 %s 倍显示缩放下启动" % dpi):
+		var main := await boot_drawer(Vector2i(roundi(1600 * dpi), roundi(1000 * dpi)), float(dpi))
+		if not need(is_instance_valid(main), "抽屉场景在 %s 倍显示缩放下启动" % dpi):
 			continue
 		var presentation: Node = main.get("drawer_presentation")
 		var drawer: Node = main.get("drawer_window")
 		if not need(presentation != null and drawer != null, "完整抽屉呈现与窗口控制器已连接"):
-			await _free_main(main)
+			await dispose_drawer(main)
 			continue
 		if not need(drawer.has_method("get_size_ratio") and drawer.has_method("get_icon_scale") \
 				and drawer.has_method("get_handle_scale"), "窗口公开比例与入口缩放接口"):
-			await _free_main(main)
+			await dispose_drawer(main)
 			continue
 		drawer.animations_enabled = false
 		_check_menu_wording(presentation)
 		_check_window_ratio_buttons(presentation, drawer)
 		await _check_icon_ratio_buttons(presentation, drawer, float(dpi))
-		await _free_main(main)
+		await dispose_drawer(main)
 	finish()
-
-func _boot_scaled_drawer(dpi: float) -> Node:
-	paused = false
-	var main: Node = load("res://scenes/main.tscn").instantiate()
-	main.force_drawer_layout = true
-	main.drawer_ui_scale = dpi
-	root.size = Vector2i(roundi(1600 * dpi), roundi(1000 * dpi))
-	root.content_scale_size = Vector2i.ZERO
-	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	root.add_child(main)
-	_booted = main
-	for i in 180:
-		await physics_frame
-		if i > 12 and not _anim_busy(main):
-			break
-	_assert_booted(main)
-	return main
 
 func _check_menu_wording(presentation: Node) -> void:
 	var menu: MenuButton = presentation.get("_menu")
@@ -168,12 +151,3 @@ func _uses_no_resolution_units(text: String) -> bool:
 	var resolution := RegEx.new()
 	resolution.compile("[0-9]+\\s*[x×]\\s*[0-9]+")
 	return "px" not in lowered and "dp" not in lowered and resolution.search(text) == null
-
-func _free_main(main: Node) -> void:
-	paused = false
-	if main.sfx:
-		main.sfx.set_muted(true)
-		main.sfx.free()
-	main.queue_free()
-	for i in 3:
-		await process_frame

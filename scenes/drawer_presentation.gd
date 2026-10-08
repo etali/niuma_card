@@ -73,6 +73,8 @@ var _detail_effect: Label
 var _detail_scroll: ScrollContainer
 var _detail_id := ""
 var _detail_market := false
+var _detail_source_signature: Array = []
+var _detail_layout_signature: Array = []
 var _ui_icon_cache: Dictionary = {}
 var _content := Rect2()
 var _last_size := Vector2.ZERO
@@ -117,6 +119,7 @@ func bind(main: Node) -> void:
 	_main.board.player_bounds = PLAYER_RECT
 	_main.board.player_min_z = PLAYER_RECT.position.y
 	_main.board.player_max_z = PLAYER_RECT.end.y
+	_main.board.hover_description_enabled = false
 	_build_header()
 	_build_footer()
 	_build_utility()
@@ -1403,6 +1406,8 @@ func _detail_fact(key: String, value: String) -> void:
 	var caption := _label(key, 14)
 	var content := _label(value, 14)
 	content.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# 保存设计像素；主题刷新会再乘 DPI，不能把已缩放的宽度当成基准。
+	content.set_meta("drawer_min_base", Vector2(145, 0))
 	content.custom_minimum_size.x = _px(145)
 	_detail_facts.add_child(caption)
 	_detail_facts.add_child(content)
@@ -1410,9 +1415,12 @@ func _detail_fact(key: String, value: String) -> void:
 func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 	var id := card.def_id
 	var def: Dictionary = CardDB.get_def(id)
-	if id != _detail_id or card.is_market != _detail_market:
+	# 升级说明会遍历可合成路线，只在卡表/规则改变时重建；配置导入后同名卡也刷新。
+	var source_signature: Array = [CardDB.CARDS.hash(), CardDB.GAME.hash(), CardDB.UPGRADE.hash()]
+	if id != _detail_id or card.is_market != _detail_market or source_signature != _detail_source_signature:
 		_detail_id = id
 		_detail_market = card.is_market
+		_detail_source_signature = source_signature
 		_detail_title.text = CardDB.card_name(id)
 		_detail_flavor.text = str(def.get("flavor", ""))
 		_detail_effect = null
@@ -1432,6 +1440,10 @@ func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 		if pawn > 0:
 			_detail_fact("典当", "资金 + %d" % pawn)
 		_detail_scroll.scroll_vertical = 0
+		var notes: String = _main.board.describe_def(id)
+		if def.get("kind", "") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
+			notes = "\n".join(notes.split("\n").slice(2))
+		_detail_text.text = notes.replace("\n→ ", " → ").replace("\n张数须精确\n不能夹杂其他牌", "\n须精确张数，不混入其他牌")
 	if _detail_effect != null:
 		var value := int(def.get("output_n", def.get("attack_n", 0))) * card.effect_mult()
 		_detail_effect.text = "每回合 %s + %d" % [CardDB.res_label(str(def.output_res)), value] if def.kind == CardDB.KIND_PRODUCT else "移除对方%s × %d" % [CardDB.card_label(str(def.attack_res)), value]
@@ -1439,29 +1451,38 @@ func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 	_detail_status.text = "购入后拖入理牌区组合" if card.is_market else card.recipe_status_text()
 	_detail_status.visible = _detail_status.text != ""
 	_detail_flavor.visible = _detail_flavor.text != ""
-	var notes: String = _main.board.describe_def(id)
-	if def.get("kind", "") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
-		notes = "\n".join(notes.split("\n").slice(2))
-	_detail_text.text = notes.replace("\n→ ", " → ").replace("\n张数须精确\n不能夹杂其他牌", "\n须精确张数，不混入其他牌")
-	_detail.reset_size()
 	_place_detail(mouse)
 
 func show_facility_detail(mouse: Vector2) -> void:
-	_detail_id = "@pawnshop"
-	_detail_market = false
-	_detail_title.text = "典当行 · 公共设施"
-	_detail_flavor.hide()
-	_detail_status.hide()
-	for child in _detail_facts.get_children():
-		_detail_facts.remove_child(child)
-		child.queue_free()
-	_detail_text.text = "不需购买，拖入非现金卡换现金。\n现金卡不收；至少保留一个用户。"
-	_detail.reset_size()
+	if _detail_id != "@pawnshop":
+		_detail_id = "@pawnshop"
+		_detail_market = false
+		_detail_effect = null
+		_detail_title.text = "典当行 · 公共设施"
+		_detail_flavor.text = ""
+		_detail_status.text = ""
+		_detail_flavor.hide()
+		_detail_status.hide()
+		for child in _detail_facts.get_children():
+			_detail_facts.remove_child(child)
+			child.queue_free()
+		_detail_text.text = "不需购买，拖入非现金卡换现金。\n现金卡不收；至少保留一个用户。"
 	_place_detail(mouse)
 
 func _place_detail(mouse: Vector2) -> void:
-	_apply_tree_theme(_detail)
-	_fit_detail_content()
+	# 跟随鼠标只改位置。内容、可用空间、缩放或配色改变时才刷新主题与文字排版。
+	var signature: Array = [_detail_id, _detail_market, _last_size, _content.size,
+		_responsive_factor(), Palette.get_color("world", "table_frame"),
+		Palette.get_color("card", "body"), Palette.get_color("card", "frame"), Palette.semantic("pending")]
+	for label in [_detail_title, _detail_flavor, _detail_status, _detail_text]:
+		signature.append(label.text)
+		signature.append(label.visible)
+	for label in _detail_facts.get_children():
+		signature.append(label.text)
+	if signature != _detail_layout_signature:
+		_detail_layout_signature = signature
+		_apply_tree_theme(_detail)
+		_fit_detail_content()
 	_detail.show()
 	_main.board._hide_desc()
 	var extent := _detail.get_combined_minimum_size()

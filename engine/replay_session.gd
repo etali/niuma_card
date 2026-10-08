@@ -94,12 +94,9 @@ func action_count() -> int:
 	return action_groups.size()
 
 func _sync_action_cursor() -> void:
-	action_cursor = 0
-	for group in action_groups:
-		if cursor >= int(group["end"]):
-			action_cursor += 1
-		else:
-			break
+	# advance 只向前推进；rewind 会归零，seek 从独立的起始会话重放。
+	while action_cursor < action_groups.size() and cursor >= int(action_groups[action_cursor]["end"]):
+		action_cursor += 1
 
 func rewind() -> void:
 	var initial := Tape.replay(record, 0)
@@ -123,14 +120,20 @@ func rewind() -> void:
 		actor = str(view.get("actor", actor))
 
 func advance() -> Dictionary:
+	return _advance(true)
+
+## 单步演出保留独立的前后状态；seek 的临时会话只需要终态，可直接推进。
+func _advance(preserve_state: bool) -> Dictionary:
 	if cursor >= record.size() or error != "":
 		return {"ok": false, "reason": "录像已结束。" if error == "" else error}
-	var before_state := GameState.new()
-	StateCodec.restore(before_state, StateCodec.snapshot(state))
-	var next_state := GameState.new()
-	StateCodec.restore(next_state, StateCodec.snapshot(state))
-	var next_applier := IntentApply.new(next_state)
-	next_applier.pools_restore(applier.pools_snapshot())
+	var before_state := state
+	var next_state := state
+	var next_applier := applier
+	if preserve_state:
+		next_state = GameState.new()
+		StateCodec.restore(next_state, StateCodec.snapshot(state))
+		next_applier = IntentApply.new(next_state)
+		next_applier.pools_restore(applier.pools_snapshot())
 	var entry: Dictionary = record.steps[cursor]
 	var intent: Dictionary = entry["intent"]
 	var result := Tape.apply_entry(next_applier, entry)
@@ -229,7 +232,7 @@ func seek(step: int) -> Dictionary:
 	target.action_groups = action_groups
 	target.rewind()
 	for i in step:
-		var advanced: Dictionary = target.advance()
+		var advanced: Dictionary = target._advance(false)
 		if not advanced.get("ok", false):
 			return advanced
 	state = target.state
