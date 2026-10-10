@@ -59,7 +59,9 @@ func _input(event: InputEvent) -> void:
 			age = 0.0
 			inspecting = false
 			holding = not host.drawer_presentation.pointer_over_panels(start) and not host.board.attack_mode
-			picked = host.board._pick_card(start) if holding else null
+			picked = host.board._pick_price_tag(start) if holding else null
+			if picked == null and holding:
+				picked = host.board._pick_card(start)
 			facility = holding and host.facility_contains_pointer(start)
 		elif event.index == finger and not event.pressed:
 			if event.canceled:

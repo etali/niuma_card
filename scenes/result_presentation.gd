@@ -4,7 +4,9 @@
 
 extends RefCounted
 
-## 对局、规则演示共用的胜负结算视图：文案、图案、按钮与声音只有一个实现。
+## 正式对局、教程与规则演示共用的胜负展示，统一创建、挂载、暂停和释放。
+const Motion = preload("res://scenes/ui_motion.gd")
+const RESULT_HOLD := 1.8
 const WIN_TAUNTS: Array[String] = [
 	"你赢了。别急着高兴，先看看赢了几分。",
 	"赢了。这套牌换个人来，估计能快三回合。",
@@ -20,7 +22,7 @@ const LOSE_TAUNTS: Array[String] = [
 ]
 
 static func create(parent: Node, state: GameState, my_seat: String, sfx: Sfx,
-		action: Callable, action_text := "再战一局", compact := true) -> Dictionary:
+		action: Callable, action_text := "再战一局", compact := true, auto_dismiss := false) -> Dictionary:
 	var canvas := CanvasLayer.new()
 	canvas.name = "GameOver"
 	canvas.layer = 10
@@ -85,16 +87,60 @@ static func create(parent: Node, state: GameState, my_seat: String, sfx: Sfx,
 	reason.text = state.win_reason
 	vb.add_child(reason)
 
-	var btn := Button.new()
-	btn.name = "ResultRestart"
-	btn.text = action_text
-	btn.set_meta("drawer_primary", true)
-	btn.add_theme_font_override("font", Fonts.zh())
-	btn.add_theme_font_size_override("font_size", 24)
-	btn.custom_minimum_size = Vector2(220, 42)
-	btn.pressed.connect(action)
-	vb.add_child(btn)
-	return {"layer": canvas, "panel": panel, "body": vb, "button": btn, "center": center}
+	var btn: Button
+	if action.is_valid():
+		btn = Button.new()
+		btn.name = "ResultRestart"
+		btn.text = action_text
+		btn.set_meta("drawer_primary", true)
+		btn.add_theme_font_override("font", Fonts.zh())
+		btn.add_theme_font_size_override("font_size", 24)
+		btn.custom_minimum_size = Vector2(220, 42)
+		btn.pressed.connect(action)
+		vb.add_child(btn)
+	# 同一段入场动效服务正式终局和教程。教学只多停留、淡出，不另画胜利界面。
+	panel.modulate.a = 0.0
+	result_icon.scale = Vector2.ONE * 0.8
+	result_icon.resized.connect(func(): result_icon.pivot_offset = result_icon.size * 0.5)
+	var animation := panel.create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	animation.tween_property(panel, "modulate:a", 1.0, Motion.ACT)
+	animation.parallel().tween_property(result_icon, "scale", Vector2.ONE, Motion.ACT).set_trans(Tween.TRANS_BACK)
+	if auto_dismiss:
+		animation.tween_interval(RESULT_HOLD)
+		animation.tween_property(panel, "modulate:a", 0.0, Motion.SETTLE)
+	canvas.visibility_changed.connect(func():
+		if not animation.is_valid(): return
+		if canvas.visible:
+			animation.play()
+		else:
+			animation.pause())
+	return {"layer": canvas, "panel": panel, "body": vb, "button": btn, "center": center,
+		"animation": animation, "auto_dismiss": auto_dismiss}
+
+## 业务方建好附加按钮后统一挂载；教程只指定演出结束后的续课动作。
+static func present(result: Dictionary, presentation: Node, completed := Callable()) -> void:
+	if presentation != null:
+		presentation.register_result_panel(result["layer"])
+	else:
+		fit(result, result["layer"].get_viewport().get_visible_rect().size)
+	if result["auto_dismiss"]:
+		result["animation"].finished.connect(func():
+			close(result)
+			if completed.is_valid(): completed.call(), CONNECT_ONE_SHOT)
+
+static func set_active(result: Dictionary, active: bool) -> void:
+	if not result.is_empty():
+		result["layer"].visible = active
+
+static func close(result: Dictionary) -> void:
+	if result.is_empty(): return
+	var animation: Tween = result["animation"]
+	if animation != null and animation.is_valid(): animation.kill()
+	var layer: CanvasLayer = result["layer"]
+	if is_instance_valid(layer):
+		layer.hide()
+		layer.queue_free()
+	result.clear()
 
 static func fit(result: Dictionary, available: Vector2) -> void:
 	var panel: PanelContainer = result["panel"]

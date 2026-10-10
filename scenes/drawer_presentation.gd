@@ -11,6 +11,9 @@ const CameraView = preload("res://scenes/table_camera_view.gd")
 const UIConfig = preload("res://engine/ui_config.gd")
 const Rulebook = preload("res://scenes/rulebook.gd")
 const CardConfig = preload("res://engine/card_config.gd")
+const TutorialCatalog = preload("res://engine/tutorial_catalog.gd")
+const TutorialProgress = preload("res://engine/tutorial_progress.gd")
+const TutorialContext = preload("res://engine/tutorial_context.gd")
 
 # 展示顺序与动作ID分开，增加首页不会改变既有设置入口。
 const UTILITY_RULEBOOK := 7
@@ -56,11 +59,19 @@ var _utility: PanelContainer
 var _utility_title: Label
 var _utility_body: VBoxContainer
 var _rulebook_button: Button
+var _end_tutorial_button: Button
+var _tutorial_resign_visible := false
 var _utility_scroll: ScrollContainer
 var _ui_footer: HBoxContainer
 var _ui_status: Label
 var _active_utility_id := -1
 var _rulebook: Control
+var _learning_invitation: PanelContainer
+var _invitation_offered := false
+var _learning_focus := false
+var tutorial: Control
+var _tutorial_context: RefCounted
+var _tearing_down := false
 var _palette: Control
 var _bot: Control
 var _detail: PanelContainer
@@ -75,6 +86,8 @@ var _detail_id := ""
 var _detail_market := false
 var _detail_source_signature: Array = []
 var _detail_layout_signature: Array = []
+var _preview_detail_source: WeakRef
+var _preview_detail_card: WeakRef
 var _ui_icon_cache: Dictionary = {}
 var _content := Rect2()
 var _last_size := Vector2.ZERO
@@ -83,6 +96,7 @@ var _ui_scale := 1.0
 var _collapsed := false
 var _table_ui_suspended := false
 var _external_panels: Array[CanvasLayer] = []
+var _learning_hidden_panels: Array[Node] = []
 var _relayout_running := false
 var _suspended_panels: Array[Node] = []
 var perspective_angle: float
@@ -124,6 +138,7 @@ func bind(main: Node) -> void:
 	_build_footer()
 	_build_utility()
 	_build_details()
+	_build_learning_invitation()
 	for panel in [_header, _footer, _detail, _main.table_hud]:
 		_guard_table_panel(panel, false)
 	for panel in [_utility, _main.msg_log]:
@@ -568,6 +583,131 @@ func _refresh_pin_button() -> void:
 	_pin.tooltip_text = "已钉住，点击取消" if pinned else "钉住"
 	_pin.accessibility_name = _pin.tooltip_text
 
+func _build_learning_invitation() -> void:
+	_invitation_offered = TutorialProgress.invitation_seen()
+	_learning_invitation = PanelContainer.new()
+	_learning_invitation.name = "FirstPlayInvitation"
+	_learning_invitation.z_index = 19
+	_learning_invitation.add_theme_stylebox_override("panel", _style(Palette.semantic("surface")))
+	add_child(_learning_invitation)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	_learning_invitation.add_child(column)
+	var title := _label(TutorialCatalog.ui("hub.invitation"), UI_FONT_TITLE)
+	title.name = "InvitationTitle"
+	column.add_child(title)
+	var actions := HFlowContainer.new()
+	column.add_child(actions)
+	var start := _button(TutorialCatalog.ui("hub.invitation_start"))
+	start.name = "InvitationStart"
+	start.set_meta("ui_role", "primary")
+	start.pressed.connect(func():
+		_dismiss_learning_invitation()
+		var courses := TutorialCatalog.courses()
+		if not courses.is_empty():
+			start_tutorial(str(courses[0]["id"])))
+	actions.add_child(start)
+	var skip := _button(TutorialCatalog.ui("hub.invitation_skip"))
+	skip.name = "InvitationSkip"
+	skip.pressed.connect(_dismiss_learning_invitation)
+	actions.add_child(skip)
+	_learning_invitation.hide()
+	_guard_table_panel(_learning_invitation, true)
+	_apply_tree_theme(_learning_invitation)
+
+func _dismiss_learning_invitation() -> void:
+	_invitation_offered = true
+	_suspended_panels.erase(_learning_invitation)
+	_learning_invitation.hide()
+	if not TutorialProgress.dismiss_invitation():
+		_main._show_message(TutorialCatalog.ui("hub.save_failed"), Palette.semantic("warning"))
+
+func _offer_learning_invitation() -> void:
+	if not _invitation_offered:
+		if panels_open() or not _main.can_begin_tutorial():
+			return
+		_invitation_offered = true
+		_learning_invitation.show()
+	if _learning_invitation.visible:
+		_learning_invitation.size = _learning_invitation.get_combined_minimum_size()
+		_learning_invitation.position = _content.position + Vector2(
+			maxf(0, (_content.size.x - _learning_invitation.size.x) * 0.5), _px(8))
+
+## 课程在原牌桌上进行；规则页仅负责选择课程，不再承载第二张牌桌。
+func start_tutorial(id: String) -> bool:
+	if TutorialCatalog.course(id).is_empty():
+		return false
+	if is_instance_valid(tutorial):
+		close_panels()
+		return tutorial.switch_course(id)
+	var scope := TutorialContext.new()
+	if not scope.begin(_main):
+		return false
+	set_learning_focus(true)
+	close_panels()
+	_learning_invitation.hide()
+	_tutorial_context = scope
+	tutorial = load("res://scenes/tutorial_player.gd").new()
+	add_child(tutorial)
+	tutorial.exited.connect(finish_tutorial)
+	tutorial.progress_changed.connect(_record_tutorial_progress)
+	tutorial.course_completed.connect(func(course_id: String):
+		_record_tutorial_progress(course_id, TutorialCatalog.course(course_id).get("steps", []).size(), "completed"))
+	tutorial.layout_requested.connect(func(): relayout.call_deferred())
+	_guard_table_panel(tutorial, true)
+	_record_tutorial_progress(id, 0, "started")
+	tutorial.bind(self, id)
+	_tutorial_resign_visible = _main.btn_resign.visible
+	_main.btn_resign.hide()
+	_end_tutorial_button.show()
+	relayout()
+	return true
+
+func finish_tutorial(show_courses := false) -> void:
+	if not is_instance_valid(tutorial) and _tutorial_context == null:
+		return
+	var player := tutorial
+	tutorial = null
+	if is_instance_valid(_end_tutorial_button):
+		_end_tutorial_button.hide()
+	if not _tearing_down:
+		close_panels()
+	if is_instance_valid(player):
+		_suspended_panels.erase(player)
+		player.process_mode = Node.PROCESS_MODE_DISABLED
+		if not _tearing_down:
+			player.hide()
+	if _tutorial_context != null:
+		_tutorial_context.release(_tearing_down)
+		_tutorial_context = null
+	if not _tearing_down:
+		_main.btn_resign.visible = _tutorial_resign_visible
+		set_learning_focus(false)
+	if is_instance_valid(player):
+		player.queue_free()
+	if not _tearing_down and is_inside_tree() and is_instance_valid(_main) and not _main.is_queued_for_deletion():
+		relayout()
+		if show_courses:
+			_open_utility(UTILITY_RULEBOOK)
+
+func _record_tutorial_progress(id: String, step: int, status: String) -> void:
+	if not TutorialProgress.record(id, step, status):
+		_main._show_message(TutorialCatalog.ui("hub.save_failed"), Palette.semantic("warning"))
+
+func _input(event: InputEvent) -> void:
+	if is_instance_valid(tutorial) and event is InputEventKey and event.pressed \
+		and not event.echo and event.keycode == KEY_ESCAPE:
+		get_viewport().set_input_as_handled()
+		finish_tutorial()
+
+func _exit_tree() -> void:
+	_tearing_down = true
+	finish_tutorial(false)
+
+func _layout_tutorial(available: Rect2) -> void:
+	# 对话只是牌桌上的浮层，不能改变相机取景区或牌桌可操作边界。
+	tutorial.place_in(available)
+
 func _build_footer() -> void:
 	_footer = PanelContainer.new()
 	_footer.name = "DrawerFooter"
@@ -600,10 +740,15 @@ func _build_footer() -> void:
 	_main.lbl_msg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_main.lbl_msg.custom_minimum_size = Vector2.ZERO
 	_main.lbl_msg.tooltip_text = ""
-	_rulebook_button = _button("规则书")
+	_rulebook_button = _button(TutorialCatalog.ui("hub.title"))
 	_rulebook_button.name = "RulebookButton"
 	_rulebook_button.pressed.connect(_open_utility.bind(UTILITY_RULEBOOK))
 	row.add_child(_rulebook_button)
+	_end_tutorial_button = _button(TutorialCatalog.ui("hub.end_tutorial"))
+	_end_tutorial_button.name = "EndTutorialButton"
+	_end_tutorial_button.pressed.connect(finish_tutorial)
+	row.add_child(_end_tutorial_button)
+	_end_tutorial_button.hide()
 	_adopt(_main.btn_pass, row)
 	_main.btn_pass.size_flags_horizontal = Control.SIZE_SHRINK_END
 	_main.btn_pass.custom_minimum_size = Vector2(210, 44)
@@ -671,14 +816,20 @@ func _build_utility() -> void:
 	_utility.hide()
 
 func _open_utility(id: int) -> void:
+	if is_instance_valid(tutorial) and id != UTILITY_RULEBOOK:
+		finish_tutorial(false)
+	if is_instance_valid(_learning_invitation):
+		_learning_invitation.hide()
 	# 旧配色入口仍能定位到合并后的 UI 页，但选项菜单只保留 UI。
 	if id == 0:
 		id = 3
 	close_panels()
+	if is_instance_valid(tutorial):
+		tutorial.set_reference_open(true)
 	_active_utility_id = id
 	_ui_footer.visible = id in [3, 4]
 	if id == UTILITY_RULEBOOK:
-		_utility_title.text = "规则书"
+		_utility_title.text = TutorialCatalog.ui("hub.title")
 		_utility_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		_utility_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		_rulebook = Rulebook.new()
@@ -997,6 +1148,7 @@ func _on_handle_size_changed(_size: Vector2i) -> void:
 		_handle.queue_redraw()
 
 func close_panels() -> void:
+	hide_preview_card_detail()
 	# 显式关闭同时取消展开恢复，避免收起期间关闭的旧页复活。
 	_suspended_panels.erase(_utility)
 	_suspended_panels.erase(_main.msg_log)
@@ -1035,6 +1187,8 @@ func close_panels() -> void:
 		_utility.hide()
 	if _main.msg_log:
 		_main.msg_log.hide()
+	if is_instance_valid(tutorial):
+		tutorial.set_reference_open(false)
 
 func panels_open() -> bool:
 	return (_utility != null and _utility.visible) or (_menu != null and _menu.get_popup().visible) \
@@ -1042,6 +1196,12 @@ func panels_open() -> bool:
 
 ## 这些工具页均为非模态；只能在自己的可见矩形内挡住牌桌输入。
 func pointer_over_panels(point: Vector2) -> bool:
+	if is_instance_valid(tutorial) and tutorial.is_visible_in_tree() \
+		and tutorial.get_global_rect().has_point(point):
+		return true
+	if is_instance_valid(_learning_invitation) and _learning_invitation.is_visible_in_tree() \
+		and _learning_invitation.get_global_rect().has_point(point):
+		return true
 	if _utility.visible and _utility.get_global_rect().has_point(point):
 		return true
 	if _header.visible and _header.get_global_rect().has_point(point):
@@ -1076,7 +1236,7 @@ func suspend_panels() -> void:
 	_main.table_hud.hide()
 	_detail.hide()
 	_close_native_popups(_main)
-	for panel in [_utility, _main.msg_log] + _external_panels:
+	for panel in [_utility, _main.msg_log, _learning_invitation, tutorial] + _external_panels:
 		if is_instance_valid(panel) and panel.visible:
 			_suspend_panel(panel)
 
@@ -1108,6 +1268,11 @@ func _guard_table_panel(panel: Node, restore_on_expand: bool) -> void:
 func _on_table_panel_visibility_changed(panel: Node, restore_on_expand: bool) -> void:
 	if not is_instance_valid(panel) or panel.is_queued_for_deletion() or not panel.visible:
 		return
+	if panel is CanvasLayer and _external_panels.has(panel) and _learning_hides_panel(panel):
+		if not _learning_hidden_panels.has(panel):
+			_learning_hidden_panels.append(panel)
+		panel.hide()
+		return
 	# 上下横条是展开画面的一部分；工具弹层仍等过渡完成后再恢复。
 	if panel in [_header, _footer] and not _collapsed and _main.drawer_window != null and _main.drawer_window.is_expanded():
 		return
@@ -1124,7 +1289,10 @@ func _relayout_utility() -> void:
 	var available := _content.size
 	var desired: Vector2
 	if _active_utility_id == UTILITY_RULEBOOK:
-		desired = available if _main.mobile_mode else Vector2(minf(_px(780), available.x), minf(_px(660), available.y))
+		var wide: bool = is_instance_valid(_rulebook) and _rulebook.current_page in ["cards", "upgrades"]
+		# 选课只需一列；图鉴保留完整展示空间。小屏字号有下限，窄栏也保留相应宽度。
+		desired = available if wide else Vector2(minf(maxf(_px(420), 360.0), available.x),
+			available.y if _main.mobile_mode else minf(_px(660), available.y))
 	else:
 		desired = Vector2(minf(maxf(_px(380), body.x + _px(28)), available.x),
 			minf(body.y + _px(82) + (_ui_footer.get_combined_minimum_size().y + _px(10) if _ui_footer.visible else 0.0), available.y))
@@ -1171,6 +1339,7 @@ func _register_external_panel(panel: CanvasLayer) -> void:
 func _unregister_external_panel(panel: CanvasLayer) -> void:
 	_external_panels.erase(panel)
 	_suspended_panels.erase(panel)
+	_learning_hidden_panels.erase(panel)
 
 func _theme_external_panel(panel: CanvasLayer) -> void:
 	# 局域网、录像通知和胜负层保留各自信号与业务锁，统一实际像素字号。
@@ -1379,10 +1548,19 @@ func _process(_delta: float) -> void:
 		panel.set_meta("drawer_was_visible", panel.visible)
 	if _collapsed or _window_blocked():
 		return
+	_offer_learning_invitation()
 	if Vector2(get_viewport().get_visible_rect().size) != _viewport_pixels:
 		relayout()
 	if _utility.visible and _utility.has_meta("source") and _utility.get_meta("source") == _bot:
 		_utility_title.text = "BOT 强度 · %s" % _bot._slider_val.text
+	if _preview_detail_source != null:
+		var source: Control = _preview_detail_source.get_ref()
+		var preview: CardEntity = _preview_detail_card.get_ref() if _preview_detail_card != null else null
+		var pointer := get_viewport().get_mouse_position()
+		if is_instance_valid(source) and is_instance_valid(preview) and _preview_contains_pointer(source, pointer):
+			show_card_detail(preview, pointer)
+			return
+		hide_preview_card_detail()
 	if _main.mobile_mode:
 		return
 	var pointer := get_viewport().get_mouse_position()
@@ -1411,6 +1589,35 @@ func _detail_fact(key: String, value: String) -> void:
 	content.custom_minimum_size.x = _px(145)
 	_detail_facts.add_child(caption)
 	_detail_facts.add_child(content)
+
+## 图鉴只提供正式卡牌实体；内容、效果、布局均复用桌面的悬停说明。
+func show_preview_card_detail(card: CardEntity, mouse: Vector2, source: Control) -> void:
+	if not is_instance_valid(card) or not is_instance_valid(source) or not source.is_visible_in_tree():
+		return
+	_preview_detail_source = weakref(source)
+	_preview_detail_card = weakref(card)
+	_detail.z_index = _utility.z_index + 1
+	show_card_detail(card, mouse)
+
+func hide_preview_card_detail(source: Control = null) -> void:
+	if _preview_detail_source == null:
+		return
+	if source != null and _preview_detail_source.get_ref() != source:
+		return
+	_preview_detail_source = null
+	_preview_detail_card = null
+	_detail.z_index = 15
+	_detail.hide()
+
+func _preview_contains_pointer(source: Control, pointer: Vector2) -> bool:
+	if not source.is_visible_in_tree() or not source.get_global_rect().has_point(pointer):
+		return false
+	var ancestor := source.get_parent()
+	while ancestor != null:
+		if ancestor is Control and ancestor.clip_contents and not ancestor.get_global_rect().has_point(pointer):
+			return false
+		ancestor = ancestor.get_parent()
+	return true
 
 func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 	var id := card.def_id
@@ -1531,6 +1738,31 @@ func _on_size_changed() -> void:
 	if not _collapsed and not _window_blocked():
 		relayout()
 
+func set_learning_focus(value: bool) -> void:
+	_learning_focus = value
+	if value:
+		for panel in _external_panels:
+			if is_instance_valid(panel) and panel.visible and _learning_hides_panel(panel):
+				if not _learning_hidden_panels.has(panel):
+					_learning_hidden_panels.append(panel)
+				panel.hide()
+	else:
+		var hidden := _learning_hidden_panels.duplicate()
+		_learning_hidden_panels.clear()
+		for panel in hidden:
+			if is_instance_valid(panel) and not panel.is_queued_for_deletion():
+				panel.show()
+	_header.visible = not _collapsed
+	_footer.visible = not _collapsed
+	_main.table_hud.visible = not _table_panels_blocked()
+	_detail.hide()
+	relayout.call_deferred()
+
+func _learning_hides_panel(panel: Node) -> bool:
+	# 原局的通知暂存，当前教学的结果仍走同一套主题、收放和注销管理。
+	return _learning_focus and not (is_instance_valid(_main._tutorial_arena)
+		and _main._tutorial_arena.is_ancestor_of(panel))
+
 func set_collapsed(collapsed: bool) -> void:
 	_collapsed = collapsed
 	_table_ui_suspended = collapsed
@@ -1570,6 +1802,8 @@ func relayout() -> void:
 	_refresh_pin_button()
 	_apply_tree_theme(_footer)
 	_apply_tree_theme(_utility)
+	if is_instance_valid(tutorial):
+		_apply_tree_theme(tutorial)
 	_style_popup(_menu.get_popup())
 	_main.msg_log.scale = Vector2.ONE
 	_apply_tree_theme(_main.msg_log._frame)
@@ -1581,6 +1815,8 @@ func relayout() -> void:
 	_footer.position = Vector2(pad, h - footer_h - pad)
 	_footer.size = Vector2(w - pad * 2, footer_h)
 	_content = Rect2(pad, header_h + pad + _px(8), w - pad * 2, h - header_h - footer_h - pad * 2 - _px(16))
+	if is_instance_valid(tutorial):
+		_layout_tutorial(_content)
 	for panel in _external_panels:
 		if is_instance_valid(panel):
 			_theme_external_panel(panel)

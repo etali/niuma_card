@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See LICENSE in the project root.
 
-"""真实Godot导入回归：build中的引擎源码不能作为游戏资源或全局脚本类导入。"""
+"""真实Godot导入回归：引擎源码、调试报告及软链接不能作为游戏资源导入。"""
 import os
 from pathlib import Path
 import shutil
@@ -40,6 +40,15 @@ class BuildImportIsolationTest(unittest.TestCase):
             classes = root / '.godot/global_script_class_cache.cfg'
             self.assertIn('EngineMustNotLeak', classes.read_text())
             self.assertTrue((engine / 'old.svg.import').exists())
+            reports = root / 'reports'
+            (reports / 'bot').mkdir(parents=True)
+            (reports / 'bot/probe.gd').write_text('extends RefCounted\n')
+            (reports / 'bot/probe.gd.uid').write_text('uid://3k6wk5agb61c\n')
+            (reports / 'ai').symlink_to('bot', target_is_directory=True)
+            duplicated = subprocess.run([GODOT, '--headless', '--path', tmp, '--import'],
+                                        capture_output=True, text=True, timeout=45)
+            self.assertEqual(duplicated.returncode, 0, duplicated.stdout + duplicated.stderr)
+            self.assertIn('UID duplicate detected', duplicated.stdout + duplicated.stderr)
             (engine / 'new.svg').write_text(svg)
             (engine / 'invalid.glsl').write_text('not a standalone Godot shader\n')
 
@@ -49,7 +58,9 @@ class BuildImportIsolationTest(unittest.TestCase):
                                    env=dict(os.environ, GODOT=GODOT), capture_output=True, text=True, timeout=45)
             self.assertEqual(fixed.returncode, 0, fixed.stdout + fixed.stderr)
             self.assertNotIn('ERROR:', fixed.stdout + fixed.stderr)
+            self.assertNotIn('UID duplicate detected', fixed.stdout + fixed.stderr)
             self.assertTrue((root / 'build/.gdignore').is_file())
+            self.assertTrue((reports / '.gdignore').is_file())
             self.assertNotIn('EngineMustNotLeak', classes.read_text())
             self.assertIn('RuntimeMustRemain', classes.read_text())
             self.assertFalse((engine / 'new.svg.import').exists())
@@ -58,13 +69,18 @@ class BuildImportIsolationTest(unittest.TestCase):
             self.assertIn('.fontdata', (root / 'assets/fonts/NotoSansSC.ttf.import').read_text())
             for cache in (root / '.godot/editor').glob('filesystem_cache*'):
                 self.assertNotIn('res://build/', cache.read_text(errors='replace'))
+                self.assertNotIn('res://reports/', cache.read_text(errors='replace'))
             # 不删除用户已下载的源码或已有的编译缓存。
             self.assertTrue((engine / 'engine.gd').is_file())
             self.assertTrue((engine / 'old.svg.import').is_file())
+            self.assertTrue((reports / 'bot/probe.gd').is_file())
+            self.assertTrue((reports / 'ai').is_symlink())
 
     def test_ignore_marker_is_versioned_but_build_outputs_stay_ignored(self):
         self.assertTrue((ROOT / 'build/.gdignore').is_file())
+        self.assertTrue((ROOT / 'reports/.gdignore').is_file())
         for relative, ignored in [('build/.gdignore', False), ('build/slim-engine/source/example.glsl', True),
+                                  ('reports/.gdignore', False), ('reports/bot/probe.gd', True),
                                   ('build/牛马牌.app/Contents/Resources/牛马牌.pck', True)]:
             result = subprocess.run(['git', 'check-ignore', '-q', '--no-index', relative], cwd=ROOT)
             self.assertEqual(result.returncode == 0, ignored, relative)

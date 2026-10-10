@@ -1,0 +1,2142 @@
+{
+  "version": 1,
+  "ui": {
+    "complete_action": "完成行动",
+    "finish_attack": "结束攻击",
+    "next_step": "下一步",
+    "hint": "给我提示",
+    "demo": "看演示",
+    "retry": "重试本课",
+    "exit": "退出教程",
+    "goal_label": "当前目标",
+    "phase_label": "阶段",
+    "result_label": "结果",
+    "progress_format": "第 {index}/{total} 步",
+    "course_completed": "本课已完成",
+    "demo_shown": "演示结束后，轮到你亲手试试。",
+    "reset_hint": "恢复了完整练习局面，可以重新尝试。",
+    "continue": "继续",
+    "demo_return": "我来试试",
+    "step_ready": "目标已达成，点击“下一步”继续。",
+    "step_pending": "目标尚未完成，可以继续操作或查看提示。",
+    "scenario_changed": "进入练习：{title}",
+    "phase.action": "购买与编组",
+    "phase.attack": "攻击",
+    "phase.review": "查看结算结果",
+    "phase.over": "对局结束",
+    "cash": "现金",
+    "user": "用户",
+    "resource_status": "现金 {cash} · 用户 {user}",
+    "opponent_status": "对手：现金 {cash} · 用户 {user}",
+    "preview_valid": "有效组合 {count} 组",
+    "preview_missing": "{name}：{reason}",
+    "result_production": "{name}：{resource} +{count}",
+    "result_upgrade": "合成成功：{name}",
+    "result_void": "{name}未能生效：{reason}",
+    "result_purchase": "购入{name}，支付 {count} 现金。",
+    "result_pawn": "典当完成，获得 {count} 现金。",
+    "result_attack": "移除了对手 {count} 张{resource}。",
+    "result_no_income": "本回合没有有效生产组合。调整后可以再次尝试。",
+    "result_victory": "你取得了胜利。",
+    "result_defeat": "这次练习结束了，可以重试本课。",
+    "recovery_lost": "当前局面缺少完成目标的必要卡牌；可以重试本课恢复完整起点。",
+    "recovery_over": "牌局已结束，尚未达成的目标可以重试本课。",
+    "recovery_retry": "可以继续尝试；需要时使用“重试本课”恢复起点。",
+    "wait_action": "请先进入自己的行动阶段。",
+    "wait_attack": "请先完成行动，进入攻击阶段。",
+    "invalid_course": "没有找到这门课程。",
+    "demo_unavailable": "当前局面无法演示，请重试本课后再查看。",
+    "demo_active": "演示中；返回练习后再继续操作。",
+    "practice_only": "牌桌教学",
+    "progress_groups": "已准备 {count} 个有效组合",
+    "progress_buy": "已购买 {count} 张业务牌",
+    "progress_hits": "已成功攻击 {count} 次",
+    "progress_round": "当前是第 {round} 回合",
+    "progress_complete": "已达成",
+    "progress_incomplete": "等待你完成当前目标",
+    "skip": "跳过本课",
+    "hub.title": "怎么玩",
+    "hub.home": "开始",
+    "hub.courses": "教程",
+    "hub.rules": "规则速查",
+    "hub.cards": "卡牌总览",
+    "hub.upgrades": "升级关系",
+    "hub.start": "开始连续教学",
+    "hub.resume": "继续本课：{title}",
+    "hub.resume_hint": "从当前课程起点继续，后续课程会依次接上；已完成记录会保留。",
+    "hub.started": "进行中",
+    "hub.intro": "经营公司，争夺市场。配置用户赚钱，花现金扩大规模，也可以攻击对手、合成变现。先攒到 {win_cash} 现金，或把对手的现金、用户任意一种打空，即可获胜。",
+    "hub.invitation": "第一次玩牛马牌？",
+    "hub.invitation_start": "带我上手",
+    "hub.invitation_skip": "直接开局",
+    "hub.details": "详细规则",
+    "hub.example": "看个例子",
+    "hub.back": "返回",
+    "hub.completed": "已完成",
+    "hub.viewed": "看过演示",
+    "hub.skipped": "已跳过",
+    "hub.new": "未练习",
+    "hub.practice_blocked": "请在单机对局轮到你行动时进入练习；联机与录像中可以查阅规则。",
+    "hub.standard_rules": "在当前牌桌练习，退出后恢复原对局。",
+    "hub.save_failed": "学习进度保存失败，本次仍可继续练习。",
+    "hub.rules_help": "点开你遇到的问题，查看例子或亲手练习。",
+    "hub.empty": "暂无可用内容。",
+    "atlas.title": "所有卡牌",
+    "atlas.card_count": "当前卡表共{count}张 · 悬停卡牌查看效果",
+    "atlas.empty": "没有找到匹配的卡牌",
+    "atlas.all": "全部",
+    "atlas.kind.unit": "资源",
+    "atlas.kind.product": "生产",
+    "atlas.kind.attack": "攻击",
+    "atlas.kind.buff": "强化",
+    "atlas.kind.legend": "传说",
+    "atlas.recipe": "配方：{resource} × {count}",
+    "atlas.production": "产出：{resource} +{count}",
+    "atlas.attack": "攻击点：{resource} +{count}",
+    "atlas.not_for_sale": "不可购买",
+    "atlas.no_pawn": "不可典当",
+    "atlas.no_recipe": "无需配方",
+    "atlas.details": "查看详情",
+    "atlas.close": "收起详情",
+    "atlas.upgrade_title": "升级关系图",
+    "atlas.upgrade_intro": "照图叠好业务牌，完成行动时升级。",
+    "atlas.ordinary_title": "同名业务升级",
+    "atlas.legend_title": "合成传说",
+    "atlas.legend_rule": "每摞都能合成右边的牌。同名、不同名都可以；升级前后的牌分开叠。",
+    "atlas.no_ordinary_route": "没有对应普通升级：{names}。可用的传说合成见下方路线。",
+    "atlas.no_upgrades": "当前卡表没有可用的升级路线。",
+    "atlas.legend_pawn": "典当后获得 {count} 现金",
+    "atlas.buff.user_fill": "至少放 1 用户，即可补满同组核心牌的用户配方。",
+    "atlas.buff.output_x2": "同组有效生产的产出 ×{multiplier}；多张倍率叠乘。",
+    "atlas.buff.attack_x2": "同组有效攻击的攻击量 ×{multiplier}；多张倍率叠乘。",
+    "atlas.buff.protect_user": "保护同组有效配方所需的用户；富余用户仍可被攻击。",
+    "atlas.buff.protect_cash": "保护同组有效配方所需的现金；结算时现金仍会消耗。",
+    "atlas.resource_note": "资源可投入业务与攻击组合。现金配方会消耗现金，用户配方正常结算后保留用户。",
+    "atlas.legend_note": "传说不会生产。典当变成现金后，才计入资金胜利。",
+    "atlas.user_recipe_note": "用户配方正常结算后保留，可以继续参与下一回合经营。",
+    "atlas.cash_recipe_note": "现金配方在生效时消耗；下一回合需要重新补充。",
+    "atlas.card_routes": "这张牌可以参与的合成",
+    "atlas.no_card_routes": "这张牌没有升级路线。",
+    "atlas.route_destination": "{material} → {name}",
+    "atlas.join": "、",
+    "atlas.or": "或者",
+    "atlas.route_filter": "仅看这张牌的路线",
+    "atlas.show_all_routes": "显示全部路线",
+    "invalid_target": "这个目标当前无法攻击，请选择高亮资源。",
+    "acknowledge": "知道了，继续",
+    "why": "为什么？",
+    "hide_explanation": "收起解释",
+    "return_practice": "我来试试",
+    "demo_mode": "操作演示",
+    "resources_format": "第 {round} 回合 · 你：现金 {cash} / 用户 {user} · 对手：现金 {foe_cash} / 用户 {foe_user}",
+    "step_format": "第 {current}/{total} 步",
+    "phase_action": "购买与编组",
+    "phase_attack": "攻击",
+    "phase_review": "查看结果",
+    "phase_over": "对局结束",
+    "complete_course": "完成本课",
+    "course_goal": "本课目标：{goal}",
+    "progress_ready": "目标已达成，点击下一步。",
+    "tutorial_table": "练习牌桌",
+    "attack_points": "攻击点：现金 {cash} · 用户 {user}",
+    "next_round": "开始下一回合",
+    "progress_missing": "{name}：还差 {count} {resource}。",
+    "progress_need_business": "先找到一张适合当前目标的业务牌，再放入配方资源。",
+    "progress_protection": "这组受保护 {protected} {resource}，富余 {exposed} {resource}。",
+    "progress_attack_types": "已命中：现金 {cash} 次 · 用户 {user} 次",
+    "progress_wait_settle": "组合已就绪，点击“完成行动”验证实际结果。",
+    "progress_no_group": "当前没有有效组合。将业务和配方资源放在同一组。",
+    "progress_restart_required": "关键卡已不在场上。点击“重试本课”恢复完整练习。",
+    "progress_buy_target": "从市场购买一张{resource}生产业务。",
+    "resume_step": "已恢复第 {index} 步的练习起点。",
+    "zoom_in": "＋",
+    "zoom_out": "－",
+    "reset_view": "全桌",
+    "table_view_hint": "滚轮缩放，双指缩放或移动视角。",
+    "hub.next_course": "接着试试：{title}",
+    "hub.again": "重新开始连续教学",
+    "coach.speaker": "带教牛马",
+    "coach.close": "×",
+    "coach.more": "更多",
+    "coach.less": "收起",
+    "coach.goal": "这一步：{goal}",
+    "coach.completed": "这轮教学完成了。点我结束教程。",
+    "coach.drag": "拖动小人，把提示挪开",
+    "coach.tap_continue": "{goal}（点我继续）",
+    "coach.tap_return": "{goal}（点我结束教程）",
+    "operation_rollback": "已撤回。{goal}",
+    "hub.other_games": "其他玩法",
+    "hub.other_games_close": "收起",
+    "hub.short_intro": "先赚到{win_cash}资金，或打空对手的一种资源，就赢了。",
+    "hub.first_round": "从买牌到进攻，按顺序学会八种玩法。",
+    "hub.end_tutorial": "结束教程",
+    "coach.tap_next_course": "点我继续教程：{title}",
+    "hub.continue_active": "继续教学：{title}",
+    "hub.continue_active_hint": "返回牌桌，接着完成当前目标。"
+  },
+  "topics": [
+    {
+      "id": "win",
+      "title": "怎么赢？",
+      "summary": "现金达到 {win_cash}，或打空对手的现金、用户任意一种。",
+      "details": "对手也按相同条件取胜。传说本身不算现金，要典当后才能冲线；资源归零会立即判负。",
+      "course_id": "cashout",
+      "demo_section": "pawn"
+    },
+    {
+      "id": "round",
+      "title": "一回合怎么走？",
+      "summary": "双方轮流行动 → 攻击 → 生产与合成；下一回合交换先后手。",
+      "details": "行动时可以购买、典当、反复调整编组。双方完成行动后，先手先攻击；攻击结束才结算生产与合成。市场每回合刷新，没有固定资源补给。",
+      "course_id": "income",
+      "demo_section": "purchase"
+    },
+    {
+      "id": "production",
+      "title": "怎么让业务运转？",
+      "summary": "把业务和配方资源放在一组。现金会消耗，用户通常留下。",
+      "details": "同一张牌只能在一组中。配方不足时组合失效，强化也不能代替必要材料。拖顶卡移动整摞；双击展开后拖最末端的一张，可以拆出单张。生产中新生成的牌下次行动才能使用。",
+      "course_id": "growth",
+      "demo_section": "combos"
+    },
+    {
+      "id": "attack",
+      "title": "攻击有什么用？",
+      "summary": "移除对手对应资源，拆掉必要配方可能使业务或攻击失效。",
+      "details": "现金点只能打现金，用户点只能打用户。核心牌和强化牌不能直接攻击。选中组合后，须先处理该组中仍可负担的合法目标，再转移目标。被移除资源不会转移给攻击者。",
+      "course_id": "attack",
+      "demo_section": "attack"
+    },
+    {
+      "id": "upgrade",
+      "title": "升级和典当有什么用？",
+      "summary": "升级消耗材料卡生成新卡；典当立即把卡换成现金。",
+      "details": "普通升级需要有对应路线的同名初级生产卡；传说可用同档异名生产卡，数量必须准确，不夹其他牌。现金不能典当，不能卖光用户。配方付款要留下现金；攻击不能借用稍后才到账的生产收入。",
+      "course_id": "upgrade",
+      "demo_section": "combos"
+    },
+    {
+      "id": "buff",
+      "title": "强化牌怎么用？",
+      "summary": "放进有效组合，增强产出、攻击或保护配方资源。",
+      "details": "产出和攻击倍率逐张相乘。裂变至少需要一张真实用户，重复放置不会进一步增强补满效果。保护仅覆盖有效配方占用的资源，多放的资源仍可被攻击；防御牌移走或组合失效后保护消失。",
+      "course_id": "buffs",
+      "demo_section": "buffs"
+    }
+  ],
+  "courses": [
+    {
+      "id": "income",
+      "title": "第一笔收入",
+      "goal": "购买业务、配置用户，亲手完成一次现金生产。",
+      "steps": [
+        {
+          "id": "income.buy",
+          "goal": "把现金拖到市场里的「{card.yunketang.name}」上，买下它。",
+          "completion_goal": "已经买下「{lesson.business.name}」。买牌花掉了现金，业务还需要配上资源才能生产。",
+          "instruction": "把左侧现金摞拖到市场里的「{card.yunketang.name}」上，支付 {card.yunketang.price} 现金。",
+          "explanation": "购买业务只是第一步，还需要把配方资源放在它身上。",
+          "hint": "把左侧现金摞拖到市场里的「{card.yunketang.name}」上，支付 {card.yunketang.price} 现金。",
+          "condition": {
+            "kind": "buy",
+            "card": "yunketang",
+            "output_res": "cash"
+          },
+          "demo": [
+            {
+              "op": "buy",
+              "card": "yunketang"
+            }
+          ],
+          "scenario": "income",
+          "focus": "market",
+          "kind": "buy",
+          "guide": {
+            "actions": [
+              "buy"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "income.split",
+          "goal": "双击用户摞展开，再把最末端的一张用户拖到桌面空处。",
+          "completion_goal": "用户已经拆出来了，可以单独分配给业务；同一张卡只能放在一组里。",
+          "instruction": "双击用户摞展开，拖最末端的一张用户到空处；拖顶卡会移动整摞。",
+          "explanation": "拆出的用户可以分配给另一项业务；同一张卡只能放在一组里。",
+          "hint": "双击用户摞展开，拖最末端的一张用户到空处；拖顶卡会移动整摞。",
+          "condition": {
+            "kind": "split"
+          },
+          "demo": [
+            {
+              "op": "split",
+              "card": "user"
+            }
+          ],
+          "scenario": "",
+          "focus": "user",
+          "kind": "split",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "income.group",
+          "goal": "把至少 {lesson.business.recipe_n} 张用户拖到「{lesson.business.name}」上，叠成一组。",
+          "completion_goal": "「{lesson.business.name}」的配方已经成立，多放用户也有效；实际收入还要等结算。",
+          "instruction": "把至少 {lesson.business.recipe_n} 张用户拖到「{lesson.business.name}」上；可以整摞拖，也可以展开后从末端逐张拖。",
+          "explanation": "这是最低需求，多放用户也有效。配方有效后要等结算才会产出现金，仍可拆开、调整。",
+          "hint": "把至少 {lesson.business.recipe_n} 张用户拖到「{lesson.business.name}」上；可以整摞拖，也可以展开后从末端逐张拖。",
+          "condition": {
+            "kind": "group",
+            "type": "production",
+            "leader": "yunketang",
+            "user_count": 3
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 1,
+                  "user": 3
+                }
+              ]
+            }
+          ],
+          "scenario": "",
+          "focus": "board",
+          "kind": "group",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "income.settle",
+          "goal": "点击「完成行动」，查看这组业务产出的现金。",
+          "completion_goal": "「{lesson.business.name}」产出的现金已到账，配方里的用户仍然保留，可以继续经营。",
+          "instruction": "点击「完成行动」，查看这组业务产出的现金。",
+          "explanation": "{lesson.business.name}每次产出 {lesson.business.output_n} 现金；用户配方在生产后保留。",
+          "hint": "点击「完成行动」，查看这组业务产出的现金。",
+          "condition": {
+            "kind": "resolution",
+            "type": "production",
+            "leader": "yunketang"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 1,
+                  "user": 3
+                }
+              ]
+            },
+            {
+              "op": "round"
+            }
+          ],
+          "scenario": "",
+          "focus": "complete_action",
+          "kind": "resolution",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "income.result",
+          "goal": "查看牌桌上的现金和用户：本轮花 {lesson.business.price} 现金买牌，业务产出 {lesson.business.output_n} 现金。",
+          "instruction": "查看现金与用户，购牌花费和生产收入分开计算，用户仍可留到下回合使用。",
+          "explanation": "下回合可以继续使用这些用户；现金总量不变也可能表示刚好赚回了购牌支出。",
+          "hint": "查看现金与用户，购牌花费和生产收入分开计算，用户仍可留到下回合使用。",
+          "condition": {
+            "kind": "confirm"
+          },
+          "demo": [],
+          "scenario": "",
+          "focus": "result",
+          "kind": "confirm",
+          "guide": {
+            "actions": []
+          },
+          "advance": "confirm"
+        }
+      ]
+    },
+    {
+      "id": "growth",
+      "title": "扩大生意",
+      "goal": "同时经营赚钱和拉新业务，理解现金消耗与用户留场。",
+      "steps": [
+        {
+          "id": "growth.buy",
+          "goal": "把现金拖到市场里的「{card.ditui.name}」或「{card.pinshaoshao.name}」上，买一项拉新业务。",
+          "completion_goal": "已经买下「{lesson.growth.name}」。它会在结算时消耗配方现金，换来更多用户。",
+          "instruction": "把现金拖到市场里的「{card.ditui.name}」或「{card.pinshaoshao.name}」上，买一项拉新业务。",
+          "explanation": "这项业务在结算时花现金，换来更多用户。",
+          "hint": "把现金拖到市场里的「{card.ditui.name}」或「{card.pinshaoshao.name}」上，买一项拉新业务。",
+          "condition": {
+            "kind": "buy",
+            "output_res": "user"
+          },
+          "demo": [
+            {
+              "op": "buy",
+              "card": "ditui"
+            }
+          ],
+          "scenario": "growth",
+          "focus": "market",
+          "kind": "buy",
+          "guide": {
+            "actions": [
+              "buy"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "growth.groups",
+          "goal": "把至少 {card.yunketang.recipe_n} 张用户拖到「{card.yunketang.name}」上，再把至少 {lesson.growth.recipe_n} 张现金拖到「{lesson.growth.name}」上。",
+          "completion_goal": "赚钱和拉新已经各成一组，各用自己的配方资源；同一张资源不能同时供给两项业务。",
+          "instruction": "双击资源摞拆牌，给「{card.yunketang.name}」拖入至少 {card.yunketang.recipe_n} 张用户，给「{lesson.growth.name}」拖入至少 {lesson.growth.recipe_n} 张现金。",
+          "explanation": "分开两组，才能分别生效。业务牌与另一组的资源混在一起可能让配方失效。",
+          "hint": "双击资源摞拆牌，给「{card.yunketang.name}」拖入至少 {card.yunketang.recipe_n} 张用户，给「{lesson.growth.name}」拖入至少 {lesson.growth.recipe_n} 张现金。",
+          "condition": {
+            "kind": "groups",
+            "requirements": [
+              {
+                "type": "production",
+                "output_res": "cash"
+              },
+              {
+                "type": "production",
+                "output_res": "user"
+              }
+            ]
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 1,
+                  "user": 3
+                },
+                {
+                  "ditui": 1,
+                  "cash": 2
+                }
+              ]
+            }
+          ],
+          "scenario": "",
+          "focus": "board",
+          "kind": "groups",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "growth.settle",
+          "goal": "点击「完成行动」，查看现金的支出和新增用户。",
+          "completion_goal": "本轮现金和用户已经产出。赚钱业务保留了用户，拉新业务消耗了配方现金。",
+          "instruction": "点击「完成行动」，查看现金的支出和新增用户。",
+          "explanation": "赚钱业务保留用户；拉新业务消耗配方现金。业务牌本身留下。",
+          "hint": "点击「完成行动」，查看现金的支出和新增用户。",
+          "condition": {
+            "kind": "resolutions",
+            "requirements": [
+              {
+                "type": "production",
+                "output_res": "cash"
+              },
+              {
+                "type": "production",
+                "output_res": "user"
+              }
+            ]
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 1,
+                  "user": 3
+                },
+                {
+                  "ditui": 1,
+                  "cash": 2
+                }
+              ]
+            },
+            {
+              "op": "round"
+            }
+          ],
+          "scenario": "",
+          "focus": "complete_action",
+          "kind": "resolutions",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "growth.refill",
+          "goal": "给「{lesson.growth.name}」拖入现金，补足至少 {lesson.growth.recipe_n} 张，准备下回合。",
+          "completion_goal": "「{lesson.growth.name}」已有足够现金，下一回合的配方准备好了。",
+          "instruction": "给「{lesson.growth.name}」补足至少 {lesson.growth.recipe_n} 张现金；上一轮已支付的现金不会自动补回。",
+          "explanation": "现金配方每回合都要重新补料。扩大用户规模能支持更多业务或攻击。",
+          "hint": "给「{lesson.growth.name}」补足至少 {lesson.growth.recipe_n} 张现金；上一轮已支付的现金不会自动补回。",
+          "condition": {
+            "kind": "group",
+            "type": "production",
+            "output_res": "user",
+            "min_round": 2
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "ditui": 1,
+                  "cash": 2
+                }
+              ]
+            }
+          ],
+          "scenario": "",
+          "focus": "board",
+          "kind": "group",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "ready_goal": "查看业务中保留的现金，确认下回合的配方已经齐全。",
+          "advance": "confirm"
+        }
+      ]
+    },
+    {
+      "id": "attack",
+      "title": "干扰对手",
+      "goal": "用攻击拆掉对手配方，并体验清空资源的胜利方式。",
+      "steps": [
+        {
+          "id": "attack.groups",
+          "goal": "把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」上，再把至少 {card.yunketang.recipe_n} 张用户拖到「{card.yunketang.name}」上。",
+          "completion_goal": "经营与攻击配方都已成立。用户可以分配给不同业务，但不能重复使用。",
+          "instruction": "从用户摞分出至少 {card.zuokong.recipe_n} 张拖到「{card.zuokong.name}」上，再分出至少 {card.yunketang.recipe_n} 张拖到「{card.yunketang.name}」上，两项配方都需要用户。",
+          "explanation": "用户增长后，才有余力同时支持经营和攻击。",
+          "hint": "从用户摞分出至少 {card.zuokong.recipe_n} 张拖到「{card.zuokong.name}」上，再分出至少 {card.yunketang.recipe_n} 张拖到「{card.yunketang.name}」上，两项配方都需要用户。",
+          "condition": {
+            "kind": "groups",
+            "requirements": [
+              {
+                "type": "attack"
+              },
+              {
+                "type": "production"
+              }
+            ]
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "zuokong": 1,
+                  "user": 6
+                },
+                {
+                  "yunketang": 1,
+                  "user": 3
+                }
+              ]
+            }
+          ],
+          "scenario": "attack",
+          "focus": "board",
+          "kind": "groups",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "attack.arm",
+          "goal": "点击「完成行动」，进入攻击阶段。",
+          "completion_goal": "已经获得攻击现金的点数。攻击在生产前进行，攻击点只能用于对应的资源。",
+          "instruction": "点击「完成行动」，进入攻击阶段。",
+          "explanation": "攻击在生产之前执行；攻击点的类型决定它能移除哪一种资源。",
+          "hint": "点击「完成行动」，进入攻击阶段。",
+          "condition": {
+            "kind": "armed",
+            "res": "cash"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "zuokong": 1,
+                  "user": 6
+                },
+                {
+                  "yunketang": 1,
+                  "user": 3
+                }
+              ]
+            },
+            {
+              "op": "round"
+            }
+          ],
+          "scenario": "",
+          "focus": "complete_action",
+          "kind": "armed",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "attack.hit",
+          "goal": "点击对手「{card.pinshaoshao.name}」组合里的现金，拆掉它的配方。",
+          "completion_goal": "你移除了对手「{card.pinshaoshao.name}」的配方现金。这些资源被销毁，不会转给你。",
+          "instruction": "点击对手「{card.pinshaoshao.name}」摞里的现金；看不清时双击牌摞展开。",
+          "explanation": "被移除的资源不会归你；缺少必要配方的业务无法正常生效。",
+          "hint": "点击对手「{card.pinshaoshao.name}」摞里的现金；看不清时双击牌摞展开。",
+          "condition": {
+            "kind": "attack",
+            "leader": "pinshaoshao",
+            "count": 1
+          },
+          "demo": [
+            {
+              "op": "attack",
+              "leader": "pinshaoshao"
+            }
+          ],
+          "scenario": "",
+          "focus": "opponent",
+          "kind": "attack",
+          "guide": {
+            "actions": [
+              "attack"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "attack.result",
+          "goal": "点击「结束攻击」，查看对手「{card.pinshaoshao.name}」停产的结果。",
+          "completion_goal": "对手「{card.pinshaoshao.name}」的配方遭到破坏，本回合没能产出用户。",
+          "instruction": "点击「结束攻击」，查看对手「{card.pinshaoshao.name}」停产的结果。",
+          "explanation": "攻击先拆掉了配方，随后这项业务无法产出用户。",
+          "hint": "点击「结束攻击」，查看对手「{card.pinshaoshao.name}」停产的结果。",
+          "condition": {
+            "kind": "void",
+            "leader": "pinshaoshao",
+            "seat": "bot"
+          },
+          "demo": [
+            {
+              "op": "finish_attack"
+            }
+          ],
+          "scenario": "",
+          "focus": "complete_action",
+          "kind": "void",
+          "guide": {
+            "actions": [
+              "finish_attack"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "attack.win",
+          "goal": "把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」上，点「完成行动」后点击对手最后一张现金。",
+          "completion_goal": "对手的现金归零，你赢了。任意一方的现金或用户归零，都会立即败北。",
+          "instruction": "把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」上，点「完成行动」后点击对手最后一张现金。",
+          "explanation": "现金或用户任何一种归零，都会立即判负。你也需要保住自己的两种资源。",
+          "hint": "把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」上，点「完成行动」后点击对手最后一张现金。",
+          "condition": {
+            "kind": "victory"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "zuokong": 1,
+                  "user": 6
+                }
+              ]
+            },
+            {
+              "op": "round"
+            },
+            {
+              "op": "attack_all"
+            }
+          ],
+          "scenario": "attack_win",
+          "focus": "opponent",
+          "kind": "victory",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action",
+              "attack"
+            ]
+          },
+          "advance": "confirm"
+        }
+      ]
+    },
+    {
+      "id": "upgrade",
+      "title": "周转与升级",
+      "goal": "典当闲置业务，并把同名生产卡升级后投入经营。",
+      "steps": [
+        {
+          "id": "upgrade.pawn",
+          "goal": "把闲置的「{card.baoyue.name}」拖到典当区，换成现金。",
+          "completion_goal": "「{card.baoyue.name}」已经换成现金，原业务离场了。典当能周转资金，也会失去这张牌。",
+          "instruction": "把闲置的「{card.baoyue.name}」拖到典当区，换成现金。",
+          "explanation": "典当立即获得现金，原卡离场。现金不能典当，最后一个用户也不能卖掉。",
+          "hint": "把闲置的「{card.baoyue.name}」拖到典当区，换成现金。",
+          "condition": {
+            "kind": "pawn",
+            "card": "baoyue"
+          },
+          "demo": [
+            {
+              "op": "pawn",
+              "card": "baoyue"
+            }
+          ],
+          "scenario": "upgrade",
+          "focus": "pawn",
+          "kind": "pawn",
+          "guide": {
+            "actions": [
+              "pawn"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "upgrade.group",
+          "goal": "把 {card.jiaolv.upgrade_dup_n} 张「{card.yunketang.name}」拖叠在一起，单独组成升级材料。",
+          "completion_goal": "升级材料已经配齐；这里只是组好材料，结算时才会生成「{card.jiaolv.name}」。",
+          "instruction": "将一张「{card.yunketang.name}」拖到另一张上，凑成 {card.jiaolv.upgrade_dup_n} 张的一摞，不夹资源或强化牌。",
+          "explanation": "仅存在对应升级路线的同名初级生产卡才能这样升级；所有路线可在升级关系图中查到。",
+          "hint": "将一张「{card.yunketang.name}」拖到另一张上，凑成 {card.jiaolv.upgrade_dup_n} 张的一摞，不夹资源或强化牌。",
+          "condition": {
+            "kind": "group",
+            "type": "upgrade",
+            "output_card": "jiaolv"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 2
+                }
+              ]
+            }
+          ],
+          "scenario": "",
+          "focus": "board",
+          "kind": "group",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "upgrade.resolve",
+          "goal": "点击「完成行动」，把这组材料合成「{card.jiaolv.name}」。",
+          "completion_goal": "原材料已合成「{card.jiaolv.name}」。升级当回合不会同时生产，新业务还需要配置资源。",
+          "instruction": "点击牌桌下方的「完成行动」，结算时才会消耗材料并生成「{card.jiaolv.name}」。",
+          "explanation": "升级消耗原来的两张业务牌；新卡需要到下一次行动时重新配置资源。",
+          "hint": "点击牌桌下方的「完成行动」，结算时才会消耗材料并生成「{card.jiaolv.name}」。",
+          "condition": {
+            "kind": "resolution",
+            "type": "upgrade",
+            "output_card": "jiaolv"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 2
+                }
+              ]
+            },
+            {
+              "op": "round"
+            }
+          ],
+          "scenario": "",
+          "focus": "complete_action",
+          "kind": "resolution",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "upgrade.recipe",
+          "goal": "把至少 {card.jiaolv.recipe_n} 张用户拖到「{card.jiaolv.name}」上，配好升级业务。",
+          "completion_goal": "「{card.jiaolv.name}」的用户配方已配齐，下一次结算可以生产现金。",
+          "instruction": "把至少 {card.jiaolv.recipe_n} 张用户拖到「{card.jiaolv.name}」上，配好升级业务。",
+          "explanation": "升级后，用更少的用户就能获得更高的生产收入。",
+          "hint": "把至少 {card.jiaolv.recipe_n} 张用户拖到「{card.jiaolv.name}」上，配好升级业务。",
+          "condition": {
+            "kind": "group",
+            "leader": "jiaolv",
+            "type": "production"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "jiaolv": 1,
+                  "user": 4
+                }
+              ]
+            }
+          ],
+          "scenario": "",
+          "focus": "board",
+          "kind": "group",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "upgrade.income",
+          "goal": "点击「完成行动」，查看「{card.jiaolv.name}」产出的现金。",
+          "completion_goal": "「{card.jiaolv.name}」产出的现金已经到账；升级的收益要靠后续经营兑现。",
+          "instruction": "点击「完成行动」，查看「{card.jiaolv.name}」产出的现金。",
+          "explanation": "升级的收益要在后续经营中兑现；升级当回合不会同时生产。",
+          "hint": "点击「完成行动」，查看「{card.jiaolv.name}」产出的现金。",
+          "condition": {
+            "kind": "resolution",
+            "leader": "jiaolv",
+            "type": "production"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "jiaolv": 1,
+                  "user": 4
+                }
+              ]
+            },
+            {
+              "op": "round"
+            }
+          ],
+          "scenario": "",
+          "focus": "complete_action",
+          "kind": "resolution",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action"
+            ]
+          },
+          "advance": "confirm"
+        }
+      ]
+    },
+    {
+      "id": "cashout",
+      "title": "变现冲线",
+      "goal": "合成独角兽，再于下一次行动中典当并达到胜利线。",
+      "steps": [
+        {
+          "id": "cashout.group",
+          "goal": "把「{card.yunketang.name}」「{card.baoyue.name}」「{card.ditui.name}」「{card.pinshaoshao.name}」拖叠成一摞，准备合成材料。",
+          "completion_goal": "合成「{card.dujiaoshou.name}」的材料已配齐。同名或不同名都可以，但材料状态与张数必须符合规则。",
+          "instruction": "把这几张初级业务逐张拖到同一张上，叠成一摞，不夹现金、用户或强化牌。",
+          "explanation": "传说合成要求材料同档、数量准确。组合关系图列出了所有档位。",
+          "hint": "把这几张初级业务逐张拖到同一张上，叠成一摞，不夹现金、用户或强化牌。",
+          "condition": {
+            "kind": "group",
+            "type": "upgrade",
+            "output_card": "dujiaoshou"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 1,
+                  "baoyue": 1,
+                  "ditui": 1,
+                  "pinshaoshao": 1
+                }
+              ]
+            }
+          ],
+          "scenario": "cashout",
+          "focus": "board",
+          "kind": "group",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "cashout.resolve",
+          "goal": "点击「完成行动」，把这摞生产卡合成「{card.dujiaoshou.name}」。",
+          "completion_goal": "材料已合成「{card.dujiaoshou.name}」，合成本身不会增加现金，典当后才能变现。",
+          "instruction": "点击「完成行动」，把这摞生产卡合成「{card.dujiaoshou.name}」。",
+          "explanation": "拥有传说不会直接增加现金；被合成的材料业务也无法继续生产。",
+          "hint": "点击「完成行动」，把这摞生产卡合成「{card.dujiaoshou.name}」。",
+          "condition": {
+            "kind": "resolution",
+            "type": "upgrade",
+            "output_card": "dujiaoshou"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 1,
+                  "baoyue": 1,
+                  "ditui": 1,
+                  "pinshaoshao": 1
+                }
+              ]
+            },
+            {
+              "op": "round"
+            }
+          ],
+          "scenario": "",
+          "focus": "complete_action",
+          "kind": "resolution",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "cashout.value",
+          "goal": "查看「{card.dujiaoshou.name}」的典当收益：{card.dujiaoshou.pawn} 现金。",
+          "instruction": "查看「{card.dujiaoshou.name}」可换得的 {card.dujiaoshou.pawn} 现金，下一步再把它拖到典当区。",
+          "explanation": "新卡在结算阶段生成，必须等到下一次行动阶段才能典当。",
+          "hint": "查看「{card.dujiaoshou.name}」可换得的 {card.dujiaoshou.pawn} 现金，下一步再把它拖到典当区。",
+          "condition": {
+            "kind": "confirm"
+          },
+          "demo": [],
+          "scenario": "",
+          "focus": "pawn",
+          "kind": "confirm",
+          "guide": {
+            "actions": []
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "cashout.win",
+          "goal": "把「{card.dujiaoshou.name}」拖到典当区，让现金达到胜利线。",
+          "completion_goal": "典当收益已到账，现金达到胜利线，你赢了。传说通过变现帮助你提前冲线。",
+          "instruction": "把「{card.dujiaoshou.name}」拖到典当区，换取 {card.dujiaoshou.pawn} 现金后达到 {win_cash} 现金胜利线。",
+          "explanation": "传说是一次性变现机会；要在持续生产与提前冲线之间作出取舍。",
+          "hint": "把「{card.dujiaoshou.name}」拖到典当区，换取 {card.dujiaoshou.pawn} 现金后达到 {win_cash} 现金胜利线。",
+          "condition": {
+            "kind": "victory"
+          },
+          "demo": [
+            {
+              "op": "pawn",
+              "card": "dujiaoshou"
+            }
+          ],
+          "scenario": "",
+          "focus": "pawn",
+          "kind": "victory",
+          "guide": {
+            "actions": [
+              "pawn"
+            ]
+          },
+          "advance": "confirm"
+        }
+      ]
+    },
+    {
+      "id": "buffs",
+      "title": "强化与保护",
+      "goal": "增强组合，并分清有效配方、保护额度和多余资源。",
+      "steps": [
+        {
+          "id": "buff.output",
+          "goal": "把至少 {card.yunketang.recipe_n} 张用户和「{card.yinqing996.name}」拖到「{card.yunketang.name}」上，再点击「完成行动」。",
+          "completion_goal": "「{card.yinqing996.name}」提高了「{card.yunketang.name}」本轮产出。强化只对有效的生产组合生效。",
+          "instruction": "把至少 {card.yunketang.recipe_n} 张用户和「{card.yinqing996.name}」拖到「{card.yunketang.name}」上，再点击「完成行动」。",
+          "explanation": "产出倍率作用于整个有效生产组合；配方不足时，强化牌不能独自工作。",
+          "hint": "把至少 {card.yunketang.recipe_n} 张用户和「{card.yinqing996.name}」拖到「{card.yunketang.name}」上，再点击「完成行动」。",
+          "condition": {
+            "kind": "resolution",
+            "leader": "yunketang",
+            "buff_count": {
+              "yinqing996": 1
+            }
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 1,
+                  "user": 3,
+                  "yinqing996": 1
+                }
+              ]
+            },
+            {
+              "op": "round"
+            }
+          ],
+          "scenario": "buff_output",
+          "focus": "board",
+          "kind": "resolution",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "buff.stack",
+          "goal": "把另一张「{card.yinqing996.name}」拖到「{card.yunketang.name}」和至少 {card.yunketang.recipe_n} 张用户的组合上，再点击「完成行动」。",
+          "completion_goal": "同组的「{card.yinqing996.name}」已经叠加生效，实际产出的现金已到账。",
+          "instruction": "把另一张「{card.yinqing996.name}」拖进「{card.yunketang.name}」和至少 {card.yunketang.recipe_n} 张用户的组合，再点击「完成行动」，同类强化可以叠加。",
+          "explanation": "同类产出倍率逐张相乘；两张翻倍牌会让原产出变为四倍。",
+          "hint": "把另一张「{card.yinqing996.name}」拖进「{card.yunketang.name}」和至少 {card.yunketang.recipe_n} 张用户的组合，再点击「完成行动」，同类强化可以叠加。",
+          "condition": {
+            "kind": "resolution",
+            "leader": "yunketang",
+            "buff_count": {
+              "yinqing996": 2
+            }
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 1,
+                  "user": 3,
+                  "yinqing996": 2
+                }
+              ]
+            },
+            {
+              "op": "round"
+            }
+          ],
+          "scenario": "",
+          "focus": "board",
+          "kind": "resolution",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action"
+            ]
+          },
+          "ready_goal": "查看实际产出的现金，确认同组的「{card.yinqing996.name}」已经叠加生效。",
+          "advance": "confirm"
+        },
+        {
+          "id": "buff.attack",
+          "goal": "把至少 {card.zuokong.recipe_n} 张用户和「{card.resou.name}」拖到「{card.zuokong.name}」上，点「完成行动」后点击对手现金。",
+          "completion_goal": "「{card.resou.name}」增加的攻击点已经用于攻击对手现金；它不会增强生产。",
+          "instruction": "把至少 {card.zuokong.recipe_n} 张用户和「{card.resou.name}」拖到「{card.zuokong.name}」上，点「完成行动」后点击对手现金。",
+          "explanation": "热搜包年增强攻击点数；生产倍率不会增强攻击。",
+          "hint": "把至少 {card.zuokong.recipe_n} 张用户和「{card.resou.name}」拖到「{card.zuokong.name}」上，点「完成行动」后点击对手现金。",
+          "condition": {
+            "kind": "attack",
+            "count": 1,
+            "requires_buff": "resou"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "zuokong": 1,
+                  "user": 6,
+                  "resou": 1
+                }
+              ]
+            },
+            {
+              "op": "round"
+            },
+            {
+              "op": "attack"
+            }
+          ],
+          "scenario": "buff_attack",
+          "focus": "opponent",
+          "kind": "attack",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action",
+              "attack"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "buff.fill",
+          "goal": "把一张用户和「{card.liebian.name}」拖到「{card.jiaolv.name}」上，让裂变补足配方。",
+          "completion_goal": "真实用户与「{card.liebian.name}」一起补足了配方，但没有凭空生成新的用户牌。",
+          "instruction": "先拖一张用户到「{card.jiaolv.name}」上，再把「{card.liebian.name}」拖上去，观察尚缺的用户被补足。",
+          "explanation": "裂变至少需要一张真实用户；多张裂变牌不会继续扩大补满效果。",
+          "hint": "先拖一张用户到「{card.jiaolv.name}」上，再把「{card.liebian.name}」拖上去，观察尚缺的用户被补足。",
+          "condition": {
+            "kind": "group",
+            "leader": "jiaolv",
+            "filled_by_fission": true,
+            "user_count": 1
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "jiaolv": 1,
+                  "user": 1,
+                  "liebian": 1
+                }
+              ]
+            }
+          ],
+          "scenario": "buff_fill",
+          "focus": "board",
+          "kind": "group",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "buff.empty",
+          "goal": "把裂变组合里的用户全部拖到空处，观察没有用户时组合失效。",
+          "completion_goal": "组里没有真实用户，「{card.liebian.name}」无法启动业务，组合已经失效。",
+          "instruction": "双击裂变组合展开，将其中所有用户拖到空处，留下业务和「{card.liebian.name}」。",
+          "explanation": "裂变不能凭空启动业务；放回至少一张用户，才能重新生效。",
+          "hint": "双击裂变组合展开，将其中所有用户拖到空处，留下业务和「{card.liebian.name}」。",
+          "condition": {
+            "kind": "invalid_group",
+            "leader": "jiaolv",
+            "buff": "liebian",
+            "user_count": 0
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "jiaolv": 1,
+                  "liebian": 1
+                }
+              ]
+            }
+          ],
+          "scenario": "",
+          "focus": "board",
+          "kind": "invalid_group",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "buff.protect_user",
+          "goal": "对手会先攻击用户。把至少 {card.yunketang.recipe_n} 张用户和「{card.tuisong.name}」拖到「{card.yunketang.name}」上，点「完成行动」；仅配方所需用户受保护，多余仍可被攻击。",
+          "completion_goal": "对手攻击了未受保护的用户，配方里的用户保住了，「{card.yunketang.name}」仍产出了现金。",
+          "instruction": "对手会先攻击用户。把至少 {card.yunketang.recipe_n} 张用户和「{card.tuisong.name}」拖到「{card.yunketang.name}」上，点「完成行动」；仅配方所需用户受保护，多余仍可被攻击。",
+          "explanation": "对手先攻击；配方所需用户受保护，富余用户仍可被攻击。",
+          "hint": "对手会先攻击用户。把至少 {card.yunketang.recipe_n} 张用户和「{card.tuisong.name}」拖到「{card.yunketang.name}」上，点「完成行动」；仅配方所需用户受保护，多余仍可被攻击。",
+          "condition": {
+            "kind": "resolution",
+            "leader": "yunketang",
+            "buff_count": {
+              "tuisong": 1
+            }
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 1,
+                  "user": 3,
+                  "tuisong": 1
+                }
+              ]
+            },
+            {
+              "op": "round"
+            }
+          ],
+          "scenario": "buff_user",
+          "focus": "board",
+          "kind": "resolution",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "buff.protect_cash",
+          "goal": "对手会先攻击现金。把至少 {card.ditui.recipe_n} 张现金和「{card.jiangjia.name}」拖到「{card.ditui.name}」上，点「完成行动」；仅配方所需现金受保护，多余仍可被攻击。",
+          "completion_goal": "对手攻击了未受保护的现金；配方现金先受到保护，随后用于支付，「{card.ditui.name}」产出了用户。",
+          "instruction": "对手会先攻击现金。把至少 {card.ditui.recipe_n} 张现金和「{card.jiangjia.name}」拖到「{card.ditui.name}」上，点「完成行动」；仅配方所需现金受保护，多余仍可被攻击。",
+          "explanation": "保护只覆盖配方所需现金，富余现金仍可被攻击；结算时配方现金照常消耗。",
+          "hint": "对手会先攻击现金。把至少 {card.ditui.recipe_n} 张现金和「{card.jiangjia.name}」拖到「{card.ditui.name}」上，点「完成行动」；仅配方所需现金受保护，多余仍可被攻击。",
+          "condition": {
+            "kind": "resolution",
+            "leader": "ditui",
+            "buff_count": {
+              "jiangjia": 1
+            }
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "ditui": 1,
+                  "cash": 2,
+                  "jiangjia": 1
+                }
+              ]
+            },
+            {
+              "op": "round"
+            }
+          ],
+          "scenario": "buff_cash",
+          "focus": "board",
+          "kind": "resolution",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "buff.spare",
+          "goal": "把 {card.yunketang.recipe_n} 张用户和「{card.tuisong.name}」拖到「{card.yunketang.name}」上，再多放一张用户。",
+          "completion_goal": "保护标记只覆盖配方实际使用的用户，额外用户仍暴露在攻击范围内。",
+          "instruction": "先给「{card.yunketang.name}」拖入 {card.yunketang.recipe_n} 张用户和「{card.tuisong.name}」，再拖入一张额外用户，查看保护标记。",
+          "explanation": "保护只覆盖有效配方实际使用的资源，富余资源仍会暴露。",
+          "hint": "先给「{card.yunketang.name}」拖入 {card.yunketang.recipe_n} 张用户和「{card.tuisong.name}」，再拖入一张额外用户，查看保护标记。",
+          "condition": {
+            "kind": "protection",
+            "res": "user",
+            "protected": 3,
+            "exposed": 1
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 1,
+                  "user": 4,
+                  "tuisong": 1
+                }
+              ]
+            }
+          ],
+          "scenario": "buff_spare",
+          "focus": "board",
+          "kind": "protection",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "buff.remove",
+          "goal": "双击展开业务摞，拖出「{card.tuisong.name}」及它下方的牌，再把用户与「{card.yunketang.name}」叠回一起。",
+          "completion_goal": "「{card.tuisong.name}」移出组合后，用户失去了保护。防御牌要留在有效配方里才能生效。",
+          "instruction": "双击展开业务摞，拖出「{card.tuisong.name}」及它下方的牌，再把用户与「{card.yunketang.name}」叠回一起。",
+          "explanation": "防御牌必须留在有效组合中，保护才持续生效。",
+          "hint": "双击展开业务摞，拖出「{card.tuisong.name}」及它下方的牌，再把用户与「{card.yunketang.name}」叠回一起。",
+          "condition": {
+            "kind": "unprotected_group",
+            "leader": "yunketang",
+            "res": "user"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 1,
+                  "user": 4
+                }
+              ]
+            }
+          ],
+          "scenario": "",
+          "focus": "board",
+          "kind": "unprotected_group",
+          "guide": {
+            "actions": [
+              "layout"
+            ],
+            "remove_cards": [
+              "tuisong"
+            ]
+          },
+          "advance": "confirm"
+        }
+      ]
+    },
+    {
+      "id": "tactics",
+      "title": "回合中的取舍",
+      "goal": "理解先后手、攻击类型与锁定，以及付款和精确合成限制。",
+      "steps": [
+        {
+          "id": "tactics.reply",
+          "goal": "这回合对手先攻击用户。把至少 {card.yunketang.recipe_n} 张用户和「{card.tuisong.name}」拖到「{card.yunketang.name}」上，点「完成行动」；仅配方所需用户受保护，多余仍可被攻击。",
+          "completion_goal": "后手提前保护了配方用户；对手攻击未受保护的用户后，「{card.yunketang.name}」仍产出了现金。",
+          "instruction": "这回合对手先攻击用户。把至少 {card.yunketang.recipe_n} 张用户和「{card.tuisong.name}」拖到「{card.yunketang.name}」上，点「完成行动」；仅配方所需用户受保护，多余仍可被攻击。",
+          "explanation": "后手可以观察先手已经准备的组合；保护只覆盖配方所需用户。下一回合先后手会交换。",
+          "hint": "这回合对手先攻击用户。把至少 {card.yunketang.recipe_n} 张用户和「{card.tuisong.name}」拖到「{card.yunketang.name}」上，点「完成行动」；仅配方所需用户受保护，多余仍可被攻击。",
+          "condition": {
+            "kind": "resolution",
+            "leader": "yunketang",
+            "buff_count": {
+              "tuisong": 1
+            }
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 1,
+                  "user": 3,
+                  "tuisong": 1
+                }
+              ]
+            },
+            {
+              "op": "round"
+            }
+          ],
+          "scenario": "tactics_reply",
+          "focus": "board",
+          "kind": "resolution",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "tactics.preempt",
+          "goal": "对手正准备攻击用户。把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」上，点「完成行动」后抢先点击对手「{card.heigongguan.name}」组里的现金，再点「结束攻击」。",
+          "completion_goal": "你先打掉了「{card.heigongguan.name}」的配方现金，使它无法发动攻击。先手可以这样打断对手。",
+          "instruction": "对手正准备攻击用户。把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」上，点「完成行动」后抢先点击对手「{card.heigongguan.name}」组里的现金，再点「结束攻击」。",
+          "explanation": "先手先攻击。后手配方遭破坏后，无法为这组攻击装弹。",
+          "hint": "对手正准备攻击用户。把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」上，点「完成行动」后抢先点击对手「{card.heigongguan.name}」组里的现金，再点「结束攻击」。",
+          "condition": {
+            "kind": "enemy_disarmed",
+            "leader": "heigongguan"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "zuokong": 1,
+                  "user": 6
+                }
+              ]
+            },
+            {
+              "op": "round"
+            },
+            {
+              "op": "attack",
+              "leader": "heigongguan"
+            },
+            {
+              "op": "finish_attack"
+            }
+          ],
+          "scenario": "tactics_preempt",
+          "focus": "opponent",
+          "kind": "enemy_disarmed",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action",
+              "attack",
+              "finish_attack"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "tactics.types",
+          "goal": "把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」、把至少 {card.chaping.recipe_n} 张用户拖到「{card.chaping.name}」上，点「完成行动」后分别点击对手现金和用户。",
+          "completion_goal": "现金攻击点移除了对方现金，用户攻击点移除了对方用户；两种攻击点不能互换。",
+          "instruction": "把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」、把至少 {card.chaping.recipe_n} 张用户拖到「{card.chaping.name}」上，点「完成行动」后分别点击对手现金和用户。",
+          "explanation": "各组合产生的同类攻击点会汇总，但现金点与用户点不能互换。",
+          "hint": "把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」、把至少 {card.chaping.recipe_n} 张用户拖到「{card.chaping.name}」上，点「完成行动」后分别点击对手现金和用户。",
+          "condition": {
+            "kind": "attack_types"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "zuokong": 1,
+                  "user": 6
+                },
+                {
+                  "chaping": 1,
+                  "user": 6
+                }
+              ]
+            },
+            {
+              "op": "round"
+            },
+            {
+              "op": "attack",
+              "res": "cash"
+            },
+            {
+              "op": "attack",
+              "res": "user"
+            }
+          ],
+          "scenario": "tactics_types",
+          "focus": "opponent",
+          "kind": "attack_types",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action",
+              "attack"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "tactics.lock",
+          "goal": "把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」上，点「完成行动」后先点完一组「{card.ditui.name}」的现金，再点另一组。",
+          "completion_goal": "你按顺序攻击了不同组合；换组前，要先处理当前组仍打得动的目标。",
+          "instruction": "给「{card.zuokong.name}」拖入至少 {card.zuokong.recipe_n} 张用户并点「完成行动」，连续点同一组「{card.ditui.name}」里的现金，清完后再点另一组。",
+          "explanation": "一旦选中组合，仍有可负担合法目标时需要继续攻击该组。散牌不会锁定组合。",
+          "hint": "给「{card.zuokong.name}」拖入至少 {card.zuokong.recipe_n} 张用户并点「完成行动」，连续点同一组「{card.ditui.name}」里的现金，清完后再点另一组。",
+          "condition": {
+            "kind": "attack_batches",
+            "count": 2
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "zuokong": 1,
+                  "user": 6
+                }
+              ]
+            },
+            {
+              "op": "round"
+            },
+            {
+              "op": "attack_all",
+              "combo_only": true
+            }
+          ],
+          "scenario": "tactics_lock",
+          "focus": "opponent",
+          "kind": "attack_batches",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action",
+              "attack"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "tactics.pay",
+          "goal": "把「{card.baoyue.name}」拖到典当区，再把至少 {card.heigongguan.recipe_n} 张现金拖到「{card.heigongguan.name}」上并点击「完成行动」。",
+          "completion_goal": "典当补回了现金，攻击配方完成付款并获得攻击点；付款不能让自己的现金归零。",
+          "instruction": "先把「{card.baoyue.name}」拖到典当区，再为「{card.heigongguan.name}」拖入至少 {card.heigongguan.recipe_n} 张现金并点「完成行动」，避免付款后现金归零。",
+          "explanation": "购买和付款都要保住现金；攻击先付款，不能借用稍后生产才会到账的收入。",
+          "hint": "先把「{card.baoyue.name}」拖到典当区，再为「{card.heigongguan.name}」拖入至少 {card.heigongguan.recipe_n} 张现金并点「完成行动」，避免付款后现金归零。",
+          "condition": {
+            "kind": "armed",
+            "res": "user"
+          },
+          "demo": [
+            {
+              "op": "pawn",
+              "card": "baoyue"
+            },
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "heigongguan": 1,
+                  "cash": 4
+                }
+              ]
+            },
+            {
+              "op": "round"
+            }
+          ],
+          "scenario": "tactics_pay",
+          "focus": "pawn",
+          "kind": "armed",
+          "guide": {
+            "actions": [
+              "pawn",
+              "layout",
+              "finish_action"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "tactics.exact",
+          "goal": "把「{card.jiaolv.name}」和用户从混合牌摞拖到空处，只留下 {card.jiaolv.upgrade_dup_n} 张「{card.yunketang.name}」叠在一起。",
+          "completion_goal": "多余牌已移开，剩下的同名业务符合升级配方。合成要求精确张数，不能夹杂其他牌。",
+          "instruction": "双击混合牌摞展开，将「{card.jiaolv.name}」和用户逐张拖到空处，只留下 {card.jiaolv.upgrade_dup_n} 张「{card.yunketang.name}」。",
+          "explanation": "合成要求数量准确、材料同档；资源、强化、攻击与传说卡都不能夹进生产卡升级组。",
+          "hint": "双击混合牌摞展开，将「{card.jiaolv.name}」和用户逐张拖到空处，只留下 {card.jiaolv.upgrade_dup_n} 张「{card.yunketang.name}」。",
+          "condition": {
+            "kind": "group",
+            "type": "upgrade",
+            "output_card": "jiaolv"
+          },
+          "demo": [
+            {
+              "op": "groups",
+              "groups": [
+                {
+                  "yunketang": 2
+                }
+              ]
+            }
+          ],
+          "scenario": "tactics_exact",
+          "focus": "board",
+          "kind": "group",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "advance": "confirm"
+        }
+      ]
+    },
+    {
+      "id": "independent",
+      "title": "自己经营",
+      "goal": "自主选购业务，完成经营，并为下一回合做好准备。",
+      "steps": [
+        {
+          "id": "independent.buy",
+          "goal": "选一张想经营的业务，把现金拖到市场里的这张牌上买下它。",
+          "completion_goal": "你已经买下业务。卡面的配方决定它需要哪种资源，满足后才能生产。",
+          "instruction": "选一张想经营的业务，把现金拖到市场里的这张牌上买下它。",
+          "explanation": "两种路线都能通过；选择取决于你希望如何发展公司。",
+          "hint": "选一张想经营的业务，把现金拖到市场里的这张牌上买下它。",
+          "condition": {
+            "kind": "buy",
+            "product": true
+          },
+          "demo": [
+            {
+              "op": "buy",
+              "card": "yunketang"
+            }
+          ],
+          "scenario": "independent",
+          "focus": "none",
+          "kind": "buy",
+          "guide": {
+            "actions": [
+              "buy"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "independent.group",
+          "goal": "查看所买业务的卡面配方，把对应资源拖到业务上，数量至少达到配方要求。",
+          "completion_goal": "这项业务的配方已经成立。资源达到最低需求即可，实际产出还要等结算。",
+          "instruction": "按业务卡面的资源种类拖入材料，数量至少达到配方要求；多放同类资源也能生效。",
+          "explanation": "需要时可以查卡牌详情、规则速查，或主动查看提示。",
+          "hint": "按业务卡面的资源种类拖入材料，数量至少达到配方要求；多放同类资源也能生效。",
+          "condition": {
+            "kind": "group",
+            "type": "production"
+          },
+          "demo": [
+            {
+              "op": "auto_product"
+            }
+          ],
+          "scenario": "",
+          "focus": "none",
+          "kind": "group",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "advance": "operation"
+        },
+        {
+          "id": "independent.settle",
+          "goal": "点击「完成行动」，查看这项业务的真实产出。",
+          "completion_goal": "本轮业务已经结算，实际产出已到账。用户配方保留用户，现金配方消耗现金。",
+          "instruction": "点击「完成行动」，查看这项业务的真实产出。",
+          "explanation": "投入、产出和对手的行动共同决定每回合结果。",
+          "hint": "点击「完成行动」，查看这项业务的真实产出。",
+          "condition": {
+            "kind": "resolution",
+            "type": "production"
+          },
+          "demo": [
+            {
+              "op": "auto_product"
+            },
+            {
+              "op": "round"
+            }
+          ],
+          "scenario": "",
+          "focus": "none",
+          "kind": "resolution",
+          "guide": {
+            "actions": [
+              "layout",
+              "finish_action"
+            ]
+          },
+          "advance": "confirm"
+        },
+        {
+          "id": "independent.next",
+          "goal": "给业务补上所需资源，数量至少达到卡面配方要求，现金配方记得补现金。",
+          "completion_goal": "下回合的配方准备好了。现金配方用掉的现金需要补回，用户通常可以继续使用。",
+          "instruction": "把缺少的资源拖回业务上，让数量至少达到配方要求；配方仍齐全时，查看提示后点小人即可。",
+          "explanation": "你已能独立经营。接下来在真实对局中，选择扩张、攻击或变现的时机。",
+          "hint": "把缺少的资源拖回业务上，让数量至少达到配方要求；配方仍齐全时，查看提示后点小人即可。",
+          "condition": {
+            "kind": "group",
+            "type": "production",
+            "min_round": 2
+          },
+          "demo": [
+            {
+              "op": "auto_product"
+            }
+          ],
+          "scenario": "",
+          "focus": "none",
+          "kind": "group",
+          "guide": {
+            "actions": [
+              "layout"
+            ]
+          },
+          "read_when_ready": true,
+          "ready_goal": "查看保留在业务上的资源，确认下回合的配方已经齐全。",
+          "advance": "confirm"
+        }
+      ]
+    }
+  ],
+  "scenarios": {
+    "income": {
+      "title": "第一笔收入",
+      "player": {
+        "cash": 12,
+        "user": 8
+      },
+      "bot": {
+        "cash": 15,
+        "user": 8
+      },
+      "market": [
+        "yunketang",
+        "baoyue"
+      ],
+      "bot_groups": [],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    },
+    "growth": {
+      "title": "扩大生意",
+      "player": {
+        "cash": 12,
+        "user": 8,
+        "yunketang": 1
+      },
+      "bot": {
+        "cash": 15,
+        "user": 8
+      },
+      "market": [
+        "ditui",
+        "pinshaoshao"
+      ],
+      "bot_groups": [],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    },
+    "attack": {
+      "title": "干扰对手",
+      "player": {
+        "cash": 11,
+        "user": 10,
+        "yunketang": 1,
+        "zuokong": 1
+      },
+      "bot": {
+        "cash": 15,
+        "user": 8,
+        "pinshaoshao": 1
+      },
+      "market": [],
+      "bot_groups": [
+        {
+          "pinshaoshao": 1,
+          "cash": 3
+        }
+      ],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    },
+    "attack_win": {
+      "title": "清空资源残局",
+      "player": {
+        "cash": 8,
+        "user": 7,
+        "zuokong": 1
+      },
+      "bot": {
+        "cash": 1,
+        "user": 8
+      },
+      "market": [],
+      "bot_groups": [],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    },
+    "upgrade": {
+      "title": "周转与升级",
+      "player": {
+        "cash": 6,
+        "user": 8,
+        "yunketang": 2,
+        "baoyue": 1
+      },
+      "bot": {
+        "cash": 15,
+        "user": 8
+      },
+      "market": [],
+      "bot_groups": [],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    },
+    "cashout": {
+      "title": "变现冲线残局",
+      "player": {
+        "cash": 70,
+        "user": 8,
+        "yunketang": 1,
+        "baoyue": 1,
+        "ditui": 1,
+        "pinshaoshao": 1
+      },
+      "bot": {
+        "cash": 15,
+        "user": 8
+      },
+      "market": [],
+      "bot_groups": [],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    },
+    "buff_output": {
+      "title": "提高生产收入",
+      "player": {
+        "cash": 12,
+        "user": 8,
+        "yunketang": 1,
+        "yinqing996": 2
+      },
+      "bot": {
+        "cash": 15,
+        "user": 8
+      },
+      "market": [],
+      "bot_groups": [],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    },
+    "buff_attack": {
+      "title": "增强攻击",
+      "player": {
+        "cash": 12,
+        "user": 8,
+        "zuokong": 1,
+        "resou": 1
+      },
+      "bot": {
+        "cash": 15,
+        "user": 8
+      },
+      "market": [],
+      "bot_groups": [],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    },
+    "buff_fill": {
+      "title": "裂变用户配方",
+      "player": {
+        "cash": 12,
+        "user": 8,
+        "jiaolv": 1,
+        "liebian": 2
+      },
+      "bot": {
+        "cash": 15,
+        "user": 8
+      },
+      "market": [],
+      "bot_groups": [],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    },
+    "buff_user": {
+      "title": "保护用户配方",
+      "player": {
+        "cash": 12,
+        "user": 4,
+        "yunketang": 1,
+        "tuisong": 1
+      },
+      "bot": {
+        "cash": 12,
+        "user": 8,
+        "chaping": 1
+      },
+      "market": [],
+      "bot_groups": [
+        {
+          "chaping": 1,
+          "user": 6
+        }
+      ],
+      "first": "bot",
+      "player_groups": [],
+      "bot_attack": true
+    },
+    "buff_cash": {
+      "title": "保护现金配方",
+      "player": {
+        "cash": 8,
+        "user": 8,
+        "ditui": 1,
+        "jiangjia": 1
+      },
+      "bot": {
+        "cash": 12,
+        "user": 8,
+        "zuokong": 1
+      },
+      "market": [],
+      "bot_groups": [
+        {
+          "zuokong": 1,
+          "user": 6
+        }
+      ],
+      "first": "bot",
+      "player_groups": [],
+      "bot_attack": true
+    },
+    "buff_spare": {
+      "title": "保护范围",
+      "player": {
+        "cash": 12,
+        "user": 6,
+        "yunketang": 1,
+        "tuisong": 1
+      },
+      "bot": {
+        "cash": 15,
+        "user": 8
+      },
+      "market": [],
+      "bot_groups": [],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    },
+    "tactics_reply": {
+      "title": "后手观察先手",
+      "player": {
+        "cash": 12,
+        "user": 6,
+        "yunketang": 1,
+        "tuisong": 1
+      },
+      "bot": {
+        "cash": 12,
+        "user": 8,
+        "chaping": 1
+      },
+      "market": [],
+      "bot_groups": [
+        {
+          "chaping": 1,
+          "user": 6
+        }
+      ],
+      "first": "bot",
+      "player_groups": [],
+      "bot_attack": true
+    },
+    "tactics_preempt": {
+      "title": "先手打断攻击",
+      "player": {
+        "cash": 12,
+        "user": 8,
+        "zuokong": 1
+      },
+      "bot": {
+        "cash": 12,
+        "user": 8,
+        "heigongguan": 1
+      },
+      "market": [],
+      "bot_groups": [
+        {
+          "heigongguan": 1,
+          "cash": 4
+        }
+      ],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": true
+    },
+    "tactics_types": {
+      "title": "匹配攻击类型",
+      "player": {
+        "cash": 12,
+        "user": 13,
+        "zuokong": 1,
+        "chaping": 1
+      },
+      "bot": {
+        "cash": 15,
+        "user": 8
+      },
+      "market": [],
+      "bot_groups": [],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    },
+    "tactics_lock": {
+      "title": "连续攻击组合",
+      "player": {
+        "cash": 12,
+        "user": 8,
+        "zuokong": 1
+      },
+      "bot": {
+        "cash": 12,
+        "user": 8,
+        "ditui": 2
+      },
+      "market": [],
+      "bot_groups": [
+        {
+          "ditui": 1,
+          "cash": 2
+        },
+        {
+          "ditui": 1,
+          "cash": 2
+        }
+      ],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    },
+    "tactics_pay": {
+      "title": "为攻击保留周转资金",
+      "player": {
+        "cash": 4,
+        "user": 8,
+        "heigongguan": 1,
+        "yunketang": 1,
+        "baoyue": 1
+      },
+      "bot": {
+        "cash": 15,
+        "user": 8
+      },
+      "market": [],
+      "bot_groups": [],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    },
+    "tactics_exact": {
+      "title": "修复合成材料",
+      "player": {
+        "cash": 12,
+        "user": 8,
+        "yunketang": 2,
+        "jiaolv": 1
+      },
+      "bot": {
+        "cash": 15,
+        "user": 8
+      },
+      "market": [],
+      "bot_groups": [],
+      "first": "player",
+      "player_groups": [
+        {
+          "yunketang": 2,
+          "jiaolv": 1,
+          "user": 1
+        }
+      ],
+      "bot_attack": false
+    },
+    "independent": {
+      "title": "自己经营",
+      "player": {
+        "cash": 16,
+        "user": 8
+      },
+      "bot": {
+        "cash": 15,
+        "user": 8
+      },
+      "market": [
+        "yunketang",
+        "baoyue",
+        "ditui",
+        "pinshaoshao"
+      ],
+      "bot_groups": [],
+      "first": "player",
+      "player_groups": [],
+      "bot_attack": false
+    }
+  }
+}

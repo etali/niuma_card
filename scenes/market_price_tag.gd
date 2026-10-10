@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 extends Node3D
 
-## 价签只表达商品价格和交互反馈，不参与拾取与购买规则。
+## 价签提供纸面命中和交互反馈；购买意图与付款规则仍由 Board 的公共入口交给控制层。
 const Surface = preload("res://scenes/table_surface.gd")
 const Materials = preload("res://scenes/effect_materials.gd")
 const HOLE_SHADER := """shader_type spatial;
@@ -42,6 +42,9 @@ var _presented := false
 var _retiring := false
 var _price := 0
 var _motion: Tween
+var _following_drag := false
+var _shelf_position := Vector3.ZERO
+var _card_offset := Vector3.ZERO
 
 func configure(price: int, card: CardEntity, board: Board) -> void:
 	_price = price
@@ -72,16 +75,56 @@ func configure(price: int, card: CardEntity, board: Board) -> void:
 	_label.outline_size = 0
 	_label.rotation_degrees.x = -90
 	hanging.add_child(_label)
-	_layout_price.call_deferred()
+	_queue_layout_price.call_deferred()
 	_add_string()
 	refresh_palette()
 	Palette.bus().changed.connect(_on_palette)
 
-func _layout_price() -> void:
-	# 将金币和实际数字墨迹作为一整行排版；整组在圆孔右侧的长方形牌身内居中。
+## 直接投影实际纸面的四角，不加不可见碰撞体或屏幕固定尺寸的点击区。
+func hit_test(screen_pos: Vector2, camera: Camera3D) -> bool:
+	if _retiring or not is_inside_tree() or not is_visible_in_tree() \
+			or not is_instance_valid(camera) or not is_instance_valid(_paper) or not _paper.is_visible_in_tree():
+		return false
+	var bounds := _paper.get_aabb()
+	var polygon := PackedVector2Array()
+	for local in [Vector3(bounds.position.x, 0.0, bounds.position.z),
+			Vector3(bounds.end.x, 0.0, bounds.position.z),
+			Vector3(bounds.end.x, 0.0, bounds.end.z),
+			Vector3(bounds.position.x, 0.0, bounds.end.z)]:
+		var world: Vector3 = _paper.to_global(local)
+		if camera.is_position_behind(world):
+			return false
+		polygon.append(camera.unproject_position(world))
+	return Geometry2D.is_point_in_polygon(screen_pos, polygon)
+
+func sync_card_position() -> void:
+	if _retiring:
+		return
+	var card := _card.get_ref() as CardEntity if _card else null
+	if not is_instance_valid(card):
+		return
+	if card.dragging:
+		if not _following_drag:
+			# 每次拖动才记真实货架位置；窗口重排后沿用新位置，点击价签不搬动纸签。
+			_shelf_position = global_position
+			var origin: Vector3 = _board._press_snap.get("pos", card.global_position) \
+				if is_instance_valid(_board) else card.global_position
+			_card_offset = _shelf_position - origin
+			_following_drag = true
+		global_position = card.global_position + _card_offset
+	elif _following_drag:
+		global_position = _shelf_position
+		_following_drag = false
+
+func _queue_layout_price() -> void:
 	if not is_inside_tree() or is_queued_for_deletion():
 		return
-	await get_tree().process_frame
+	# Label3D下一帧才有墨迹尺寸。使用节点方法连接，销毁时自动断开；
+	# await会保留函数栈，价签提前释放后连函数内的有效性守卫也无法执行。
+	get_tree().process_frame.connect(_layout_price, CONNECT_ONE_SHOT)
+
+func _layout_price() -> void:
+	# 将金币和实际数字墨迹作为一整行排版；整组在圆孔右侧的长方形牌身内居中。
 	if not is_inside_tree() or is_queued_for_deletion() or not is_instance_valid(_label):
 		return
 	var bounds := _label.get_aabb()

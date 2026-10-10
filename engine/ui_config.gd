@@ -13,7 +13,7 @@ const PATH := "res://data/ui.json"
 const EXTERNAL_FILE := "ui.json"
 const USER_PATH := "user://ui_preferences.json"
 const FALLBACK := {
-	"window_fraction": 0.75,
+	"window_fraction": 0.98,
 	"perspective_angle": 80.0,
 	"icon_scale": 0.75,
 	"table_zoom": 1.0,

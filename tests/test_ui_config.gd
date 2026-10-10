@@ -18,14 +18,14 @@ func _run() -> void:
 	print("=== UI启动配置 ===")
 	check(FileAccess.file_exists(Config.PATH), "发行资源包含独立UI配置")
 	var defaults := Config.read_defaults()
-	check(defaults["window_fraction"] == 0.75, "窗口默认75%来自配置")
+	check(defaults["window_fraction"] == 0.98, "窗口默认98%来自配置")
 	check(defaults["perspective_angle"] == 80.0, "透视默认80度来自配置")
 	check(defaults["icon_scale"] == 0.75, "入口默认75%来自同一配置")
 	check(defaults["hover_animation_speed"] == 2.0, "悬停插画默认二倍速来自同一配置")
 	_check_speed_config()
 
 	# 换文件即换启动值：验证窗口和显示层都读取配置，没有各写一个固定默认数。
-	for config in [[Config.PATH, 0.75, 80.0, 0.75, Vector2i(1485, 900)], [ALTERNATE, 0.85, 55.0, 1.25, Vector2i(1683, 1020)]]:
+	for config in [[Config.PATH, 0.98, 80.0, 0.75, Vector2i(1940, 1176)], [ALTERNATE, 0.85, 55.0, 1.25, Vector2i(1683, 1020)]]:
 		var drawer := Drawer.new(config[0])
 		root.add_child(drawer)
 		drawer.setup(false, Rect2i(0, 0, 2000, 1200))

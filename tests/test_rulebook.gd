@@ -179,88 +179,79 @@ func _layout(main: Node) -> void:
 
 func _check_rulebook(main: Node, context: String) -> void:
 	var presentation: Node = main.drawer_presentation
-	var menu: MenuButton = presentation._menu
-	var popup := menu.get_popup()
-	check(menu.text.is_empty() and menu.find_child("IconGlyph", true, false) != null and menu.tooltip_text == "选项", "%s：选项入口使用齿轮线稿图标" % context)
-	check(menu.get_meta("drawer_icon_button", false) and menu.get_theme_stylebox("normal") is StyleBoxEmpty, "%s：齿轮按钮无外边框" % context)
-	check(popup.get_item_index(7) == -1 and popup.get_item_index(8) >= 0,
-		"%s：选项提供读入录像，规则书移到主操作旁" % context)
-	# 配色已经并入 UI，菜单保留现有业务 ID，旧 ID 0 的兼容跳转在下面另验。
-	var existing := {1: "BOT 强度", 2: "提示记录", 3: "UI",
-		4: "入口大小", 5: "存录像", 6: "局域网对战", 8: "读入录像", 9: "卡牌配置"}
-	var old_routes_intact := popup.get_item_count() == existing.size()
-	for id in existing:
-		var index := popup.get_item_index(id)
-		old_routes_intact = old_routes_intact and index >= 0 and popup.get_item_text(index) == existing[id]
-	check(old_routes_intact and popup.get_item_index(0) == -1,
-		"%s：工具页名称与业务ID保持可达，配色不重复占用菜单入口" % context)
+	var catalog: Script = load("res://engine/tutorial_catalog.gd")
 	presentation._rulebook_button.pressed.emit()
 	await _layout(main)
-	var book: Control = presentation.get("_rulebook")
-	if not need(is_instance_valid(book), "%s：选项入口创建并绑定规则书视图" % context):
-		return
-	var rulebook_button: Button = presentation._rulebook_button
-	check(rulebook_button.get_parent() == main.btn_pass.get_parent()
-		and rulebook_button.get_index() == main.btn_pass.get_index() - 1,
-		"%s：规则书位于完成行动左侧" % context)
-	check(presentation.find_child("OptionTabs", true, false) == null,
-		"%s：所有选项页都没有重复页签导航" % context)
-	check(presentation.panels_open() and presentation._utility_title.text == "规则书",
-		"%s：真实工具面板显示规则书标题" % context)
-	check(book.sections.size() == SECTION_IDS.size() and book.section_buttons.size() == SECTION_IDS.size()
-		and book.current_section == 0, "%s：默认打开输赢章并提供全部章节导航" % context)
+	var book: Control = presentation._rulebook
+	if not need(is_instance_valid(book), "%s：怎么玩入口创建学习中心" % context): return
+	check(presentation._utility_title.text == "怎么玩" and presentation._rulebook_button.text == "怎么玩",
+		"%s：统一入口与标题" % context)
+	check(book.current_page == "home" and book.section_buttons.size() == 3,
+		"%s：首页只提供课程、卡牌总览、升级关系" % context)
+	check(book.find_child("StartTutorial", true, false) != null, "%s：首页有显式教程入口" % context)
+	check(book.find_child("Learning_rules", true, false) == null
+		and book.find_child("OtherTutorialsToggle", true, false) == null,
+		"%s：不再出现规则速查和其他玩法收起开关" % context)
+	var courses: Control = book.find_child("TutorialCourses", true, false)
+	check(courses != null and courses.visible and courses.get_child_count() == 8,
+		"%s：全部八课默认展开" % context)
+	for lesson in catalog.courses():
+		var button: Button = book.find_child("Course_" + lesson["id"], true, false)
+		check(button != null and button.is_visible_in_tree() and button.text.begins_with(lesson["title"]),
+			"%s：课程名称直接可选：%s" % [context, lesson["title"]])
+	var list_heading := false
+	for label: Label in book.find_children("*", "Label", true, false):
+		list_heading = list_heading or label.text == "课程与目标"
+	check(courses.find_children("*", "Label", true, false).is_empty() and not list_heading
+		and not book.has_method("show_course"), context + "：课程列表没有附加说明、课程与目标标题或详情页")
 	check(not main.board._interaction_is_blocked() and main._drawer_can_collapse(),
-		"%s：阅读规则不阻止牌桌交互与抽屉收起" % context)
-	var scroll: ScrollContainer = book.find_child("RulebookScroll", true, false)
-	var page: VBoxContainer = book.find_child("SectionContent", true, false)
-	if not need(scroll != null and page != null, "%s：章节正文使用可滚动阅读区" % context):
-		return
-	for i in SECTION_IDS.size():
-		var button: Button = book.section_buttons[i]
-		button.pressed.emit()
-		await _layout(main)
-		check(book.current_section == i and button.button_pressed,
-			"%s：点击第%d章切换真实牌桌演示" % [context, i + 1])
-		_check_bounds(presentation._utility, "%s第%d章面板" % [context, i + 1])
-		_check_bounds(book, "%s第%d章规则视图" % [context, i + 1])
-		check(book.demo._stage.board != null and book.demo._viewport.own_world_3d,
-			"%s：演示使用隔离的真实3D牌桌" % context)
-		check(page.get_child_count() == 1 and page.get_child(0) == book.demo,
-			"%s：规则书没有配方文字区块或展开按钮" % context)
-	for button: Button in book.section_buttons:
-		_check_bounds(button, "%s章节导航%s" % [context, button.text])
-		check(button.is_visible_in_tree(), "%s：规则书自身章节导航保持可见" % context)
-	book.select_section(1)
+		"%s：阅读首页保持原牌桌的非模态行为" % context)
+	_check_bounds(presentation._utility, context + "学习中心")
+	_check_bounds(book, context + "全部课程")
+	var progress: Script = load("res://engine/tutorial_progress.gd")
+	progress.record("income", 4, "completed")
+	progress.record("growth", 2, "started")
+	book.show_home()
 	await _layout(main)
-	scroll.scroll_vertical = ceili(scroll.get_v_scroll_bar().max_value)
-	await process_frame
-	var previous_scroll := scroll.scroll_vertical
+	check(book.find_child("Course_income", true, false).text.contains(catalog.ui("hub.completed"))
+		and book.find_child("Course_growth", true, false).text.contains(catalog.ui("hub.started")),
+		"%s：展开列表显示完成和进行中的已有记录" % context)
+	check(book.find_child("StartTutorial", true, false).text.contains(catalog.course("growth")["title"]),
+		"%s：主按钮继续最近未完成的课程" % context)
+	book.find_child("Course_income", true, false).pressed.emit()
+	await _layout(main)
+	check(is_instance_valid(presentation.tutorial) and presentation.tutorial.session.course_id == "income"
+		and not presentation._utility.visible,
+		"%s：点击课程名称立即回到原牌桌开始所选课程" % context)
+	presentation.finish_tutorial(false)
+	presentation._rulebook_button.pressed.emit()
+	await _layout(main)
+	book = presentation._rulebook
+	book.show_atlas("cards")
+	await _layout(main)
+	_check_bounds(book, context + "全部卡牌总览")
+	book.show_atlas("upgrades")
+	await _layout(main)
+	_check_bounds(presentation._utility, context + "升级关系图")
+	book.show_home()
+	await _layout(main)
+	var page_before: Array = book._page.get_children()
 	main.drawer_window.collapse_now()
-	check(not presentation._utility.visible and not main.drawer_window.is_expanded(),
-		"%s：收起抽屉同步隐藏规则书" % context)
+	check(not presentation._utility.visible, context + "收起隐藏学习中心")
 	main.drawer_window.pin()
 	await _layout(main)
-	check(presentation.get("_rulebook") == book and presentation._utility.is_visible_in_tree()
-		and book.current_section == 1 and scroll.scroll_vertical == previous_scroll,
-		"%s：展开恢复同一本规则书、章节与滚动位置" % context)
+	check(presentation._rulebook == book and book._page.get_children() == page_before,
+		context + "展开保留课程列表位置和内容")
 	var escape := InputEventKey.new()
 	escape.keycode = KEY_ESCAPE
 	escape.pressed = true
 	main._input(escape)
 	await process_frame
-	check(not presentation.panels_open() and main.drawer_window.is_expanded(),
-		"%s：Esc关闭规则书且保持抽屉展开" % context)
+	check(not presentation.panels_open(), context + "Esc关闭学习中心")
 	presentation._open_utility(0)
 	await _layout(main)
-	check(presentation._active_utility_id == 3 and presentation._utility_title.text == "UI"
-		and presentation._utility.get_meta("source", null) == presentation._palette
-		and presentation._utility.get_meta("frame").is_visible_in_tree(),
-		"%s：旧配色业务ID打开合并后的UI页并显示真实配色控件" % context)
-	check(rulebook_button.is_visible_in_tree(), "%s：规则书独立入口始终可达" % context)
-	rulebook_button.pressed.emit()
-	await _layout(main)
-	check(presentation._utility_title.text == "规则书" and is_instance_valid(presentation.get("_rulebook"))
-		and presentation.find_child("OptionTabs", true, false) == null, "%s：规则书没有重复选项入口" % context)
+	check(presentation._active_utility_id == 3 and presentation._utility_title.text == "UI",
+		context + "原有工具页入口仍保持可用")
 	presentation.close_panels()
 
 func _check_bounds(control: Control, context: String) -> void:

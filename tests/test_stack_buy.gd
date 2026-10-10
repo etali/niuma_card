@@ -11,6 +11,10 @@ extends "res://tests/harness.gd"
 func _initialize() -> void:
 	print("=== 堆叠购买 测试 ===")
 	var main: Node = await boot_main()
+	# 两次购买都要有余款，固定货架避免随机抽到高价卡耗尽第二次付款夹具。
+	main.state.market = ["yunketang", "ditui", "baoyue", "tuisong", "yunketang", "ditui", "baoyue", "tuisong"]
+	main._respawn_all()
+	await create_timer(0.5).timeout
 
 	var state: GameState = main.state
 	var board: Board = main.board
@@ -25,7 +29,9 @@ func _initialize() -> void:
 			dragged.append(main.entities[c["uid"]])
 	check(dragged.size() == price + 2, "备好 %d 张现金" % (price + 2))
 	var market_card: CardEntity = main.market_cards[0]
-	check(not market_card.draggable, "公共区卡牌不可拖动（Stacklands 货架）")
+	check(not market_card.draggable, "商品成交前不是可自由编组的己方卡")
+	# 模拟现金已被玩家拖离原摞；商品反拖付款的原地现金另有真实输入测试。
+	for card in dragged: board._detach_from_group(card)
 	await main._on_dropped_on_market(dragged, market_card)
 	await create_timer(0.5).timeout
 	for i in 10:
@@ -63,9 +69,7 @@ func _initialize() -> void:
 	for c in state.players[GameState.PLAYER]["cards"]:
 		if c["def_id"] == "cash" and pile.size() < price3 + 3:
 			pile.append(main.entities[c["uid"]])
-	# 从所有组里摘干净再重新成摞。上面那次购买是直接调 _on_dropped_on_market 的，
-	# 绕开了 _on_card_clicked（真正拖拽时它会先把牌从原组摘掉），
-	# 于是退回的多付现金同时挂在理牌摞和退回组两处；_detach_from_group 只摘第一处
+	# 从已有现金摞中取出这一手付款，重新摆成收拢摞。
 	for e in pile:
 		for g in board.groups.duplicate():
 			if g["cards"].has(e):

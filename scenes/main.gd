@@ -240,11 +240,15 @@ func _bind_tape_view() -> void:
 	tape.update_view.call_deferred()
 
 func _request_record_layout() -> void:
+	if _tutorial_active:
+		return
 	if replay_session == null:
 		_record_layout_pending = true
 		_record_layout_seat = my_seat
 
 func _flush_record_view() -> void:
+	if _tutorial_active:
+		return
 	if replay_session != null or not tape.recording() or not is_instance_valid(board):
 		return
 	if not board._drag_cards.is_empty() or not _drag_lease.is_empty():
@@ -322,6 +326,9 @@ var web_mode := false
 var web_files: Node
 var drawer_ui_scale := 1.0
 var _drawer_owns_pause := false
+var _tutorial_active := false
+var _tutorial_arena: Node3D
+var _tutorial_context: RefCounted
 var _drawer_pause_at := -1
 var _drawer_pause_total := 0
 ## 摆放那一层（见 scenes/settle_layout.gd）。测试和 scenes/debug_shot.gd
@@ -388,6 +395,7 @@ var save_notice: SaveNotice
 ## 认输按钮点过第一下了吗。第二下才真发意图（见 _on_resign_pressed）
 var _resign_armed := false
 var game_over_panel: PanelContainer = null
+var _game_over_result: Dictionary = {}
 
 # 选色面板要能实时改世界配色，故把这几个对象留下引用（见 _refresh_world_palette）
 var _env: Environment = null
@@ -577,6 +585,16 @@ func _drawer_input_blocked() -> bool:
 	# 面板只消费自身的 GUI 输入，不再把整张牌桌锁住。
 	return drawer_window != null and (not drawer_window.is_expanded() or drawer_window.is_transitioning())
 
+func can_begin_tutorial() -> bool:
+	return not _tutorial_active and replay_session == null and _net == null and _host == null \
+		and not _network_join_pending() and not _thinking and not _client_action_pending \
+		and _drawer_waiting_for_player() and board._drag_cards.is_empty() \
+		and (not get_tree().paused or _drawer_owns_pause)
+
+func set_tutorial_active(value: bool) -> void:
+	_tutorial_active = value
+	_refresh_drawer_pause()
+
 func _drawer_can_collapse() -> bool:
 	# 打开任何设置、记录、联机面板都不影响自动收起；仅正在进行的拖拽等松手。
 	return (board == null or board._drag_cards.is_empty()) and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) \
@@ -598,10 +616,11 @@ func _on_drawer_expanded_changed(expanded: bool) -> void:
 func _refresh_drawer_pause() -> void:
 	if replay_session != null:
 		return
-	if drawer_window == null or not is_inside_tree():
+	if not is_inside_tree():
 		return
-	var should_pause := not drawer_window.is_expanded() and _net == null and _host == null \
+	var should_pause := _tutorial_active or (drawer_window != null and not drawer_window.is_expanded() and _net == null and _host == null \
 		and not _network_join_pending() and _drawer_waiting_for_player()
+	)
 	if should_pause and not get_tree().paused:
 		_drawer_pause_at = Time.get_ticks_msec()
 		_drawer_owns_pause = true
@@ -1211,7 +1230,7 @@ func _refresh_attack_panel() -> void:
 	var pools := _attack_pools
 	attack_pool_text.text = "现金攻击 %d    用户攻击 %d" % [
 		int(pools.get(CardDB.RES_CASH, 0)), int(pools.get(CardDB.RES_USER, 0))]
-	var count := pipe.applier().affordable_targets(foe_seat).size()
+	var count := pipe.applier().affordable_targets(my_seat).size()
 	attack_target_text.text = "可攻击目标 %d · 点击高亮卡牌选择目标" % count
 
 func _set_button(text: String, cb: Callable) -> void:
@@ -1374,18 +1393,7 @@ func _rand_pos(z_min: float, z_max: float) -> Vector3:
 ## 传 null（默认）就是老行为：直接落在 pos
 func _spawn_entity(state_card: Dictionary, pos: Vector3, draggable: bool,
 		from_pos = null, idx: int = 0, total: int = 1) -> CardEntity:
-	if _uses_fitted_table() and layout:
-		var safe: Rect2 = layout._center_bounds(my_seat if draggable else foe_seat)
-		if safe.has_area():
-			pos.x = clampf(pos.x, safe.position.x, safe.end.x)
-			pos.z = clampf(pos.z, safe.position.y, safe.end.y)
-		if draggable:
-			pos = board.clamp_player_position(pos)
-	var e: CardEntity = _table_scene.spawn_card(board, state_card, pos, draggable)
-	entities[state_card["uid"]] = e
-	if from_pos != null:
-		_fly_from(e, from_pos, pos, idx, total)
-	return e
+	return _table_actions.spawn_card(state_card, pos, draggable, from_pos, idx, total)
 
 ## 产出的卡从组合位置飞到落点。
 ## 落地用 BACK/EASE_OUT 收一下，和别处的落卡手感一致（见 _spawn_market_card）
@@ -1451,8 +1459,8 @@ func _drop_price_label(idx: int) -> void:
 
 # ---------- 抽卡阶段：购买 ----------
 
-## 程序化购买（测试/调试用）：公共区卡牌本身不可拖动，
-## 游戏内购买走 _on_dropped_on_market（拖现金堆到货架卡上）。
+## 程序化购买（测试/调试用）；现金拖商品、点击价签、商品拖现金组或己方理牌区
+## 均由 Board 交给 _on_dropped_on_market，同样提交购买意图。
 ## 两条路都只是「凑出 pay_uids 交给 state.buy，成交后调 _commit_buy」，
 ## 规则在引擎那一份、收尾在 _commit_buy 那一份，这里不再有第二套
 func _try_buy(market_idx: int, pay_uids: Array = []) -> Dictionary:
@@ -1482,10 +1490,10 @@ func _try_buy_impl(market_idx: int, pay_uids: Array = []) -> Dictionary:
 ## 成交后的收尾：付掉的卡吸进货架卡，货架卡转成己方卡飞进卡牌区。
 ## 拖拽买和程序化买共用这一份 —— 两处各抄一遍时，
 ## 「买到手恢复可拖动」这类改动漏掉一处就只在其中一条路上生效
-func _commit_buy(idx: int, card: CardEntity, result: Dictionary) -> void:
+func _commit_buy(idx: int, card: CardEntity, result: Dictionary, placement: Dictionary = {}) -> void:
 	_opening_action_pending = false
 	_refresh_mascot_state()
-	_table_actions.purchase(idx, card, result)
+	_table_actions.purchase(idx, card, result, placement)
 	_update_hud()
 	_show_message("购入「%s」" % CardDB.card_name(card.def_id), Palette.semantic("success"))
 
@@ -1533,15 +1541,7 @@ func _tear_out(card: CardEntity, dir: Vector3) -> void:
 ##   2. 0.18s 演完、等 0.28s → 每组结算白挂 0.1s 空场，桌上什么都不动。
 ##      而攻击那边 await 的就是 dur 本身，一毫秒的空场都没有
 func _payment_animation_target(owner: String, combo: Dictionary) -> Vector3:
-	# 现金→用户的生产组合要和用户卡使用同一个「下一张用户卡」落点。
-	# 不能只返回现金锚点：那只是资源列的起始锚，而真实用户产出会经
-	# _pile_slot 避开已有摞后落到具体组位。preview 不改台账，随后 arrival_spot
-	# 会用完全相同的 _arr_count/_arr_taken 再算一次，保证实际 tween 终点一致。
-	var eval: Dictionary = combo.get("eval", {})
-	if eval.get("type", "") == "production" and eval.get("output_res", "") == CardDB.RES_USER \
-		and layout.has_method("preview_arrival_spot"):
-		return layout.preview_arrival_spot(owner, {"def_id": CardDB.unit_id(CardDB.RES_USER)})
-	return layout.payment_spot(owner, CardDB.RES_CASH)
+	return _table_actions.payment_animation_target(owner, combo)
 
 func _consume_recipe_visual(owner: String, combo: Dictionary, paid_uids: Variant = null) -> void:
 	# 结算演出传裁决器返回的实付名单，避免联网拒付时先把现金演走。
@@ -1555,9 +1555,7 @@ func _consume_recipe_visual(owner: String, combo: Dictionary, paid_uids: Variant
 ## 逐张错开吸走一批的总时长。和攻击那边同一个式子（见 _animate_removed 的 dur）：
 ## 最后一张的起飞时刻 + 它自己吸完要的时间
 func _suck_batch_time(count: int) -> float:
-	if count <= 0:
-		return 0.0
-	return TEAR_STAGGER * float(count - 1) + SUCK_TIME
+	return _table_actions.suck_batch_time(count)
 
 ## 到点再响。sfx 没有延迟播放的接口，而错开起飞就要求声音跟着各自那一拍
 ## （攻击那边是 _delayed_flyout 里顺手播的，那条路每张卡本来就有自己的补间）。
@@ -1581,40 +1579,49 @@ func _suck_into(card: CardEntity, target: Vector3, delay := 0.0) -> void:
 ## 拖现金堆到货架卡上 = 买。发的是意图，不是直接改状态：
 ## pay_uids 的**次序**是真输入（引擎按 slice(0, price) 取前几张），联网时要原样传过去
 func _on_dropped_on_market(drag_cards: Array, market_card: CardEntity) -> void:
+	var placement: Dictionary = _table_actions.take_purchase_placement(market_card)
 	var session := _session_generation
 	if not _start_client_action():
+		_table_actions.cancel_purchase_placement(market_card, placement)
 		return
-	await _on_dropped_on_market_impl(drag_cards, market_card)
+	await _on_dropped_on_market_impl(drag_cards, market_card, placement)
 	_end_client_action(session)
 
-func _on_dropped_on_market_impl(drag_cards: Array, market_card: CardEntity) -> void:
+func _on_dropped_on_market_impl(drag_cards: Array, market_card: CardEntity, placement: Dictionary = {}) -> void:
 	var session := _session_generation
 	if replay_session != null:
+		_table_actions.cancel_purchase_placement(market_card, placement)
 		return
 	var idx := market_cards.find(market_card)
 	if idx < 0:
+		_table_actions.cancel_purchase_placement(market_card, placement)
 		return
 	if phase != PHASE_ACTION or _actor != my_seat:
-		_return_cards_to_player_zone(drag_cards)
+		_table_actions.cancel_purchase_placement(market_card, placement)
+		if placement.is_empty(): _table_actions.return_purchase_payment(drag_cards)
 		_show_message("现在不能买卡", Palette.semantic("danger"))
 		return
-	var pay_uids: Array = []
-	for c in drag_cards:
-		pay_uids.append(c.uid)
-	var result: Dictionary = await pipe.submit(Intent.buy(my_seat, idx, pay_uids), my_seat)
+	var payment: Dictionary = _table_actions.purchase_payment(drag_cards, int(CardDB.get_def(market_card.def_id).get("price", -1)))
+	var result: Dictionary = payment["issue"]
+	if result.is_empty():
+		result = await pipe.submit(Intent.buy(my_seat, idx, payment["uids"]), my_seat)
 	if not _session_current(session):
+		_table_actions.cancel_purchase_placement(market_card, placement)
 		return
 	if not result["ok"]:
+		_table_actions.cancel_purchase_placement(market_card, placement)
 		# 抖一下只给「够买但不该买 / 差一点就够」这两类：拖错卡种是操作失误，
 		# 抖起来像是这张卡有问题
 		if result.get("code", "") in ["short", "zero_out"]:
 			_shake(market_card)
-		_return_cards_to_player_zone(drag_cards)
+		if placement.is_empty(): _table_actions.return_purchase_payment(drag_cards)
 		sfx.play("deny")
 		_show_message(result["reason"], Palette.semantic("danger"))
 		return
 
-	_commit_buy(idx, market_card, result)
+	_commit_buy(idx, market_card, result, placement)
+	# 反拖商品时付款牌从未被提起，余款已经由共享购买流程就近避让。
+	if not placement.is_empty(): return
 	# 多付的现金：保持堆叠状态退回卡牌区。
 	# 引擎只收走 price 张（removed_uids），拖来的其余几张差集算出来
 	var paid := {}
@@ -1624,33 +1631,13 @@ func _on_dropped_on_market_impl(drag_cards: Array, market_card: CardEntity) -> v
 	for c in drag_cards:
 		if not paid.has(c.uid):
 			excess.append(c)
-	_return_cards_to_player_zone(excess)
+	_table_actions.return_purchase_payment(excess)
 
 ## 把一摞卡退回玩家卡牌区（多张保持堆叠，单张散放）。
 ## 收拢态跟着一起还回去：玩家把收拢好的现金摞拖去买卡，付掉一部分后剩下的
 ## （以及被拒时退回的全部）还是同一摞钱，摊开等于每买一次卡就要重新双击收一次
 func _return_cards_to_player_zone(drag_cards: Array) -> void:
-	if drag_cards.is_empty():
-		return
-	# 退回点要避让，不能硬钉在 PLAYER_ZONE_Z + 2.2 上：那是「买到的牌不见了」
-	# 同一个毛病的另一道门 —— 拖一摞钱去买、被拒退回，落点和桌上已有的牌
-	# 精确重合就又是一次掩埋。x 沿用手放下的位置（退回该看着像退回原处）
-	var ignore := {}
-	for c in drag_cards:
-		ignore[c.uid] = true
-	var base := layout._free_spot(
-		Vector3(clampf(drag_cards[0].global_position.x, -8.0, 8.0), 0.2,
-			PLAYER_ZONE_Z + 2.2),
-		my_seat, [], ignore)
-	base.y = 0.2
-	drag_cards[0].global_position = base
-	if drag_cards.size() > 1:
-		# 预评估，退回已凑满的组合不误报叮
-		var ng: Dictionary = board.make_group(drag_cards.duplicate(), board.last_drag_compact)
-		board.groups.append(ng)
-		board._layout_group(ng)
-	else:
-		drag_cards[0].freeze = false
+	_table_actions.return_cards(drag_cards)
 
 # ---------- 典当行（回收非现金卡 → 现金） ----------
 
@@ -1820,6 +1807,9 @@ const RESIGN_ARM_HOLD := 4.0
 
 ## 玩家点「完成行动」：注册组合，然后交接给下一行动方 / 进入攻击阶段
 func _on_action_done() -> void:
+	if _tutorial_active and is_instance_valid(_tutorial_arena):
+		_tutorial_arena.finish_action()
+		return
 	if replay_session != null:
 		_replay_next()
 		return
@@ -2107,11 +2097,8 @@ func _flush_foe_attack() -> void:
 	_foe_tear_uids.clear()
 	_foe_tear_batch = ""
 	_foe_tear_target.clear()
-	_impact_once(center, foe_seat, str(target.get("res", "")))
-	var duration := _animate_removed(removed, true, cards)
-	if duration > 0.0:
-		await _drawer_timer(duration).timeout
-	if _session_current(session):
+	if await _table_actions.present_attack(removed, center, foe_seat, str(target.get("res", "")),
+		table_hands, _drawer_timer, func(): return _session_current(session), cards, _track_attack_duration):
 		_update_hud()
 
 # ---------- 拖拽广播（scenes/main.gd 的拖拽广播与租约处理）----------
@@ -2283,6 +2270,8 @@ func drag_packet(phase_name: String, uids: Array, at: Vector3) -> Dictionary:
 ## 本地拖拽的一帧要广播出去（board.drag_broadcast）。
 ## 单机局这里什么都不做：没有对手在看
 func _on_drag_broadcast(phase_name: String, uids: Array, at: Vector3) -> void:
+	if _tutorial_active:
+		return
 	tape.record_drag(my_seat, phase_name, uids, at)
 	if phase_name == Protocol.DRAG_CANCEL:
 		_request_record_layout()
@@ -3859,29 +3848,16 @@ func _apply_player_attack(card: CardEntity) -> void:
 ## 不该按摞里的张数连放 N 声
 func _attack_pile(key: String) -> void:
 	var session := _session_generation
-	var removed: Array = []
-	var center := Vector3.INF
-	var first_target := {}
-	while true:
-		var t := _pile_target_by_key(key)
-		if t.is_empty():
-			break
-		if first_target.is_empty():
-			first_target = t
-			center = _target_center(t)
-		var r: Dictionary = await pipe.submit(Intent.apply_attack(my_seat, t), my_seat)
-		if not _session_current(session):
-			return
-		if not r["ok"]:
-			# 池子不够/目标已失效：本轮到此为止。一张都没扣掉才算「点空了」
-			if removed.is_empty():
-				sfx.play("deny_quiet")
-				_show_message(r["reason"], Palette.semantic("danger"))
-				return
-			break
-		for c in r["removed"]:
-			removed.append(c)
+	var submit := func(target): return await pipe.submit(Intent.apply_attack(my_seat, target), my_seat)
+	var batch: Dictionary = await _table_actions.apply_pile_attack(key, submit,
+		func(): return _attack_pools, func(): return _session_current(session))
+	if not _session_current(session): return
+	var removed: Array = batch["removed"]
 	if removed.is_empty():
+		if batch["result"].has("reason"):
+			sfx.play("deny_quiet")
+			_show_message(batch["result"]["reason"], Palette.semantic("danger"))
+			return
 		# 摞里一个点得起的靶都没有：区分「点不起」和「压根点不了」
 		sfx.play("deny_quiet")
 		var pool_txt := "（%s）" % GameState.pool_text(_attack_pools)
@@ -3892,7 +3868,7 @@ func _attack_pile(key: String) -> void:
 		else:
 			_show_message("点数不够：这一摞里没有点得起的目标 %s" % pool_txt, Palette.semantic("danger"))
 		return
-	await _settle_attack(removed, center)
+	await _settle_attack(removed, batch["center"])
 	if not _session_current(session):
 		return
 
@@ -3922,13 +3898,12 @@ func _settle_attack(removed: Array, center: Vector3) -> void:
 	var resource := ""
 	if not removed.is_empty() and entities.has(int(removed[0])):
 		resource = str(CardDB.get_def(entities[int(removed[0])].def_id).get("res", ""))
-	_impact_once(center, my_seat, resource)
 	_clear_attack_hl()
 	# 先把这一批撕完再往下走。下面第一句就是重排 BOT 区，
 	# 不等的话重排会把还没轮到的那几张连补间带卡一起清掉（见 _animate_removed）：
 	# 一组三张，玩家只看见撕掉一张，另外两张凭空不见了
-	await _await_removed(removed, false)
-	if not _session_current(session):
+	if not await _table_actions.present_attack(removed, center, my_seat, resource,
+		table_hands, _drawer_timer, func(): return _session_current(session), [], _track_attack_duration):
 		return
 	# BOT 的摞是自己摆的（不进 board.groups），扣完必须重排一次：
 	# 不排的话被扣掉那几张的层位空着、侧边清单还挂着扣之前的张数，
@@ -3986,27 +3961,7 @@ func _finish_player_attack(reason := Intent.DONE_FORFEIT) -> void:
 ## 按摞的 key 而不是 CardEntity 找靶：连点同一摞时被点的那张已经从场上移掉了，
 ## 拿不到实体再去问「它在哪一摞」。摞内的靶每次都要现问 state
 func _pile_target_by_key(key: String) -> Dictionary:
-	if key == "":
-		return {}
-	var uids: Array = layout._bot_pile_uids.get(key, [])
-	if uids.is_empty():
-		return {}
-	var core := {}
-	var spare := {}
-	for t in state.attack_targets(foe_seat):
-		var inside := false
-		for u in t["uids"]:
-			if uids.has(u):
-				inside = true
-				break
-		if not inside or not GameState.target_affordable(t, _attack_pools):
-			continue
-		if t["kind"] == "combo":
-			if core.is_empty():
-				core = t
-		elif spare.is_empty():
-			spare = t
-	return core if not core.is_empty() else spare
+	return _table_actions.pile_attack_target(key, _attack_pools)
 
 ## 高亮当前所有点得起的目标（玩家点选模式的视觉引导）。
 ##
@@ -4020,25 +3975,7 @@ func _pile_target_by_key(key: String) -> Dictionary:
 ##     真能打的那几张一片灰」。这就是「可被攻击的牌没有都变红」
 func _refresh_attack_targets() -> void:
 	_clear_attack_hl()
-	var pile_hl := {}
-	for t in state.affordable_targets(foe_seat, _attack_pools):
-		for u in t["uids"]:
-			if not entities.has(u) or not is_instance_valid(entities[u]):
-				continue
-			var key: String = str(layout._bot_pile_of_uid.get(u, ""))
-			if key != "" and bool(layout._bot_pile_compact.get(key, true)):
-				pile_hl[key] = true
-				continue
-			entities[u].set_highlight(true, Color(1.5, 0.55, 0.45))
-			_attack_hl.append(entities[u])
-	for key in pile_hl:
-		var uids: Array = layout._bot_pile_uids.get(key, [])
-		if uids.is_empty():
-			continue
-		var top: int = uids[0]   # 摞顶 = core_first_order 的队首
-		if entities.has(top) and is_instance_valid(entities[top]):
-			entities[top].set_highlight(true, Color(1.5, 0.55, 0.45))
-			_attack_hl.append(entities[top])
+	_attack_hl = _table_actions.highlight_attack_targets(_attack_pools)
 
 func _clear_attack_hl() -> void:
 	for e in _attack_hl:
@@ -4052,28 +3989,19 @@ func _hl_target(target: Dictionary, on: bool) -> void:
 			entities[u].set_highlight(on, Color(1.5, 0.55, 0.45))
 
 func _target_center(target: Dictionary) -> Vector3:
-	for u in target["uids"]:
-		if entities.has(u) and is_instance_valid(entities[u]):
-			return entities[u].global_position + Vector3(0, 0.5, 0)
-	return Vector3(0, 1.0, 0.0)
+	return _table_actions.attack_target_center(target)
 
 ## 同一次攻击命中的全部卡共用抓握、撕开和退场节拍，数量不增加动画次数。
 func _animate_removed(removed: Array, toward_ai: bool, held_cards: Array = []) -> float:
-	var cards: Array = held_cards.filter(func(card): return is_instance_valid(card))
-	for uid in removed:
-		if entities.has(uid) and is_instance_valid(entities[uid]):
-			cards.append(entities[uid])
-	if cards.is_empty():
-		return 0.0
-	for card in cards:
-		entities.erase(card.uid)
-	_card_motion.sfx = sfx
-	var dir := Vector3(0, 4, -2) if toward_ai else Vector3(0, 4, 2)
-	var duration: float = _card_motion.tear_batch(cards, table_hands, dir)
+	var duration: float = _table_actions.animate_removed(removed, toward_ai, table_hands, held_cards)
+	_track_attack_duration(duration)
+	return duration
+
+func _track_attack_duration(duration: float) -> void:
+	if duration <= 0.0: return
 	var until := _animation_now_ms() + int(duration * 1000.0)
 	_tear_slot_ms = until
 	_tear_until_ms = maxi(_tear_until_ms, until)
-	return duration
 
 ## 结算消耗仍可错开；攻击不再逐张排队。
 const TEAR_STAGGER := UIMotion.STAGGER
@@ -4212,107 +4140,39 @@ func _run_settle() -> void:
 func _resolve_combo_visual(combo_idx: int, recorded: Dictionary = {}, resolve: Callable = Callable()) -> Dictionary:
 	var session := _session_generation
 	var combo: Dictionary = recorded.get("combo", {}) if not recorded.is_empty() else Settle.ordered_production_combos(state)[combo_idx]
-	var owner: String = combo["owner"]
-	var eval: Dictionary = combo["eval"]
-	var owner_name := _seat_name(owner)
-	var leader_name := CardDB.card_name(eval["leader"])
-
-	# 高亮该组合
-	var combo_entities: Array = []
-	for u in combo["uids"]:
-		if entities.has(u):
-			combo_entities.append(entities[u])
-			entities[u].set_highlight(true)
-	_table_actions.prepare_combo(combo)
-	_show_message("%s 的「%s」结算中……" % [owner_name, leader_name], Palette.semantic("pending"))
-	await _drawer_timer(BEAT_COMBO_SHOW).timeout
-	if not _session_current(session):
-		return {"ok": false, "code": "cancelled", "reason": "牌局已切换"}
-
-	# 组合的位置要在结算**之前**量：升级会把配方卡吃掉，结算完再量就没实体可量了。
-	# 取全体成员的中心而不是第一张：产出得看着是从整组里迸出来的，
-	# 而摞起来的组合第一张在最外沿，从那儿飞会偏出组合一截
-	var combo_center := Vector3(0, 0.6, 0)
-	var n_alive := 0
-	for e in combo_entities:
-		if is_instance_valid(e):
-			combo_center += e.global_position
-			n_alive += 1
-	if n_alive > 0:
-		combo_center /= float(n_alive)
-	else:
-		combo_center = Vector3(0, 0.6, 0)
-
-	# 演出按裁决器的实付结果走：网络端同样取服务器返回的 resolution。
-	# 引擎先落地，牌桌暂不同步；确认成功后仍按「现金吸走 → 产出落下」播放。
-	var log_before: int = state.log.size()
-	var settled := recorded
-	if recorded.is_empty():
-		var flow := _round_flow()
-		settled = await resolve.call() if resolve.is_valid() else await flow.produce(combo_idx)
-	if not _session_current(session):
-		return {"ok": false, "code": "cancelled", "reason": "牌局已切换"}
-	var resolution: Dictionary = settled.get("resolution", {})
-	if not settled.get("ok", false) or resolution.is_empty():
-		for e in combo_entities:
-			if is_instance_valid(e):
-				e.set_highlight(false)
-		_show_message(str(settled.get("reason", "未收到组合结算结果")), Palette.semantic("danger"))
-		_sync_entities()
+	var owner_name := _seat_name(combo["owner"])
+	var effect: Dictionary = combo["eval"]
+	var leader_name := CardDB.card_name(effect["leader"])
+	var log_range := {"before": state.log.size()}
+	var current := func() -> bool: return _session_current(session)
+	var resolver := func() -> Dictionary:
+		log_range["before"] = state.log.size()
+		if not recorded.is_empty(): return recorded
+		return await resolve.call() if resolve.is_valid() else await _round_flow().produce(combo_idx)
+	var synchronize := func(_settled: Dictionary, center: Variant) -> void:
+		_sync_entities(center)
+		board.prune_groups()
 		_update_hud()
-		return settled
-	var resolved: bool = resolution.get("resolved", false)
-	if resolved:
-		await _consume_recipe_visual(owner, combo, resolution.get("paid_uids", []))
-		if not _session_current(session):
-			return {"ok": false, "code": "cancelled", "reason": "牌局已切换"}
-		if eval["type"] == "upgrade":
-			var material_count: int = _table_actions.consume_upgrade(combo, combo_center)
-			if material_count > 0:
-				await _drawer_timer(_suck_batch_time(material_count)).timeout
-				if not _session_current(session):
-					return {"ok": false, "code": "cancelled", "reason": "牌局已切换"}
-	# 取结算产生的最后一条战报作为结果展示（含实际移除数/保护提示/作废原因）。
-	# 过一遍 _render_log：引擎存的是 { fmt, args }，公司名在这里才按视角定
-	var result_msg := ""
-	for i in range(log_before, state.log.size()):
-		result_msg = _render_log(state.log[i])
-
-	var burst_pos := combo_center + Vector3(0, 0.6, 0)
-
-	var stamped_card: CardEntity = null
-	if not resolved:
-		# 作废不销毁幸存卡：只在核心盖一个章，并保持到结果那一拍结束。
-		sfx.play("combo_broken")
-		for e in combo_entities:
-			if is_instance_valid(e):
-				e.set_highlight(true, Color(1.3, 0.5, 0.5))
-				if e.def_id == str(eval["leader"]) and stamped_card == null:
-					stamped_card = e
-		if stamped_card:
-			stamped_card.set_void_stamp(true)
-		var message := result_msg if result_msg != "" else "%s 的「%s」%s，整组作废！" % [owner_name, leader_name, resolution.get("reason", "")]
-		_show_message(message, Palette.semantic("danger"))
-	else:
-		_table_actions.combo_feedback(eval, burst_pos, combo)
-		# 把战报结果摆上台面：实际产出/移除数/保护格挡，光放音效读不出这些数
-		if result_msg != "":
-			var msg_color := Palette.semantic("danger") if eval["type"] == "attack" else Palette.semantic("success")
-			_show_message(result_msg, msg_color)
-
-	# 只在确认产出成功时让新资源从组合中心飞出。
-	_sync_entities(combo_center if resolved and eval["type"] != "attack" else null)
-	board.prune_groups()
-	_update_hud()
-	await _drawer_timer(BEAT_COMBO_DONE).timeout
-	if not _session_current(session):
-		return {"ok": false, "code": "cancelled", "reason": "牌局已切换"}
-	for e in combo_entities:
-		if is_instance_valid(e):
-			e.set_highlight(false)
-	if is_instance_valid(stamped_card):
-		stamped_card.set_void_stamp(false)
-	return settled
+	var announce := func(stage: String, settled: Dictionary) -> void:
+		if stage == "prepare":
+			_show_message("%s 的「%s」结算中……" % [owner_name, leader_name], Palette.semantic("pending"))
+			return
+		if stage == "error":
+			_show_message(str(settled.get("reason", "未收到组合结算结果")), Palette.semantic("danger"))
+			return
+		# 战报仍在正式对局按原视角展开，呈现器不接管日志与业务状态。
+		var message := ""
+		for i in range(int(log_range["before"]), state.log.size()):
+			message = _render_log(state.log[i])
+		var resolution: Dictionary = settled.get("resolution", {})
+		if not resolution.get("resolved", false):
+			if message.is_empty():
+				message = "%s 的「%s」%s，整组作废！" % [owner_name, leader_name, resolution.get("reason", "")]
+			_show_message(message, Palette.semantic("danger"))
+		elif not message.is_empty():
+			_show_message(message, Palette.semantic("danger" if effect["type"] == "attack" else "success"))
+	return await _table_actions.present_combo(combo, resolver, current, synchronize, _drawer_timer, announce,
+		BEAT_COMBO_SHOW, BEAT_COMBO_DONE)
 
 ## 实体差分同步：消失的撕掉，新增的落入。
 ##
@@ -4432,7 +4292,7 @@ func _show_game_over() -> void:
 	_resign_armed = false
 	_update_hud()
 	var result := ResultPresentation.create(self, state, my_seat, sfx, _on_restart, "再战一局", drawer_presentation != null)
-	var canvas: CanvasLayer = result["layer"]
+	_game_over_result = result
 	game_over_panel = result["panel"]
 	var vb: VBoxContainer = result["body"]
 	var btn: Button = result["button"]
@@ -4440,8 +4300,7 @@ func _show_game_over() -> void:
 		_add_rematch_row(vb, btn)
 	# 在全部控件（含联机按钮）建好后接入，主题、尺寸、收放走同一入口。
 	# 必须同步注册：联机局可能在抽屉已经收起时才收到胜负结果。
-	if drawer_presentation:
-		drawer_presentation.register_result_panel(canvas)
+	ResultPresentation.present(result, drawer_presentation)
 
 ## 联网局的终局面板：把「再战一局」拆成两个意思。
 ##
@@ -4499,13 +4358,7 @@ func _teardown_for_new_game(force := false) -> bool:
 	if game_over_panel == null and not force:
 		return false   # queue_free 是延迟的，按钮当帧仍可点：防二次进入
 	_invalidate_session()
-	# 要释放的是整层 CanvasLayer，不是面板的直接父节点（那是居中用的
-	# CenterContainer）：只放掉容器会把空的 CanvasLayer 留在场景里，每重开一局漏一层
-	var layer: Node = game_over_panel
-	while layer != null and not (layer is CanvasLayer):
-		layer = layer.get_parent()
-	if layer != null:
-		layer.queue_free()
+	ResultPresentation.close(_game_over_result)
 	game_over_panel = null
 	_rematch_btn = null          # 面板连着这个按钮一起放掉了，留着引用就是野的
 	layout.end_arrivals()        # 结算中途重开：到货台账不许留给下一局

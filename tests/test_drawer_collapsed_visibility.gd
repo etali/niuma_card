@@ -107,7 +107,7 @@ func _check_late_panels(main: Node, prefix: String) -> void:
 	check(not presentation._utility.visible, "%s：收起期间切到规则书同帧隐藏" % prefix)
 	var rulebook: Control = presentation._rulebook
 	main.drawer_window.pin()
-	check(presentation._utility.visible and presentation._utility_title.text == "规则书"
+	check(presentation._utility.visible and presentation._utility_title.text == TutorialCatalog.ui("hub.title")
 		and presentation._rulebook == rulebook,
 		"%s：展开保留最新选项页和原有内容实例" % prefix)
 	main.drawer_window.collapse_now()

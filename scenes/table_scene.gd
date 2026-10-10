@@ -306,7 +306,7 @@ func spawn_market_card(board: Board, idx: int, def_id: String, slot: Vector3) ->
 	e.setup(-1000 - idx, def_id)
 	e.is_market = true
 	e.set_meta("market_slot", slot)
-	e.draggable = false   # 货架上的卡不可拖动，只能放现金上去购买
+	e.draggable = false   # 尚未归玩家；Board仅允许把商品拖向足额纯现金摞购买
 	e.freeze = true      # 入场由Tween独占位置，物理帧不能把卡挤离固定槽位
 	e.position = slot + Vector3(0, 1.0 if drawer_mode else 2.5, 0)
 	host.add_child(e)

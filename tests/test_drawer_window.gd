@@ -20,7 +20,7 @@ func _run() -> void:
 	drawer.handle_hovered.connect(func(value: bool): hover_events.append(value))
 	drawer.setup(false, screen)
 	check(drawer.process_mode == Node.PROCESS_MODE_ALWAYS, "牌局暂停后抽屉仍处理入口交互")
-	check(drawer.get_expanded_size() == Vector2i(1296, 786), "默认75%保留786高度，左右空白收至1.65宽高比")
+	check(drawer.get_expanded_size() == Vector2i(1694, 1027), "默认98%保留1027高度，左右空白收至1.65宽高比")
 	check(screen.encloses(drawer._geometry), "负坐标副屏：展开窗口完整留在可用区")
 	check(drawer._geometry.end.x == screen.end.x, "展开窗口贴住当前屏幕右边缘")
 	drawer._tick_at(60000)

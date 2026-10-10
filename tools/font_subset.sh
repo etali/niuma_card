@@ -31,9 +31,9 @@ font_transaction_begin() {
 
 font_import_resources() {
 	font_transaction_begin || return $?
-	# 标准构建/发布打包共用的前置条件。字体第一次导入也不能扫描build里的引擎源码。
-	mkdir -p build || return 1
-	touch build/.gdignore || return 1
+	# 字体首次导入也需隔离引擎源码和调试报告，避免报告软链接重复注册脚本UID。
+	mkdir -p build reports || return 1
+	touch build/.gdignore reports/.gdignore || return 1
 	godot_checked --headless --import || return $?
 	python3 - "$FONT.import" <<-'PY_CHECK'
 		import pathlib, re, sys

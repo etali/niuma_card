@@ -166,7 +166,7 @@ static func _buffs_section() -> Dictionary:
 		var buff_type: String = str(def.get("buff_type", ""))
 		buffs.append(_card(str(def_id), CardDB.card_name(str(def_id)), _buff_text(buff_type), _buff_badge(buff_type)))
 	return _section("buffs", "BUFF 规则", "增强产出，守住配方",
-		"Buff 放在生效的生产或攻击组合里才有作用。不同类型可以搭配，同类型重复放入不会叠加效果。", [
+		"Buff 放在生效的生产或攻击组合里才有作用。产出与攻击倍率逐张相乘；裂变和保护状态不会因重复放入而扩大。", [
 		_block("cards", "全部 Buff 效果", "倍率读取当前配置；效果只作用于所在组合。", buffs),
 		_block("flow", "防御 Buff 的生效过程", "", [
 			{"title": "首次入组", "text": "进入有效组合即刻保护配方额度内的对应资源，本回合就生效。"},
@@ -249,5 +249,5 @@ static func _card(def_id: String, title: String, text: String, badge: String) ->
 static func _purchase_section() -> Dictionary:
 	var count := int(CardDB.game_rules()["market_size"])
 	return _section("purchase", "购买", "现金换取新的卡牌", "在自己的行动阶段，从公共购牌栏选择商品。", [
-		_block("text", "购买", "市场每回合提供 %d 个商品位。把足够的现金拖到商品上支付价格；付款不能让现金归零。典当行是公共设施，不需要购买。" % count),
+		_block("text", "购买", "市场每回合提供 %d 个商品位。可把现金拖到商品上、点击价签，把商品拖到足额的纯现金摞上，或拖到自己的理牌区购买。自动付款不动有效产出和攻击组合里的现金；付款不能让现金归零。典当行是公共设施，不需要购买。" % count),
 	])

@@ -407,7 +407,7 @@ func _announce_victory() -> void:
 		result_panel = result["panel"]
 		if result_styler.is_valid():
 			result_styler.call(result_panel)
-		ResultPresentation.fit(result, Vector2(get_viewport().size))
+		ResultPresentation.present(result, null)
 
 func _refresh_protection() -> void:
 	for card in _input_cards:

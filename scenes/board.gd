@@ -17,6 +17,7 @@ const MERGE_DIST := 1.6         # 松手时的吸附距离
 ## 盖不住反被穿透——电脑玩家的牌列往 -z 堆，下张卡的标题就直接印在上张卡脸上。
 ## 6 张一列总共抬 0.12，仍远小于拖拽高度，看着还是一摞牌而不是楼梯
 const STACK_GAP := Vector3(0, 0.024, 0.52)
+const TableRegions = preload("res://scenes/table_regions.gd")
 
 ## 收拢态（双击切换）的层间距：几乎不往 z 铺，靠 y 往上摞。
 ## 一列 8 张摊开占 z 向 3.64（≈3 张卡长），收拢后只占 0.35，桌面立刻腾出地方。
@@ -67,6 +68,8 @@ var hover_description_enabled := true
 var camera: Camera3D
 
 signal card_picked(card: CardEntity)
+## 在任何拆组或抬牌之前通知控制层；只提供事务边界，不改变原拖牌行为。
+signal card_pick_started(card: CardEntity)
 signal card_stacked(completed: bool)  # 并入某组；completed=这次并入凑满了配方
 signal card_dropped_table    # 落回桌面
 signal group_formed(cards: Array)  # 带成员的视觉事件，旧音效信号仍保持无参数
@@ -75,7 +78,7 @@ signal group_completed       # 某组配方凑满（可结算）
 ## 「摞」是玩家单独做的一个动作，配一声独立的音；
 ## 「组合」永远是拖到位松手的副产物，落桌那一声已经交代了，不另外发音
 signal pile_toggled          # 双击收拢/摊开了某一摞
-signal dropped_on_market(drag_cards: Array, market_card: CardEntity)  # 拖现金堆到公共区卡上 = 购买
+signal dropped_on_market(drag_cards: Array, market_card: CardEntity)  # [] = 自动付款；否则交给现有购买规则选择实际消耗
 signal dropped_on_pawn(drag_cards: Array)   # 拖卡到典当行 = 回收成现金
 signal attack_clicked(card: CardEntity)     # 攻击模式下点选卡牌（点选攻击目标）
 
@@ -123,6 +126,22 @@ func pointer_position() -> Vector2:
 func _input(event: InputEvent) -> void:
 	if touch_mode and event is InputEventMouse:
 		_pointer_at = event.position
+	if not _press_snap.get("price_tag", false):
+		return
+	if view_gesture or input_locked or attack_mode or _interaction_is_blocked():
+		cancel_pointer()
+		return
+	if event is InputEventMouseMotion:
+		# 滑出价签后再滑回来也不是点击购买；长按查看/取消沿用 cancel_pointer。
+		if event.position.distance_to(_press_snap["at"]) > CLICK_SLOP \
+				or not _price_tag_contains(_press_snap["card"], event.position):
+			_press_snap["price_cancelled"] = true
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		if event.canceled:
+			cancel_pointer()
+		else:
+			# 价签没有在手卡，Main 的拖牌松手兜底不会处理它；延迟一次兼容 GUI 消费。
+			release_pointer.call_deferred(event.position)
 
 func cancel_pointer() -> void:
 	if not _press_snap.is_empty():
@@ -133,9 +152,24 @@ func cancel_pointer() -> void:
 
 ## 同一个松手入口供鼠标、触摸及GUI消费事件后的兜底使用。
 func release_pointer(at: Vector2) -> void:
+	if _press_snap.get("price_tag", false):
+		var market: CardEntity = _press_snap["card"]
+		var purchase: bool = not _press_snap.get("price_cancelled", false) \
+			and at.distance_to(_press_snap["at"]) <= CLICK_SLOP \
+			and get_viewport().get_visible_rect().has_point(at) \
+			and not input_locked and not attack_mode and not view_gesture and not _interaction_is_blocked() \
+			and not (hover_blocked.is_valid() and bool(hover_blocked.call())) \
+			and _price_tag_contains(market, at)
+		_restore_press()
+		_reset_click_track()
+		if purchase:
+			dropped_on_market.emit([], market)
+		return
 	if _drag_cards.is_empty():
 		return
-	if _interaction_is_blocked():
+	if _interaction_is_blocked() or input_locked or attack_mode \
+			or (_drag_cards[0].is_market and (not get_viewport().get_visible_rect().has_point(at) \
+				or (hover_blocked.is_valid() and bool(hover_blocked.call())))):
 		cancel_pointer()
 		return
 	if not _press_snap.is_empty() and at.distance_to(_press_snap["at"]) <= CLICK_SLOP:
@@ -144,7 +178,9 @@ func release_pointer(at: Vector2) -> void:
 		if touch_mode:
 			_pointer_at = at
 			_process(1.0 / 60.0)
-		_press_snap = {}
+		# 商品保留原货架快照，交给交易入口在拒绝时复位。
+		if not _drag_cards[0].is_market:
+			_press_snap = {}
 		_end_drag()
 
 var attack_mode := false    # 攻击点选模式：点击 = 选靶，不触发拖拽
@@ -235,6 +271,10 @@ func _bounds_card_is_moving(card: CardEntity) -> bool:
 	var rec: Variant = _move_tw.get(card)
 	return rec != null and rec["tw"] != null and is_instance_valid(rec["tw"]) \
 		and rec["tw"].is_running()
+
+## 观察当前归位/飞行动作；只读，不取消或加速牌桌补间。
+func cards_moving() -> bool:
+	return cards.any(func(card): return is_instance_valid(card) and _bounds_card_is_moving(card))
 
 func _apply_pending_playable_bounds() -> void:
 	if not _playable_bounds_pending or input_locked or not _drag_cards.is_empty():
@@ -348,6 +388,8 @@ func drop_card(card: CardEntity) -> void:
 		_layout_group(g, origin)
 
 func unregister_card(card: CardEntity) -> void:
+	if _press_snap.get("card") == card:
+		_press_snap = {}
 	if card == _hover_card:
 		_set_hover_card(null)
 	card.reset_interaction_visual()
@@ -374,10 +416,15 @@ func unregister_card(card: CardEntity) -> void:
 
 	## Stacklands 子堆拖拽：点第 N 张牌 = 拖走第 N 张 + 它屏幕下方的所有牌；
 	## 点最顶上一张（index 0）= 拖走整个组合；其余牌留在原组并即时收拢
-func _on_card_clicked(card: CardEntity) -> void:
+func _on_card_clicked(card: CardEntity, notify_started := true) -> void:
 	_set_hover_card(null)
-	if not card.draggable:
+	if not card.draggable and not card.is_market:
 		return
+	if notify_started:
+		card_pick_started.emit(card)
+	# 直接调用拾取入口时也使用同一快照；市场卡仍不是玩家可编组的手牌。
+	if card.is_market and _press_snap.is_empty():
+		_snapshot_press(card, pointer_position())
 	var g: Variant = group_of(card)
 	_drag_compact = false
 	_drag_start_origin = Vector3.INF
@@ -471,18 +518,29 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _interaction_is_blocked():
 		# 释放事件仍能终止在手状态，避免窗口切换/弹层吃掉它后永远保持拖拽。
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT \
-				and not event.pressed and not _drag_cards.is_empty():
-			cancel_drag()
+				and not event.pressed and (not _drag_cards.is_empty() or not _press_snap.is_empty()):
+			cancel_pointer()
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
+			# 价签只负责命中；付款选择与余额检查始终由购买意图完成。
+			var priced := _pick_price_tag(event.position)
+			if priced != null:
+				if input_locked or attack_mode:
+					return
+				cancel_pointer()
+				card_pick_started.emit(priced)
+				_snapshot_press(priced, event.position)
+				_press_snap["price_tag"] = true
+				return
 			# 物理射线拾取：冻结/成组的卡也能点到
 			var picked := _pick_card(event.position)
 			# 双击 = 这一摞在「摊开」和「收拢」之间切换（收拢 = 沿高度摞起来省桌面）。
 			# 第一击虽然当场把牌拎起来了，但它的松手照快照精确复位过
 			# （见 _press_snap / _restore_press），所以这里面对的还是完整的那一摞。
 			# 拿不准射线这一下打到了什么就交给 _dbl_target 兜底（见那边的注释）
-			if _is_double(event, picked) and not attack_mode and not input_locked:
+			if _is_double(event, picked) and not attack_mode and not input_locked \
+					and (picked == null or not picked.is_market):
 				var t := _dbl_target(picked)
 				_reset_click_track()
 				_last_press_card = null
@@ -510,8 +568,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			# 按下就拎起来 —— 手感优先，不等双击窗口。代价是双击的第一击也会拎一次，
 			# 由它的松手照快照原样放回（见 _press_snap），对桌面是空操作
+			if picked.is_market:
+				card_pick_started.emit(picked)
 			_snapshot_press(picked, event.position)
-			_on_card_clicked(picked)
+			_on_card_clicked(picked, not picked.is_market)
 		else:
 			if event.canceled:
 				cancel_pointer()
@@ -617,13 +677,34 @@ func _pick_card(screen_pos: Vector2) -> CardEntity:
 		return hit["collider"]
 	return null
 
+func _price_tag_contains(card: CardEntity, screen_pos: Vector2) -> bool:
+	if not is_instance_valid(card) or not card.is_market:
+		return false
+	var reference: Variant = card.get_meta("price_tag", null)
+	var tag: Variant = reference.get_ref() if reference is WeakRef else null
+	return is_instance_valid(tag) and tag.hit_test(screen_pos, camera)
+
+func _pick_price_tag(screen_pos: Vector2) -> CardEntity:
+	for card in cards:
+		if _price_tag_contains(card, screen_pos):
+			return card
+	return null
+
+func _sync_market_tag(card: CardEntity) -> void:
+	var reference: Variant = card.get_meta("price_tag", null)
+	var tag: Variant = reference.get_ref() if reference is WeakRef else null
+	if is_instance_valid(tag):
+		tag.sync_card_position()
+
 func _process(delta: float) -> void:
 	_apply_pending_playable_bounds()
+	if _press_snap.get("price_tag", false) and (view_gesture or input_locked or attack_mode):
+		cancel_pointer()
 	if _interaction_is_blocked():
 		_set_hover_card(null)
 		_hide_desc()
-		if not _drag_cards.is_empty():
-			cancel_drag()
+		if not _drag_cards.is_empty() or not _press_snap.is_empty():
+			cancel_pointer()
 		_tick_drag_broadcast(delta)
 		return
 	_tick_drag_broadcast(delta)
@@ -658,8 +739,11 @@ func _process(delta: float) -> void:
 		var velocity := (pos - c.global_position) / maxf(delta, 0.001)
 		c.global_position = pos
 		c.update_drag_motion(velocity, delta)
+		if c.is_market:
+			_sync_market_tag(c)
 	# 吸附高亮
-	var g: Variant = _nearest_group(target, _drag_cards)
+	var g: Variant = _market_payment_group(_drag_cards[0], _drag_cards[0].global_position) \
+		if _drag_cards[0].is_market else _nearest_group(target, _drag_cards)
 	# 刚拆出来的那一摞不算吸附目标：手上这几张是**从它身上**拿的，
 	# 松手前一直贴着它，_nearest_group 必然选中它 —— 于是玩家一拆组，
 	# 剩下的牌就无端亮一下，看着像「拆完反而凑成了」。
@@ -686,7 +770,7 @@ func _process(delta: float) -> void:
 ## 代价是松手比落手的信号晚一帧到。这一帧不影响正确性：落点是权威事件，
 ## 由 drop 那条意图的结果决定，不由最后一帧 dragging 决定（scenes/main.gd 的拖拽广播与租约处理）
 func _tick_drag_broadcast(delta: float) -> void:
-	if _drag_cards.is_empty():
+	if _drag_cards.is_empty() or (is_instance_valid(_drag_cards[0]) and _drag_cards[0].is_market):
 		if not _bcast_uids.is_empty():
 			# 手上空了：广播一帧「放下了」。至于放到哪儿去了 —— 那是意图的结果
 			# 说的事，这条只负责把远端那几张牌从网络驱动交还给布局
@@ -744,6 +828,9 @@ func _snapshot_press(card: CardEntity, at: Vector2) -> void:
 		"origin": Vector3.INF,   # 队首静止位置减掉层偏移，见 _group_origin
 		"pos": card.global_position,        # 散卡才用得上
 		"rot": card.rotation_degrees,
+		"linear_velocity": card.linear_velocity,
+		"angular_velocity": card.angular_velocity,
+		"sleeping": card.sleeping,
 	}
 	if g != null:
 		_press_snap["cards"] = (g["cards"] as Array).duplicate()
@@ -788,7 +875,12 @@ func _restore_press() -> void:
 			_stop_move(c0, false)
 			c0.global_position = snap["pos"]
 			c0.rotation_degrees = snap["rot"]
-			c0.freeze = false
+			c0.freeze = c0.is_market
+			if c0.is_market:
+				c0.linear_velocity = snap["linear_velocity"]
+				c0.angular_velocity = snap["angular_velocity"]
+				c0.sleeping = snap["sleeping"]
+				_sync_market_tag(c0)
 		return
 	# 组还原：队列、形态、基线三样都按原值写回，再照原起点重排
 	var alive: Array = []
@@ -979,7 +1071,7 @@ func describe_def(def_id: String) -> String:
 					if ComboRules.legend_upgrade_target(tier, n) == def_id:
 						counts.append(str(n))
 				if not counts.is_empty():
-					routes.append("同档T%d生产卡×%s" % [tier, "/".join(counts)])
+					routes.append("%s×%s" % [_production_stage_name(tier), "/".join(counts)])
 			if routes.is_empty():
 				return "当前配置无合成路线"
 			return "合成：\n%s\n同名异名均可\n张数须精确\n不能夹杂其他牌" % "\n或".join(routes)
@@ -1007,7 +1099,11 @@ func describe_def(def_id: String) -> String:
 			return "配方材料：%s" % CardDB.card_label(str(def.get("res", "")))
 	return ""
 
-## 普通升级与同档传说分开说明；张数和折算率均由真实规则派生。
+## 两处升级说明共用卡表里的阶段，玩家无需记住内部档位代号。
+func _production_stage_name(tier: int) -> String:
+	return "已升级的生产卡" if tier > 1 else "未升级的生产卡"
+
+## 普通升级与传说合成分开说明；张数和折算率均由真实规则派生。
 func _upgrade_line(def_id: String) -> String:
 	var def: Dictionary = CardDB.get_def(def_id)
 	var near := ""
@@ -1020,7 +1116,7 @@ func _upgrade_line(def_id: String) -> String:
 		if target != "" and CardDB.get_def(target).get("kind", "") != CardDB.KIND_LEGEND and near == "":
 			near = "\n同名×%d → %s" % [n, CardDB.card_name(target)]
 	if not legend_ns.is_empty():
-		near += "\n同档T%d×%s\n→ 传说卡（可异名）\n张数须精确\n不能夹杂其他牌" % [tier, "/".join(legend_ns)]
+		near += "\n%s\n×%s → 传说卡\n同名异名均可\n张数须精确\n不能夹杂其他牌" % [_production_stage_name(tier), "/".join(legend_ns)]
 	return near
 
 ## 悬停说明文案：效果描述 + 典当价（卡名/标价/配方进度都已在牌面或价签上）。
@@ -1067,7 +1163,10 @@ func _update_hover_hint() -> void:
 		_set_hover_card(null)
 		_hide_desc()
 		return
-	var picked := _pick_card(get_viewport().get_mouse_position())
+	var pointer := get_viewport().get_mouse_position()
+	var picked := _pick_price_tag(pointer)
+	if picked == null:
+		picked = _pick_card(pointer)
 	_set_hover_card(picked)
 	if not hover_description_enabled:
 		_hide_desc()
@@ -1100,6 +1199,10 @@ func clear_hover_group() -> void:
 
 ## 强制中止拖拽：把在手的牌放回桌面（HUD 控件吃掉松手事件时的兜底）
 func cancel_drag() -> void:
+	if not _press_snap.is_empty() and is_instance_valid(_press_snap.get("card")) \
+			and _press_snap["card"].is_market:
+		_restore_press()
+		return
 	_clamp_drag_to_player()
 	_press_snap = {}   # 强制中止：这一击不再有「原样放回」的机会，快照作废
 	for c in _drag_cards:
@@ -1158,6 +1261,30 @@ func _drag_drop_origin(g: Dictionary) -> Vector3:
 func _end_drag() -> void:
 	# 在手的牌可能先被 unregister_card 摘走；随后到达的松手事件不再有落点。
 	if _drag_cards.is_empty():
+		return
+	if _drag_cards[0].is_market:
+		var market: CardEntity = _drag_cards[0]
+		var drop := market.global_position
+		var payment: Variant = _market_payment_group(market, market.global_position)
+		var paycards: Array = payment["cards"].duplicate() if payment != null else []
+		var compact: bool = bool(payment.get("compact", false)) if payment != null else false
+		# 明确指向一摞纯现金就只用这一摞；其余本方落点都交给共同购买入口自动付款。
+		var nearby: Variant = _nearest_group(drop, [market])
+		var automatic := not _is_cash_group(nearby) and _market_drop_is_own(drop)
+		var placement := {
+			"position": drop, "shelf_position": _press_snap["pos"], "shelf_rotation": _press_snap["rot"],
+			"payment_uids": paycards.map(func(card): return card.uid), "payment_compact": compact,
+			"payment_origin": rest_origin(payment) if payment != null else Vector3.INF,
+		}
+		# 复用按下快照清理拖拽；有效购买在同一帧放回松手处，拒绝才回货架。
+		_restore_press()
+		_reset_click_track()
+		if payment != null or automatic:
+			market.global_position = drop
+			# 只在同步信号交接中暂存，由交易入口立即取走，不进入游戏状态或网络意图。
+			market.set_meta("purchase_placement", placement)
+			last_drag_compact = compact
+			dropped_on_market.emit(paycards, market)
 		return
 	# 真实鼠标可能在按住期间越过 CLICK_SLOP 后又回到原处；这仍是“原地松手”。
 	# 直接走按下快照，尤其避免高摞在抬升/降回时重新计算层距造成落点漂移。
@@ -1287,6 +1414,40 @@ func _market_card_near(pos: Vector3) -> CardEntity:
 			best_d = d
 			best = c
 	return best
+
+## 反向拖商品只认实际命中的现成纯现金摞；数量只是手势门槛，最终付款由购买意图裁决。
+func _market_payment_group(market: CardEntity, pos: Vector3) -> Variant:
+	var group: Variant = _nearest_group(pos, [market])
+	if not _is_cash_group(group) or not _market_drop_is_own(pos):
+		return null
+	var price := int(CardDB.get_def(market.def_id).get("price", 0))
+	var members: Array = group["cards"]
+	if members.size() < price:
+		return null
+	return group
+
+func _is_cash_group(group: Variant) -> bool:
+	return group != null and not group["cards"].is_empty() and group["cards"].all(func(card):
+		return is_instance_valid(card) and card.draggable and not card.is_market and card.def_id == CardDB.RES_CASH)
+
+func _market_drop_is_own(pos: Vector3) -> bool:
+	if pawn_pos != Vector3.INF and Vector2(pos.x - pawn_pos.x, pos.z - pawn_pos.z).length() < PAWN_RADIUS:
+		return false
+	var bounds := player_bounds
+	if not has_table_bounds(bounds):
+		# 旧横屏没有拟合矩形时，沿用正式桌面的区域几何及外部配置的 z 边界。
+		var count := cards.filter(func(card): return is_instance_valid(card) and card.is_market).size()
+		bounds = TableRegions.zone_rect(true, false, count)
+	if not bounds.has_point(Vector2(pos.x, pos.z)) or pos.z < player_min_z or pos.z > player_max_z:
+		return false
+	# 忽略正在手里的商品，但不要把货架或设施边缘误当本方购买落点。
+	for card in cards:
+		if not is_instance_valid(card) or not card.is_market:
+			continue
+		var at: Vector3 = _press_snap.get("pos", card.global_position) if card.dragging else card.global_position
+		if Vector2(pos.x - at.x, pos.z - at.z).length() < 1.5:
+			return false
+	return true
 
 # ---------- 分组管理 ----------
 

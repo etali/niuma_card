@@ -1,7 +1,7 @@
 {
   "_说明": "游戏展示配置：defaults=启动默认值；palette=配色；art=图标、插画与卡面呈现；resource_labels=资源计量名；sfx=音效与动作映射。规则和卡牌见 cards.json，BOT 参数见 bot.json。",
   "defaults": {
-    "window_fraction": 0.75,
+    "window_fraction": 0.98,
     "perspective_angle": 80.0,
     "icon_scale": 0.75,
     "table_zoom": 1.0,

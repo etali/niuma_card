@@ -50,6 +50,19 @@ func relayout_drawer(main: Node, wait_physics := false) -> void:
 	else:
 		await process_frame
 
+func tap_drawer_control(control: Control) -> void:
+	var point := control.get_global_rect().get_center()
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = point
+	press.global_position = point
+	root.push_input(press)
+	await process_frame
+	press.pressed = false
+	root.push_input(press)
+	await process_frame
+
 func dispose_drawer(main: Node) -> void:
 	paused = false
 	if not is_instance_valid(main):

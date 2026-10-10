@@ -18,6 +18,7 @@ func _run() -> void:
 	var first: Node3D = before[0]
 	_check_paper_interaction(main)
 	await _check_tag_ink_bounds(main)
+	await _check_tag_early_disposal(main)
 	var first_pos := first.global_position
 	var other_positions: Array = main.market_cards.slice(1).map(func(c): return c.global_position)
 	var purchase: Dictionary = await main._try_buy(0)
@@ -151,6 +152,21 @@ func _check_tag_ink_bounds(main: Node) -> void:
 					contained = contained and safe.has_point(Vector2(point.x, point.z))
 			check(contained, "%s 的%s完整位于吊牌留白范围内" % [tag.text, "数字" if item == tag._label else "金币"])
 		tag.queue_free()
+
+func _check_tag_early_disposal(main: Node) -> void:
+	var tags: Array = []
+	for price in [1, 10, 100]:
+		var tag := preload("res://scenes/market_price_tag.gd").new()
+		main.add_child(tag)
+		tag.configure(price, main.market_cards[0], main.board)
+		tags.append(weakref(tag))
+	# 在deferred启动布局后、下一帧布局回调执行前销毁，覆盖快速关闭示例/课程。
+	await process_frame
+	for ref in tags:
+		ref.get_ref().free()
+	await process_frame
+	check(tags.all(func(ref): return not is_instance_valid(ref.get_ref())),
+		"价签等待数字尺寸期间也能安全释放，下一帧不恢复已销毁的布局协程")
 
 func _check_tag_resources(main: Node) -> void:
 	var first: Node3D = main.market_price_labels[0]

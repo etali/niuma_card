@@ -23,6 +23,7 @@ func _initialize() -> void:
 	var widest := ""
 	var missing: Array = []
 	var leaked: Array = []
+	var tier_codes: Array = []
 
 	for def_id in CardDB.all_cards().keys():
 		var def: Dictionary = CardDB.get_def(def_id)
@@ -30,6 +31,8 @@ func _initialize() -> void:
 		if t == "":
 			missing.append(def_id)
 			continue
+		if "T1" in t or "T2" in t or "同档" in t:
+			tier_codes.append(def_id)
 		# 卡名已在标题带上、标价已在牌外价签上、进度已在 D 位墨团上。
 		# 单位卡跳过卡名这一条：现金/用户卡的卡名就是资源名，
 		# 说明里写「配方材料：用户」是在说资源种类，不是在重复卡名
@@ -46,6 +49,7 @@ func _initialize() -> void:
 
 	check(missing.is_empty(), "每张卡都有悬停说明（缺：%s）" % str(missing))
 	check(leaked.is_empty(), "说明不重复卡名/标价/进度（越界：%s）" % str(leaked))
+	check(tier_codes.is_empty(), "所有共享悬停说明都用玩家语言，不暴露档位代号（越界：%s）" % str(tier_codes))
 	print("       最宽一行：「%s」= %.2f 世界单位（框宽 %.2f）" % [widest, max_line, Board.DESC_WIDTH])
 	check(max_line <= Board.DESC_WIDTH,
 		"最长一行不超文本框宽（%.2f ≤ %.2f，不会在汉字间断词）" % [max_line, Board.DESC_WIDTH])
@@ -128,18 +132,20 @@ func _initialize() -> void:
 	for sample in [with_t2, t2_id, "chunwan"]:
 		var tier := int(CardDB.get_def(sample)["tier"])
 		var description := board.hover_desc_text(sample)
-		check(description.contains("同档T%d×%s" % [tier, dup_slashed(tier_counts[tier])]),
-			"%s展示同档传说的全部精确张数" % CardDB.card_name(sample))
-		check(description.contains("可异名") and description.contains("张数须精确") and description.contains("不能夹杂其他牌"),
-			"%s明确同档可异名、数量精确、不能夹杂" % CardDB.card_name(sample))
+		var stage_name := "未升级的生产卡" if tier == 1 else "已升级的生产卡"
+		check(description.contains("%s\n×%s" % [stage_name, dup_slashed(tier_counts[tier])]),
+			"%s用升级前后状态展示传说的全部精确张数" % CardDB.card_name(sample))
+		check(description.contains("同名异名均可") and description.contains("张数须精确") and description.contains("不能夹杂其他牌"),
+			"%s明确可异名、数量精确、不能夹杂" % CardDB.card_name(sample))
 	check(t2_of("chunwan") == "" and not board.hover_desc_text("chunwan").contains("同名×%d →" % t2_step),
 		"没有对应T2的卡不虚构普通同名升级路线")
 	for tier in [1, 2]:
 		for n in tier_counts[tier]:
 			var target := ComboRules.legend_upgrade_target(tier, n)
 			var description := board.hover_desc_text(target)
-			check(description.contains("同档T%d生产卡×%d" % [tier, n]) and description.contains("同名异名均可"),
-				"%s说明按真实规则展示T%d来源与张数" % [CardDB.card_name(target), tier])
+			var stage_name := "未升级的生产卡" if tier == 1 else "已升级的生产卡"
+			check(description.contains("%s×%d" % [stage_name, n]) and description.contains("同名异名均可"),
+				"%s说明按真实规则展示%s来源与张数" % [CardDB.card_name(target), stage_name])
 			check(not description.contains("同名巨头") and not description.contains("同名产品"), "传说说明不再要求同名材料")
 	var original_upgrade := CardDB.UPGRADE
 	CardDB.UPGRADE = original_upgrade.duplicate(true)
@@ -151,11 +157,11 @@ func _initialize() -> void:
 		var target := ComboRules.legend_upgrade_target(1, n)
 		if target != "":
 			configured_counts.append(n)
-			check(board.hover_desc_text(target).contains("同档T1生产卡×%d" % n), "传说说明实时跟随per变化，不硬编码dup×2")
-	check(board.hover_desc_text(with_t2).contains("同档T1×%s" % dup_slashed(configured_counts)),
+			check(board.hover_desc_text(target).contains("未升级的生产卡×%d" % n), "传说说明实时跟随per变化，不硬编码dup×2")
+	check(board.hover_desc_text(with_t2).contains("未升级的生产卡\n×%s" % dup_slashed(configured_counts)),
 		"生产卡说明实时跟随传说路线折算配置")
 	CardDB.UPGRADE = original_upgrade
-	check(board.hover_desc_text(with_t2).contains("同档T1×%s" % dup_slashed(tier_counts[1])), "恢复配置后悬停提示不保留旧张数")
+	check(board.hover_desc_text(with_t2).contains("未升级的生产卡\n×%s" % dup_slashed(tier_counts[1])), "恢复配置后悬停提示不保留旧张数")
 
 	# ---- 两种防御膜共用一句模板，res 从 buff_type 反解（protect_<res>）----
 	# 两张卡各念自己那种资源的**卡名**：反解错了会两张都说同一种资源，

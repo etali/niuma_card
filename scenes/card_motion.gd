@@ -18,6 +18,11 @@ const PAWN_TRAVEL_TIME := UIMotion.ANTICIPATE + UIMotion.ACT + UIMotion.SETTLE +
 var board: Board
 var sfx: Sfx
 var clamp_to_player := false
+var _tear_cards: Array = []
+var _tear_tweens: Array[Tween] = []
+var _tear_hands: Node
+var _tear_hands_mode := Node.PROCESS_MODE_ALWAYS
+var _tear_hands_visible := true
 
 func bind(target_board: Board, sound: Sfx, clamp_player := false) -> void:
 	board = target_board
@@ -37,7 +42,14 @@ func tear_batch(members: Array, hands: Node, direction := Vector3(0, 4, 2)) -> f
 	for i in cards.size():
 		packet.append(center + Vector3((i - (cards.size() - 1) * 0.5) * 0.10, i * 0.008, i * 0.035))
 	if is_instance_valid(hands):
+		if _tear_hands != hands:
+			_tear_hands = hands
+			_tear_hands_mode = hands.process_mode
+			_tear_hands_visible = hands.visible
 		hands.tear(cards, packet)
+	_tear_cards = _tear_cards.filter(func(card): return is_instance_valid(card))
+	_tear_cards.append_array(cards)
+	_tear_tweens = _tear_tweens.filter(func(tween): return tween != null and tween.is_valid())
 	for i in cards.size():
 		var card: CardEntity = cards[i]
 		board.drop_card(card)
@@ -46,11 +58,31 @@ func tear_batch(members: Array, hands: Node, direction := Vector3(0, 4, 2)) -> f
 		card.freeze = true
 		card.collision_layer = 0
 		card.collision_mask = 0
-		card.create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT) \
-			.tween_property(card, "global_position", packet[i], BATCH_GRIP)
-		delayed_tear(card, direction, BATCH_GRIP, false)
-	delayed_sound("attack_tear", BATCH_GRIP)
+		# 卡牌与运动节点属于同一个演出宿主；教学暂停时抓握和撕开同时停住。
+		var grip := card.create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		grip.tween_property(card, "global_position", packet[i], BATCH_GRIP)
+		_tear_tweens.append(grip)
+		_tear_tweens.append(delayed_tear(card, direction, BATCH_GRIP, false))
+	_tear_tweens.append(delayed_sound("attack_tear", BATCH_GRIP))
 	return BATCH_DURATION
+
+## 手仍是原牌桌那一双；只有当前撕牌宿主临时保管其暂停状态。
+func set_tear_active(active: bool) -> void:
+	if not is_instance_valid(_tear_hands): return
+	_tear_hands.process_mode = _tear_hands_mode if active else Node.PROCESS_MODE_DISABLED
+	_tear_hands.visible = _tear_hands_visible if active else false
+
+func cancel_tears() -> void:
+	for tween in _tear_tweens:
+		if tween != null and tween.is_valid(): tween.kill()
+	_tear_tweens.clear()
+	for card in _tear_cards:
+		if is_instance_valid(card): card.queue_free()
+	_tear_cards.clear()
+	if is_instance_valid(_tear_hands):
+		_tear_hands.clear()
+		set_tear_active(true)
+	_tear_hands = null
 
 func _fly_from(e: CardEntity, from_pos: Vector3, to_pos: Vector3,
 		idx: int = 0, total: int = 1, delay := 0.0) -> Tween:
@@ -217,6 +249,7 @@ func _tear_out(card: CardEntity, dir: Vector3) -> void:
 	tw.chain().tween_callback(card.queue_free)
 	transferring()
 	_transfers.append(tw)
+	if _tear_cards.has(card): _tear_tweens.append(tw)
 
 var _transfers: Array[Tween] = []
 
@@ -253,21 +286,25 @@ func _consume(tw: Tween, card: CardEntity, target: Vector3, delay: float) -> voi
 	transferring()
 	_transfers.append(tw)
 
-func delayed_sound(action: String, delay: float) -> void:
+func delayed_sound(action: String, delay: float) -> Tween:
 	if delay <= 0:
 		sfx.play(action)
-		return
+		return null
 	var tween := create_tween()
 	tween.tween_interval(delay)
 	tween.tween_callback(func(): sfx.play(action))
+	transferring()
+	_transfers.append(tween)
+	return tween
 
-func delayed_tear(card: CardEntity, direction: Vector3, delay: float, with_sound: bool) -> void:
+func delayed_tear(card: CardEntity, direction: Vector3, delay: float, with_sound: bool) -> Tween:
 	var tween := create_tween().bind_node(card)
 	tween.tween_interval(delay)
 	tween.tween_callback(func():
 		if with_sound:
 			sfx.play("attack_tear")
 		_tear_out(card, direction))
+	return tween
 
 ## 教学的拖动输入和真实购买到货都在牌面上方移动，避免图标与下方牌面同高穿插。
 func move_above_table(card: CardEntity, target: Vector3, delay := 0.0) -> Tween:
@@ -280,8 +317,10 @@ func move_above_table(card: CardEntity, target: Vector3, delay := 0.0) -> Tween:
 	tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	if delay > 0.0:
 		tween.tween_interval(delay)
-	tween.tween_property(card, "position:y", lift, UIMotion.ANTICIPATE)
-	tween.tween_property(card, "position", Vector3(target.x, lift, target.z), UIMotion.ACT)
+	# 玩家已经把商品拖到目标上方时，只需落桌，不能再绕回货架或换一个位置。
+	if not Vector2(card.position.x, card.position.z).is_equal_approx(Vector2(target.x, target.z)):
+		tween.tween_property(card, "position:y", lift, UIMotion.ANTICIPATE)
+		tween.tween_property(card, "position", Vector3(target.x, lift, target.z), UIMotion.ACT)
 	tween.tween_property(card, "position", target, UIMotion.SETTLE)
 	tween.tween_callback(func(): _clear_dest(card))
 	card.set_meta("fly_tw", tween)
@@ -308,3 +347,9 @@ func drag_stack(cards: Array, at: Vector3) -> void:
 func transferring() -> bool:
 	_transfers = _transfers.filter(func(tween): return tween != null and tween.is_valid() and tween.is_running())
 	return not _transfers.is_empty()
+
+## 回滚前由运动组件撤销自己持有的转移与延迟音，调用方随后恢复实体快照。
+func cancel_transfers() -> void:
+	for tween in _transfers:
+		if tween != null and tween.is_valid(): tween.kill()
+	_transfers.clear()
