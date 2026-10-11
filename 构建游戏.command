@@ -4,7 +4,7 @@
 # See LICENSE in the project root.
 
 # 牛马牌 · 构建可运行 App（build/牛马牌.app）
-# 首次使用已完成模板安装，之后每次运行本脚本即可出包
+# 首次使用先运行 ./安装构建环境.command，之后每次运行本脚本即可出包
 set -e
 cd "$(dirname "$0")"
 
@@ -79,6 +79,7 @@ if [ "$#" -gt 0 ]; then
 		-h|--help)
 			cat <<'HELP'
 用法：
+  ./安装构建环境.command                     首次使用：安装导出模板与 Python 依赖
   ./构建游戏.command                         标准构建
   ./构建游戏.command --engine-plan           扫描当前功能并查看裁剪计划，不下载、不编译
   ./构建游戏.command --slim-engine           编译精简模板后构建 App（首次较慢，之后使用缓存）
@@ -102,6 +103,22 @@ HELP
 	esac
 fi
 FONT="assets/fonts/NotoSansSC.ttf"
+
+# ---------- 构建环境预检 ----------
+# 新机器最常见的失败是缺少导出模板，要到资源导入完成后才报错；先检查，立刻给出修复方法。
+if [ ! -x "$GODOT" ]; then
+	echo "构建失败：找不到 Godot：${GODOT}（安装到 /Applications，或用 GODOT=/path/to/Godot 指定）" >&2
+	exit 1
+fi
+if GODOT_VERSION=$(plutil -extract CFBundleShortVersionString raw "$(dirname "$GODOT")/../Info.plist" 2>/dev/null); then
+	shopt -s nullglob
+	GODOT_TEMPLATES=("$HOME/Library/Application Support/Godot/export_templates/$GODOT_VERSION".*/macos.zip)
+	shopt -u nullglob
+	if [ "${#GODOT_TEMPLATES[@]}" -eq 0 ]; then
+		echo "ERROR: 缺少 Godot $GODOT_VERSION 的 macOS 导出模板，请先运行：./安装构建环境.command" >&2
+		exit 1
+	fi
+fi
 
 # ---------- 字体子集化与完整导入状态恢复 ----------
 source tools/font_subset.sh

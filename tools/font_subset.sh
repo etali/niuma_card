@@ -65,9 +65,15 @@ _font_subset_on_exit() {
 
 subset_font() {
 	font_transaction_begin || return $?
+	# pip --user 把 pyftsubset 装进 ~/Library/Python/*/bin，通常不在 PATH；改用模块入口。
+	local subsetter=(pyftsubset)
 	if ! command -v pyftsubset > /dev/null 2>&1; then
-		echo "     跳过（没装 fonttools：pip3 install fonttools）"
-		return 0
+		if python3 -c 'import fontTools.subset' > /dev/null 2>&1; then
+			subsetter=(python3 -m fontTools.subset)
+		else
+			echo "     跳过（没装 fonttools：运行 ./安装构建环境.command）"
+			return 0
+		fi
 	fi
 	# 先导入完整字体，修复旧构建留下的缺失缓存，再保存一致的完整状态。
 	font_import_resources
@@ -99,7 +105,7 @@ subset_font() {
 	PY
 	)
 	# 先输出到临时文件，失败不会写坏源字体；保留 variable font 的 wght 轴。
-	pyftsubset "$_FONT_SUBSET_BACKUP/font" --unicodes="$chars" --notdef-outline \
+	"${subsetter[@]}" "$_FONT_SUBSET_BACKUP/font" --unicodes="$chars" --notdef-outline \
 		--output-file="$_FONT_SUBSET_BACKUP/subset.ttf"
 	mv -f "$_FONT_SUBSET_BACKUP/subset.ttf" "$FONT"
 	rm -f .godot/imported/"${FONT##*/}"-*

@@ -420,6 +420,7 @@ flowchart TD
 ├── bot.md                       # BOT 实现与评估说明
 ├── 构建游戏.command            # 构建 macOS App / Android 包
 ├── 启动游戏.command            # 启动已构建 App
+├── 安装构建环境.command        # 安装 Godot 导出模板与 Python 依赖（首次构建前运行）
 ├── 安装安卓构建环境.command    # 安装 Android SDK、JDK 和导出模板
 ├── 打包DMG.command             # 将已编译的 macOS App 制作成 DMG 安装盘
 ├── 本地运行Web版.command       # 本地启动 Web 版及联机服务
@@ -440,6 +441,13 @@ flowchart TD
 以下命令默认在仓库根目录执行。Godot 路径可用 `GODOT=/path/to/Godot` 覆盖。首次用 Godot 打开工程或运行构建入口时，会导入仓库内的素材并生成本地缓存。
 
 ### 4.1 构建和启动 macOS 版
+
+新机器或升级 Godot 后，先安装与当前 Godot 版本匹配的导出模板（约 1GB，仅一次）和 Python 依赖（Pillow、fonttools）：
+
+```bash
+./安装构建环境.command --dry-run   # 只显示安装计划
+./安装构建环境.command
+```
 
 ```bash
 ./构建游戏.command

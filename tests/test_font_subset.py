@@ -410,6 +410,11 @@ while [ ! -f "$CASE.finish" ]; do sleep 0.02; done
 
     def test_without_fonttools_export_uses_full_font(self):
         (self.root / "bin/pyftsubset").unlink()
+        # 构建会回退到 python3 -m fontTools.subset；用无法导入的同名包模拟没装 fonttools。
+        shadow = self.root / "shadow/fontTools"
+        shadow.mkdir(parents=True)
+        (shadow / "__init__.py").write_text("raise ImportError('fixture: fonttools not installed')\n")
+        self.env["PYTHONPATH"] = str(shadow.parent)
         # 此场景没有字体事务；fake export 不应改动字体导入配置。
         script = self.godot.read_text().replace('font.with_suffix(".ttf.import").write_text("export changed the import config")', 'pass')
         script = script.replace('(root / ".godot/imported/NotoSansSC.ttf-export.fontdata").write_bytes(b"export cache")', 'pass')

@@ -39,6 +39,8 @@ ROOT = Path(__file__).resolve().parents[1]
 GODOT_DEFAULT = "/Applications/Godot.app/Contents/MacOS/Godot"
 ANDROID_SDK_DEFAULT = Path.home() / "Library/Android/sdk"
 CMDLINE_XML = "https://dl.google.com/android/repository/repository2-3.xml"
+# 其他安装入口复用下载/命令工具时改写日志前缀。
+LOG_TAG = "Android"
 
 
 class InstallError(RuntimeError):
@@ -46,7 +48,7 @@ class InstallError(RuntimeError):
 
 
 def log(message: str) -> None:
-    print(redact_paths(f"[Android] {message}", ROOT), flush=True)
+    print(redact_paths(f"[{LOG_TAG}] {message}", ROOT), flush=True)
 
 
 def run(command: list[str], *, env: dict[str, str] | None = None,

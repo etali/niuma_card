@@ -12,8 +12,10 @@
 cd "$(dirname "$0")"
 GODOT="${GODOT:-/Applications/Godot.app/Contents/MacOS/Godot}"
 FONT="assets/fonts/NotoSansSC.ttf"
-TPL_DIR="${TPL_DIR:-$HOME/Library/Application Support/Godot/export_templates/4.7.1.stable}"
-TPZ_URL="https://github.com/godotengine/godot/releases/download/4.7.1-stable/Godot_v4.7.1-stable_export_templates.tpz"
+# 模板版本必须与编辑器一致；读取 Godot.app 版本，无法识别时沿用项目当前版本。
+GODOT_VERSION=$(plutil -extract CFBundleShortVersionString raw "$(dirname "$GODOT")/../Info.plist" 2>/dev/null || echo 4.7.2)
+TPL_DIR="${TPL_DIR:-$HOME/Library/Application Support/Godot/export_templates/$GODOT_VERSION.stable}"
+TPZ_URL="https://github.com/godotengine/godot/releases/download/$GODOT_VERSION-stable/Godot_v$GODOT_VERSION-stable_export_templates.tpz"
 
 set -e
 
