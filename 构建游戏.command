@@ -42,12 +42,17 @@ if [ "${CARD_BUILD_WORKER:-0}" != "1" ]; then
 			BUILD_STATUS=$BUILD_CODE
 		fi
 	done
+	# 用户在依赖询问中选择 N：如实说明已取消，不当作构建错误展示。
+	if [ "$BUILD_STATUS" -eq 3 ] && grep -q '已终止构建：' "$BUILD_LOG"; then
+		echo "构建已取消（未安装缺少的依赖）。日志：$BUILD_LOG" >&2
+		exit "$BUILD_STATUS"
+	fi
 	if [ "$BUILD_STATUS" -ne 0 ]; then
 		{
 			echo ""
 			echo "========== 构建失败（退出码：${BUILD_STATUS}） =========="
 			echo "首个错误及上下文："
-			awk '/^(SCRIPT ERROR|ERROR):|精简构建失败：|error:|Traceback/ { if (!found) { found=1; left=10 } } found && left-- > 0 { print }' "$BUILD_LOG" || true
+			awk '/^(SCRIPT ERROR|ERROR):|精简构建失败：|构建依赖检查未通过：|error:|Traceback/ { if (!found) { found=1; left=10 } } found && left-- > 0 { print }' "$BUILD_LOG" || true
 			echo "错误摘要（日志末尾）："
 			tail -n 12 "$BUILD_LOG" || true
 			echo ""
@@ -74,6 +79,7 @@ if [ "$#" -gt 0 ]; then
 			ANDROID_ARGS=()
 			[ "$1" = "--android-debug" ] && ANDROID_ARGS+=(--debug)
 			[ "$1" = "--aab" ] && ANDROID_ARGS+=(--aab)
+			python3 tools/build_deps.py android --godot "$GODOT" || exit $?
 			exec python3 tools/android_build.py --godot "$GODOT" "${ANDROID_ARGS[@]}"
 			;;
 		-h|--help)
@@ -91,6 +97,7 @@ if [ "$#" -gt 0 ]; then
   ./构建游戏.command --slim-engine --arch arm64 --jobs 8
 
 Android release 首次未配置签名时自动生成 .android-signing/，后续复用；请备份此目录。
+缺少依赖时会询问 Y/N（安装后继续或终止构建）；自动化可设 CARD_BUILD_ASSUME_YES=1 自动安装。
 精简选项：--source /path/to/godot 指定匹配版本源码；--rebuild-engine 强制重新构建模板。
 精简默认：--optimize size --lto full --class-trim safe；--keep-class 类名 可保留动态使用的类。
 可选：--optimize size_extra 更小但可能变慢；--lto thin --class-trim none 恢复旧优化方式。
@@ -105,20 +112,8 @@ fi
 FONT="assets/fonts/NotoSansSC.ttf"
 
 # ---------- 构建环境预检 ----------
-# 新机器最常见的失败是缺少导出模板，要到资源导入完成后才报错；先检查，立刻给出修复方法。
-if [ ! -x "$GODOT" ]; then
-	echo "构建失败：找不到 Godot：${GODOT}（安装到 /Applications，或用 GODOT=/path/to/Godot 指定）" >&2
-	exit 1
-fi
-if GODOT_VERSION=$(plutil -extract CFBundleShortVersionString raw "$(dirname "$GODOT")/../Info.plist" 2>/dev/null); then
-	shopt -s nullglob
-	GODOT_TEMPLATES=("$HOME/Library/Application Support/Godot/export_templates/$GODOT_VERSION".*/macos.zip)
-	shopt -u nullglob
-	if [ "${#GODOT_TEMPLATES[@]}" -eq 0 ]; then
-		echo "ERROR: 缺少 Godot $GODOT_VERSION 的 macOS 导出模板，请先运行：./安装构建环境.command" >&2
-		exit 1
-	fi
-fi
+# 缺少依赖时询问 Y/N：安装后继续，或终止构建；不会等到资源导入完才报错。
+python3 tools/build_deps.py macos --godot "$GODOT" || exit $?
 
 # ---------- 字体子集化与完整导入状态恢复 ----------
 source tools/font_subset.sh

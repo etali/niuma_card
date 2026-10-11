@@ -25,6 +25,7 @@ import sys
 import tempfile
 import zipfile
 
+import build_deps
 from engine_class_profile import disabled_classes as select_disabled_classes
 from project_paths import display_path, redact_paths
 
@@ -312,7 +313,7 @@ def check_toolchain():
     # 另一套 C/C++ 工具链，则交给匹配源码继续校验其版本，避免误挡 Homebrew LLVM。
     if apple and int(apple[1]) < 16 and not supplied:
         raise BuildError(f'当前 Apple Clang {apple[1]}，精简引擎需要 Xcode 16 或更新的工具链。'
-                         '\n请更新后重试，或设置 CXX=/path/to/clang++、CC=/path/to/clang。'
+                         '\n请运行 ./安装构建环境.command --toolchain，或设置 CXX=/path/to/clang++、CC=/path/to/clang。'
                          '\n裁剪清单已生成，原 App 和标准构建方式未改动。')
     run(['xcrun', '--show-sdk-path'], capture=True)
     return output.strip()
@@ -545,11 +546,16 @@ def main(argv=None):
         write_plan(plan, CACHE)
         if args.engine_plan:
             return 0
+        # 先询问安装缺少的模板与编译器，避免编译数十分钟后才发现缺少 App 骨架。
+        build_deps.ensure('slim', godot)
         compiler = check_toolchain()
         source = acquire_source(version, args.source, CACHE)
         template = build_template(plan, source, arch, args.jobs, CACHE, compiler, args.rebuild_engine)
         export_project(ROOT, godot, template, arch, CACHE)
         return 0
+    except build_deps.DependencyError as error:
+        print(redact_paths(f'构建依赖检查未通过：{error}'), file=sys.stderr)
+        return error.code
     except (BuildError, OSError, ValueError, KeyError) as error:
         print(redact_paths(f'精简构建失败：{error}'), file=sys.stderr)
         return 1

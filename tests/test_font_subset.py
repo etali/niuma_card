@@ -35,7 +35,8 @@ class FontSubsetTest(unittest.TestCase):
         for name in SCRIPTS:
             shutil.copy2(ROOT / name, self.root / name)
         shutil.copy2(ROOT / "tools/font_subset.sh", self.root / "tools/font_subset.sh")
-        for tool in ("build_art.py", "ensure_app_icon.py", "build_android_icons.py", "godot_build.sh", "project_paths.py", "release_bundle.py", "install_web_templates.py"):
+        for tool in ("build_art.py", "ensure_app_icon.py", "build_android_icons.py", "godot_build.sh", "project_paths.py", "release_bundle.py", "install_web_templates.py",
+                     "build_deps.py", "install_build_env.py", "install_android_dependencies.py"):
             shutil.copy2(ROOT / "tools" / tool, self.root / "tools" / tool)
         (self.root / "tools/check_art_assets.py").write_text("pass\n")
         from PIL import Image
@@ -131,6 +132,8 @@ else:
             "GODOT": str(self.godot),
             "TPL_DIR": str(self.root / "templates"),
             "TMPDIR": str(self.root / "scratch"),
+            # 依赖询问读 /dev/tty；在终端里跑测试也不能停下来等输入。
+            "CARD_BUILD_NO_PAUSE": "1",
             "PATH": str(self.root / "bin") + ":/usr/bin:/bin:/usr/sbin:/sbin",
         })
 
