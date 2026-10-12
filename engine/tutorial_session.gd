@@ -29,6 +29,8 @@ var _preview_cache: GameState
 var _step_round_floor := 1
 var _step_event_floor := 0
 var _ready_on_entry := false
+## 本步曾被规则拒绝过。回滚不会撤销这次经历，目标改为配置的纠正说明，直到换步。
+var _step_rejected := false
 
 func _init(id: String = "") -> void:
 	if id != "": start(id)
@@ -58,9 +60,11 @@ func current_step() -> Dictionary:
 		var selected := _lesson_business("cash" if alias == "business" else "user")
 		for key in selected:
 			lesson_vars["lesson.%s.%s" % [alias, key]] = selected[key]
-	for field in ["goal", "instruction", "explanation", "hint", "ready_goal", "completion_goal"]:
+	for field in ["goal", "instruction", "explanation", "hint", "ready_goal", "completion_goal", "rejected_goal"]:
 		if step.has(field):
 			step[field] = TutorialCatalog.format_text(str(step[field]), lesson_vars)
+	if _step_rejected and step.has("rejected_goal"):
+		step["goal"] = step["rejected_goal"]
 	if state != null and (_ready_on_entry or step.get("read_when_ready", false)) and _matches(step.get("condition", {})):
 		step["kind"] = "read"
 		step["goal"] = str(step.get("ready_goal", step.get("goal", "")))
@@ -75,6 +79,7 @@ func _lesson_business(resource: String) -> Dictionary:
 
 func _enter_step(from_round := -1) -> void:
 	_ready_on_entry = false
+	_step_rejected = false
 	var step := current_step()
 	var scenario_id := str(step.get("scenario", ""))
 	if scenario_id != "" and scenario_id != _scenario_id:
@@ -505,6 +510,8 @@ func _matches(condition: Dictionary) -> bool:
 			for event in events:
 				if event.get("op") == Intent.OP_PAWN and event.get("pawn_cards", []).has(condition.get("card")): return true
 		"victory": return state.winner == GameState.PLAYER
+		# 演示被攻击打空资源的后果；判负本身就是这一步要看到的结果。
+		"defeat": return state.winner == GameState.BOT
 		"armed":
 			for event in events:
 				if event.get("op") == Intent.OP_ARM and event.get("seat") == GameState.PLAYER and int(event.get("pools", {}).get(condition.get("res"), 0)) > 0: return true
@@ -672,9 +679,21 @@ func restore_operation(before: Dictionary) -> void:
 ## 规则引擎先执行；这里只检查这一步是否推进当前学习目标，不修改状态或自动回滚。
 func review_operation(before: Dictionary, action: String, detail: Dictionary = {}) -> Dictionary:
 	var expected := false
-	if before.get("course_id") == course_id and int(before.get("step_index", -1)) == step_index and not demo_active:
+	var same_step: bool = before.get("course_id") == course_id and int(before.get("step_index", -1)) == step_index and not demo_active
+	if same_step:
 		expected = _operation_expected(before, action, detail)
-	return {"expected": expected, "reason": "" if expected else TutorialCatalog.ui("operation_rollback", {"goal": current_step().get("goal", "")})}
+	if expected: return {"expected": true, "reason": ""}
+	# 规则拒绝时说出真实原因，例如付款会让现金归零；只说“已撤回”玩家不知道错在哪。
+	var result: Dictionary = detail.get("result", {})
+	var rule := "" if result.get("ok", true) else str(result.get("reason", ""))
+	if same_step and not rule.is_empty():
+		var step := current_step()
+		# 专门教这条规则的步骤改用配置好的纠正说明，它已写明原因与下一步，不再叠一句规则原文。
+		if step.has("rejected_goal"):
+			_step_rejected = true
+			return {"expected": false, "reason": str(step["rejected_goal"])}
+		return {"expected": false, "reason": TutorialCatalog.ui("operation_rejected", {"reason": rule.trim_suffix("。"), "goal": step.get("goal", "")})}
+	return {"expected": false, "reason": TutorialCatalog.ui("operation_rollback", {"goal": current_step().get("goal", "")})}
 
 func _operation_expected(before: Dictionary, action: String, detail: Dictionary) -> bool:
 	if detail.get("view_only", false): return true
@@ -868,8 +887,11 @@ func _target_filter(target: Dictionary, expected: Dictionary) -> Dictionary:
 
 func _target_ready(counts: Dictionary, target: Dictionary) -> bool:
 	var expected := ComboRules.evaluate(_spec_cards(target))
-	# 有意拆出无效组合的观察步骤仍按指定条件演示，不能用有效组合代替。
-	if not expected.get("valid", false): return _same_counts(counts, target)
+	# 有意闲置的业务（例如留现金周转而暂停的那一项）：核心还在、组合不生效即算到位，
+	# 留下几张不够配方的资源也一样；仍然生效的组合不能冒充闲置。
+	if not expected.get("valid", false):
+		return _same_counts(counts, target) or (_anchors_target(counts, target) \
+			and not ComboRules.evaluate(_spec_cards(counts)).get("valid", false))
 	var actual := ComboRules.evaluate(_spec_cards(counts))
 	return actual.get("valid", false) and _eval_matches(actual, counts, _target_filter(target, expected))
 

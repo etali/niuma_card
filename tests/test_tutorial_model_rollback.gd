@@ -11,7 +11,6 @@ func _initialize() -> void:
 	_test_recipe()
 	_test_surplus_preparation()
 	_test_material_first()
-	_test_remove_protection()
 	_test_misplaced_resources()
 	_test_surplus_and_buffs()
 	_test_fission_and_upgrades()
@@ -19,10 +18,8 @@ func _initialize() -> void:
 	_test_results()
 	_test_attacks()
 	_test_pile_attacks()
-	_test_attack_victory_finalization()
-	_test_attack_types()
+	_test_defeat_finalization()
 	_test_preparation_and_cleanup()
-	_test_previous_business()
 	finish()
 
 func _test_all_operations() -> void:
@@ -52,7 +49,7 @@ func _test_all_operations() -> void:
 			if not session.step_complete: return
 			session.acknowledge()
 		check(session.completed, "%s：逐手审查不锁死课程" % course["id"])
-	check(steps == 42, "完整八课42步均逐操作通过审查")
+	check(steps == 23, "完整八门课23步均逐操作通过审查")
 
 func _test_purchase_snapshot() -> void:
 	var session := TutorialSession.new("income")
@@ -90,12 +87,12 @@ func _at_split() -> TutorialSession:
 	session.acknowledge()
 	return session
 
+## 买牌后先拆出一张用户：拆牌只是组牌准备，仍停在组牌目标。
 func _at_recipe() -> TutorialSession:
 	var session := _at_split()
 	var user := int(_ids(session, "user", 1)[0])
 	_move(session, [user])
 	session.notify_split(user)
-	session.acknowledge()
 	return session
 
 func _test_split() -> void:
@@ -104,7 +101,7 @@ func _test_split() -> void:
 	var before := session.capture_operation()
 	_move(session, [user], int(_ids(session, "yunketang", 1)[0]))
 	session.notify_split(user)
-	check(not session.step_complete and not session.review_operation(before, "layout", {"picked_uids": [user], "split_uid": user})["expected"], "拆用户时放上业务，不能误判完成")
+	check(not session.step_complete and session.review_operation(before, "layout", {"picked_uids": [user], "split_uid": user})["expected"], "拆出用户直接放上业务是配牌进展，但不提前完成")
 	session.restore_operation(before)
 	_move(session, [user], int(_ids(session, "cash", 1)[0]))
 	session.notify_split(user)
@@ -112,7 +109,7 @@ func _test_split() -> void:
 	session.restore_operation(before)
 	_move(session, [user])
 	session.notify_split(user)
-	check(session.step_complete and session.review_operation(before, "layout", {"picked_uids": [user], "split_uid": user})["expected"], "单张用户独立落到空处才通过拆牌")
+	check(not session.step_complete and session.review_operation(before, "layout", {"picked_uids": [user], "split_uid": user})["expected"], "单张用户独立落到空处是合法准备，不冒充完成配方")
 
 func _test_recipe() -> void:
 	var session := _at_recipe()
@@ -233,8 +230,7 @@ func _test_surplus_preparation() -> void:
 
 func _test_material_first() -> void:
 	var cases := [
-		{"step": "buff.protect_user", "core": "yunketang", "res": "user", "n": 3, "extra_n": 4, "buff": "tuisong"},
-		{"step": "buff.protect_cash", "core": "ditui", "res": "cash", "n": 2, "extra_n": 4, "buff": "jiangjia"},
+		{"step": "defense.protect", "core": "ditui", "res": "cash", "n": 2, "extra_n": 4, "buff": "jiangjia"},
 		{"step": "buff.output", "core": "yunketang", "res": "user", "n": 3, "extra_n": 8, "buff": "yinqing996"},
 		{"step": "buff.attack", "core": "zuokong", "res": "user", "n": 6, "extra_n": 8, "buff": "resou"},
 		{"step": "buff.fill", "core": "jiaolv", "res": "user", "n": 1, "extra_n": 2, "buff": "liebian"},
@@ -242,7 +238,7 @@ func _test_material_first() -> void:
 	var orders := [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]
 	for entry in cases:
 		for order in orders:
-			var session := _at_buff_step(entry["step"])
+			var session := _at_step(entry["step"])
 			var chunks := [_ids(session, entry["core"], 1), _ids(session, entry["res"], entry["n"]), _ids(session, entry["buff"], 1)]
 			var anchor := int(chunks[order[0]][0])
 			_move(session, chunks[order[0]])
@@ -258,7 +254,7 @@ func _test_material_first() -> void:
 			check(ComboRules.evaluate(_material_group(session, anchor))["valid"]
 				and _counts(session, anchor).get(entry["res"]) == entry["n"],
 				"%s：顺序%s最终得到同一真实有效配方" % [entry["step"], order])
-		var surplus := _at_buff_step(entry["step"])
+		var surplus := _at_step(entry["step"])
 		var users := _ids(surplus, entry["res"], entry["extra_n"])
 		var buff := int(_ids(surplus, entry["buff"], 1)[0])
 		var before := surplus.capture_operation()
@@ -272,17 +268,17 @@ func _test_material_first() -> void:
 			and ComboRules.evaluate(_material_group(surplus, buff))["valid"],
 			"%s：核心最后加入富余材料摞也按真实配方放行" % entry["step"])
 
-	var protected := _at_buff_step("buff.protect_user")
-	var push := int(_ids(protected, "tuisong", 1)[0])
-	_move(protected, _ids(protected, "user", 4), push)
-	_move(protected, _ids(protected, "yunketang", 1), push)
+	var protected := _at_step("defense.protect")
+	var price_cut := int(_ids(protected, "jiangjia", 1)[0])
+	_move(protected, _ids(protected, "cash", 4), price_cut)
+	_move(protected, _ids(protected, "ditui", 1), price_cut)
 	var before := protected.capture_operation()
 	protected.finish_action(protected._groups)
 	check(protected.review_operation(before, "finish_action")["expected"] and protected.step_complete
-		and protected.state.resource_count(GameState.PLAYER, "cash") == 16
-		and protected.state.resource_count(GameState.PLAYER, "user") == 3,
-		"资源+推送先组再加云课堂：对手只打掉富余1用户，3配方用户受保护且真实赚4现金")
-	var mixed_buffs := _at_buff_step("buff.output")
+		and protected.state.resource_count(GameState.PLAYER, "cash") == 3
+		and protected.state.resource_count(GameState.PLAYER, "user") == 10,
+		"现金+降价先组再加地推：对手3点只打掉未受保护现金，2配方现金付款后真实产2用户")
+	var mixed_buffs := _at_step("buff.output")
 	var extra_buff := mixed_buffs.state.add_card(GameState.PLAYER, "tuisong")
 	mixed_buffs._reconcile_groups()
 	var mixed_anchor := int(extra_buff["uid"])
@@ -299,158 +295,62 @@ func _test_material_first() -> void:
 	check(mixed_buffs.review_operation(before, "layout")["expected"]
 		and ComboRules.evaluate(_material_group(mixed_buffs, mixed_anchor)).get("output_n") == 16,
 		"多种Buff与富余资源先组后加入云课堂，真实效果为16现金")
-	var rearranged := _at_buff_step("buff.protect_user")
-	var material_buff := int(_ids(rearranged, "tuisong", 1)[0])
-	var material_users := _ids(rearranged, "user", 3)
-	_move(rearranged, material_users, material_buff)
+	var rearranged := _at_step("defense.protect")
+	var material_buff := int(_ids(rearranged, "jiangjia", 1)[0])
+	var material_cash := _ids(rearranged, "cash", 2)
+	_move(rearranged, material_cash, material_buff)
 	before = rearranged.capture_operation()
 	_move(rearranged, [material_buff])
 	check(rearranged.review_operation(before, "layout", {"picked_uids": [material_buff]})["expected"]
-		and not rearranged.step_complete and _counts(rearranged, int(material_users[0])) == {"user": 3},
-		"用户+推送尚未配上业务时可拆出Buff重新整理，不把准备摞当已经生效的业务")
+		and not rearranged.step_complete and _counts(rearranged, int(material_cash[0])) == {"cash": 2},
+		"现金+降价尚未配上业务时可拆出Buff重新整理，不把准备摞当已经生效的业务")
 	before = rearranged.capture_operation()
-	_move(rearranged, [material_buff], int(material_users[0]))
+	_move(rearranged, [material_buff], int(material_cash[0]))
 	check(rearranged.review_operation(before, "layout")["expected"] and not rearranged.step_complete,
-		"拆开的推送可反向叠回用户材料摞，仍只是合法准备")
+		"拆开的降价促销可反向叠回现金材料摞，仍只是合法准备")
 	before = rearranged.capture_operation()
-	_move(rearranged, _ids(rearranged, "yunketang", 1), int(material_users[0]))
+	_move(rearranged, _ids(rearranged, "ditui", 1), int(material_cash[0]))
 	check(rearranged.review_operation(before, "layout")["expected"]
-		and ComboRules.evaluate(_material_group(rearranged, int(material_users[0]))).get("protect_user"),
-		"准备材料拆开重组后补核心，最终共享规则正常识别用户保护")
+		and ComboRules.evaluate(_material_group(rearranged, int(material_cash[0]))).get("protect_cash"),
+		"准备材料拆开重组后补核心，最终共享规则正常识别现金保护")
 
-	var wrong := _at_buff_step("buff.protect_user")
-	var target_buff := int(_ids(wrong, "tuisong", 1)[0])
+	var wrong := _at_step("defense.protect")
+	var target_buff := int(_ids(wrong, "jiangjia", 1)[0])
 	before = wrong.capture_operation()
-	_move(wrong, _ids(wrong, "cash", 3), target_buff)
-	check(not wrong.review_operation(before, "layout")["expected"], "用户保护目标仍拒绝先把现金和Buff组为错料摞")
-	wrong.restore_operation(before)
 	_move(wrong, _ids(wrong, "user", 3), target_buff)
+	check(not wrong.review_operation(before, "layout")["expected"], "现金保护目标仍拒绝先把用户和Buff组为错料摞")
+	wrong.restore_operation(before)
+	_move(wrong, _ids(wrong, "cash", 2), target_buff)
 	before = wrong.capture_operation()
-	_move(wrong, _ids(wrong, "cash", 1), target_buff)
-	check(not wrong.review_operation(before, "layout")["expected"], "尚无业务核心的用户+Buff准备摞混入错类型现金仍应撤回")
+	_move(wrong, _ids(wrong, "user", 1), target_buff)
+	check(not wrong.review_operation(before, "layout")["expected"], "尚无业务核心的现金+Buff准备摞混入错类型用户仍应撤回")
 	wrong.restore_operation(before)
 	var unrelated := wrong.state.add_card(GameState.PLAYER, "baoyue")
 	wrong._reconcile_groups()
 	before = wrong.capture_operation()
 	_move(wrong, [unrelated["uid"]], target_buff)
-	check(not wrong.review_operation(before, "layout")["expected"], "材料先组不允许用不相干业务核心替代目标云课堂")
+	check(not wrong.review_operation(before, "layout")["expected"], "材料先组不允许用不相干业务核心替代目标地推扫码")
 	wrong.restore_operation(before)
-	_move(wrong, _ids(wrong, "yunketang", 1), target_buff)
+	_move(wrong, _ids(wrong, "ditui", 1), target_buff)
 	before = wrong.capture_operation()
-	_move(wrong, _ids(wrong, "yunketang", 1))
+	_move(wrong, _ids(wrong, "ditui", 1))
 	check(not wrong.review_operation(before, "layout")["expected"], "有效组合移走业务核心仍是退步，不能冒充无核心材料准备")
 
-func _at_buff_step(id: String) -> TutorialSession:
-	var session := TutorialSession.new("buffs")
-	for index in session.course_data["steps"].size():
-		if session.course_data["steps"][index]["id"] != id: continue
-		session.step_index = index
-		session._enter_step()
-		return session
-	return session
+## 按步骤 id 进入任一课程的指定步骤，起点与连续教学一致。
+func _at_step(id: String) -> TutorialSession:
+	for course in TutorialCatalog.courses():
+		for index in course["steps"].size():
+			if course["steps"][index]["id"] != id: continue
+			var session := TutorialSession.new(str(course["id"]))
+			session.step_index = index
+			session._enter_step()
+			return session
+	return TutorialSession.new("buffs")
 
 func _material_group(session: TutorialSession, uid: int) -> Array:
 	for group in session._groups:
 		if group.any(func(card): return int(card["uid"]) == uid): return group
 	return []
-
-func _test_remove_protection() -> void:
-	var session := _at_buff_step("buff.spare")
-	var cloud := int(_ids(session, "yunketang", 1)[0])
-	var users := _ids(session, "user", 4)
-	var push := int(_ids(session, "tuisong", 1)[0])
-	_move(session, users, cloud)
-	_move(session, [push], cloud)
-	check(session.step_complete and session.current_step()["id"] == "buff.spare",
-		"保护范围真实编组达标后仍停在本步，等待玩家确认")
-	session.acknowledge()
-	check(session.current_step()["id"] == "buff.remove" and not session.step_complete
-		and _counts(session, cloud) == {"yunketang": 1, "user": 4, "tuisong": 1},
-		"确认保护范围后完整保留云课堂、4用户与推送组合，进入移除Buff目标")
-	var before := session.capture_operation()
-	_move(session, [push])
-	var review := session.review_operation(before, "layout", {"picked_uids": [push], "split_uid": push})
-	check(review["expected"] and session.review_operation(before, "layout")["expected"] and session.step_complete,
-		"仅把推送单张拖到空处应通过移除保护目标，是否带视觉拆牌信息不影响")
-	check(_counts(session, cloud) == {"yunketang": 1, "user": 4}
-		and _material_group(session, push).size() == 1
-		and _material_group(session, cloud).filter(func(card): return card["def_id"] == "user").all(
-			func(card): return not session.preview_protected(int(card["uid"]), "user")),
-		"单张移出后四用户完整留在有效业务里，仅保护标记消失")
-	# 模型按成员而非数组顺序裁决；模拟正式摞中Buff在用户前方的排列。
-	session.restore_operation(before)
-	var arranged: Array = []
-	for uid in [cloud, push] + users: arranged.append(session.state.find_card(GameState.PLAYER, int(uid)))
-	var groups: Array = session._groups.filter(func(group): return not group.any(func(card): return int(card["uid"]) == cloud))
-	groups.append(arranged)
-	session.preview_groups(groups)
-	before = session.capture_operation()
-	_move(session, [push])
-	check(session.review_operation(before, "layout", {"picked_uids": [push]})["expected"] and session.step_complete,
-		"Buff排在用户前方时精确移出同一张也合法，模型不要求它必须位于摞末端")
-	session.restore_operation(before)
-	_move(session, [push] + users)
-	check(session.review_operation(before, "layout", {"picked_uids": [push] + users})["expected"]
-		and session.review_operation(before, "layout")["expected"] and not session.step_complete,
-		"推送位于中间时允许按真实拖牌规则带走后方全部用户，作为拆保护准备而非完成")
-	var trailing := session.capture_operation()
-	_move(session, users, cloud)
-	check(session.review_operation(trailing, "layout", {"picked_uids": users})["expected"] and session.step_complete
-		and _counts(session, cloud) == {"yunketang": 1, "user": 4} and _material_group(session, push).size() == 1,
-		"推送连带用户的临时摞可直接把原用户拖回云课堂，不必额外落地一次")
-	session.restore_operation(trailing)
-	_move(session, users)
-	check(session.review_operation(trailing, "layout", {"picked_uids": users})["expected"] and not session.step_complete,
-		"无业务核心的推送+用户摞可以继续拆开，不被当作无关旧业务锁住")
-	var detached := session.capture_operation()
-	_move(session, users, cloud)
-	check(session.review_operation(detached, "layout", {"picked_uids": users})["expected"] and session.step_complete
-		and _counts(session, cloud) == {"yunketang": 1, "user": 4} and _material_group(session, push).size() == 1
-		and session.state.resource_count(GameState.PLAYER, "user") == 6,
-		"将原4张用户补回云课堂才达成无保护有效配方，所有原用户和推送均保留")
-	# 推送位于整个组头部时，点它只会整摞平移；先从第二张开始拆，再单拆末尾Buff。
-	session.restore_operation(before)
-	groups = session._groups.filter(func(group): return not group.any(func(card): return int(card["uid"]) == cloud))
-	arranged = []
-	for uid in [push, cloud] + users: arranged.append(session.state.find_card(GameState.PLAYER, int(uid)))
-	groups.append(arranged)
-	session.preview_groups(groups)
-	var head := session.capture_operation()
-	_move(session, [cloud] + users)
-	check(session.review_operation(head, "layout", {"picked_uids": [cloud] + users})["expected"]
-		and session.step_complete and _material_group(session, push).size() == 1,
-		"推送在整组头部时可拖出后方业务与用户，留下单张推送同样完成拆保护")
-	# 先取走用户再移出Buff：每次都只拆分原材料，尚未补回业务前不能完成。
-	session.restore_operation(before)
-	for index in users.size():
-		var partial := session.capture_operation()
-		_move(session, [users[index]])
-		check(session.review_operation(partial, "layout", {"picked_uids": [users[index]]})["expected"]
-			and not session.step_complete, "拆保护允许先逐张移出第%d用户，不提前完成" % (index + 1))
-	var empty_core := session.capture_operation()
-	_move(session, [push])
-	check(session.review_operation(empty_core, "layout", {"picked_uids": [push]})["expected"] and not session.step_complete,
-		"用户已暂时拆出后可把推送单独移走，空业务仍不能冒充有效配方")
-	var to_refill := session.capture_operation()
-	_move(session, users, cloud)
-	var returned_uids := _material_group(session, cloud).map(func(card): return int(card["uid"]))
-	check(session.review_operation(to_refill, "layout", {"picked_uids": users})["expected"] and session.step_complete
-		and users.all(func(uid): return returned_uids.has(uid)),
-		"拆散再补回后真实原4用户UID全部归回业务，完成状态来自当前配方")
-	# 新拆牌准备只允许分离原组，不能借它整理现金或往目标业务混入错料。
-	session.restore_operation(before)
-	var cash := _ids(session, "cash", 4)
-	_move(session, cash)
-	check(not session.review_operation(before, "layout", {"picked_uids": cash})["expected"],
-		"拆保护目标中无关现金整理不算拆分准备")
-	session.restore_operation(before)
-	_move(session, [cash[0]], cloud)
-	check(not session.review_operation(before, "layout", {"picked_uids": [cash[0]]})["expected"] and not session.step_complete,
-		"含推送的目标组额外混入现金仍回滚，不能用拆牌准备规则放行合并错料")
-	session.restore_operation(before)
-	_move(session, [push] + users, int(cash[0]))
-	check(not session.review_operation(before, "layout", {"picked_uids": [push] + users})["expected"] and not session.step_complete,
-		"推送连带用户只能拆到空处，混进现金摞仍拒绝")
 
 func _test_misplaced_resources() -> void:
 	var session := TutorialSession.new("attack")
@@ -549,27 +449,8 @@ func _test_surplus_and_buffs() -> void:
 	check(session.review_operation(before, "finish_action")["expected"] and session.step_complete, "多资源多Buff的真实结算可通过强化教学")
 	check(session.state.resource_count(GameState.PLAYER, "cash") == 28 and session.state.resource_count(GameState.PLAYER, "user") == 8, "两张引擎真实使云课堂产16现金，12变28且用户不消耗")
 	check(session._resolution_match({"leader": "yunketang", "output_n": 8, "buff_count": {"yinqing996": 1}}), "实际16产出和2Buff满足至少8产出及1Buff的目标")
-	var result_state := StateCodec.snapshot(session.state)
 	session.acknowledge()
-	check(session.current_step()["id"] == "buff.stack" and session.current_step()["kind"] == "read" and session.step_complete, "下一步要求两张Buff已真实完成，转成可点击观察")
-	check(session.phase == "review" and StateCodec.snapshot(session.state) == result_state, "提前完成的叠乘观察保持真实16现金结果，不开新轮")
-	before = session.capture_operation()
-	session.demo_action()
-	session.end_demo()
-	before["seen_demo"] = true
-	check(session.capture_operation() == before and session.current_step()["kind"] == "read", "演示往返完整恢复入步已完成阅读标记")
-	session.acknowledge()
-	check(session.current_step()["id"] == "buff.attack" and not session.step_complete, "已完成的第二张Buff观察可继续，旧产出不会完成攻击新场景")
-
-	var ordinary := TutorialSession.new("buffs")
-	ordinary.run_example()
-	ordinary.acknowledge()
-	check(ordinary.current_step()["id"] == "buff.stack" and not ordinary.step_complete and ordinary.phase == "action" and ordinary.state.round_num == 2, "上一轮只放1Buff时仍必须新一轮实际叠乘生产，不把旧结果当达标")
-	ordinary._example_action({"op": "groups", "groups": [{"yunketang": 1, "user": 3, "yinqing996": 2}]})
-	check(not ordinary.step_complete, "新一轮摆上2Buff尚未结算时仍不满足实际产出目标")
-	before = ordinary.capture_operation()
-	ordinary.finish_action(ordinary._groups)
-	check(ordinary.review_operation(before, "finish_action")["expected"] and ordinary.step_complete and ordinary.state.resource_count(GameState.PLAYER, "cash") == 36, "第二轮真实产16完成叠乘：第一轮20现金再加16")
+	check(session.current_step()["id"] == "buff.attack" and not session.step_complete, "翻倍产出完成后进入攻击强化，旧产出不会完成攻击新场景")
 
 	var growth := TutorialSession.new("growth")
 	growth.buy(0)
@@ -582,12 +463,10 @@ func _test_surplus_and_buffs() -> void:
 	check(growth.review_operation(before, "finish_action")["expected"] and growth.state.resource_count(GameState.PLAYER, "cash") == 11 and growth.state.resource_count(GameState.PLAYER, "user") == 10, "地推放4现金只真实支付2；购买后9加4减2得11现金，并产2用户")
 	check(_counts(growth, int(_ids(growth, "ditui", 1)[0])).get("cash") == 2, "现金配方中的富余2张保留，不被教学抹掉")
 	growth.acknowledge()
-	check(growth.state.round_num == 2 and growth.step_complete and growth.current_step()["kind"] == "read", "足量现金留到下轮已经满足补料目标，允许观察继续")
+	check(growth.completed and growth.state.round_num == 1, "扩大生意以结算收尾，确认后完成课程，不提前开新轮")
 
 func _test_fission_and_upgrades() -> void:
-	var session := TutorialSession.new("buffs")
-	session.step_index = 3
-	session._enter_step()
+	var session := _at_step("buff.fill")
 	var before := session.capture_operation()
 	session._example_action({"op": "groups", "groups": [{"jiaolv": 1, "user": 2, "liebian": 2}]})
 	check(session.review_operation(before, "layout")["expected"] and session.step_complete, "裂变教学接受2用户与2裂变，仍实际触发未满4人的补满效果")
@@ -596,26 +475,25 @@ func _test_fission_and_upgrades() -> void:
 	_move(session, _ids(session, "user", 4), core)
 	check(not session.step_complete and not session.review_operation(before, "layout")["expected"], "4用户自身已满配方，不再产生裂变补满，不能冒充裂变教学")
 	session.restore_operation(before)
-	session.acknowledge()
-	check(not session.step_complete, "进入无用户失效目标时，两张用户尚未移走不能误判")
 	_move(session, _ids(session, "user", 2))
-	check(session.step_complete, "用户移空后即使双裂变也不能独立生产，零用户条件仍严格")
+	check(not ComboRules.evaluate(_material_group(session, core)).get("valid", false),
+		"用户移空后即使双裂变也不能独立生产，裂变至少需要一张真实用户")
 
 	var upgrade := TutorialSession.new("upgrade")
-	upgrade.run_example()
-	upgrade.acknowledge()
 	var third := upgrade.state.add_card(GameState.PLAYER, "yunketang")
 	var higher := upgrade.state.add_card(GameState.PLAYER, "jiaolv")
 	var buff := upgrade.state.add_card(GameState.PLAYER, "yinqing996")
 	upgrade._reconcile_groups()
-	upgrade.run_example()
+	upgrade._example_action({"op": "groups", "groups": [{"yunketang": 2}]})
 	var ready := upgrade.capture_operation()
 	var leader := int(_ids(upgrade, "yunketang", 1)[0])
+	check(ComboRules.evaluate(_material_group(upgrade, leader)).get("output_card") == "jiaolv", "两张同名云课堂组成合法升级材料")
 	for wrong in [third["uid"], higher["uid"], buff["uid"], _ids(upgrade, "cash", 1)[0]]:
 		_move(upgrade, [wrong], leader)
-		check(not upgrade.step_complete and not upgrade.review_operation(ready, "layout")["expected"], "升级仍拒绝第三张/混档/Buff/资源等真实非法材料 %s" % wrong)
+		check(ComboRules.evaluate(_material_group(upgrade, leader)).get("output_card") != "jiaolv"
+			and not upgrade.review_operation(ready, "layout")["expected"], "升级仍拒绝第三张/混档/Buff/资源等真实非法材料 %s" % wrong)
 		upgrade.restore_operation(ready)
-	check(upgrade.capture_operation() == ready and upgrade.step_complete, "撤回升级错误材料保持原两张合法合成")
+	check(upgrade.capture_operation() == ready, "撤回升级错误材料保持原两张合法合成")
 
 func _test_growth_purchase_choices() -> void:
 	# 两条明确选择各走完一课；预期数值独立于示例卡名与适配代码。
@@ -639,12 +517,6 @@ func _test_growth_purchase_choices() -> void:
 			and session.review_operation(before, "finish_action")["expected"], id + "所选业务真实结算被接受")
 		check(session.state.resource_count(GameState.PLAYER, "cash") == 12 - choice[1] + 4 - choice[2]
 			and session.state.resource_count(GameState.PLAYER, "user") == 8 + choice[3], id + "真实消耗现金并产出对应用户数量")
-		session.acknowledge()
-		check(session.current_step()["id"] == "growth.refill" and session.state.round_num == 2
-			and session.current_step()["hint"].contains(CardDB.card_name(id)), id + "下一回合仍提示所选业务补料")
-		before = session.capture_operation()
-		session.preview_groups(session._groups_for_specs([{id: 1, "cash": choice[2]}], true))
-		check(session.step_complete and session.review_operation(before, "layout")["expected"], id + "下一回合按实际现金配方补料被接受")
 		session.acknowledge()
 		check(session.completed, id + "能够完整完成扩大生意课程")
 	var wrong := TutorialSession.new("growth")
@@ -676,16 +548,14 @@ func _test_produced_cards() -> void:
 	check(record["def_id"] == "cash" and record.has("uid"), "后续消耗真实产出牌后，事件仍保留可演出的实体记录")
 
 	var upgrade := TutorialSession.new("upgrade")
-	for _i in 3:
-		upgrade.run_example()
-		if _i < 2: upgrade.acknowledge()
+	upgrade.run_example()
 	productions = upgrade.events.filter(func(event): return event.get("op") == Intent.OP_PRODUCE)
 	check(productions.size() == 1 and productions[0]["produced_cards"].size() == 1 and productions[0]["produced_cards"][0]["card"]["def_id"] == "jiaolv", "升级事件记录实际新焦虑贩卖机，不把消失材料当产出")
 
 	var attack := TutorialSession.new("attack")
-	for _i in 4:
+	for _i in 3:
 		attack.run_example()
-		if _i < 3: attack.acknowledge()
+		if _i < 2: attack.acknowledge()
 	productions = attack.events.filter(func(event): return event.get("op") == Intent.OP_PRODUCE and event.get("seat") == GameState.BOT)
 	check(productions.size() == 1 and productions[0]["produced_cards"].is_empty(), "对手组合被拆散后无实际产出，事件不得按eval虚构资源")
 
@@ -698,20 +568,19 @@ func _test_results() -> void:
 	session.finish_action(session._groups)
 	check(session.review_operation(before, "finish_action")["expected"] and session.state.resource_count(GameState.PLAYER, "cash") == 12, "结算步骤真实赚4现金，购买后的8变成12")
 	var settled := StateCodec.snapshot(session.state)
-	session.acknowledge()
-	check(session.current_step()["kind"] == "confirm" and session.phase == "review" and session.state.round_num == 1 and StateCodec.snapshot(session.state) == settled, "收入对白保留刚结算局面，不提前开轮、发牌或刷新随机数")
 	var read := session.capture_operation()
 	session.finish_action()
-	check(not session.review_operation(read, "finish_action")["expected"], "收入对白不能用行动按钮跳过阅读开新轮")
+	check(not session.review_operation(read, "finish_action")["expected"], "收入结果不能用行动按钮跳过确认开新轮")
 	session.restore_operation(read)
 	session.acknowledge()
-	check(session.completed and StateCodec.snapshot(session.state) == settled, "确认结果完成课程也保持结算状态")
+	check(session.completed and session.phase == "review" and session.state.round_num == 1 and StateCodec.snapshot(session.state) == settled,
+		"确认结果完成课程，保留刚结算局面，不提前开轮、发牌或刷新随机数")
 
 func _test_attacks() -> void:
 	var session := TutorialSession.new("attack")
-	for _i in 2:
-		session.run_example()
-		session.acknowledge()
+	session.run_example()
+	session.acknowledge()
+	session.finish_action()
 	var before := session.capture_operation()
 	var wrong: Dictionary = {}
 	var right: Dictionary = {}
@@ -734,27 +603,11 @@ func _test_attacks() -> void:
 	session.finish_attack()
 	check(session.review_operation(finish_before, "finish_attack")["expected"] and session.step_complete, "到结束攻击目标再结束可以验证对手停产")
 
-func _test_attack_types() -> void:
-	var session := TutorialSession.new("tactics")
-	session.step_index = 2
-	session._enter_step()
-	session._example_action({"op": "groups", "groups": [{"zuokong": 1, "user": 6}, {"chaping": 1, "user": 6}]})
-	session.finish_action(session._groups)
-	var before := session.capture_operation()
-	session._example_action({"op": "attack", "res": "cash"})
-	check(session.review_operation(before, "attack")["expected"] and not session.step_complete, "两种攻击目标可先完成现金这一半")
-	var half := session.capture_operation()
-	session._example_action({"op": "attack", "res": "cash"})
-	check(not session.review_operation(half, "attack")["expected"], "重复现金攻击不能冒充用户攻击")
-	session.restore_operation(half)
-	session._example_action({"op": "attack", "res": "user"})
-	check(session.review_operation(half, "attack")["expected"] and session.step_complete, "保留一半进展后命中用户完成两种攻击")
-
 func _test_pile_attacks() -> void:
 	var session := TutorialSession.new("attack")
-	for _i in 2:
-		session.run_example()
-		session.acknowledge()
+	session.run_example()
+	session.acknowledge()
+	session.finish_action()
 	var before := session.capture_operation()
 	var target: Dictionary = session.applier.affordable_targets(GameState.PLAYER).filter(
 		func(candidate): return candidate.get("leader") == "pinshaoshao")[0]
@@ -789,7 +642,6 @@ func _test_pile_attacks() -> void:
 		{"zuokong": 1, "user": 6, "resou": 2}, {"yunketang": 1, "user": 3}]})
 	surplus.acknowledge()
 	surplus.finish_action(surplus._groups)
-	surplus.acknowledge()
 	var spare_before := surplus.capture_operation()
 	var spare_target: Dictionary = surplus.applier.affordable_targets(GameState.PLAYER).filter(
 		func(candidate): return candidate.get("leader") == "pinshaoshao")[0]
@@ -800,28 +652,6 @@ func _test_pile_attacks() -> void:
 		"两个Buff真实提供12攻击点，同手可打掉三张配方现金与两张富余现金，余7点")
 	check(surplus.review_operation(spare_before, "attack", spare_detail)["expected"] and surplus.step_complete,
 		"首击已拆配方仍允许同摞后续合法余量，不因示例只攻击一次而回滚整手")
-
-	var locked := TutorialSession.new("tactics")
-	locked.step_index = 3
-	locked._enter_step()
-	locked._example_action({"op": "groups", "groups": [{"zuokong": 1, "user": 6}]})
-	locked.finish_action(locked._groups)
-	var start := locked.capture_operation()
-	var first: Dictionary = locked.applier.affordable_targets(GameState.PLAYER).filter(
-		func(candidate): return GameState.batch_locks(candidate))[0]
-	var first_detail := _apply_pile(locked, first)
-	check(locked.review_operation(start, "attack", first_detail)["expected"] and not locked.step_complete,
-		"锁定教学允许一手打完整个第一组合，保留第二组合目标")
-	var half := locked.capture_operation()
-	var second: Dictionary = locked.applier.affordable_targets(GameState.PLAYER).filter(
-		func(candidate): return GameState.batch_locks(candidate))[0]
-	var second_detail := _apply_pile(locked, second)
-	check(locked.review_operation(half, "attack", second_detail)["expected"] and locked.step_complete,
-		"第一摞清完后另一次点击第二摞合法，并完成两批目标")
-	var combined := first_detail.duplicate(true)
-	combined["pile_uids"].append_array(second_detail["pile_uids"])
-	check(not locked.review_operation(start, "attack", combined)["expected"],
-		"即使两摞都符合攻击计划，也不能伪装成同一次选摞的攻击")
 
 func _apply_pile(session: TutorialSession, selected: Dictionary) -> Dictionary:
 	var batch := GameState.target_batch(selected)
@@ -837,40 +667,24 @@ func _apply_pile(session: TutorialSession, selected: Dictionary) -> Dictionary:
 		target = {} if choices.is_empty() else choices[0]
 	return {"target": selected, "pile_uids": pile_uids}
 
-func _test_attack_victory_finalization() -> void:
-	var session := TutorialSession.new("attack")
-	session.step_index = 4
-	session._enter_step()
-	session._example_action({"op": "groups", "groups": [{"zuokong": 1, "user": 6}]})
-	session.finish_action(session._groups)
+func _test_defeat_finalization() -> void:
+	var session := TutorialSession.new("defense")
 	var before := session.capture_operation()
-	var target: Dictionary = session.applier.affordable_targets(GameState.PLAYER)[0]
-	session.attack(target)
-	check(session.state.winner == GameState.PLAYER and session.phase == "over"
+	session.finish_action()
+	check(session.state.winner == GameState.BOT and session.phase == "over"
 		and session.events.slice(before["events"].size()).filter(func(event): return event.get("op") == Intent.OP_FINALIZE).size() == 1,
-		"教程清零获胜与正式流程一致，决胜攻击后通过共享裁决完成且仅完成一次FINALIZE")
+		"教程被打空判负与正式流程一致，决胜攻击后通过共享裁决完成且仅完成一次FINALIZE")
 	check(session.state.combos.is_empty()
 		and session.state.players[GameState.PLAYER]["cards"].all(func(card): return not card.get("locked", false))
 		and session.state.players[GameState.BOT]["cards"].all(func(card): return not card.get("locked", false)),
-		"攻击胜利收尾清空双方组合并解锁剩余实体")
-	check(session.review_operation(before, "attack", {"target": target, "pile_uids": target["uids"]})["expected"]
-		and session.step_complete, "共享收尾不会丢失实际攻击事件或使胜利学习目标无法通过")
+		"判负收尾清空双方组合并解锁剩余实体")
+	check(session.review_operation(before, "finish_action")["expected"] and session.step_complete,
+		"共享收尾不会丢失对手攻击事件，判负学习目标可以通过")
 	session.restore_operation(before)
 	check(session.capture_operation() == before and not session.state.combos.is_empty(),
-		"决胜攻击也能按同一事务完整还原，恢复胜负、组合、锁及事件")
+		"判负这一手也能按同一事务完整还原，恢复胜负、组合、锁及事件")
 
 func _test_preparation_and_cleanup() -> void:
-	var session := TutorialSession.new("tactics")
-	session.step_index = 5
-	session._enter_step()
-	var before := session.capture_operation()
-	var extra := _ids(session, "jiaolv", 1)
-	_move(session, extra)
-	check(session.review_operation(before, "layout", {"picked_uids": extra})["expected"] and not session.step_complete, "污染升级组可以先移走错误业务，接受修复中间步骤")
-	var partial := session.capture_operation()
-	var user := _ids(session, "user", 1)
-	_move(session, user)
-	check(session.review_operation(partial, "layout", {"picked_uids": user})["expected"] and session.step_complete, "再移走用户留下真正的两张云课堂升级")
 	var recipe := _at_recipe()
 	var users := _ids(recipe, "user", 8)
 	var split_before := recipe.capture_operation()
@@ -884,27 +698,7 @@ func _test_preparation_and_cleanup() -> void:
 	for _i in 3:
 		independent.run_example()
 		independent.acknowledge()
-	check(independent.step_complete and independent.current_step()["kind"] == "read" and independent.state.round_num == 2, "用户配方保留时最后一步转为可点击观察，不要求无意义操作")
-
-func _test_previous_business() -> void:
-	var session := TutorialSession.new("growth")
-	for _i in 3:
-		session.run_example()
-		session.acknowledge()
-	check(session.current_step()["id"] == "growth.refill" and session.state.round_num == 2, "补现金目标进入第二轮，云课堂仍留在桌面")
-	var cloud := int(_ids(session, "yunketang", 1)[0])
-	var user := -1
-	for group in session._groups:
-		if not group.any(func(card): return int(card["uid"]) == cloud): continue
-		for card in group:
-			if card["def_id"] == "user": user = int(card["uid"]); break
-	var before := session.capture_operation()
-	_move(session, [user])
-	check(not session.review_operation(before, "layout", {"picked_uids": [user]})["expected"], "补地推现金时拆已完成云课堂，不能被当作降低材料错误的进展")
-	session.restore_operation(before)
-	var cash := _ids(session, "cash", 2)
-	_move(session, cash, int(_ids(session, "ditui", 1)[0]))
-	check(session.review_operation(before, "layout", {"picked_uids": cash})["expected"] and session.step_complete and _counts(session, cloud).get("user") == 3, "正确补地推现金，并完整保留云课堂及三用户")
+	check(independent.completed, "自己经营三步完成课程，结算后不再要求补料")
 
 func _ids(session: TutorialSession, id: String, count: int) -> Array:
 	var out: Array = []

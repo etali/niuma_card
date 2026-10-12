@@ -16,7 +16,7 @@ func _run() -> void:
 	_punctuation.compile("[\\p{P}\\p{Z}\\p{C}]")
 	_quantities.compile("[0-9]+\\x{2060}张")
 	var examples := _examples()
-	check(examples.size() == 124, "覆盖42步目标、40句完成结果和42句回滚说明")
+	check(examples.size() == 71, "覆盖23步目标、23句完成结果、23句回滚说明和2句规则纠正说明")
 	var main: Node = await boot_drawer(Vector2i(1280, 800), 1.0, true)
 	if not need(main != null, "真实牌桌启动用于验证Label实际字形断行"): return
 	var p: Node = main.drawer_presentation
@@ -52,7 +52,7 @@ func _run() -> void:
 				or label.get_minimum_size().y > label.size.y + 1:
 				outside.append(example.id)
 			if label.text != example.text: modified.append(example.id)
-			if example.id == "buff.spare.goal":
+			if example.id == "defense.preempt.goal":
 				print("SCREENSHOT_SENTENCE ", JSON.stringify({"screen": str(cfg[0]), "dpi": cfg[1],
 					"font_size": label.get_theme_font_size("font_size"), "width": label.size.x, "lines": lines}))
 		var title := "%s@%sx" % [cfg[0], cfg[1]]
@@ -75,6 +75,8 @@ func _examples() -> Array:
 			if not str(step.get("completion_goal", "")).is_empty():
 				examples.append({"id": step.id + ".completion_goal", "text": TutorialCatalog.ui("coach.tap_continue", {"goal": step.completion_goal})})
 			examples.append({"id": step.id + ".rollback", "text": TutorialCatalog.ui("operation_rollback", {"goal": step.goal})})
+			if step.has("rejected_goal"):
+				examples.append({"id": step.id + ".rejected", "text": step.rejected_goal})
 	return examples
 
 func _actual_lines(label: Label) -> Array:

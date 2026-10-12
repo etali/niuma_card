@@ -31,9 +31,9 @@ func _run() -> void:
 	main.add_child(sound)
 	main.sfx = sound
 	await _player_batch()
-	await _two_resources()
+	await _loose_pile()
 	await _bot_attack(false)
-	await _bot_attack(false, 4)
+	await _bot_attack(false, 3)
 	await _bot_attack(true)
 	await _cancel_attack(false)
 	await _cancel_attack(true)
@@ -116,37 +116,29 @@ func _player_batch() -> void:
 		and not completed[0].result.get("rolled_back", false) and not completed[0].retired_alive,
 		"所有纸片退场后只发一次accepted，整摞不被教程回滚")
 
-func _two_resources() -> void:
-	if not await _prepare("tactics", "tactics.types"): return
+func _loose_pile() -> void:
+	if not await _prepare("buffs", "buff.attack"): return
 	var cash_pool: int = arena.session.applier.pools(GameState.PLAYER)[CardDB.RES_CASH]
 	var user_pool: int = arena.session.applier.pools(GameState.PLAYER)[CardDB.RES_USER]
 	var cash_cards := _trigger(_target("cash"))
-	check(cash_cards.size() > 1 and cash_cards.size() <= cash_pool
+	check(cash_pool == 6 and cash_cards.size() > 1 and cash_cards.size() <= cash_pool
 		and arena.session.applier.pools(GameState.PLAYER)[CardDB.RES_USER] == user_pool,
 		"闲置现金整摞沿用正式点数上限，不消耗用户攻击池")
 	await _wait_completed()
-	check(completed.size() == 1 and completed[0].result.get("expected", false)
-		and arena.session.current_step().get("id") == "tactics.types" and not arena.session.step_complete,
-		"只攻击现金时仍留在双类型目标，成功操作不会提早越过用户攻击")
-	completed.clear()
-	var users := _trigger(_target("user"))
-	check(users.size() > 1 and users.all(func(card): return card.def_id == "user"),
-		"第二击整摞使用用户攻击，命中真实用户实体")
-	await _wait_completed()
-	check(completed.size() == 1 and completed[0].result.get("expected", false),
-		"两种资源的真实批次均被接受")
+	check(completed.size() == 1 and completed[0].result.get("expected", false) and arena.session.step_complete,
+		"热搜增强后的整摞攻击被接受并完成本步")
 
-func _bot_attack(wrong: bool, user_count := 3) -> void:
-	if not await _prepare("buffs", "buff.protect_user", false): return
-	if user_count == 4:
-		arena.session._example_action({"op": "groups", "groups": [{"yunketang": 1, "user": 4, "tuisong": 1}]})
+func _bot_attack(wrong: bool, cash_count := 2) -> void:
+	if not await _prepare("defense", "defense.protect", false): return
+	if cash_count == 3:
+		arena.session._example_action({"op": "groups", "groups": [{"ditui": 1, "cash": 3, "jiangjia": 1}]})
 		arena.sync_state(true)
 		await create_timer(0.35).timeout
 	if wrong:
 		# 真实移除保护卡后结束行动：对手确实打穿业务，教程随后应回滚。
 		for group in arena.board.groups.duplicate():
 			for card in group["cards"].duplicate():
-				if card.def_id == "tuisong": arena.board._detach_from_group(card)
+				if card.def_id == "jiangjia": arena.board._detach_from_group(card)
 		arena.session.preview_groups(arena.current_groups())
 	var known: Dictionary = arena.entities.duplicate()
 	var count: int = main.table_hands.batch_count
@@ -154,17 +146,21 @@ func _bot_attack(wrong: bool, user_count := 3) -> void:
 	var preview: GameState = arena.session._preview_state()
 	var protected := {}
 	var exposed: Array = []
+	var spare: Array = []
 	var weapon: CardEntity
 	for combo in preview.combos:
-		if combo["owner"] == GameState.PLAYER and combo["eval"].get("leader") == "yunketang":
-			protected = preview.protected_uids(GameState.PLAYER, combo, CardDB.RES_USER)
+		if combo["owner"] == GameState.PLAYER and combo["eval"].get("leader") == "ditui":
+			protected = preview.protected_uids(GameState.PLAYER, combo, CardDB.RES_CASH)
 	for target in preview.attack_targets(GameState.PLAYER):
-		if target.get("res") == CardDB.RES_USER: exposed.append_array(target["uids"])
+		if target.get("res") != CardDB.RES_CASH: continue
+		exposed.append_array(target["uids"])
+		if target.get("kind") == "spare": spare.append_array(target["uids"])
 	for card in known.values():
-		if not card.draggable and card.def_id == "chaping": weapon = card
+		if not card.draggable and card.def_id == "zuokong": weapon = card
 	if not wrong:
-		check(protected.size() == 3 and exposed.size() == 1 and protected.keys().all(func(uid): return known[uid]._shield_on),
-			"放%d用户时真实保护集合与护盾均只覆盖配方3张，第4张可受击" % user_count)
+		check(protected.size() == 2 and spare.size() == cash_count - 2 and protected.keys().all(func(uid): return known[uid]._shield_on)
+			and exposed.all(func(uid): return not protected.has(uid)),
+			"放%d现金时真实保护集合与护盾均只覆盖配方2张，富余现金可受击" % cash_count)
 	var operation_goal: String = player._goal.text
 	var operation_step: int = arena.session.step_index
 	var before_positions := {}
@@ -174,28 +170,38 @@ func _bot_attack(wrong: bool, user_count := 3) -> void:
 	for uid in known:
 		if not arena.entities.has(uid): removed.append(known[uid])
 	if not need(not removed.is_empty(), "对手实际攻击玩家实体" + ("（错误结束）" if wrong else "")): return
+	var attack_n := int(CardDB.get_def("zuokong")["attack_n"])
 	check(removed.all(func(card): return card.draggable) and main.table_hands.batch_count > count
 		and arena.operation_pending and completed.is_empty(), "对手攻击也经过同一双手，先撕真实玩家牌再结算")
 	if not wrong:
 		var hits: Array = arena.session.events.slice(event_start).filter(func(event): return event.get("op") == Intent.OP_ATTACK)
 		var hit_ids: Array = []
 		for hit in hits: hit_ids.append_array(hit["removed"])
-		check(hits.size() == 1 and hits[0]["seat"] == GameState.BOT and hits[0]["target"]["res"] == CardDB.RES_USER
-			and hit_ids == exposed and hit_ids.all(func(uid): return not protected.has(uid)),
-			"放%d用户：唯一真实攻击来自BOT，只移除未保护的用户UID" % user_count)
-		check(removed.size() == 1 and removed[0].uid == exposed[0]
-			and protected.keys().all(func(uid): return arena.entities.has(uid) and not arena.state.find_card(GameState.PLAYER, uid).is_empty()),
-			"受保护3张UID在状态与原实体中都完整保留")
-		var victim: CardEntity = removed[0]
-		var hand_bounds: Rect2 = main.table_hands._batches[-1]["bounds"]
-		var expected_bounds: Rect2 = main.table_hands.card_bounds([victim], [before_positions[victim.uid]])
-		check(weapon != null and weapon.feedback_event == "attack" and not weapon.draggable
-			and hand_bounds.is_equal_approx(expected_bounds),
-			"对面真实差评牌发出攻击反馈，正式撕牌双手围住唯一被击用户")
-		print("PROTECTION users=", user_count, " protected=", protected.keys(), " exposed=", exposed,
-			" hits=", hits, " weapon_uid=", weapon.uid, " weapon_position=", weapon.global_position,
-			" victim_position=", victim.global_position, " hand_bounds=", hand_bounds)
-		await _click_control(player._mascot if user_count == 3 else player._goal)
+		check(hits.size() == attack_n and hits.all(func(hit): return hit["seat"] == GameState.BOT and hit["target"]["res"] == CardDB.RES_CASH)
+			and hit_ids.all(func(uid): return exposed.has(uid) and not protected.has(uid)) and spare.all(func(uid): return hit_ids.has(uid)),
+			"放%d现金：%d次真实攻击都来自BOT，先打组内富余，只移除未保护的现金UID" % [cash_count, attack_n])
+		# 现金配方结算时照常付款；受保护的2张应躲过攻击，再作为配方付款离场。
+		var paid: Array = []
+		for event in arena.session.events.slice(event_start):
+			if event.get("op") == Intent.OP_PRODUCE and event.get("seat") == GameState.PLAYER:
+				paid.append_array(event.get("resolution", {}).get("paid_uids", []))
+		paid.sort()
+		var shielded: Array = protected.keys()
+		shielded.sort()
+		# 演出按批移除实体：此刻只确定首批离场，命中总数以上面的真实攻击事件为准。
+		check(removed.all(func(card): return hit_ids.has(card.uid)) and paid == shielded,
+			"受保护2张现金躲过攻击，结算时正好作为地推扫码的配方付款")
+		check(weapon != null and weapon.feedback_event == "attack" and not weapon.draggable,
+			"对面真实做空报告牌发出攻击反馈")
+		if spare.is_empty():
+			# 只打散现金时三张同属一批，正式撕牌双手围住整批被击现金。
+			var hand_bounds: Rect2 = main.table_hands._batches[-1]["bounds"].grow(2.0)
+			var camera: Camera3D = main.board.camera
+			check(removed.all(func(card): return hand_bounds.has_point(camera.unproject_position(before_positions[card.uid]))),
+				"正式撕牌双手围住同一批被击散现金")
+		print("PROTECTION cash=", cash_count, " protected=", protected.keys(), " spare=", spare,
+			" hits=", hit_ids, " paid=", paid, " weapon_uid=", weapon.uid)
+		await _click_control(player._mascot if cash_count == 2 else player._goal)
 		check(arena.operation_pending and completed.is_empty() and not player._awaiting_result
 			and arena.session.step_index == operation_step and player._goal.text == operation_goal,
 			"攻击动画中真实点击对白不能跳过，也不能提前显示观察结果")
@@ -203,16 +209,17 @@ func _bot_attack(wrong: bool, user_count := 3) -> void:
 	if not wrong:
 		await create_timer(0.08).timeout
 		check(is_instance_valid(removed[0]) and removed[0].global_position.z < before_positions[removed[0].uid].z,
-			"被攻击用户纸片沿正式BOT攻击方向飘向对面，不使用玩家攻击方向")
+			"被攻击现金纸片沿正式BOT攻击方向飘向对面，不使用玩家攻击方向")
 	await _wait_completed()
 	check(completed.size() == 1 and bool(completed[0].result.get("rolled_back", false)) == wrong
 		and bool(completed[0].result.get("expected", false)) != wrong,
 		"对手演出结束后才按教学目标接受或回滚")
 	if not wrong:
-		check(arena.state.resource_count(GameState.PLAYER, CardDB.RES_USER) == 3
-			and arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 16 and arena.state.winner == "",
-			"只损失1张富余用户，受保护云课堂正常产4现金且未判负")
-		await _confirm_result(player._mascot if user_count == 3 else player._goal, user_count == 3)
+		check(arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 8 - attack_n - 2
+			and arena.state.resource_count(GameState.PLAYER, CardDB.RES_USER) == 8 + int(CardDB.get_def("ditui")["output_n"])
+			and arena.state.winner == "",
+			"只损失未受保护的现金，受保护地推扫码付2现金正常产用户且未判负")
+		await _confirm_result(player._mascot if cash_count == 2 else player._goal, cash_count == 2)
 	else:
 		await create_timer(1.0).timeout
 		await _click_control(player._goal)

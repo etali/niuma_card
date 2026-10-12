@@ -64,17 +64,20 @@ func _run() -> void:
 	var cash_before: int = stage.state.resource_count(GameState.PLAYER, CardDB.RES_CASH)
 	cash_group = stage.board.group_of(_card("cash"))
 	await _drag_pointer(cash_group["cards"][0], market.position)
-	await _wait_operation("split")
+	await _wait_operation("group")
 	check(stage.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == cash_before - price and _card("yunketang") != null,
-		"真实买牌只扣一次费用，直接进入拆牌目标")
+		"真实买牌只扣一次费用，直接进入配牌目标")
 	check(Codec.snapshot(original_state) == original_snapshot and main.tape.to_dict() == tape_snapshot, "购买不写原局或录像")
 
 	var users: Dictionary = stage.board.group_of(_card("user"))
 	if users.get("compact", false): stage.board.toggle_compact(users["cards"][0])
 	await create_timer(0.3).timeout
 	await _drag_pointer(users["cards"][-1], Vector3(0.0, 0.05, 1.8))
-	await _wait_operation("group")
-	check(player.session.current_step().get("kind") == "group", "真实拆出一张用户后直接进入配牌目标")
+	for i in 120:
+		if not stage.operation_pending: break
+		await create_timer(0.025).timeout
+	check(player.session.current_step().get("kind") == "group" and not stage.operation_pending and player._notice.is_empty(),
+		"拆出一张用户是配牌的准备，留在配牌目标")
 	var business: CardEntity = _card("yunketang")
 	for i in 3:
 		var material := _unassigned_user(business)
@@ -92,7 +95,7 @@ func _run() -> void:
 	var cash_at_settle: int = stage.state.resource_count(GameState.PLAYER, CardDB.RES_CASH)
 	var users_at_settle: int = stage.state.resource_count(GameState.PLAYER, CardDB.RES_USER)
 	await _click_button(main.btn_pass)
-	await _wait_operation("confirm")
+	await _wait_result()
 	check(main.btn_pass == pass_button and stage.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == cash_at_settle + 4,
 		"点击原完成按钮真实产出4现金")
 	check(stage.state.resource_count(GameState.PLAYER, CardDB.RES_USER) == users_at_settle and player.session.phase == "review"
@@ -156,8 +159,15 @@ func _wait_operation(kind: String) -> void:
 		check(not main.btn_pass.disabled and not stage.board.input_locked,
 			"配好材料后原完成行动按钮直接可用，无额外确认")
 
+func _wait_result() -> void:
+	for i in 300:
+		if player._awaiting_result and not stage.operation_pending: break
+		await create_timer(0.025).timeout
+	check(player._awaiting_result and player.session.step_complete and not stage.operation_pending,
+		"结算演出完成后停在本课结果，等待点击继续")
+
 func _check_course_clicks() -> void:
-	# 检查点来自上面的真实买牌、拆牌、组牌和结算，只有准备重复输入用例才恢复它。
+	# 检查点来自上面的真实买牌、组牌和结算，只有准备重复输入用例才恢复它。
 	var checkpoint: Dictionary = player.session.capture_operation()
 	var visual := TableSnapshot.capture(main)
 	var view := _table_view()
@@ -168,8 +178,8 @@ func _check_course_clicks() -> void:
 		if player.session.course_id != checkpoint["course_id"]:
 			await _restore_reading_checkpoint(checkpoint, visual)
 		var mode := "触摸" if touch else "鼠标"
-		check(player._goal.text == "点我继续教程：" + next_title,
-			"%s：跨课提示显示下一课真实标题" % mode)
+		check(player._goal.text.ends_with("（点我继续教程：%s）" % next_title),
+			"%s：课末结果同时提示下一课真实标题" % mode)
 		var outside: Vector2 = main.lbl_round.get_global_rect().get_center()
 		for control in [player._mascot, player._goal]:
 			var target: Vector2 = control.get_global_rect().get_center()
@@ -224,6 +234,10 @@ func _restore_reading_checkpoint(checkpoint: Dictionary, visual: Dictionary) -> 
 	player.switch_course(str(checkpoint["course_id"]))
 	player.session.restore_operation(checkpoint)
 	stage.sync_state(true, visual)
+	# 检查点停在课末结果确认；切课会清掉确认状态，这里按原样恢复。
+	player._awaiting_result = true
+	stage.set_transition_busy(true)
+	player._refresh()
 	await relayout_drawer(main)
 
 func _check_view_and_bounds() -> void:

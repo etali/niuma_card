@@ -17,7 +17,7 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	print("=== 首课富余用户：真实买牌、拆牌、整摞方向与落桌 ===")
+	print("=== 首课富余资源：真实买牌、拆牌、整摞方向与落桌 ===")
 	main = await boot_drawer(Vector2i(1280, 800), 1.0, true)
 	if not need(main != null, "原牌桌启动"): return
 	main.drawer_presentation._learning_invitation.hide()
@@ -29,12 +29,12 @@ func _run() -> void:
 	arena.operation_finished.connect(func(result): results.append(result.duplicate(true)))
 	await create_timer(0.4).timeout
 	await _drag(_largest_users("cash")["cards"][0], arena.market_cards[0].global_position, "真实购买")
-	if not need(await _continue_step("income.split"), "真实买牌后直接进入拆牌"): return
+	if not need(await _continue_step("income.group"), "真实买牌后直接进入配牌"): return
 	var users := _largest_users()
 	if users["compact"]: arena.board.toggle_compact(users["cards"][0])
 	await create_timer(0.3).timeout
 	await _drag(users["cards"][-1], Vector3(0, 0.05, 1.8), "真实拆1用户")
-	if not need(await _continue_step("income.group"), "真实拆牌后直接进入配牌"): return
+	if not need(_accepted() and await _continue_step("income.group"), "真实拆牌是配牌准备，被接受并留在配牌目标"): return
 	check(_largest_users()["cards"].size() == 7 and _single_user() != null,
 		"教程现场是7张用户摞和1张拆出的用户")
 	checkpoint = player.session.capture_operation()
@@ -85,34 +85,35 @@ func _run() -> void:
 	finish()
 
 func _buff_material_first() -> void:
-	check(main.drawer_presentation.start_tutorial("buffs"), "从原牌桌进入强化教学")
+	check(main.drawer_presentation.start_tutorial("defense"), "从原牌桌进入守住公司")
 	player = main.drawer_presentation.tutorial
 	arena = player.arena
 	for attempt in 42:
-		if arena.session.current_step().get("id") == "buff.protect_user": break
+		if arena.session.current_step().get("id") == "defense.protect": break
 		var result: Dictionary = arena.session.run_example()
 		if not result.get("ok", false) or not arena.session.step_complete: break
 		arena.session.acknowledge()
-	if not need(arena.session.current_step().get("id") == "buff.protect_user", "前置抵达用户保护课"): return
+	if not need(arena.session.current_step().get("id") == "defense.protect", "前置抵达现金保护课"): return
 	arena.sync_state(true)
 	await create_timer(0.5).timeout
 	var buff: CardEntity
 	for card in arena.entities.values():
-		if card.draggable and card.def_id == "tuisong": buff = card
-	if not need(buff != null and _largest_users()["cards"].size() == 4, "现场提供4用户与推送弹窗"): return
-	await _drag(_largest_users()["cards"][0], buff.global_position, "4用户先拖到推送")
+		if card.draggable and card.def_id == "jiangjia": buff = card
+	if not need(buff != null and _largest_users("cash")["cards"].size() == 8, "现场提供8现金与降价促销"): return
+	await _drag(_largest_users("cash")["cards"][0], buff.global_position, "8现金先拖到降价促销")
 	var material: Variant = arena.board.group_of(buff)
-	if not need(_accepted() and material != null and material["cards"].size() == 5,
-		"先叠4用户与推送是合法中间准备，不要求业务必须先入组"): return
-	await _drag(material["cards"][0], _business().global_position, "用户推送整摞拖到云课堂")
-	var group: Variant = arena.board.group_of(_business())
-	check(_accepted() and _business_users() == 4 and group != null and group["cards"].has(buff),
-		"4用户与推送整摞进入云课堂，目标仍等待真实完成行动")
+	if not need(_accepted() and material != null and material["cards"].size() == 9,
+		"先叠8现金与降价促销是合法中间准备，不要求业务必须先入组"): return
+	await _drag(material["cards"][0], _business("ditui").global_position, "现金促销整摞拖到地推扫码")
+	var group: Variant = arena.board.group_of(_business("ditui"))
+	check(_accepted() and group != null and group["cards"].has(buff)
+		and group["cards"].filter(func(card): return card.def_id == "cash").size() == 8,
+		"8现金与降价促销整摞进入地推扫码，目标仍等待真实完成行动")
 	var preview: GameState = arena.session._preview_state()
 	var protected := {}
 	for combo in preview.combos:
-		if combo["owner"] == GameState.PLAYER and combo["eval"].get("leader") == "yunketang":
-			protected = preview.protected_uids(GameState.PLAYER, combo, CardDB.RES_USER)
+		if combo["owner"] == GameState.PLAYER and combo["eval"].get("leader") == "ditui":
+			protected = preview.protected_uids(GameState.PLAYER, combo, CardDB.RES_CASH)
 	var event_start: int = arena.session.events.size()
 	results.clear()
 	var point: Vector2 = main.btn_pass.get_global_rect().get_center()
@@ -129,14 +130,13 @@ func _buff_material_first() -> void:
 		if not results.is_empty(): break
 		await create_timer(0.02).timeout
 	var hits: Array = arena.session.events.slice(event_start).filter(func(event): return event.get("op") == Intent.OP_ATTACK)
-	check(_accepted() and hits.size() == 1 and hits[0]["seat"] == GameState.BOT
-		and hits[0]["target"]["kind"] == "spare" and hits[0]["removed"].size() == 1
-		and not protected.has(hits[0]["removed"][0]),
-		"点击原完成按钮后只有BOT攻击未受保护的第4张用户，没有我方自攻或目标回滚")
-	check(protected.size() == 3 and protected.keys().all(func(uid): return arena.entities.has(uid))
-		and arena.state.resource_count(GameState.PLAYER, CardDB.RES_USER) == 3
-		and arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 16,
-		"真实先备料路径保住3张配方用户，云课堂照常产4现金")
+	var attack_n := int(CardDB.get_def("zuokong")["attack_n"])
+	var spare_hits := hits.filter(func(hit): return hit["seat"] == GameState.BOT and hit["target"]["kind"] == "spare" and hit["removed"].size() == 1 and not protected.has(hit["removed"][0]))
+	check(_accepted() and hits.size() == attack_n and spare_hits.size() == attack_n,
+		"点击原完成按钮后只有BOT攻击组内富余现金，没有我方自攻或目标回滚")
+	check(protected.size() == 2 and arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 8 - attack_n - 2
+		and arena.state.resource_count(GameState.PLAYER, CardDB.RES_USER) == 8 + int(CardDB.get_def("ditui")["output_n"]),
+		"真实先备料路径保住2张配方现金，地推扫码付款后照常产用户")
 
 func _restore() -> void:
 	arena.cancel_pending_operation()
@@ -159,9 +159,9 @@ func _single_user() -> CardEntity:
 		if group == null or group["cards"].size() == 1: return card
 	return null
 
-func _business() -> CardEntity:
+func _business(id := "yunketang") -> CardEntity:
 	for card in arena.entities.values():
-		if card.draggable and card.def_id == "yunketang": return card
+		if card.draggable and card.def_id == id: return card
 	return null
 
 func _business_users() -> int:

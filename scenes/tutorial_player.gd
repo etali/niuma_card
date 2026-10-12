@@ -139,7 +139,12 @@ func _can_tap() -> bool:
 func _base_sentence() -> String:
 	if _awaiting_result:
 		var step: Dictionary = session.current_step()
-		return Catalog.ui("coach.tap_continue", {"goal": step.get("completion_goal", step.get("explanation", ""))})
+		var result_text: String = step.get("completion_goal", step.get("explanation", ""))
+		# 课末结果同时预告下一课；多数课程以操作结尾，不再另设一个纯阅读步骤。
+		var next_course := Catalog.next_course_id(session.course_id)
+		if int(session.step_index) == session.course_data.get("steps", []).size() - 1 and not next_course.is_empty():
+			return Catalog.ui("coach.result_next_course", {"goal": result_text, "title": Catalog.course(next_course).get("title", "")})
+		return Catalog.ui("coach.tap_continue", {"goal": result_text})
 	if session.completed or _final_reading_step():
 		var next_id := Catalog.next_course_id(session.course_id)
 		if not next_id.is_empty():

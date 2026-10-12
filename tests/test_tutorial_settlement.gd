@@ -35,10 +35,11 @@ func _run() -> void:
 	main._flush_record_view()
 	var original_tape: Dictionary = main.tape.to_dict().duplicate(true)
 
-	await _settle_case("income", "income.settle", "income.result", {"cash": 4}, {"cash": "yunketang"})
-	await _settle_case("growth", "growth.settle", "growth.refill", {"cash": 4, "user": 2},
+	# 两课都以结算收尾：点击结果后直接进入下一课首步。
+	await _settle_case("income", "income.settle", "growth.buy", {"cash": 4}, {"cash": "yunketang"})
+	await _settle_case("growth", "growth.settle", "reserve.buy", {"cash": 4, "user": 2},
 		{"cash": "yunketang", "user": "ditui"}, 2)
-	await _settle_case("buffs", "buff.stack", "buff.attack", {"cash": 16}, {"cash": "yunketang"})
+	await _settle_case("buffs", "buff.output", "buff.attack", {"cash": 8}, {"cash": "yunketang"})
 	await _growth_alternative()
 	await _reference_during_flight()
 
@@ -115,21 +116,8 @@ func _growth_alternative() -> void:
 	await _finish_step("growth.groups", "growth.settle")
 	if not need(await _wait_step("growth.settle"), "云课堂与拼少少按各自真实配方编组，直接进入结算"): return
 	if not _watch_producers({"cash": "yunketang", "user": "pinshaoshao"}, "拼少少分支"): return
-	await _settle_current("growth", "growth.settle", "growth.refill", {"cash": 4, "user": 4},
+	await _settle_current("growth", "growth.settle", "reserve.buy", {"cash": 4, "user": 4},
 		{"cash": "yunketang", "user": "pinshaoshao"}, recipe)
-	if arena.session.current_step().get("id") != "growth.refill": return
-	check(arena.state.round_num == 2 and arena.session.current_step().get("instruction", "").contains("拼少少"),
-		"下一回合仍为实际购买的拼少少补料，不退回地推扫码示例")
-	# 拼少少实际用3现金；放4张是合法富余资源，不能再次被教学的示例张数拒绝。
-	final_events.clear()
-	cash = _owned_cards("cash").slice(0, 4)
-	_apply_checked_groups(growth, [[growth.uid] + cash.map(func(card): return card.uid)])
-	if not need(await _wait_for_finish(), "为拼少少补4现金的真实编组收到操作审查结果"): return
-	var replenished: Dictionary = arena.board.group_of(growth)
-	check(final_events.size() == 1 and final_events[0].result.get("expected", false)
-		and not final_events[0].result.get("rolled_back", false) and arena.session.step_complete
-		and replenished["cards"].filter(func(card): return card.def_id == "cash").size() == 4,
-		"补4现金保留在拼少少组内并完成目标，合法富余资源不被回滚")
 
 func _apply_checked_groups(core: CardEntity, groups: Array) -> void:
 	# 捕获拿牌前状态，再让真实Board编组；落牌仍经过Arena的延迟操作审查。
@@ -178,12 +166,12 @@ func _reference_during_flight() -> void:
 		and final_events[0].flying == 0 and not final_events[0].transferring
 		and births.size() == 4 and births.values().all(func(birth): return birth.moved),
 		"恢复后四张现金继续飞到桌面，落位完成才发一次accepted")
-	await _finish_step("income.settle", "income.result")
+	await _finish_step("income.settle", "growth.buy")
 	for attempt in 120:
-		if arena.session.current_step().get("id") == "income.result": break
+		if arena.session.current_step().get("id") == "growth.buy": break
 		await create_timer(0.025).timeout
-	check(arena.session.current_step().get("id") == "income.result",
-		"查阅返回后完成演出，直接进入已有收入观察步骤，避免连续确认两次")
+	check(arena.session.current_step().get("id") == "growth.buy",
+		"查阅返回后完成演出，只确认一次结果就进入下一课")
 
 func _settle_case(course: String, step_id: String, next_step: String,
 		expected: Dictionary, leaders: Dictionary, payment_count := 0) -> void:
@@ -240,7 +228,7 @@ func _settle_current(course: String, step_id: String, next_step: String,
 	check(arena.session.current_step().get("id") == next_step, step_id + "：演出完成后按课程推进策略进入" + next_step)
 	if course == "buffs":
 		check(int(arena.session.generation) != held_generation and _owned_cards("zuokong").size() == 1,
-			"强化现金全部落位后才换到攻击场景，未吞掉16张产出的观察机会")
+			"翻倍现金全部落位后才换到攻击场景，未吞掉8张产出的观察机会")
 
 func _prepare(course: String, target: String, leaders: Dictionary) -> bool:
 	watching = false
@@ -380,9 +368,6 @@ func _finish_step(step_id: String, next_step: String) -> void:
 		check(not player._awaiting_result and arena.session.current_step()["id"] == next_step
 			and StateCodec.snapshot(arena.state) == snapshot and arena.entities.values() == cards,
 			step_id + "：只衔接一次，空闲保留新目标和真实牌桌，不再自行跳步")
-		if step_id == "income.settle":
-			check(player._reading_step() and player._goal.text == "点我继续教程：扩大生意",
-				"收入结算直接停在已有跨课阅读提示，保持指定文案且无需双重确认")
 		return
 	for attempt in 200:
 		if player._awaiting_result and not arena.operation_pending: break

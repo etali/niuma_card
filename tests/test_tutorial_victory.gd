@@ -45,10 +45,11 @@ func _run() -> void:
 	main.add_child(sound)
 	main.sfx = sound
 	await _capture_shared_result_reference()
-	await _victory_case("attack", "attack.win")
-	await _victory_case("cashout", "cashout.win")
-	await _cancel_during_result("attack", "attack.win", false)
-	await _cancel_during_result("cashout", "cashout.win", true)
+	await _victory_case("upgrade", "upgrade.cashout", true)
+	await _victory_case("upgrade", "upgrade.cashout", false)
+	await _defeat_case()
+	await _cancel_during_result("upgrade", "upgrade.cashout", false)
+	await _cancel_during_result("upgrade", "upgrade.cashout", true)
 	check(_restored(), "全部胜利演出回归结束后原局、实体、录像和镜头保持原样")
 	await dispose_drawer(main)
 	finish()
@@ -83,7 +84,7 @@ func _capture_shared_result_reference() -> void:
 	root.size = Vector2i(1280, 800)
 	await _relayout_result()
 
-func _victory_case(course: String, target: String) -> void:
+func _victory_case(course: String, target: String, resize_and_collapse: bool) -> void:
 	if not await _prepare(course, target): return
 	var scope: RefCounted = main._tutorial_context
 	var generation := int(arena.session.generation)
@@ -118,7 +119,7 @@ func _victory_case(course: String, target: String) -> void:
 		and not sound.events.has("lose"), course + "：复用原Sfx，只播放一次正式胜利音效")
 	check(animation != null and animation.is_valid() and animation.is_running(),
 		course + "：展示由共享Tween驱动，不以静态面板冒充完整动画")
-	if course == "attack":
+	if resize_and_collapse:
 		await _resize_result(view)
 		await _collapse_result(view, course, target, generation)
 	else:
@@ -324,9 +325,6 @@ func _prepare(course: String, target: String) -> bool:
 		if not prepared.get("ok", false) or not arena.session.step_complete: break
 		arena.session.acknowledge()
 	if not need(arena.session.current_step().get("id") == target, "真实规则前置抵达 " + target): return false
-	if course == "attack":
-		for action: Dictionary in arena.session.current_step().get("demo", []):
-			if action.get("op") in ["groups", "round"]: arena.session._example_action(action)
 	arena.sync_state(true)
 	arena.board.touch_mode = true
 	await create_timer(0.45).timeout
@@ -340,23 +338,56 @@ func _prepare(course: String, target: String) -> bool:
 	return true
 
 func _trigger_victory(course: String) -> void:
-	if course == "attack":
-		var targets: Array = arena.session.applier.affordable_targets(GameState.PLAYER)
-		var cash_targets: Array = targets.filter(func(target): return target.get("res") == CardDB.RES_CASH)
-		if not need(cash_targets.size() == 1 and arena.state.resource_count(GameState.BOT, CardDB.RES_CASH) == 1,
-			"真实攻击池只能命中对手最后一张现金"): return
-		var card: CardEntity = arena.entities[int(cash_targets[0]["uids"][0])]
-		await _click(main.board.camera.unproject_position(card.global_position))
-	else:
-		var legends: Array = arena.entities.values().filter(func(card): return card.draggable and card.def_id == "dujiaoshou")
-		if not need(legends.size() == 1 and arena.session.phase == "action"
-			and arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 70,
-			"真实合成后的独角兽可在下一行动阶段典当，当前现金70"): return
-		await _drag(legends[0], main.board.pawn_pos)
+	var legends: Array = arena.entities.values().filter(func(card): return card.draggable and card.def_id == "dujiaoshou")
+	if not need(legends.size() == 1 and arena.session.phase == "action"
+		and arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 70,
+		"真实合成后的独角兽可在下一行动阶段典当，当前现金70"): return
+	await _drag(legends[0], main.board.pawn_pos)
 	check(arena.state.winner == GameState.PLAYER, course + "：最后一手由真实裁决产生胜者")
-	if course == "cashout":
-		check(arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == int(CardDB.game_rules()["win_cash"]),
-			"典当真实支付三十现金并达到胜利线")
+	check(arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == int(CardDB.game_rules()["win_cash"]),
+		"典当真实支付三十现金并达到胜利线")
+
+## 守住公司第一步：对手攻击打空现金。判负是本步要看的结果，复用正式失败演出后再续步。
+func _defeat_case() -> void:
+	if not await _prepare("defense", "defense.lose"): return
+	main.btn_pass.pressed.emit()
+	check(arena.operation_pending and final_events.is_empty() and not player._awaiting_result,
+		"判负：对手攻击与结果演出期间本步仍未完成")
+	var shown := false
+	for attempt in 400:
+		if not arena._result_view.is_empty() and _result_layer() != null:
+			shown = true
+			break
+		if not final_events.is_empty(): break
+		await create_timer(0.02).timeout
+	if not need(shown, "判负：被打空现金后出现正式结果层"): return
+	var panel: Control = arena._result_view["panel"]
+	var result_id: int = arena._result_view["layer"].get_instance_id()
+	check(arena.state.winner == GameState.BOT and arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 0,
+		"判负：对手真实攻击打空3现金，胜者为对手")
+	check(panel.find_child("ResultTitle", true, false).text == "失败" and panel.find_child("ResultRestart", true, false) == null
+		and sound.events.count("lose") == 1 and not sound.events.has("win"),
+		"判负复用正式失败结果，只播一次失败音效，不提供重开正式对局")
+	for attempt in 500:
+		if not final_events.is_empty(): break
+		await create_timer(0.02).timeout
+	if not need(final_events.size() == 1, "判负：失败演出结束后只发一次操作完成"): return
+	check(final_events[0]["result"].get("expected", false) and not final_events[0]["result"].get("rolled_back", false)
+		and final_events[0]["step"] == "defense.lose" and not final_events[0]["result_layer_present"],
+		"判负作为本步预期结果被接受，不回滚，结果层先清理")
+	await create_timer(0.3).timeout
+	var step: Dictionary = player.session.current_step()
+	check(player._awaiting_result and player._goal.text.contains(str(step.get("completion_goal", ""))),
+		"判负后停在结果说明，等待点击继续")
+	await _relayout_result()
+	await _click(player._bubble.get_global_rect().get_center())
+	for attempt in 120:
+		if player.session.current_step().get("id") == "defense.protect": break
+		await create_timer(0.025).timeout
+	check(player.session.current_step().get("id") == "defense.protect" and player.session.state.winner == ""
+		and not player._awaiting_result and completed_courses.is_empty() and _original_untouched(),
+		"点击后进入保护课的新局面，判负不算课程完成，正式对局不受影响")
+	_check_unregistered(result_id, "判负续步清理失败结果注册")
 
 func _operation_finished(result: Dictionary) -> void:
 	final_events.append({"result": result.duplicate(true), "course": arena.session.course_id,

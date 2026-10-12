@@ -77,11 +77,11 @@ func _run() -> void:
 		"普通准备完成后直接衔接，不锁桌等确认，也不注册推进计时")
 	var next_goal: String = player._goal.text
 	await create_timer(IDLE_OBSERVATION_TIME).timeout
-	check(player.session.current_step().get("id") == "income.split" and player._goal.text == next_goal,
-		"到达拆牌目标后空闲不会继续跳步")
+	check(player.session.current_step().get("id") == "income.group" and player._goal.text == next_goal,
+		"到达组牌目标后空闲不会继续跳步")
 	await relayout_drawer(main)
 	await tap_drawer_control(player._bubble)
-	check(player.session.current_step().get("id") == "income.split" and player._notice.is_empty()
+	check(player.session.current_step().get("id") == "income.group" and player._notice.is_empty()
 		and player._goal.text == player.session.current_step().get("goal", ""),
 		"普通操作目标不能靠点击对白越过")
 	player.retry()
@@ -102,10 +102,9 @@ func _run() -> void:
 	player.set_reference_open(false)
 	check(not main.btn_pass.disabled and not player.arena.board.input_locked, "关闭查看页立即恢复当前教学目标的操作")
 	await _check_dialogue_layout(main, presentation, player, "income.buy")
-	for example in [["upgrade", "upgrade.group"], ["cashout", "cashout.group"],
-		["buffs", "buff.output"], ["tactics", "tactics.types"],
-		["buffs", "buff.protect_user"], ["buffs", "buff.protect_cash"],
-		["tactics", "tactics.reply"], ["tactics", "tactics.preempt"]]:
+	for example in [["upgrade", "upgrade.resolve"], ["upgrade", "upgrade.legend"],
+		["buffs", "buff.output"], ["reserve", "reserve.recipe"], ["attack", "attack.groups"],
+		["defense", "defense.lose"], ["defense", "defense.protect"], ["defense", "defense.preempt"]]:
 		player.switch_course(example[0])
 		var steps: Array = player.session.course_data["steps"]
 		for index in steps.size():

@@ -80,7 +80,7 @@ func _reference_lifecycle() -> void:
 	arena.operation_finished.disconnect(record_purchase)
 	if not need(purchase_results.size() == 1 and purchase_results[0].get("expected", false)
 		and not arena.operation_pending, "真实购牌演出结束后收到一次成功事件"): return
-	check(session.current_step()["id"] == "income.split" and not player._awaiting_result, "正确买牌直接衔接拆牌，无需再确认购牌")
+	check(session.current_step()["id"] == "income.group" and not player._awaiting_result, "正确买牌直接衔接组牌，无需再确认购牌")
 	await _click(p._rulebook_button)
 	await relayout_drawer(main)
 	var step: int = session.step_index
@@ -90,7 +90,7 @@ func _reference_lifecycle() -> void:
 		"打开课程列表保留同一个教学现场")
 	check(session.step_index == step and not player._awaiting_result
 		and main.btn_pass.disabled and main.board.input_locked and arena.finish_action().get("code") == "busy",
-		"查看列表时保留当前拆牌目标并锁住原完成行动")
+		"查看列表时保留当前组牌目标并锁住原完成行动")
 	var book: Node = p._rulebook
 	check(book.find_child("StartTutorial", true, false).text == TutorialCatalog.ui("hub.continue_active", {"title": session.course_data.title}),
 		"首页主按钮准确显示继续当前教学")

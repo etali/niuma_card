@@ -81,8 +81,7 @@ func _run() -> void:
 	results.clear()
 	await _drag(main.board.group_of(_resource_top("user"))["cards"][-1], _free_drop())
 	await _wait_operation()
-	check(results[-1].expected and arena.session.step_complete, "拆出一张用户被判为正确操作")
-	_advance()
+	check(results[-1].expected and not arena.session.step_complete, "拆出一张用户被判为配牌的正确准备，组牌目标尚未完成")
 	# 正式配方允许附加现金和富余用户；用第二张不相干业务核心制造真正无效的组。
 	arena.state.add_card(GameState.PLAYER, "baoyue")
 	arena.sync_state()

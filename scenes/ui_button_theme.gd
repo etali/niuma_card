@@ -17,6 +17,11 @@ static func apply(button: Button, factor := 1.0, margin := 9.0, radius := 10.0) 
 		surface = accent
 	elif role == "tool":
 		accent = Palette.get_color("card", "frame")
+	elif role == "advanced":
+		# 进阶教程沿用强化牌底板色，与主线课程区分，不另设一套配色。
+		surface = Palette.plate_color("plate_buff_up", "face")
+		accent = Palette.plate_color("plate_buff_up", "accent")
+		ink = accent
 	var armed := bool(button.get_meta("danger_armed", false))
 	if armed and role == "danger":
 		surface = accent

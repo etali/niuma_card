@@ -114,6 +114,7 @@ func show_home() -> void:
 	if resume.is_empty() and Progress.course(str(courses[0]["id"])).get("status", "") == "completed":
 		caption = Catalog.ui("hub.again")
 		for course in courses:
+			if course.get("optional", false): continue
 			if Progress.course(str(course["id"])).get("status", "") != "completed":
 				start_id = str(course["id"])
 				caption = Catalog.ui("hub.next_course", {"title": course["title"]})
@@ -132,13 +133,19 @@ func show_home() -> void:
 	course_list.name = "TutorialCourses"
 	course_list.add_theme_constant_override("separation", 12)
 	_page.add_child(course_list)
-	for course in courses:
+	# 主线在前；进阶教程排在最后并换色，只能单独点开。
+	var ordered := courses.filter(func(course): return not course.get("optional", false))
+	ordered.append_array(courses.filter(func(course): return course.get("optional", false)))
+	for course in ordered:
 		var id := str(course["id"])
 		var entry: Dictionary = Progress.course(id)
 		var status := str(entry.get("status", "new"))
-		var button := _button(str(course["title"]) + "  ·  " + Catalog.ui("hub." + status), start_course.bind(id))
+		var advanced: bool = course.get("optional", false)
+		var title := Catalog.ui("hub.advanced", {"title": course["title"]}) if advanced else str(course["title"])
+		var button := _button(title + "  ·  " + Catalog.ui("hub." + status), start_course.bind(id))
 		button.name = "Course_" + id
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		if advanced: button.set_meta("ui_role", "advanced")
 		course_list.add_child(button)
 	_finish_page()
 

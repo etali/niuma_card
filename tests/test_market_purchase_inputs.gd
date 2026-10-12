@@ -413,9 +413,9 @@ func _tutorial_inputs(shared_buy: Dictionary) -> void:
 		await _wait_tutorial_operation(arena)
 		if mode in ["reverse", "area"]: _check_drop_position("教程" + mode)
 		check(operations.size() == 1 and operations[0].get("expected", false)
-			and player.session.current_step().get("id") == "income.split"
+			and player.session.current_step().get("id") == "income.group"
 			and not player._awaiting_result and not arena.board.input_locked,
-			"教程%s到货后直接进入拆牌，无额外点击且不重复交易" % mode)
+			"教程%s到货后直接进入配牌，无额外点击且不重复交易" % mode)
 		check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == old_cash - price
 			and main.entities.get(market.uid) == market and market.draggable and not market.is_market,
 			"教程%s沿用真实付款与原商品实体" % mode)
@@ -487,7 +487,7 @@ func _mobile_price_tag() -> void:
 			and _actions().count("buy") == 1,
 			"%s随后正常轻触价签仍购买一次，长按取消不会永久阻止短点" % ("教程" if tutorial else "正式局"))
 		if tutorial:
-			check(arena.session.current_step().get("id") == "income.split", "移动端轻触购买等到货后直接进入拆牌")
+			check(arena.session.current_step().get("id") == "income.group", "移动端轻触购买等到货后直接进入配牌")
 			main.drawer_presentation.finish_tutorial(false)
 	Input.emulate_mouse_from_touch = previous_emulation
 	await dispose_drawer(main)

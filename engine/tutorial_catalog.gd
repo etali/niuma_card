@@ -55,11 +55,15 @@ static func course(id: String) -> Dictionary:
 		if str(entry.get("id", "")) == id: return _expand(entry)
 	return {}
 
+## 进阶教程只能单独点开：连续教学跳过它，学完进阶课也不再接回主线。
 static func next_course_id(id: String) -> String:
 	var entries: Array = data().get("courses", [])
 	for index in entries.size():
-		if str(entries[index].get("id", "")) == id:
-			return str(entries[index + 1].get("id", "")) if index + 1 < entries.size() else ""
+		if str(entries[index].get("id", "")) != id: continue
+		if entries[index].get("optional", false): return ""
+		for later in range(index + 1, entries.size()):
+			if not entries[later].get("optional", false): return str(entries[later].get("id", ""))
+		return ""
 	return ""
 
 static func topics() -> Array:
