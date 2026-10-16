@@ -701,8 +701,8 @@ func _palette_changed(_section: String, _key: String) -> void:
 func _cancel_fly(card: CardEntity) -> void: _card_motion._cancel_fly(card)
 func _clear_dest(card: CardEntity) -> void: _card_motion._clear_dest(card)
 func _pawn_position() -> Vector3: return board.pawn_pos
-func _event_feedback(event: String, at: Vector3, color: Color, amount := 16) -> void:
-	UIMotion.play(self, event, at, color, amount)
+func _event_feedback(event: String, at: Vector3, color: Color, amount := 16, shape := "") -> void:
+	UIMotion.play(self, event, at, color, amount, shape)
 
 func _spawn_entity(record: Dictionary, at: Vector3, draggable: bool, from_pos = null, index := 0, total := 1) -> CardEntity:
 	return _table_actions.spawn_card(record, at, draggable, from_pos, index, total)

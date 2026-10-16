@@ -437,5 +437,5 @@ func is_drag_leased(_uid: int) -> bool: return false
 func foe_anchor_of(_uid: int) -> Variant: return null
 func foe_pile_point(_x: float, _y: float) -> Vector3: return Vector3.ZERO
 func foe_compact_of(_uid: int) -> Variant: return null
-func _event_feedback(event: String, at: Vector3, color: Color, amount := 16) -> void:
-	Motion.play(self, event, at, color, amount)
+func _event_feedback(event: String, at: Vector3, color: Color, amount := 16, shape := "") -> void:
+	Motion.play(self, event, at, color, amount, shape)

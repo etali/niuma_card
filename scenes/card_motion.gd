@@ -15,6 +15,9 @@ const BATCH_GRIP := 0.16
 const BATCH_DURATION := 0.74
 const SUCK_TIME := UIMotion.TRANSFER
 const PAWN_TRAVEL_TIME := UIMotion.ANTICIPATE + UIMotion.ACT + UIMotion.SETTLE + UIMotion.SETTLE + SUCK_TIME
+## 同批到货逐张升调的步长与封顶张数；再多也停在这个音高，不会尖到刺耳。
+const ARRIVAL_PITCH_STEP := 0.045
+const ARRIVAL_PITCH_STEPS := 8
 var board: Board
 var sfx: Sfx
 var clamp_to_player := false
@@ -30,10 +33,16 @@ func bind(target_board: Board, sound: Sfx, clamp_player := false) -> void:
 	clamp_to_player = clamp_player
 
 ## 正式对局和独立预览共享整叠抓握、同步撕开及一次音效。
-func tear_batch(members: Array, hands: Node, direction := Vector3(0, 4, 2)) -> float:
+## 抓握到位的一刻是命中：on_impact 在这一拍触发，随后整批顿住 hitstop 秒
+## （牌被砸得一扁、双手按住发抖）再撕开。普通一击的顿帧已含在 BATCH_DURATION 内，
+## 只有更长的终结顿帧会把整批时长顺延同样的差值。
+func tear_batch(members: Array, hands: Node, direction := Vector3(0, 4, 2),
+		hitstop := UIMotion.HITSTOP, on_impact := Callable()) -> float:
 	var cards := members.filter(func(card): return is_instance_valid(card))
 	if cards.is_empty():
 		return 0.0
+	var hold := maxf(0.0, hitstop)
+	var duration := BATCH_DURATION + maxf(0.0, hold - UIMotion.HITSTOP)
 	var center := Vector3.ZERO
 	for card in cards:
 		center += card.global_position
@@ -46,7 +55,7 @@ func tear_batch(members: Array, hands: Node, direction := Vector3(0, 4, 2)) -> f
 			_tear_hands = hands
 			_tear_hands_mode = hands.process_mode
 			_tear_hands_visible = hands.visible
-		hands.tear(cards, packet)
+		hands.tear(cards, packet, hold, duration)
 	_tear_cards = _tear_cards.filter(func(card): return is_instance_valid(card))
 	_tear_cards.append_array(cards)
 	_tear_tweens = _tear_tweens.filter(func(tween): return tween != null and tween.is_valid())
@@ -61,10 +70,17 @@ func tear_batch(members: Array, hands: Node, direction := Vector3(0, 4, 2)) -> f
 		# 卡牌与运动节点属于同一个演出宿主；教学暂停时抓握和撕开同时停住。
 		var grip := card.create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 		grip.tween_property(card, "global_position", packet[i], BATCH_GRIP)
+		if hold > 0.0:
+			# 砸实的一下：牌面横向一胀、纵向一扁，顿帧结束恰好回到原形再撕。
+			grip.tween_property(card._visual, "scale", Vector3(1.08, 1.0, 0.90), hold * 0.35) \
+				.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			grip.tween_property(card._visual, "scale", Vector3.ONE, hold * 0.65)
 		_tear_tweens.append(grip)
-		_tear_tweens.append(delayed_tear(card, direction, BATCH_GRIP, false))
-	_tear_tweens.append(delayed_sound("attack_tear", BATCH_GRIP))
-	return BATCH_DURATION
+		_tear_tweens.append(delayed_tear(card, direction, BATCH_GRIP + hold, false))
+	_tear_tweens.append(delayed_sound("attack_tear", BATCH_GRIP + hold))
+	if on_impact.is_valid():
+		_tear_tweens.append(delayed_call(on_impact, BATCH_GRIP))
+	return duration
 
 ## 手仍是原牌桌那一双；只有当前撕牌宿主临时保管其暂停状态。
 func set_tear_active(active: bool) -> void:
@@ -122,7 +138,15 @@ func _fly_from(e: CardEntity, from_pos: Vector3, to_pos: Vector3,
 	# 音效同一档 db（见 _sfx.actions 的 produce_land 和 card_drop）。
 	# 挂在补间里而不是提前算时刻：飞入被 _cancel_fly 掐掉的那几张就不该响，
 	# 牌没落地的声音是假的
-	tw.parallel().tween_callback(func() -> void: sfx.play("produce_land")) \
+	# 同一批逐张升调：一串落地声听得出「越来越多」，像收银机在数钱。
+	# 现金再叠一声硬币叮，用户没有这一声 —— 听得出到账的是钱还是人。
+	var pitch := 1.0 + ARRIVAL_PITCH_STEP * float(mini(idx, ARRIVAL_PITCH_STEPS))
+	var coin: bool = CardDB.get_def(e.def_id).get("res", "") == CardDB.RES_CASH \
+		and CardDB.get_def(e.def_id).get("kind", "") == CardDB.KIND_UNIT
+	tw.parallel().tween_callback(func() -> void:
+		sfx.play("produce_land", pitch)
+		if coin:
+			sfx.play("produce_coin", pitch)) \
 		.set_delay(stagger + SPAWN_FLY_TIME)
 	# 落地撤掉归宿：此后实时坐标就是答案（见 _move_to）
 	tw.parallel().tween_callback(func() -> void:
@@ -293,6 +317,18 @@ func delayed_sound(action: String, delay: float) -> Tween:
 	var tween := create_tween()
 	tween.tween_interval(delay)
 	tween.tween_callback(func(): sfx.play(action))
+	transferring()
+	_transfers.append(tween)
+	return tween
+
+## 与延迟音同一条可取消队列：回滚或换局时一起撤掉，教学暂停时一起停住。
+func delayed_call(callback: Callable, delay: float) -> Tween:
+	if delay <= 0:
+		callback.call()
+		return null
+	var tween := create_tween()
+	tween.tween_interval(delay)
+	tween.tween_callback(callback)
 	transferring()
 	_transfers.append(tween)
 	return tween

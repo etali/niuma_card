@@ -9,6 +9,19 @@ const Hands = preload("res://scenes/table_hands.gd")
 const ButtonTheme = preload("res://scenes/ui_button_theme.gd")
 const ArtResolution = preload("res://scenes/preview_art_resolution.gd")
 const PreviewCard = preload("res://scenes/preview_card.gd")
+const ComicFx = preload("res://scenes/comic_fx.gd")
+const UIMotion = preload("res://scenes/ui_motion.gd")
+const ResultPresentation = preload("res://scenes/result_presentation.gd")
+const FX_PAGE := 2
+## 特效页的按钮：调用与正式牌桌相同的组合演出，只是位置取预览台中央。
+const FX_DEMOS := [
+	["hit", "撕掉用户"], ["coins", "撕掉现金"], ["final", "终结一击"], ["void", "组合作废"],
+	["cash", "产出资金"], ["user", "产出用户"], ["upgrade", "升级"], ["legend", "传说登场"],
+	["listing", "胜利 · 上市"], ["bankrupt", "胜利 · 对手破产"], ["exodus", "胜利 · 对手跑光"], ["defeat", "失败"],
+]
+## 特效页台面：左边一张生产牌（产出、升级、作废都盖在它身上），右边一叠被攻击的资源牌。
+const FX_CORE := Vector3(-1.9, 0.05, 0.0)
+const FX_TARGET := Vector3(1.9, 0.05, 0.0)
 var board: Board
 var drawer_presentation: Node
 var table_hands: Node
@@ -59,6 +72,10 @@ var _resolution_generation := 0
 var _resolution_cache: Dictionary = {}
 var _resolution_lru: Array[int] = []
 var _resolution_tasks: Dictionary = {}
+var _sound: Sfx
+var _fx_controls: VBoxContainer
+var _fx_root: Node3D
+var _fx_result: Dictionary = {}
 
 func _exit_tree() -> void:
 	_resolution_generation += 1
@@ -115,11 +132,11 @@ func _ready() -> void:
 	add_child(environment)
 	_stage = Node3D.new()
 	add_child(_stage)
-	var sound := Sfx.new()
-	add_child(sound)
+	_sound = Sfx.new()
+	add_child(_sound)
 	_motion = Motion.new()
 	add_child(_motion)
-	_motion.bind(board, sound)
+	_motion.bind(board, _sound)
 	drawer_presentation = PreviewSurface.new()
 	drawer_presentation.host = self
 	add_child(drawer_presentation)
@@ -174,6 +191,7 @@ func _build_ui() -> void:
 	column.add_child(_tabs)
 	_tabs.add_child(_button("悬停动画", func(): set_page(0)))
 	_tabs.add_child(_button("攻击撕牌", func(): set_page(1)))
+	_tabs.add_child(_button("牌桌特效", func(): set_page(FX_PAGE)))
 	_tabs.get_child(0).set_meta("ui_role", "primary")
 	column.add_child(_label("插画分辨率 · 最长边", 17))
 	_resolution = OptionButton.new()
@@ -223,6 +241,23 @@ func _build_ui() -> void:
 	_reset = _button("重新摆牌", reset_attack)
 	_attack_controls.add_child(_reset)
 	_attack_controls.add_child(_label("也可以直接点击右侧的卡牌。\n一双手抓起整叠，同时撕开。", 15))
+	_fx_controls = VBoxContainer.new()
+	_fx_controls.add_theme_constant_override("separation", 6)
+	column.add_child(_fx_controls)
+	_fx_controls.add_child(_label("攻击、结算、升级与终局", 17))
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+	_fx_controls.add_child(grid)
+	for demo in FX_DEMOS:
+		var button := _button(str(demo[1]), play_fx.bind(str(demo[0])))
+		button.name = "Fx_" + str(demo[0])
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(button)
+	_fx_controls.add_child(_button("清空桌面", reset_fx))
+	_fx_controls.add_child(_label("终局印章与封条会留在桌上，点「清空桌面」重摆。画面震动跟随游戏 UI 设置。", 14))
+	_fx_controls.hide()
 	_spacer = Control.new()
 	_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_spacer.hide()
@@ -366,14 +401,17 @@ func _position_cards() -> void:
 		if _page == 1 and _spread.button_pressed else 4.8
 	if _page == 0 and not _cards.is_empty() and _cards[0].hover_animation_duration > 0.0:
 		_camera.size = 2.8
+	if _page == FX_PAGE:
+		_camera.size = 7.0
 	var ray := _camera.project_ray_origin(_surface.get_center())
 	for i in _cards.size():
 		var card := _cards[i]
 		if not is_instance_valid(card) or card._visual_retired:
 			continue
 		var offset := float(i) - float(_cards.size() - 1) * 0.5
+		var spread := (_page == 1 and _spread.button_pressed) or _page == FX_PAGE
 		card.global_position = Vector3(ray.x, 0.05, ray.z) + \
-			(Vector3(offset * 1.35, 0, 0) if _page == 1 and _spread.button_pressed else Vector3(offset * 0.035, i * 0.024, offset * 0.04))
+			(Vector3(offset * (2.5 if _page == FX_PAGE else 1.35), 0, 0) if spread else Vector3(offset * 0.035, i * 0.024, offset * 0.04))
 
 func _clear_cards() -> void:
 	_generation += 1
@@ -411,13 +449,157 @@ func set_page(page: int) -> void:
 	table_hands.cursor_enabled = page == 1
 	_list.visible = page == 0
 	_attack_controls.visible = page == 1
-	_spacer.visible = page == 1
+	_fx_controls.visible = page == FX_PAGE
+	_spacer.visible = page != 0
 	for i in _tabs.get_child_count():
 		_tabs.get_child(i).set_meta("ui_role", "primary" if i == page else "tool")
+	if page != FX_PAGE:
+		_clear_fx()
 	if page == 0:
 		show_card(_ids[_selection])
+	elif page == FX_PAGE:
+		reset_fx()
 	else:
 		reset_attack()
+
+## 特效页：一张生产牌和一叠被攻击的资源牌，按钮直接调正式牌桌用的演出。
+func reset_fx() -> void:
+	if _page != FX_PAGE:
+		return
+	_clear_cards()
+	_clear_fx()
+	_fx_root = Node3D.new()
+	_fx_root.name = "FxStage"
+	add_child(_fx_root)
+	_heading.text = "牌桌特效"
+	_hint.text = "按左侧按钮播放；调用的是对局里同一套演出。"
+	_status.text = ""
+	_relayout()
+	_fx_place("yunketang", FX_CORE)
+	_fx_place(CardDB.unit_id(CardDB.RES_USER), FX_TARGET)
+
+func _fx_center() -> Vector3:
+	var ray := _camera.project_ray_origin(_surface.get_center())
+	return Vector3(ray.x, 0.0, ray.z)
+
+## 台面上的牌不进 _cards：它们由特效页自己摆，撕掉了就补一张。
+func _fx_place(id: String, offset: Vector3, count := 1) -> Array:
+	var made: Array = []
+	for i in count:
+		var card := PreviewCard.new()
+		_uid += 1
+		card.setup(_uid, id)
+		_fx_root.add_child(card)
+		card.freeze = true
+		card.collision_layer = 0
+		card.collision_mask = 0
+		card.global_position = _fx_center() + offset + Vector3(0.03 * i, 0.024 * i, 0.04 * i)
+		made.append(card)
+	return made
+
+func _fx_cards(id: String) -> Array:
+	return _fx_root.get_children().filter(func(node): return node is CardEntity and node.def_id == id \
+		and not node._visual_retired and not node.is_queued_for_deletion())
+
+func _clear_fx() -> void:
+	ResultPresentation.close(_fx_result)
+	if is_instance_valid(_fx_root):
+		_fx_root.queue_free()
+	_fx_root = null
+	_camera.h_offset = 0.0
+	_camera.v_offset = 0.0
+
+func play_fx(kind: String) -> void:
+	if _page != FX_PAGE or not is_instance_valid(_fx_root):
+		return
+	ResultPresentation.close(_fx_result)
+	var config := ComicFx.rules()
+	_status.text = ""
+	var core: CardEntity = null
+	for card in _fx_cards("yunketang"):
+		core = card
+	if core == null:
+		core = _fx_place("yunketang", FX_CORE)[0]
+	match kind:
+		"hit", "coins", "final":
+			_fx_attack(CardDB.RES_CASH if kind == "coins" else CardDB.RES_USER, kind == "final", 3)
+		"void":
+			_sound.play("combo_broken")
+			core.set_void_stamp(true)
+			_motion.delayed_call(func() -> void:
+				if is_instance_valid(core): core.set_void_stamp(false), 1.4)
+		"cash", "user":
+			var cash := kind == "cash"
+			var color := Palette.semantic("cash" if cash else "user")
+			var source := ComicFx.production(_fx_root, _camera, core, core.global_position, cash,
+				int(CardDB.get_def("yunketang").get("output_n", 3)), _sound)
+			UIMotion.play(_fx_root, "production", source, color, 12, "coin" if cash else "user")
+		"upgrade", "legend":
+			_sound.play("upgrade")
+			UIMotion.play(_fx_root, "upgrade", core.global_position + Vector3.UP * 0.6, Palette.plate_color("plate_t3", "band"))
+			UIMotion.play(_fx_root, "celebrate", core.global_position + Vector3.UP * 0.6, Color.WHITE, 24 if kind == "legend" else 16, "spark")
+			ComicFx.upgrade(_fx_root, _camera, core, core.global_position, kind == "legend", _sound)
+		_:
+			_show_fx_result(kind, _fx_center() + Vector3(0, 0.55, 0))
+
+## 撕一叠：真实的抓握、顿帧、折痕与裂口、撕开、纸屑，和对局里同一条链。
+func _fx_attack(res: String, final: bool, count: int) -> void:
+	var unit := CardDB.unit_id(res)
+	for old in _fx_root.get_children():
+		if old is CardEntity and old.def_id != "yunketang" and old.def_id != unit:
+			old.queue_free()
+	var targets := _fx_cards(unit)
+	if targets.size() < count:
+		targets.append_array(_fx_place(unit, FX_TARGET + Vector3(0, 0.024 * targets.size(), 0), count - targets.size()))
+	var at := Vector3.ZERO
+	for card in targets:
+		at += card.global_position
+	at /= float(targets.size())
+	var hold := ComicFx.hitstop("final" if final else "hit")
+	_sound.play("attack")
+	_motion.tear_batch(targets, table_hands, Vector3(0, 4, -2), hold, func() -> void:
+		ComicFx.hit(_fx_root, _camera, targets, at, "final" if final else "hit", res, Vector3(1.0, 0.0, -0.8), hold))
+	var scrap := CardArt.face_color(unit)
+	_motion.delayed_call(func() -> void:
+		if is_instance_valid(_fx_root):
+			UIMotion.play(_fx_root, "attack", at + Vector3(0, 0.5, 0), scrap, 14), Motion.BATCH_GRIP + hold)
+	_motion.delayed_call(func() -> void:
+		if is_instance_valid(_fx_root) and _fx_cards(unit).is_empty():
+			_fx_place(unit, FX_TARGET), Motion.BATCH_DURATION + hold + 0.3)
+
+## 终局：按胜因造一份真实终局读数，弹出正式结果面板，并在桌上补终局的那一笔。
+func _show_fx_result(kind: String, at: Vector3) -> void:
+	var state := GameState.new()
+	state.new_game()
+	var me := GameState.PLAYER
+	var foe := GameState.BOT
+	var win_cash := int(CardDB.game_rules()["win_cash"])
+	match kind:
+		"listing":
+			_set_resource(state, me, CardDB.RES_CASH, win_cash)
+		"bankrupt":
+			_set_resource(state, foe, CardDB.RES_CASH, 0)
+		"exodus":
+			_set_resource(state, foe, CardDB.RES_USER, 0)
+		_:
+			_set_resource(state, me, CardDB.RES_CASH, maxi(1, win_cash - 3))
+			_set_resource(state, foe, CardDB.RES_CASH, win_cash)
+	state.round_num = 9
+	state.check_victory()
+	var stats := {me: {CardDB.RES_CASH: 46, CardDB.RES_USER: 12, "torn": 9}}
+	var finale := ResultPresentation.finale_for(state, me, stats)
+	_fx_result = ResultPresentation.create(self, state, me, _sound, func(): ResultPresentation.close(_fx_result),
+		"关闭", false, false, finale)
+	ResultPresentation.present(_fx_result, null)
+	ComicFx.finale(_fx_root, _camera, str(finale.get("kind", "")), {"winner_cash": at + FX_CORE,
+		"loser_cash": at + FX_TARGET, "loser_user": at + FX_TARGET}, state.winner != me, _sound)
+	_status.text = "%s · %s" % [finale.get("stamp", ""), state.win_reason]
+
+static func _set_resource(state: GameState, seat: String, res: String, count: int) -> void:
+	var unit := CardDB.unit_id(res)
+	state.players[seat]["cards"] = state.players[seat]["cards"].filter(func(card): return card["def_id"] != unit)
+	for i in count:
+		state.add_card(seat, unit)
 
 func show_card(id: String) -> void:
 	if _player_attack_busy != 0:

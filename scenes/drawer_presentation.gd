@@ -107,6 +107,8 @@ var _zoom_slider: HSlider
 var _zoom_value: Label
 var _hover_speed_slider: HSlider
 var _hover_speed_value: Label
+var _screen_shake_slider: HSlider
+var _screen_shake_value: Label
 var _card_config_status: Label
 var _card_config_path: LineEdit
 var _card_config_drop: PanelContainer
@@ -933,6 +935,28 @@ func _open_utility(id: int) -> void:
 		_hover_speed_value.text = UIConfig.hover_speed_text(UIConfig.get_hover_animation_speed())
 		_hover_speed_slider.value_changed.connect(set_hover_animation_speed)
 		_utility_body.add_child(_hover_speed_slider)
+		var shake_row := HBoxContainer.new()
+		shake_row.add_theme_constant_override("separation", 8)
+		_utility_body.add_child(shake_row)
+		shake_row.add_child(_label("画面震动", UI_FONT_BODY))
+		_screen_shake_value = _label("", UI_FONT_BODY)
+		_screen_shake_value.name = "ScreenShakeValue"
+		_screen_shake_value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_screen_shake_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		shake_row.add_child(_screen_shake_value)
+		_screen_shake_slider = HSlider.new()
+		_screen_shake_slider.name = "ScreenShake"
+		_screen_shake_slider.min_value = 0.0
+		_screen_shake_slider.max_value = 1.0
+		_screen_shake_slider.step = 0.25
+		_screen_shake_slider.custom_minimum_size = Vector2(250, 40)
+		_screen_shake_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_screen_shake_slider.tooltip_text = "命中、终局时镜头震动的幅度；拉到最左关闭"
+		_screen_shake_slider.accessibility_name = "画面震动幅度"
+		_screen_shake_slider.set_value_no_signal(UIConfig.get_screen_shake())
+		_screen_shake_value.text = _screen_shake_text(UIConfig.get_screen_shake())
+		_screen_shake_slider.value_changed.connect(set_screen_shake)
+		_utility_body.add_child(_screen_shake_slider)
 		var angle_row := HBoxContainer.new()
 		angle_row.add_theme_constant_override("separation", 8)
 		_utility_body.add_child(angle_row)
@@ -1044,6 +1068,7 @@ func _save_ui_settings() -> void:
 	values["perspective_angle"] = perspective_angle
 	values["table_zoom"] = camera_view.zoom
 	values["hover_animation_speed"] = UIConfig.get_hover_animation_speed()
+	values["screen_shake"] = UIConfig.get_screen_shake()
 	if _main.drawer_window != null:
 		values["window_fraction"] = _main.drawer_window.get_size_ratio()
 		values["icon_scale"] = _main.drawer_window.get_icon_scale()
@@ -1066,6 +1091,19 @@ func _reset_ui_settings() -> void:
 	_open_utility(page)
 	relayout()
 	_ui_status.text = "已还原"
+
+func set_screen_shake(value: float) -> void:
+	UIConfig.set_screen_shake(value)
+	var current := UIConfig.get_screen_shake()
+	if is_instance_valid(_screen_shake_slider):
+		_screen_shake_slider.set_value_no_signal(current)
+	if is_instance_valid(_screen_shake_value):
+		_screen_shake_value.text = _screen_shake_text(current)
+	if is_instance_valid(_ui_status):
+		_ui_status.text = "已生效，尚未保存"
+
+static func _screen_shake_text(value: float) -> String:
+	return "关闭" if value <= 0.0 else "%d%%" % roundi(value * 100.0)
 
 func set_hover_animation_speed(value: float) -> void:
 	UIConfig.set_hover_animation_speed(value)
@@ -1218,7 +1256,8 @@ func pointer_over_panels(point: Vector2) -> bool:
 				for frame in child.get_children():
 					if frame is Control and frame.is_visible_in_tree() and frame.get_global_rect().has_point(point):
 						return true
-			elif child is Control and child.is_visible_in_tree() and child.get_global_rect().has_point(point):
+			elif child is Control and child.is_visible_in_tree() and not child.get_meta("pointer_passthrough", false) \
+				and child.get_global_rect().has_point(point):
 				return true
 	return false
 

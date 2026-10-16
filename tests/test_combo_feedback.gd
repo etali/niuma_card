@@ -114,7 +114,7 @@ func _assert_stamp_lifecycle(main: Node, cards: Array, reason: String) -> void:
 			if e._void_on:
 				count += 1
 		check(count == 1, "整组仅核心有一个作废章")
-		check(core._void_label != null and core._void_label.text == "作废", "空章框有可读的作废文字")
+		check(core.stamp_text() == "作废", "章上写着「作废」")
 		check(core.label.text == CardDB.card_name(core.def_id), "作废状态保留核心卡名")
 		await create_timer(0.25).timeout
 		check(core._void_stamp.visible, "盖章保持足够时间阅读，不在同帧清除")
@@ -154,7 +154,8 @@ func _test_spare_loss(main: Node) -> void:
 	check(main.state.combo_intact(main.my_seat, main.state.combos[0]), "丢富余牌后配方仍成立")
 	await main._resolve_combo_visual(0)
 	check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == int(CardDB.get_def("yunketang")["output_n"]), "丢富余牌仍正常产出")
-	check(cards[0]._void_stamp == null, "丢富余牌不误盖作废章")
+	# 到账与作废共用一枚章：节点可能因「到账」已经建好，判据是作废状态没被打开。
+	check(not cards[0]._void_on and cards[0].stamp_text() != "作废", "丢富余牌不误盖作废章")
 	check(not main.lbl_msg.text.contains("作废"), "丢富余牌不误报作废消息")
 	await create_timer(0.2).timeout
 

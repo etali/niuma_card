@@ -17,11 +17,16 @@ const PLATE_ART_INSET := 0.05
 const PLATE_SHADER := "res://shaders/card_face.gdshader"
 const TEAR_SHADER := "res://shaders/card_tear.gdshader"
 const BACK_SHADER := "res://shaders/card_back.gdshader"
+const DAMAGE_SHADER := "res://shaders/card_damage.gdshader"
 ## 特效结束后仍持有着色器。仅在材质上 load 的资源会随最后一张离场牌释放，
 ## 下一次翻背/撕牌又触发驱动编译，Compatibility 下每次会停顿约 100ms。
 const _PLATE_PROGRAM = preload(PLATE_SHADER)
 const _TEAR_PROGRAM = preload(TEAR_SHADER)
 const _BACK_PROGRAM = preload(BACK_SHADER)
+const _DAMAGE_PROGRAM = preload(DAMAGE_SHADER)
+## 结算章：成功的「到账 / 升级」与失败的「作废」是同一枚章，只换字；
+## 和牌桌、结果面板上的章也是同一枚（见 ink_stamp.gd），同样大小、同一盒印泥。
+const InkStamp = preload("res://scenes/ink_stamp.gd")
 
 ## 卡名的行盒占「实测标题带高」的比例（见 _fit_label_in_band）。
 ## 注意这个比例卡的是行盒（ascent+descent），不是肉眼看到的墨迹。实测 NotoSansSC
@@ -108,8 +113,7 @@ var is_market := false   # 公共区的牌：拖拽用于购买，不参与堆�
 var label: Label3D
 var card_mesh: MeshInstance3D
 var _shield: Node3D = null    # 防御 Buff 保护标记（护盾角标）
-var _void_stamp: Node3D = null # 组合作废盖章
-var _void_label: Label3D = null # 素材为空章框，文字由引擎绘制
+var _void_stamp: MeshInstance3D = null # 结算章（作废 / 到账 / 升级共用这一枚，见 ink_stamp.gd）
 var _dimmed := false          # 可选的强调态调暗；正常对手牌不使用，见 _apply_color
 var _hl_color := Color(1.2, 1.2, 0.6)
 var _plate: MeshInstance3D = null   # 程序化卡面，始终存在
@@ -123,6 +127,15 @@ var _face_down := false
 var _shield_on := false               # 盾牌自身的开关（与翻面独立，见 set_face_down）
 var _void_on := false                 # 作废盖章自身的开关
 var _void_tint_override: Variant = null
+var _stamp_parts: Dictionary = {}
+var _stamp_flash_on := false
+var _stamp_tween: Tween
+## 受击层与它的强度；撕开时把强度交给两片撕片。
+var _damage: MeshInstance3D = null
+var _crumple := 0.0
+var _damage_tween: Tween
+## 撕开后两片撕片的材质；受击与撕开落在同一帧时，折痕直接补到撕片上。
+var _tear_materials: Array[ShaderMaterial] = []
 var _glow: Sprite3D = null            # Buff 生效光环
 var _glow_on := false
 static var _buff_glow_fallback: Texture2D = null
@@ -230,11 +243,14 @@ const HOVER_LIFT := 0.06
 const DRAG_LIFT := 0.07
 
 func _add_visual(node: Node3D) -> void:
+	_ensure_visual().add_child(node)
+
+func _ensure_visual() -> Node3D:
 	if _visual == null:
 		_visual = Node3D.new()
 		_visual.name = "CardVisual"
 		add_child(_visual)
-	_visual.add_child(node)
+	return _visual
 
 func _ready() -> void:
 	# 物理材质：高摩擦、低弹性，纸牌感
@@ -678,10 +694,9 @@ func refresh_palette() -> void:
 func _refresh_overlay_colors() -> void:
 	if is_instance_valid(_shield):
 		_shield.modulate = Color.WHITE if _shield is Sprite3D else Palette.semantic("info")
-	var tint: Color = _void_tint_override if _void_tint_override is Color else Color(Palette.semantic("danger"), 0.92)
-	for overlay in [_void_stamp, _void_label]:
-		if is_instance_valid(overlay):
-			overlay.modulate = tint
+	if not _stamp_parts.is_empty():
+		InkStamp.paint(_stamp_parts, _void_tint_override if _void_tint_override is Color and not _stamp_flash_on \
+			else Color(0, 0, 0, 0))
 
 ## 高亮与调暗保存在正面材质上；翻到背面改状态后，再翻回也不会丢色。
 func _apply_color() -> void:
@@ -876,45 +891,121 @@ static func _make_buff_glow_fallback() -> Texture2D:
 	return _buff_glow_fallback
 
 
-## 组合失效时在核心盖章。素材只含空框，“作废”保留为独立文字层。
+## 组合失效时在核心盖「作废」；与「到账 / 升级」是同一枚章，只换字。
 func set_void_stamp(on: bool, tint: Variant = null) -> void:
 	var newly_broken := on and not _void_on
 	_void_on = on
 	_void_tint_override = tint
 	if newly_broken:
 		pulse_feedback("broken")
-	if on and _void_stamp == null:
-		var pos := Vector3(0, Y_OVERLAY, 0.08)
-		var tex := CardArt.overlay_texture("overlay_void_stamp")
-		if tex:
-			var sp := Sprite3D.new()
-			sp.texture = tex
-			sp.pixel_size = CARD_SIZE.x * 0.62 / float(tex.get_width())
-			sp.rotation_degrees = Vector3(-90, -10, 0)
-			sp.position = pos
-			sp.render_priority = 3
-			sp.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-			sp.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
-			_void_stamp = sp
-			_add_visual(sp)
-		var lb := Label3D.new()
-		lb.text = "作废"
-		lb.font = Fonts.zh_bold()
-		lb.font_size = _raster()
-		lb.pixel_size = _text_scale(170)
-		lb.outline_size = 0
-		lb.rotation_degrees = Vector3(-90, -10, 0)
-		lb.position = pos
-		lb.render_priority = 4
-		_add_visual(lb)
-		if tex:
-			_void_label = lb
-		else:
-			_void_stamp = lb
+	if on:
+		_ensure_stamp()
+		_set_stamp_text("作废")
+		if newly_broken:
+			_slam_stamp(Callable())
 	_refresh_overlay_colors()
-	for overlay in [_void_stamp, _void_label]:
-		if is_instance_valid(overlay):
-			overlay.visible = on and not _face_down
+	_sync_stamp_visibility()
+
+## 结算成功时盖在牌上的章（「到账」「升级」「传奇」），盖下去停 hold 秒后收起。
+## 与「作废」同一枚章、同一盒印泥；landed 在章落定那一刻调用（给调用方配音）。
+func flash_stamp(text: String, hold := 0.9, landed := Callable()) -> void:
+	if _visual_retired or _plate == null:
+		return
+	_ensure_stamp()
+	_stamp_flash_on = true
+	_set_stamp_text(text)
+	_refresh_overlay_colors()
+	_sync_stamp_visibility()
+	var tween := _slam_stamp(landed)
+	tween.tween_interval(hold)
+	tween.tween_callback(func() -> void:
+		_stamp_flash_on = false
+		if _void_on:
+			_set_stamp_text("作废")
+		_refresh_overlay_colors()
+		_sync_stamp_visibility())
+
+func stamp_text() -> String:
+	return str(_stamp_parts.get("text", ""))
+
+func stamp_showing() -> bool:
+	return (_void_on or _stamp_flash_on) and not _face_down
+
+func _ensure_stamp() -> void:
+	if is_instance_valid(_void_stamp):
+		return
+	_stamp_parts = InkStamp.build(_ensure_visual(), Vector3(0, Y_OVERLAY, 0.08), "作废", InkStamp.CARD_WIDTH, 2)
+	_void_stamp = _stamp_parts["mesh"]
+
+func _set_stamp_text(text: String) -> void:
+	InkStamp.set_text(_stamp_parts, text)
+
+func _slam_stamp(landed: Callable) -> Tween:
+	if _stamp_tween and _stamp_tween.is_valid():
+		_stamp_tween.kill()
+	_stamp_tween = InkStamp.slam(self, _stamp_parts, landed)
+	return _stamp_tween
+
+func _sync_stamp_visibility() -> void:
+	var shown := stamp_showing()
+	if is_instance_valid(_void_stamp):
+		_void_stamp.visible = shown
+
+## 受击：几道折痕和一点压暗在 0.06 秒内出现，裂口在 duration 内沿撕口走到大半。
+## 只是表现；撕开时折痕跟着两片走，裂口已经变成了撕口。
+func impact_damage(duration: float) -> void:
+	if _plate == null or _face_down:
+		return
+	# 帧很长时（低帧率、后台）顿帧可能整段落在一帧里，撕开先于这次回调执行：
+	# 牌已经变成两片，折痕直接画到两片上，不让这一击白白丢掉。
+	if _visual_retired:
+		_crumple = 1.0
+		for material in _tear_materials:
+			material.set_shader_parameter("crumple", _crumple)
+		return
+	if _damage == null:
+		_damage = MeshInstance3D.new()
+		_damage.name = "CardDamage"
+		_damage.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var quad := QuadMesh.new()
+		quad.size = Vector2(CARD_SIZE.x, CARD_SIZE.z)
+		_damage.mesh = quad
+		var material := ShaderMaterial.new()
+		material.shader = _DAMAGE_PROGRAM
+		material.render_priority = 2
+		var src := _plate.material_override as ShaderMaterial
+		for key in CardArt.FRAME_PARAMETERS:
+			material.set_shader_parameter(key, src.get_shader_parameter(key))
+		material.set_shader_parameter("ink_color", src.get_shader_parameter("ink_color"))
+		material.set_shader_parameter("damage_seed", _damage_seed())
+		_damage.material_override = material
+		_damage.rotation_degrees = Vector3(-90, 0, 0)
+		_damage.position = Vector3(0, Y_OVERLAY - 0.003, 0)
+		_add_visual(_damage)
+	var damage_material := _damage.material_override as ShaderMaterial
+	if _damage_tween and _damage_tween.is_valid():
+		_damage_tween.kill()
+	_damage_tween = create_tween().bind_node(self)
+	_damage_tween.tween_method(func(v: float) -> void:
+		_crumple = v
+		damage_material.set_shader_parameter("crumple", v), _crumple, 1.0, 0.06)
+	_damage_tween.parallel().tween_method(func(v: float) -> void:
+		damage_material.set_shader_parameter("crack", v), 0.0, 0.75, maxf(0.05, duration)) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+func damage_amount() -> float:
+	return _crumple
+
+func _damage_seed() -> float:
+	return float(absi(uid) % 997) * 0.731 + 0.17
+
+## 右下效果墨团在世界里的位置（结算时钱从这里冒出来）；没有效果格时退回牌心。
+func effect_badge_anchor() -> Vector3:
+	if is_instance_valid(_effect_blob):
+		return _effect_blob.global_position
+	if has_effect_badge():
+		return _effect_label.global_position
+	return global_position
 
 ## 横向撕成上下两片。外框/标题带使用共享程序轮廓，只有撕口保留锯齿纹理。
 ## 图标合成进撕片，文字等独立层由调用方按位置分派给各半片。
@@ -923,6 +1014,11 @@ func tear_apart() -> Array:
 		set_face_down(false)
 	reset_interaction_visual()
 	_visual_retired = true
+	# 受击的折痕还在长（帧不均匀时，撕开可能早于折痕补间走完）：直接定格到满，
+	# 两片撕片拿到的是完整的折痕，而不是长到一半的样子。
+	if _damage_tween and _damage_tween.is_valid():
+		_damage_tween.kill()
+		_crumple = 1.0
 	if _plate == null or not (_plate.material_override is ShaderMaterial):
 		return []
 	var src := _plate.material_override as ShaderMaterial
@@ -946,6 +1042,9 @@ func tear_apart() -> Array:
 		mat.set_shader_parameter("tint", t if t != null else Color.WHITE)
 		mat.set_shader_parameter("side", side)
 		mat.set_shader_parameter("fade", 1.0)
+		mat.set_shader_parameter("crumple", _crumple)
+		mat.set_shader_parameter("damage_seed", _damage_seed())
+		_tear_materials.append(mat)
 		_feed_icon(mat)
 		half.material_override = mat
 		half.rotation_degrees = Vector3(-90, 0, 0)
@@ -956,6 +1055,10 @@ func tear_apart() -> Array:
 	# 本体那圈侧壁留着会在撕口中间露出一条实心色；图标已经合进着色器，
 	# 原来那张 Sprite3D 留着就成了「半张卡上飘着整个图标」
 	_plate.visible = false
+	# 受击层只盖完整卡面；撕开后折痕由两片自己画。
+	if is_instance_valid(_damage):
+		_damage.queue_free()
+	_damage = null
 	if card_mesh:
 		card_mesh.visible = false
 	if _icon:
@@ -989,7 +1092,7 @@ func face_overlays() -> Array:
 	for n in _face_elems:
 		if is_instance_valid(n) and n != _icon:
 			out.append(n)
-	for extra in [label, _recipe_label, _recipe_blob, _shield, _glow, _void_stamp, _void_label]:
+	for extra in [label, _recipe_label, _recipe_blob, _shield, _glow, _void_stamp]:
 		if is_instance_valid(extra) and not out.has(extra):
 			out.append(extra)
 	for n in _badge_icons:
@@ -1037,9 +1140,9 @@ func set_face_down(on: bool) -> void:
 		_shield.visible = _shield_on and not on
 	if _glow:
 		_glow.visible = _glow_on and not on
-	for overlay in [_void_stamp, _void_label]:
-		if is_instance_valid(overlay):
-			overlay.visible = _void_on and not on
+	_sync_stamp_visibility()
+	if is_instance_valid(_damage):
+		_damage.visible = not on
 
 func _feedback_material() -> ShaderMaterial:
 	if _plate == null:

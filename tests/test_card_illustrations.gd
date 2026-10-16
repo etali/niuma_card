@@ -3,6 +3,7 @@
 # See LICENSE in the project root.
 
 extends "res://tests/harness.gd"
+const InkStamp = preload("res://scenes/ink_stamp.gd")
 
 ## 插画接入需要跨翻面、撕裂、调色和同名卡详情验证，避免只在静态预览成立。
 func _initialize() -> void:
@@ -111,23 +112,20 @@ func _hand_drawn_overlays() -> void:
 		"手绘护盾保留原色，避免再次乘蓝色后墨线和纸色变暗")
 	check(card._shield.position.z - CardEntity.CARD_SIZE.x * 0.12 > (CardArt.FRAME_BAND_HEIGHT - 0.5) * CardEntity.CARD_SIZE.z,
 		"护盾位于标题带下方，不遮挡卡名")
-	check(card._void_stamp.rotation.is_equal_approx(card._void_label.rotation),
-		"作废章框与独立文字使用相同倾斜角度")
+	var stamp_material := card._void_stamp.material_override as ShaderMaterial
+	check(stamp_material != null and stamp_material.shader == InkStamp.spatial_shader() and card.stamp_text() == "作废",
+		"作废章就是全游戏共用的那枚章，框和字在同一张面片上，倾斜角度自然一致")
 	Palette.set_color("semantic", "danger", Color("#8F3553"))
 	card.refresh_palette()
-	check(card._void_stamp.modulate.is_equal_approx(Color(Palette.semantic("danger"), 0.92))
-			and card._void_stamp.modulate == card._void_label.modulate,
-		"作废框和文字实时跟随现有危险语义色")
+	check(Color(stamp_material.get_shader_parameter("ink")).is_equal_approx(InkStamp.seal_ink()),
+		"作废章的印泥是 fx.stamp_ink 那一盒，改危险色也不跟着变（%s）" % InkStamp.seal_ink())
 	card.set_face_down(true)
-	check(not card._shield.visible and not card._void_stamp.visible and not card._void_label.visible,
-		"翻面隐藏所有正面状态标记")
+	check(not card._shield.visible and not card._void_stamp.visible, "翻面隐藏所有正面状态标记")
 	card.set_face_down(false)
-	check(card._shield.visible and card._void_stamp.visible and card._void_label.visible,
-		"翻回恢复手绘护盾与作废章")
+	check(card._shield.visible and card._void_stamp.visible, "翻回恢复手绘护盾与作废章")
 	card.set_shield(false)
 	card.set_void_stamp(false)
-	check(not card._shield.visible and not card._void_stamp.visible and not card._void_label.visible,
-		"取消状态隐藏标记，不留下残影")
+	check(not card._shield.visible and not card._void_stamp.visible, "取消状态隐藏标记，不留下残影")
 	card.queue_free()
 	Palette.restore_defaults()
 	await process_frame

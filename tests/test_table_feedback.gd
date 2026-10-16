@@ -190,8 +190,8 @@ func _attack_and_shield() -> void:
 	var before := StateCodec.state_hash(arena.state)
 	var at: Vector3 = target.position
 	arena._table_actions.attack_feedback(at, arena.my_seat, str(arena.demo["effect"]["attack_res"]))
-	var impact: MeshInstance3D = arena.get_node_or_null("Outline_impact")
-	check(impact != null and impact.position.distance_to(at) < 0.2, "攻击轮廓落向真实受击卡")
+	check(arena.get_node_or_null("Outline_impact") == null and arena.find_children("Receipt_attack*", "", false, false).is_empty(),
+		"攻击不再在目标上画红框和「竞争打击」回执，被打的感觉交给牌自己")
 	check(arena.get_node_or_null("Trace_attack") == null, "攻击不再从武器发射光束")
 	var weapon: CardEntity = arena._input_cards[0]
 	check(weapon.feedback_event == "attack",
@@ -248,7 +248,8 @@ func _effect_material_lifecycle() -> void:
 	root.add_child(stage)
 	var first := Motion.play(stage, "production", Vector3.ZERO, Color.RED) as CPUParticles3D
 	var particle_material: WeakRef = weakref(first.mesh.material)
-	await create_timer(Motion.ACT + Motion.SETTLE + 0.1).timeout
+	# 按这一朵的真实寿命等：产出的金币比纸屑多飞一会儿，固定等 ACT 会和释放时刻贴得太近。
+	await create_timer(first.lifetime + Motion.SETTLE + 0.15).timeout
 	check(not is_instance_valid(first) and particle_material.get_ref() != null,
 		"粒子节点结束释放，材质保留给下次反馈，避免每组结算重新编译")
 	var second := Motion.play(stage, "pawn", Vector3.ZERO, Color.BLUE) as CPUParticles3D

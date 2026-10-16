@@ -1693,10 +1693,47 @@ func _sync_side(g, at: Vector3, pin_y := false) -> void:
 	for row in spec:
 		sig += str(row["text"]) + "|"
 	if g.get("side_sig", "") != sig:
+		var before: Dictionary = g.get("side_counts", {})
 		_clear_side(g)
 		g["side"] = _build_side(self, spec)
 		g["side_sig"] = sig
+		g["side_counts"] = _side_counts(spec)
+		# 资源到账：哪一行的「×N」变大了，那一行就弹一下，读得出钱刚落进这一摞。
+		# 第一次挂清单（before 为空）不弹，新局摆桌、理牌合并不该看起来像到账。
+		if not before.is_empty():
+			for i in spec.size():
+				var key := _side_key(spec[i])
+				if int(g["side_counts"].get(key, 0)) > int(before.get(key, 0)):
+					_pop_side_row(g["side"], i)
 	_place_side(g["side"], spec.size(), at, pin_y)
+
+static func _side_key(row: Dictionary) -> String:
+	var tex: Texture2D = row.get("tex")
+	return tex.resource_path if tex != null and tex.resource_path != "" else str(row.get("tex"))
+
+static func _side_counts(spec: Array) -> Dictionary:
+	var counts := {}
+	for row in spec:
+		var text := str(row["text"])
+		if text.begins_with("×"):
+			counts[_side_key(row)] = int(text.substr(1))
+	return counts
+
+## 清单一行（图标 + ×N）放大一下再回位；只动这一行自己的缩放，不碰位置。
+func _pop_side_row(nodes: Array, row: int) -> void:
+	for node in [nodes[row * 2], nodes[row * 2 + 1]]:
+		if node == null or not is_instance_valid(node):
+			continue
+		node.scale = Vector3.ONE * 1.6
+		var tween: Tween = node.create_tween()
+		tween.tween_property(node, "scale", Vector3.ONE, 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var label: Variant = nodes[row * 2 + 1]
+	if label is Label3D and is_instance_valid(label):
+		var ink: Color = label.modulate
+		label.modulate = Palette.semantic("success").darkened(0.2)
+		var tint: Tween = label.create_tween()
+		tint.tween_interval(0.25)
+		tint.tween_property(label, "modulate", ink, 0.35)
 
 ## 造出清单节点：每行（图标 + ×N）。返回 [行 0 图标, 行 0 文字, 行 1 图标, ...]
 ##

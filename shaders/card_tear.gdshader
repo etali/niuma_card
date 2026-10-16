@@ -22,11 +22,9 @@ uniform float jag = 0.022;
 uniform float edge = 0.012;
 uniform vec3 edge_color : source_color = vec3(0.35, 0.3, 0.28);
 
-// 撕口所在的 UV.y，随 UV.x 抖动。三个不同频率的正弦叠加：
-// 单一正弦看着像波浪剪纸，叠起来才像手撕的毛边
+// 撕口曲线与受击裂口共用 card_frame 里的 tear_curve：先裂开的那道就是撕开的这条。
 float tear_y(float u) {
-	return 0.5 + jag * sin(u * 37.0) + jag * 0.55 * sin(u * 91.0 + 1.7)
-		+ jag * 0.30 * sin(u * 173.0 + 4.2);
+	return tear_curve(u, jag);
 }
 
 void fragment() {
@@ -46,6 +44,10 @@ void fragment() {
 			c = mix(c, icon_full_color ? ic.rgb : icon_color, ic.a);
 		}
 	}
+
+	// 受击留下的折痕跟着这半张纸走（撕开后不再画裂口：它已经变成了撕口）。
+	vec2 damage = card_damage(UV);
+	c = mix(c * (1.0 - damage.y), ink_color, damage.x);
 
 	// 撕口两侧压一条暗边：纸被撕开会露出纤维，没有这条边看着像刀切
 	float d = abs(UV.y - ty);

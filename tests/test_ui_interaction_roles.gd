@@ -95,7 +95,15 @@ func _run() -> void:
 	var attack := Motion.play(stage, "attack", Vector3.ZERO, Palette.semantic("danger"), 8)
 	var upgrade := Motion.play(stage, "upgrade", Vector3.ZERO, Palette.semantic("primary"))
 	check(purchase is CPUParticles3D and production is CPUParticles3D and attack is CPUParticles3D, "购买产出攻击保留纸片材质")
-	check(upgrade is MeshInstance3D and upgrade.mesh is TorusMesh, "升级使用独立的环形反馈")
+	# 升级圈是一笔画成的墨圈（ArrayMesh 环带），不是圆规画的 TorusMesh；量它确实绕成一圈。
+	var ring_ok := upgrade is MeshInstance3D and upgrade.mesh is ArrayMesh
+	if ring_ok:
+		var vertices: PackedVector3Array = upgrade.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		var angles := {}
+		for vertex in vertices:
+			angles[int(floorf((atan2(vertex.z, vertex.x) + PI) / TAU * 8.0)) % 8] = true
+		ring_ok = angles.size() == 8 and vertices.size() > 64
+	check(ring_ok, "升级使用独立的环形反馈")
 	check(purchase.spread != production.spread and attack.direction != purchase.direction, "产出上升与攻击方向可区分")
 	await create_timer(Motion.FEEDBACK_LIFETIME + Motion.SETTLE + 0.1).timeout
 	check(stage.get_child_count() == 0, "动作结束释放全部反馈节点")

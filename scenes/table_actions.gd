@@ -13,10 +13,25 @@ class PresentationBeat extends Node:
 ## 共用卡牌回收、落位、反馈和动作音效，不在演示层另写交易动画。
 const Motion = preload("res://scenes/ui_motion.gd")
 const Feedback = preload("res://scenes/table_feedback.gd")
+const ComicFx = preload("res://scenes/comic_fx.gd")
 const Regions = preload("res://scenes/table_regions.gd")
+## 连击：同一攻击方在这段时间内的相邻批次算一串，命中音逐批升调。
+const CHAIN_WINDOW_MS := 2500
+const CHAIN_PITCH_STEP := 0.06
+const CHAIN_PITCH_STEPS := 5
+## 结算演出传进来的位置比组合抬高了这么多（给粒子起跳用）；牌桌特效要对准桌面上的组合本身。
+const FEEDBACK_RAISE := 0.6
+## 升级产物最多等这么久才出现、落定；等不到就在材料原处演，不让庆祝凭空消失。
+const ARRIVAL_WAIT := 1.6
 var host: Node3D
 signal pawn_finished
 var _pawn_moves: Array[Dictionary] = []
+var _chain := {"attacker": "", "count": 0, "at": -CHAIN_WINDOW_MS}
+## 已为哪一份 GameState 演过终结一击；终局后补播的旧批次不再重复定格。
+var _final_state_id := 0
+## 本局战绩只给终局面板展示，规则状态里没有这些数。换了一份 GameState 就重记；
+## 从第一回合起记全的才算数，中途接手（读档、重连）宁可不显示也不显示半截数字。
+var _stats := {}
 
 ## 正式与教学实体使用同一边界、登记和产出飞入入口。
 func spawn_card(record: Dictionary, at: Vector3, draggable: bool,
@@ -362,34 +377,49 @@ func suck_batch_time(count: int) -> float:
 
 func combo_feedback(effect: Dictionary, at: Vector3, combo: Dictionary = {}) -> void:
 	var members := _members(combo.get("uids", []))
+	var table_at := at - Vector3.UP * FEEDBACK_RAISE
 	if not members.is_empty():
 		for card in members:
 			if card.def_id == effect.get("leader", "") or (effect["type"] == "production" and card.def_id == "yinqing996"):
 				card.pulse_feedback("produce" if effect["type"] == "production" else "upgrade")
 	match effect["type"]:
 		"production":
-			var color := Palette.semantic("cash" if effect["output_res"] == CardDB.RES_CASH else "user")
-			host._event_feedback("production", at, color, 12)
+			var cash: bool = effect["output_res"] == CardDB.RES_CASH
+			var color := Palette.semantic("cash" if cash else "user")
+			var amount := int(effect["output_n"])
+			var big := amount >= ComicFx.big_output()
+			_record(str(combo.get("owner", "")), str(effect["output_res"]), amount)
+			# 钱从核心牌右下的效果墨团里冒出来；核心牌上盖「到账 / 拉新」，和「作废」同一枚章。
+			var source := at
 			if _visible():
-				Feedback.receipt(host, "production", at, "+%d %s" % [int(effect["output_n"]), CardDB.res_label(effect["output_res"])], color)
+				source = ComicFx.production(host, host.board.camera, _leader(members, effect), table_at, cash, amount, host.sfx)
+			host._event_feedback("production", source, color, 18 if big else 12, "coin" if cash else "user")
 		"upgrade":
 			host.sfx.play("upgrade")
 			host._event_feedback("upgrade", at, Palette.plate_color("plate_t3", "band"))
+			var legend: bool = CardDB.get_def(str(effect.get("output_card", ""))).get("kind", "") == CardDB.KIND_LEGEND
+			host._event_feedback("celebrate", at, Color.WHITE, 24 if legend else 16, "spark")
 			if _visible():
 				Feedback.outline(host, "upgrade", at, Vector2(CardEntity.CARD_SIZE.x, CardEntity.CARD_SIZE.z), Palette.semantic("cash"))
-				Feedback.receipt(host, "upgrade", at, "升级完成", Palette.semantic("cash"))
+				# 墨圈和彩纸留在材料收拢处；集中线、印章与聚光等新牌飞到落点再围上去。
+				_celebrate_arrival(str(effect.get("output_card", "")), host.entities.keys(), table_at, legend)
 		"attack":
 			host.sfx.play("attack")
 
-func attack_feedback(at: Vector3, attacker := "", resource := "", round_num := -1, attack_combos: Array = []) -> void:
-	host.sfx.play("attack")
+## scraps 为 false 时纸屑交给调用方在真正撕开的那一拍撒（present_attack）；
+## 规则书这类当场撕的路径照旧在这里撒。纸屑用被打资源牌自己的底色。
+func attack_feedback(at: Vector3, attacker := "", resource := "", round_num := -1, attack_combos: Array = [],
+		scraps := true) -> void:
+	var chain := _advance_chain(attacker)
+	host.sfx.play("attack", 1.0 + CHAIN_PITCH_STEP * float(mini(chain - 1, CHAIN_PITCH_STEPS)))
 	if at == Vector3.INF:
 		return
-	host._event_feedback("attack", at, Palette.semantic("danger"), 14)
+	if scraps:
+		host._event_feedback("attack", at, _scrap_color(resource), 14)
 	if not _visible():
 		return
-	Feedback.outline(host, "impact", at, Vector2(CardEntity.CARD_SIZE.x, CardEntity.CARD_SIZE.z), Palette.semantic("danger"), Motion.TEAR)
-	Feedback.receipt(host, "attack", at, "竞争打击", Palette.semantic("danger"))
+	# 不再在目标上画红框和「竞争打击」回执：被打的感觉由牌自己（折痕、裂口、撕开）、
+	# 顿帧、震动和声音给出；开火的武器牌照旧在自己身上响应一下。
 	# 点数可能由多组武器汇合，每张真实的对应武器响应，不能凭空造一个攻击起点。
 	for combo in host.state.combos if attack_combos.is_empty() else attack_combos:
 		var effect: Dictionary = combo["eval"]
@@ -404,6 +434,100 @@ func attack_feedback(at: Vector3, attacker := "", resource := "", round_num := -
 					continue
 				card.pulse_feedback("attack")
 				break
+
+func _scrap_color(resource: String) -> Color:
+	return CardArt.face_color(CardDB.unit_id(resource)) if resource != "" else Palette.semantic("surface")
+
+func _leader(members: Array, effect: Dictionary) -> CardEntity:
+	for card in members:
+		if is_instance_valid(card) and card.def_id == str(effect.get("leader", "")):
+			return card
+	return null
+
+## 等这次升级的产物出现并落定，再在它身上盖「升级 / 传奇」，传说再打聚光。
+## known 是升级前已有的实体 uid：产物是之后新出现、卡种对得上的那张。
+func _celebrate_arrival(def_id: String, known: Array, fallback: Vector3, legend: bool) -> void:
+	var tree := get_tree()
+	var waited := 0.0
+	var card: CardEntity = null
+	while waited < ARRIVAL_WAIT and is_instance_valid(host):
+		if card == null:
+			for uid in host.entities:
+				var candidate: CardEntity = host.entities[uid]
+				if not known.has(uid) and is_instance_valid(candidate) and candidate.def_id == def_id:
+					card = candidate
+					break
+		if card != null and (not is_instance_valid(card) or not _flying(card)):
+			break
+		# 经子节点转发等帧：规则页提前关掉、牌桌释放时，这条协程随之断开，不在已释放的牌桌上恢复。
+		await _wait_presentation(tree.process_frame)
+		waited += get_process_delta_time()
+	if not is_instance_valid(host) or not _visible():
+		return
+	ComicFx.upgrade(host, host.board.camera, card if card != null and is_instance_valid(card) else null,
+		fallback, legend, host.sfx)
+
+func _flying(card: CardEntity) -> bool:
+	if not card.has_meta("fly_tw"):
+		return false
+	var tween: Variant = card.get_meta("fly_tw")
+	return tween is Tween and tween.is_valid() and tween.is_running()
+
+func _advance_chain(attacker: String) -> int:
+	var now := Time.get_ticks_msec()
+	if attacker == str(_chain["attacker"]) and now - int(_chain["at"]) <= CHAIN_WINDOW_MS:
+		_chain["count"] = int(_chain["count"]) + 1
+	else:
+		_chain["count"] = 1
+	_chain["attacker"] = attacker
+	_chain["at"] = now
+	return int(_chain["count"])
+
+## 命中一拍（双手按住的那一刻）：被打的牌起折痕、撕口先裂开一道，镜头震一下；
+## 被打掉的用户跑出牌桌，被打掉的现金撒成硬币。自己挨打震得更重，终结一击最重。
+func _impact(cards: Array, at: Vector3, attacker: String, resource: String, final: bool, hold: float) -> void:
+	if not _visible() or at == Vector3.INF:
+		return
+	var hurt: bool = attacker != host.my_seat
+	# 用户往受害方那一侧的牌桌外跑：我被打就朝屏幕下方，对手被打就朝上方。
+	var side := signf(at.x) if absf(at.x) > 0.5 else (1.0 if ComicFx.Materials.rng().randf() > 0.5 else -1.0)
+	ComicFx.hit(host, host.board.camera, cards, at, "final" if final else ("hurt" if hurt else "hit"),
+		resource, Vector3(side, 0.0, 0.8 if hurt else -0.8), hold)
+
+## 当前局面是否刚由这一批分出胜负；同一局只演一次终结。
+func _claims_final_blow() -> bool:
+	var state: GameState = host.state
+	if state == null or state.winner == "" or _final_state_id == state.get_instance_id():
+		return false
+	_final_state_id = state.get_instance_id()
+	return true
+
+## 开局时由正式牌桌登记；规则书与教学不登记，它们的战绩一律不记。
+func track_match(state: GameState) -> void:
+	if state == null or int(_stats.get("state", 0)) == state.get_instance_id():
+		return
+	_stats = {"state": state.get_instance_id(), "complete": state.round_num <= 1, "seats": {}}
+
+## 换局（含联网 rematch 复用同一个 GameState）时清掉战绩、连击与终结记录，下一次 HUD 刷新重新登记。
+func reset_match() -> void:
+	_stats = {}
+	_final_state_id = 0
+	_chain = {"attacker": "", "count": 0, "at": -CHAIN_WINDOW_MS}
+
+func match_stats() -> Dictionary:
+	var state: GameState = host.state
+	if state == null or int(_stats.get("state", 0)) != state.get_instance_id() or not _stats.get("complete", false):
+		return {}
+	return (_stats["seats"] as Dictionary).duplicate(true)
+
+func _record(seat: String, key: String, amount: int) -> void:
+	var state: GameState = host.state
+	if seat.is_empty() or amount <= 0 or state == null or int(_stats.get("state", 0)) != state.get_instance_id():
+		return
+	var seats: Dictionary = _stats["seats"]
+	if not seats.has(seat):
+		seats[seat] = {CardDB.RES_CASH: 0, CardDB.RES_USER: 0, "torn": 0}
+	seats[seat][key] = int(seats[seat].get(key, 0)) + amount
 
 ## 一次点摞沿用正式牌局的挑靶顺序：先拆配方，再打同摞富余单位。
 ## 每次裁决之后重新查询，不能缓存已经被上一击破坏的组合目标。
@@ -468,7 +592,8 @@ func highlight_attack_targets(pools: Dictionary) -> Array:
 	return highlighted
 
 ## 正式对局、对手回放与教学都先从实体表摘除，再交唯一的整摞撕牌实现。
-func animate_removed(removed: Array, toward_ai: bool, hands: Node, held_cards: Array = []) -> float:
+func animate_removed(removed: Array, toward_ai: bool, hands: Node, held_cards: Array = [],
+		hitstop := Motion.HITSTOP, on_impact := Callable()) -> float:
 	var cards: Array = held_cards.filter(func(card): return is_instance_valid(card))
 	for uid in removed:
 		if host.entities.has(uid) and is_instance_valid(host.entities[uid]) and not cards.has(host.entities[uid]):
@@ -476,17 +601,37 @@ func animate_removed(removed: Array, toward_ai: bool, hands: Node, held_cards: A
 	for card in cards:
 		host.entities.erase(card.uid)
 		host.layout.kill_bot_move(card.uid)
-	return _motion().tear_batch(cards, hands, Vector3(0, 4, -2) if toward_ai else Vector3(0, 4, 2))
+	return _motion().tear_batch(cards, hands, Vector3(0, 4, -2) if toward_ai else Vector3(0, 4, 2),
+		hitstop, on_impact)
 
 ## 命中、抓握、撕开和等整批退场是同一条演出链；调用方只负责各自的局面有效期。
+## 折痕、裂口和震动落在抓握到位的一拍，不在点下去的瞬间：那时手还没碰到牌。
 func present_attack(removed: Array, center: Vector3, attacker: String, resource: String,
 		hands: Node, timer: Callable, current: Callable, held_cards: Array = [], track: Callable = Callable(),
 		round_num := -1, attack_combos: Array = []) -> bool:
 	if not current.call(): return false
-	attack_feedback(center, attacker, resource, round_num, attack_combos)
+	attack_feedback(center, attacker, resource, round_num, attack_combos, false)
 	var retiring := _members(removed)
 	retiring.append_array(held_cards)
-	var duration := animate_removed(removed, attacker != host.my_seat, hands, held_cards)
+	var hit := retiring.filter(func(card): return is_instance_valid(card))
+	_record(attacker, "torn", hit.size())
+	var final := _claims_final_blow()
+	# 牌桌特效对准被打牌在桌面上的位置（不再加 0.5 的起跳高度：抬高由特效沿视线自己做）。
+	var at := center - Vector3(0, 0.5, 0)
+	if not hit.is_empty():
+		at = Vector3.ZERO
+		for card in hit:
+			at += card.global_position
+		at = at / float(hit.size())
+	var hold := ComicFx.hitstop("final" if final else "hit")
+	var on_impact := func() -> void: _impact(hit, at, attacker, resource, final, hold)
+	var duration := animate_removed(removed, attacker != host.my_seat, hands, held_cards, hold, on_impact)
+	# 纸屑在真正撕开的那一拍撒，颜色取被撕那张牌的底色。
+	if duration > 0.0 and at != Vector3.INF:
+		var tear_at := at + Vector3(0, 0.5, 0)
+		var scrap_color := _scrap_color(resource)
+		_motion().delayed_call(func() -> void: host._event_feedback("attack", tear_at, scrap_color, 14),
+			_motion().BATCH_GRIP + hold)
 	if track.is_valid(): track.call(duration)
 	if duration > 0.0:
 		await _wait_presentation(timer.call(duration).timeout)

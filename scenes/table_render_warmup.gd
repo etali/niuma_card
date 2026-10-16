@@ -8,6 +8,8 @@ extends SubViewport
 ## 将准备工作留在启动阶段。静态资源负责后续复用，这个视口不常驻。
 const Feedback = preload("res://scenes/table_feedback.gd")
 const Motion = preload("res://scenes/ui_motion.gd")
+const ComicFx = preload("res://scenes/comic_fx.gd")
+const Materials = preload("res://scenes/effect_materials.gd")
 static var _completed := false
 static var _pending: WeakRef
 var _frames := 0
@@ -66,6 +68,30 @@ func _build_samples() -> void:
 	Feedback.outline(world, "warmup", Vector3.ZERO, Vector2(1.2, 1.6), Color.WHITE)
 	var particles := Motion.play(world, "production", Vector3.ZERO, Color.WHITE, 1) as CPUParticles3D
 	particles.preprocess = 0.05
+	# 牌桌特效的着色器与每种纸片形状都画一次；第一次结算、盖章、受击不再临场编译。
+	ComicFx.badge_pop(world, Vector3(-2, 0, 0), "+1", CardDB.RES_CASH, Color.WHITE)
+	ComicFx.stamp(world, Vector3(2, 0, 0), "章")
+	# 章上的字第一次用到时要离屏排一次；开局先把配置里的词都排好。
+	ComicFx.InkStamp.prewarm(ComicFx.rules().get("stamps", {}).values() + ["作废"])
+	var target := CardEntity.new()
+	target.setup(-2, CardDB.unit_id(CardDB.RES_USER))
+	target.freeze = true
+	target.collision_layer = 0
+	target.collision_mask = 0
+	target.position = Vector3(0, 0, -2)
+	world.add_child(target)
+	target.impact_damage(0.1)
+	target.flash_stamp("章")
+	ComicFx.seal(world, Vector3(0, 0, 2), "封", "章", Color.WHITE)
+	ComicFx.spotlight(world, Vector3.ZERO)
+	Motion.play(world, "upgrade", Vector3.ZERO, Color.WHITE)
+	for shape in Materials.PARTICLE_SHAPES:
+		var sprite := MeshInstance3D.new()
+		var quad := QuadMesh.new()
+		quad.size = Vector2.ONE * 0.3
+		sprite.mesh = quad
+		sprite.material_override = Materials.particles(shape)
+		world.add_child(sprite)
 
 func _after_draw() -> void:
 	_frames += 1

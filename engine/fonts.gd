@@ -12,10 +12,13 @@ extends RefCounted
 static var _source: Font = null
 static var _font: Font = null
 static var _bold: Font = null
+static var _black: Font = null
 
 const BUNDLED_FONT := "res://assets/fonts/NotoSansSC.ttf"
 const REGULAR_WEIGHT := 400
 const SEMIBOLD_WEIGHT := 600
+## 印章字：最粗一档，刻章用的字笔画都很实。
+const BLACK_WEIGHT := 900
 ## OpenType 的 wght 标签。Godot 接受整数标签或友好名 "weight"，
 ## 但字符串 "wght" 在部分版本只会留在属性里，底层实际仍使用默认字重。
 const WEIGHT_AXIS := 0x77676874
@@ -31,6 +34,11 @@ static func zh_bold() -> Font:
 	if _bold == null:
 		_bold = _weighted_font(SEMIBOLD_WEIGHT)
 	return _bold
+
+static func zh_black() -> Font:
+	if _black == null:
+		_black = _weighted_font(BLACK_WEIGHT)
+	return _black
 
 ## 源目录可读 TTF 时直接交给 FontFile，避免残留 .import 指向已删除的缓存。
 ## 导出包通常只有 .fontdata，此时仍按 Godot 资源映射读取正式导入资源。

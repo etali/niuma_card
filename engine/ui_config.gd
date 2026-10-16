@@ -18,18 +18,21 @@ const FALLBACK := {
 	"icon_scale": 0.75,
 	"table_zoom": 1.0,
 	"hover_animation_speed": 2.0,
+	"screen_shake": 1.0,
 }
 const RANGES := {
 	"window_fraction": Vector2(0.5, 1.0),
 	"perspective_angle": Vector2(45.0, 80.0),
 	"icon_scale": Vector2(0.5, 3.0),
 	"table_zoom": Vector2(1.0, 2.5),
+	"screen_shake": Vector2(0.0, 1.0),
 }
 const HOVER_SPEED_CONTROL := {"min": 0.5, "max": 2.0, "step": 0.1}
 
 static var _cache: Dictionary = {}
 static var _source := ""
 static var _hover_animation_speed := -1.0
+static var _screen_shake := -1.0
 
 ## 仅缓存播放倍率；正在播放的卡牌每帧读取，因此调速不会重启或重载动画。
 static func get_hover_animation_speed() -> float:
@@ -39,6 +42,15 @@ static func get_hover_animation_speed() -> float:
 
 static func set_hover_animation_speed(value: float) -> void:
 	_hover_animation_speed = validated_defaults({"hover_animation_speed": value})["hover_animation_speed"]
+
+## 命中与终局的镜头震动比例；0 关闭。特效每次读取，调整后下一次震动即生效。
+static func get_screen_shake() -> float:
+	if _screen_shake < 0.0:
+		_screen_shake = read_defaults()["screen_shake"]
+	return _screen_shake
+
+static func set_screen_shake(value: float) -> void:
+	_screen_shake = validated_defaults({"screen_shake": value})["screen_shake"]
 
 static func hover_speed_text(value: float) -> String:
 	var text := String.num(value, 3)
@@ -106,6 +118,7 @@ static func reset_cache() -> void:
 	_cache.clear()
 	_source = ""
 	_hover_animation_speed = -1.0
+	_screen_shake = -1.0
 
 static func read_defaults(path: String = "") -> Dictionary:
 	var values := read_section("defaults", path)
@@ -127,6 +140,7 @@ static func restore_preferences() -> Dictionary:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(USER_PATH))
 	var defaults := validated_defaults(read_section("defaults"))
 	_hover_animation_speed = defaults["hover_animation_speed"]
+	_screen_shake = defaults["screen_shake"]
 	return defaults
 
 static func validated_defaults(source: Variant, path := "") -> Dictionary:

@@ -1,14 +1,15 @@
 {
-  "_说明": "游戏展示配置：defaults=启动默认值；palette=配色；art=图标、插画与卡面呈现；resource_labels=资源计量名；sfx=音效与动作映射。规则和卡牌见 cards.json，BOT 参数见 bot.json。",
+  "_说明": "游戏展示配置：defaults=启动默认值；palette=配色；art=图标、插画与卡面呈现；resource_labels=资源计量名；sfx=音效与动作映射；fx=牌桌特效的强度与印章文字。规则和卡牌见 cards.json，BOT 参数见 bot.json。",
   "defaults": {
     "window_fraction": 0.98,
     "perspective_angle": 80.0,
     "icon_scale": 0.75,
     "table_zoom": 1.0,
-    "hover_animation_speed": 2.0
+    "hover_animation_speed": 2.0,
+    "screen_shake": 1.0
   },
   "controls": {
-    "_说明": "UI 页的可调范围。hover_animation_speed 仅控制卡牌插画播放倍率，修改后立即生效。",
+    "_说明": "UI 页的可调范围。hover_animation_speed 仅控制卡牌插画播放倍率，修改后立即生效；screen_shake 是命中/终局镜头震动的比例，0 为关闭。",
     "hover_animation_speed": {
       "min": 0.5,
       "max": 2.0,
@@ -143,7 +144,11 @@
       "attack": "res://assets/sfx/attack.wav",
       "broken": "res://assets/sfx/broken.wav",
       "win": "res://assets/sfx/win.wav",
-      "lose": "res://assets/sfx/lose.wav"
+      "lose": "res://assets/sfx/lose.wav",
+      "coin": "res://assets/sfx/coin.wav",
+      "stamp": "res://assets/sfx/stamp.wav",
+      "bell": "res://assets/sfx/bell.wav",
+      "trombone": "res://assets/sfx/trombone.wav"
     },
     "actions": {
       "_note_actions": "产出没有自己的音效：produce_land 复用 drop，每张产出的牌落地各响一声（整组一声说不出产出了几张，见 main._fly_from 和 test_arrivals T11）。所以它的 sound/db 必须和 card_drop 一样",
@@ -219,6 +224,23 @@
       },
       "lose": {
         "sound": "lose"
+      },
+      "_note_fx": "produce_coin 只在现金落地时叠在 produce_land 之后（同一批逐张升调）；stamp 是印章落定；listing_bell 是资金冲线的敲钟；defeat_trombone 跟在 lose 之后。",
+      "produce_coin": {
+        "sound": "coin",
+        "db": -12.0
+      },
+      "stamp": {
+        "sound": "stamp",
+        "db": -5.0
+      },
+      "listing_bell": {
+        "sound": "bell",
+        "db": -4.0
+      },
+      "defeat_trombone": {
+        "sound": "trombone",
+        "db": -6.0
       }
     }
   },
@@ -857,6 +879,35 @@
       "cache_bytes": 100663296,
       "max_dimension": 384,
       "_说明": "12fps；最长边384；hdelta-v1无损帧间差分；首帧复用静止图，后台解码并生成mipmap。"
+    }
+  },
+  "fx": {
+    "_说明": "牌桌特效。shake=镜头震动幅度（世界单位，再乘 UI 页的画面震动比例）：hit 普通命中、hurt 自己挨打、big 大额产出与传说、final 终结一击；hitstop=命中顿帧秒数，hit 不超过 0.08（要塞进原撕牌节拍），final 不超过 0.4；big_output=单次产出达到这个数量时轻震一下；stamp_ink=印章的印泥色（全游戏只有这一枚章、这一盒印泥）；stamps=各场合印章文字（cash/user 产出、upgrade/legend 升级，这四枚与「作废」是同一枚章盖在牌上；listing/bankrupt/exodus 终局桌面、win_*/lose 终局面板）。",
+    "shake": {
+      "hit": 0.05,
+      "hurt": 0.1,
+      "big": 0.06,
+      "final": 0.18
+    },
+    "hitstop": {
+      "hit": 0.08,
+      "final": 0.24
+    },
+    "big_output": 6,
+    "stamp_ink": "#C43428",
+    "stamps": {
+      "cash": "到账",
+      "user": "拉新",
+      "upgrade": "升级",
+      "legend": "传奇",
+      "listing": "上市",
+      "bankrupt": "查封",
+      "exodus": "人去楼空",
+      "lose": "已优化",
+      "win_listing": "上市成功",
+      "win_bankrupt": "对手破产",
+      "win_exodus": "对手跑光",
+      "win_resign": "对手认输"
     }
   }
 }

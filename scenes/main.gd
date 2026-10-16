@@ -30,6 +30,8 @@ const TableSurface = preload("res://scenes/table_surface.gd")
 const TableRegions = preload("res://scenes/table_regions.gd")
 const UIButtonTheme = preload("res://scenes/ui_button_theme.gd")
 const UIMotion = preload("res://scenes/ui_motion.gd")
+const HudFx = preload("res://scenes/hud_fx.gd")
+const ComicFx = preload("res://scenes/comic_fx.gd")
 const PlatformMode = preload("res://engine/platform_mode.gd")
 const TouchInput = preload("res://scenes/table_touch_input.gd")
 const WebFiles = preload("res://scenes/web_files.gd")
@@ -4234,10 +4236,10 @@ func _sync_entities(from_pos = null) -> void:
 			who == my_seat, from_pos, i, to_spawn.size())
 
 ## 事件明确选择动效语义：购买收束、产出上升、攻击纸屑、升级扩环。
-func _event_feedback(event: String, pos: Vector3, color: Color, amount := 16) -> void:
+func _event_feedback(event: String, pos: Vector3, color: Color, amount := 16, shape := "") -> void:
 	if drawer_window and not drawer_window.is_expanded():
 		return
-	UIMotion.play(self, event, pos, color, amount)
+	UIMotion.play(self, event, pos, color, amount, shape)
 
 # ---------- 回合推进 ----------
 
@@ -4291,8 +4293,11 @@ func _show_game_over() -> void:
 		btn_resign.text = TXT_RESIGN
 	_resign_armed = false
 	_update_hud()
-	var result := ResultPresentation.create(self, state, my_seat, sfx, _on_restart, "再战一局", drawer_presentation != null)
+	var finale := ResultPresentation.finale_for(state, my_seat, _table_actions.match_stats())
+	var result := ResultPresentation.create(self, state, my_seat, sfx, _on_restart, "再战一局",
+		drawer_presentation != null, false, finale)
 	_game_over_result = result
+	_play_table_finale(finale)
 	game_over_panel = result["panel"]
 	var vb: VBoxContainer = result["body"]
 	var btn: Button = result["button"]
@@ -4301,6 +4306,41 @@ func _show_game_over() -> void:
 	# 在全部控件（含联机按钮）建好后接入，主题、尺寸、收放走同一入口。
 	# 必须同步注册：联机局可能在抽屉已经收起时才收到胜负结果。
 	ResultPresentation.present(result, drawer_presentation)
+
+## 终局时牌桌上的谢幕；留在桌上直到开下一局（_teardown_for_new_game 清场）。
+var _finale_fx: Node3D
+
+## 赢家的牌从左到右依次蹦一下，输家的牌往后一仰；再按胜因在牌桌上补一笔：
+## 冲线在赢家的现金堆上盖「上市」章，破产在输家的现金堆上贴封条，用户清零就让输家的用户跑光。
+func _play_table_finale(finale: Dictionary) -> void:
+	_clear_table_finale()
+	if finale.is_empty() or get_viewport().disable_3d:
+		return
+	_finale_fx = Node3D.new()
+	_finale_fx.name = "FinaleFx"
+	add_child(_finale_fx)
+	var winner := state.winner
+	var loser := foe_seat if winner == my_seat else my_seat
+	ComicFx.finale(_finale_fx, board.camera, str(finale.get("kind", "")), {
+		"winner_cash": layout._unit_anchor(winner, CardDB.unit_id(CardDB.RES_CASH)),
+		"loser_cash": layout._unit_anchor(loser, CardDB.unit_id(CardDB.RES_CASH)),
+		"loser_user": layout._unit_anchor(loser, CardDB.unit_id(CardDB.RES_USER))}, loser == my_seat, sfx)
+	for card: CardEntity in entities.values():
+		if not is_instance_valid(card) or card.is_market or card._visual == null:
+			continue
+		var delay := 0.35 + clampf((card.global_position.x + 11.0) / 22.0, 0.0, 1.0) * 0.6
+		var bow := card.create_tween()
+		bow.tween_interval(delay)
+		if (my_seat if card.draggable else foe_seat) == winner:
+			bow.tween_property(card._visual, "position:y", 0.32, 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			bow.tween_property(card._visual, "position:y", 0.0, 0.18).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+		else:
+			bow.tween_property(card._visual, "rotation_degrees:x", -9.0, 0.28).set_trans(Tween.TRANS_SINE)
+
+func _clear_table_finale() -> void:
+	if is_instance_valid(_finale_fx):
+		_finale_fx.queue_free()
+	_finale_fx = null
 
 ## 联网局的终局面板：把「再战一局」拆成两个意思。
 ##
@@ -4359,6 +4399,7 @@ func _teardown_for_new_game(force := false) -> bool:
 		return false   # queue_free 是延迟的，按钮当帧仍可点：防二次进入
 	_invalidate_session()
 	ResultPresentation.close(_game_over_result)
+	_clear_table_finale()
 	game_over_panel = null
 	_rematch_btn = null          # 面板连着这个按钮一起放掉了，留着引用就是野的
 	layout.end_arrivals()        # 结算中途重开：到货台账不许留给下一局
@@ -4556,6 +4597,12 @@ func _reset_session_flags(keep_net := false) -> void:
 	_resign_armed = false
 	_connection_mascot_state = "idle"
 	_set_mascot_state("idle")
+	# 特效的跨局量同样要在 keep_net 之前清：rematch 时客户端把新局快照还原进
+	# **同一个** GameState 对象，单凭对象换没换认不出新局。不清的话新局的战绩
+	# 接着上一局累计、终结一击被认成「这局已经演过」、顶栏把开局读数当成一次大额到账
+	_hud_seen.clear()
+	if is_instance_valid(_table_actions):
+		_table_actions.reset_match()
 	if keep_net:
 		return
 	# 座位回到单机局那一对。**这一句是「再战一局」在联网局之后的必需项**：
@@ -4668,8 +4715,132 @@ func _update_hud() -> void:
 	else:
 		# 等文字最小尺寸缓存更新后再收紧/居中，风险徽章消失时也能恢复原宽。
 		_position_table_hud.call_deferred()
+	_hud_feedback()
 	# 防御 Buff 保护状态 → 卡牌盾牌标记（防御卡在组合中即永久保护组内对应资源卡）
 	_refresh_shields()
+
+## 上一次刷新时双方的资源总量；换了一份 GameState（新局、读档）就只记不播。
+var _hud_seen := {}
+var _hud_fx_layer: CanvasLayer
+## 涨的图标等这么久再从牌桌飞向顶栏：产出的牌先落到资源摞上，钱再「记进账」。
+const HUD_COLLECT_DELAY := UIMotion.ACT + 0.08
+
+## 读数变化的反馈。读数文字已由上面写好，这里只按差值加演出：
+## 录像跳步、抽屉收起或新局第一帧都不播，免得一次跳几十的假到账。
+func _hud_feedback() -> void:
+	if state == null:
+		return
+	if is_instance_valid(_table_actions):
+		_table_actions.track_match(state)
+	var fresh: bool = int(_hud_seen.get("state", 0)) != state.get_instance_id()
+	var can_show: bool = replay_session == null and (drawer_window == null or drawer_window.is_expanded()) \
+		and not get_viewport().disable_3d
+	for seat: String in [my_seat, foe_seat]:
+		var now := {CardDB.RES_CASH: state.resource_count(seat, CardDB.RES_CASH),
+			CardDB.RES_USER: state.resource_count(seat, CardDB.RES_USER)}
+		var mine := seat == my_seat
+		var readout: Label = lbl_player_res if mine else lbl_bot_res
+		var compact := _uses_fitted_table()
+		var before: Dictionary = _hud_seen.get(seat, {})
+		if not fresh and can_show and not before.is_empty():
+			for res: String in [CardDB.RES_CASH, CardDB.RES_USER]:
+				var delta: int = int(now[res]) - int(before.get(res, now[res]))
+				if delta == 0:
+					continue
+				var target: Control = readout if compact else \
+					((hud_player_card if mine else hud_bot_card).cash_value if res == CardDB.RES_CASH \
+					else (hud_player_card if mine else hud_bot_card).user_value)
+				if is_instance_valid(target) and target.is_visible_in_tree():
+					_collect_resource(seat, target, res, delta, compact)
+		_hud_seen[seat] = now
+	_hud_seen["state"] = state.get_instance_id()
+
+## 一次读数变化：资源图标在牌桌上那摞与顶栏读数之间飞，并在读数下贴「[图标] ±N」。
+func _collect_resource(seat: String, target: Control, res: String, delta: int, compact: bool) -> void:
+	if _hud_fx_layer == null:
+		_hud_fx_layer = CanvasLayer.new()
+		_hud_fx_layer.name = "HudFx"
+		# 压在抽屉顶栏（4）之上、终局面板（10）之下。
+		_hud_fx_layer.layer = 5
+		add_child(_hud_fx_layer)
+	var rect := target.get_global_rect()
+	var x := rect.get_center().x
+	# 紧凑读数一行写着资金和用户（「你的公司 · 资金6 · 用户16」）：按文字实测宽度，
+	# 把图标对准对应那一段的中点。读数居中排版，文字起点由整行宽度反推。
+	var label := target as Label
+	if compact and label != null:
+		var font := label.get_theme_font("font")
+		var size_px := label.get_theme_font_size("font_size")
+		var caption := CardDB.res_label(res)
+		var at := label.text.find(caption)
+		if at >= 0:
+			var stop := label.text.find(" ", at)
+			var segment_end := label.text.length() if stop < 0 else stop
+			var line := font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, size_px).x
+			var start := rect.position.x + maxf(0.0, (rect.size.x - line) * 0.5)
+			var left := font.get_string_size(label.text.substr(0, at), HORIZONTAL_ALIGNMENT_LEFT, -1, size_px).x
+			var right := font.get_string_size(label.text.substr(0, segment_end), HORIZONTAL_ALIGNMENT_LEFT, -1, size_px).x
+			x = minf(start + (left + right) * 0.5, rect.end.x)
+	var point := Vector2(x, rect.get_center().y)
+	var origin := point + Vector2(0, rect.size.y * 4.0)
+	var pile := _resource_pile_top(seat, res)
+	var ground: Vector3 = _card_rest(pile) if pile != null \
+		else layout._unit_anchor(seat, CardDB.unit_id(res))
+	if board != null and board.camera != null and not board.camera.is_position_behind(ground):
+		origin = board.camera.unproject_position(ground)
+	var font_size := maxi(14, target.get_theme_font_size("font_size"))
+	HudFx.collect(_hud_fx_layer, origin, target, point, CardArt.res_icon_texture(res), delta, font_size,
+		HUD_COLLECT_DELAY if delta > 0 else 0.0)
+
+## 一张牌最终会停在哪：在飞的看它的归宿，对手牌的重排看排定的落点。
+func _card_rest(card: CardEntity) -> Vector3:
+	var uid := card.uid
+	if layout._bot_tw.has(uid) and layout._bot_flight.has(uid):
+		return layout._bot_flight[uid]["at"]
+	return board.rest_pos(card)
+
+## 某一方这种资源的「主摞」露在最上面的那张牌：摞顶没被别的牌压着、身下同种牌最多的那张。
+## 顶栏的资源图标从它这里起飞、往它这里落。一张都没有时返回 null。
+func _resource_pile_top(seat: String, res: String) -> CardEntity:
+	var unit := CardDB.unit_id(res)
+	var cards: Array = []
+	# 手里正拖着的牌不算：它悬在摞上方，会把摞顶「压住」，图标就从手上起飞了。
+	var held: Array = board._drag_cards if board != null else []
+	for card: CardEntity in entities.values():
+		if is_instance_valid(card) and not card.is_market and not card._visual_retired \
+			and not card.is_queued_for_deletion() and not held.has(card):
+			cards.append([card, _card_rest(card)])
+	var anchor: Vector3 = layout._unit_anchor(seat, unit)
+	var best: CardEntity = null
+	var best_count := -1
+	var best_distance := INF
+	var reach := Vector2(CardEntity.CARD_SIZE.x, CardEntity.CARD_SIZE.z) * 0.8
+	for entry in cards:
+		var card: CardEntity = entry[0]
+		if card.def_id != unit or card.draggable != (seat == my_seat):
+			continue
+		var at: Vector3 = entry[1]
+		var covered := false
+		var count := 1
+		for other in cards:
+			if other[0] == card:
+				continue
+			var there: Vector3 = other[1]
+			if absf(there.x - at.x) > reach.x or absf(there.z - at.z) > reach.y:
+				continue
+			if there.y > at.y + 0.004:
+				covered = true
+				break
+			if other[0].def_id == unit:
+				count += 1
+		if covered:
+			continue
+		var distance := Vector2(at.x - anchor.x, at.z - anchor.z).length()
+		if count > best_count or (count == best_count and distance < best_distance):
+			best = card
+			best_count = count
+			best_distance = distance
+	return best
 
 ## 每帧只核对轻量输入；保护与光环按摞计算一次，牌组不变就复用结果。
 var _shield_signature: Array = []

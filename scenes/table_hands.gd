@@ -47,11 +47,13 @@ func card_bounds(cards: Array, positions: Array = []) -> Rect2:
 					bounds = bounds.expand(point)
 	return bounds
 
-func tear(cards: Array, positions: Array = []) -> void:
+## hold 是命中顿帧：抓到之后按住发抖这么久再往两边扯；duration 随之顺延。
+func tear(cards: Array, positions: Array = [], hold := 0.0, duration := DURATION) -> void:
 	var bounds := card_bounds(cards, positions)
 	if bounds.size == Vector2.ZERO:
 		return
-	_batches.append({"bounds": bounds, "elapsed": 0.0, "count": cards.size()})
+	_batches.append({"bounds": bounds, "elapsed": 0.0, "count": cards.size(),
+		"hold": maxf(0.0, hold), "duration": maxf(duration, GRIP + hold + 0.2)})
 	batch_count += 1
 
 func clear() -> void:
@@ -121,7 +123,7 @@ func _process(delta: float) -> void:
 	if available and had_batches:
 		for batch in _batches:
 			batch.elapsed += delta
-		_batches = _batches.filter(func(batch): return batch.elapsed < DURATION)
+		_batches = _batches.filter(func(batch): return batch.elapsed < float(batch.get("duration", DURATION)))
 	_canvas.visible = available and not _batches.is_empty()
 	if available and had_batches:
 		_canvas.queue_redraw()
@@ -133,14 +135,23 @@ func paint(canvas: Control) -> void:
 	var scale_factor := _hand_scale()
 	for batch in _batches:
 		var rect: Rect2 = batch.bounds
+		var hold := float(batch.get("hold", 0.0))
+		var duration := float(batch.get("duration", DURATION))
+		# 顿帧期间时间轴停在抓握完成那一刻；之后的扯开照原节拍走完。
 		var t: float = batch.elapsed
-		var pull := smoothstep(GRIP, DURATION - 0.10, t)
+		var held := clampf(t - GRIP, 0.0, hold)
+		t -= held
+		var span := duration - hold
+		var pull := smoothstep(GRIP, span - 0.10, t)
 		var approach := 1.0 - smoothstep(0.0, GRIP, t)
 		var reach := approach * 35.0 + pull * 45.0
-		var opacity := 1.0 - smoothstep(DURATION - 0.12, DURATION, t)
+		var opacity := 1.0 - smoothstep(span - 0.12, span, t)
 		var size_factor := scale_factor * clampf(rect.size.x / 90.0, 1.6, 2.5)
-		_hand(canvas, Vector2(rect.get_center().x - rect.size.x * 0.15, rect.position.y + 18.0 * size_factor - reach), PI, size_factor, true, false, opacity)
-		_hand(canvas, Vector2(rect.get_center().x + rect.size.x * 0.15, rect.end.y - 18.0 * size_factor + reach), 0, size_factor, true, false, opacity)
+		var tremble := Vector2.ZERO
+		if held > 0.0 and held < hold:
+			tremble = Vector2(sin(batch.elapsed * 95.0), cos(batch.elapsed * 77.0)) * 2.0 * size_factor
+		_hand(canvas, Vector2(rect.get_center().x - rect.size.x * 0.15, rect.position.y + 18.0 * size_factor - reach) + tremble, PI, size_factor, true, false, opacity)
+		_hand(canvas, Vector2(rect.get_center().x + rect.size.x * 0.15, rect.end.y - 18.0 * size_factor + reach) - tremble, 0, size_factor, true, false, opacity)
 	canvas.draw_set_transform(Vector2.ZERO)
 
 func _hand(canvas: Control, at: Vector2, angle: float, magnification: float, grip: bool, angry: bool, opacity: float) -> void:

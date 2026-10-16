@@ -43,6 +43,9 @@ REQUIRED_RASTER = {
     "table/badge_base.png": (1024, 1024),
     "overlay/overlay_shield.png": (1024, 1024),
     "overlay/overlay_void_stamp.png": (1024, 1024),
+    # 全游戏共用那枚章的框与印泥纹理，由 tools/gen_stamp_art.py 生成。
+    "overlay/stamp_frame.png": (1024, 379),
+    "overlay/stamp_grain.png": (512, 512),
 }
 
 # CardArt.table_texture() 对所有牌桌素材都接受 png/jpg。

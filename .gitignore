@@ -32,6 +32,7 @@ __pycache__/
 /test_image
 *.swp
 # 临时目录不参与 Godot 导入，保留隔离标记供新检出使用。
+/.claude
 /tmp
 !/tmp/.gdignore
 # Godot 资源扫描排除；保留 .gdignore，搜索结果本体仍是临时文件。
