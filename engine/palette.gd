@@ -6,6 +6,7 @@ class_name Palette
 extends RefCounted
 
 const ConfigData = preload("res://engine/config_data.gd")
+const SavePaths = preload("res://engine/save_paths.gd")
 
 ## 全局配色表：配置文件 → 运行时颜色
 ##
@@ -13,10 +14,13 @@ const ConfigData = preload("res://engine/config_data.gd")
 ## 圆角与线宽由 CardArt 中的几何参数控制，不依赖任何底板位图。
 ## 语义槽位与配色结构保持兼容，玩家已有的配色无需迁移。
 ##
-## 玩家配色 user://palette.json 覆盖 UIConfig 的 ui.json.palette。
+## 玩家配色 settings/palette.json 覆盖 UIConfig 的 ui.json.palette。
 ## 出厂色板仅在 data/ui.json 保存一份，外置文件缺键也从那里补齐。
 
-const USER_PATH := "user://palette.json"
+## 存在玩家数据目录的 settings/（见 engine/save_paths.gd）
+static func user_path() -> String:
+	return SavePaths.settings_file("palette.json")
+
 const REPO_PATH := UIConfig.PATH
 
 static var DEFAULTS: Dictionary:
@@ -47,7 +51,7 @@ static func _ensure_loaded() -> void:
 		return
 	_loaded = true
 	# 仓库配置打底，玩家配置覆盖在上面
-	_cfg = _merge(UIConfig.read_section("palette"), read_json(USER_PATH))
+	_cfg = _merge(UIConfig.read_section("palette"), read_json(user_path()))
 
 ## 读一份 JSON 表，缺文件 / 打不开 / 解不出字典一律静默返回 {}。
 ##
@@ -157,10 +161,10 @@ static func set_plate_color(slot: String, key: String, c: Color) -> void:
 	(plates[slot] as Dictionary)[key] = "#" + c.to_html(false).to_upper()
 	bus().changed.emit("plates", slot)
 
-## 存到 user://palette.json。res:// 在导出包里只读，故玩家改的存 user://
+## 存到玩家数据目录的 settings/palette.json。res:// 在导出包里只读，玩家改的另存一份
 static func save() -> bool:
 	_ensure_loaded()
-	var f := FileAccess.open(USER_PATH, FileAccess.WRITE)
+	var f := FileAccess.open(user_path(), FileAccess.WRITE)
 	if f == null:
 		return false
 	var out := _cfg.duplicate(true)
@@ -170,8 +174,8 @@ static func save() -> bool:
 
 ## 恢复到当前 ui.json 的配色（删掉玩家改的那份）
 static func restore_defaults() -> void:
-	if FileAccess.file_exists(USER_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(USER_PATH))
+	if FileAccess.file_exists(user_path()):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(user_path()))
 	_cfg = UIConfig.read_section("palette")
 	_loaded = true
 	bus().changed.emit("", "")

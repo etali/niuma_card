@@ -57,7 +57,7 @@ func _run_child(flags: Array, expected: int, label: String) -> void:
 
 func _verify_child(args: Dictionary) -> void:
 	var mode := str(args["verify-launch"])
-	var pref_before := FileAccess.get_file_as_bytes(CardConfigClass.PREF_PATH) if FileAccess.file_exists(CardConfigClass.PREF_PATH) else PackedByteArray()
+	var pref_before := FileAccess.get_file_as_bytes(CardConfigClass.pref_path()) if FileAccess.file_exists(CardConfigClass.pref_path()) else PackedByteArray()
 	# 模拟已加载的玩家选择；测试不改真实 user:// 偏好文件。
 	CardConfigClass._loaded = true
 	CardConfigClass._selected_path = str(args.get("saved-config", ""))
@@ -104,7 +104,7 @@ func _verify_child(args: Dictionary) -> void:
 			check(CardDB.loaded_from == CardConfigClass.DEFAULT_PATH, "无选择时使用内置默认")
 		main.queue_free()
 		await process_frame
-	var pref_after := FileAccess.get_file_as_bytes(CardConfigClass.PREF_PATH) if FileAccess.file_exists(CardConfigClass.PREF_PATH) else PackedByteArray()
+	var pref_after := FileAccess.get_file_as_bytes(CardConfigClass.pref_path()) if FileAccess.file_exists(CardConfigClass.pref_path()) else PackedByteArray()
 	check(pref_after == pref_before, "整个试玩过程不修改持久化偏好文件")
 	finish()
 

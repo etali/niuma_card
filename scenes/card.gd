@@ -154,6 +154,9 @@ var _effect_base_n := 0               # 卡面自己的效果值（不含任何 
 var _effect_mark := ""                # "+" 产出 / "−" 攻击
 var _effect_kind := ""                # 这张卡的效果取的是 output 还是 attack
 var _effect_mult := 1                 # 当前生效倍数（1 = 没有翻倍 Buff）
+## 牌主人的角色修正（Roles.mods）。只改墨团上念的数，卡的定义不动；
+## 由 TableActions 在牌归属本方时写入（apply_rule_mods），空字典 = 卡面原值
+var _rule_mods := {}
 ## 墨团旁的资源图标（着墨色）。选色面板改图标前景色时要跟着刷，故留引用
 var _badge_icons: Array[Sprite3D] = []
 ## 卡名 + 墨团内的文字，配色变更时一起刷墨色
@@ -527,7 +530,7 @@ func set_effect_mult(mult: int) -> void:
 	if m == _effect_mult:
 		return
 	_effect_mult = m
-	_effect_label.text = _effect_mark + str(_effect_base_n * m)
+	_effect_label.text = _effect_mark + str(effect_value())
 	# 字号从基准重算：位数变多（+14 → +28、+7 → +14）要重新塞进圆盘，
 	# 而 _fit_label_in_disc 只会缩不会放
 	_effect_label.pixel_size = _effect_label_px
@@ -538,6 +541,32 @@ func set_effect_mult(mult: int) -> void:
 	if _effect_blob and is_instance_valid(_effect_blob):
 		_effect_blob.modulate = CardArt.accent_color(def_id) if m > 1 else Color.WHITE
 		_effect_blob.scale = _effect_blob_scale * (BADGE_DONE_SCALE if m > 1 else 1.0)
+
+## 当前效果值：卡面值 × Buff 倍数，产出再按主人的角色修正缩放（和 ComboRules 同一个式子）
+func effect_value() -> int:
+	var n := _effect_base_n * _effect_mult
+	if _effect_kind != "output":
+		return n
+	return ComboRules.scaled_output(n, str(CardDB.get_def(def_id).get("output_res", "")), _rule_mods)
+
+## 配方位的需求量（角色改过的值）；没有配方格返回 0
+func recipe_need() -> int:
+	return _recipe_need if has_recipe_badge() else 0
+
+## 按牌主人的角色重念两个墨团：HR 手里的云课堂写 0/2，财务手里的写 +8。
+## 只改显示 —— 组合成不成立、产出多少，结算时由 ComboRules 带着同一份修正现算
+func apply_rule_mods(mods: Dictionary) -> void:
+	if mods == _rule_mods:
+		return
+	_rule_mods = mods.duplicate(true)
+	if has_recipe_badge():
+		_recipe_need = ComboRules.recipe_need(CardDB.get_def(def_id), _rule_mods)
+		_recipe_label.text = "%d/%d" % [_recipe_have, _recipe_need]
+	if has_effect_badge() and _effect_kind != "":
+		_effect_label.text = _effect_mark + str(effect_value())
+		_effect_label.pixel_size = _effect_label_px
+		if _effect_blob:
+			_fit_label_in_disc(_effect_label, CARD_SIZE.x * CardArt.BLOB_FRAC)
 
 ## Buff / 传说卡的 效果位：这两类没有固定的资源增减，用符号 + 资源图标表示，
 ## 不写「Buff」「传说」（同样为了多语言化）。
@@ -573,6 +602,14 @@ func _add_kind_badge(def: Dictionary, textured: bool) -> void:
 					mark = ""
 		CardDB.KIND_LEGEND:
 			mark = "★"
+		CardDB.KIND_SPECIAL:
+			# 角色专属卡沿用同一套语法：「给我」付 0 现金拿牌 → [现金] ¥0；
+			# Idea 是升级材料 → ↑（不配资源图标，它不动资源；也不写档位代号，卡面只说玩家语言）
+			match CardDB.special_type(def_id):
+				CardDB.SPECIAL_GRAB:
+					mark = "¥0"; res = CardDB.RES_CASH
+				CardDB.SPECIAL_IDEA:
+					mark = "↑"
 	if mark == "":
 		return
 	var cx: float = CardArt.BLOB_L_CX if textured else 0.5
@@ -623,7 +660,7 @@ func recipe_status_text() -> String:
 		var resource := CardDB.card_label(str(CardDB.get_def(def_id).get("recipe_res", "")))
 		return "还缺%d张%s" % [maxi(0, _recipe_need - _recipe_have), resource] if _recipe_have < _recipe_need else "组合无效，请检查材料"
 	var def := CardDB.get_def(def_id)
-	var n := _effect_base_n * _effect_mult
+	var n := effect_value()
 	return "可%s：%s%d%s" % ["攻击" if def.get("kind") == CardDB.KIND_ATTACK else "生产", _effect_mark, n,
 		CardDB.res_label(str(def.get("attack_res" if def.get("kind") == CardDB.KIND_ATTACK else "output_res", "")))]
 

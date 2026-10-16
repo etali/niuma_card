@@ -1537,7 +1537,7 @@ func _refresh_bot_pile_progress(pile: Dictionary) -> void:
 	var data: Array = []
 	for c: CardEntity in cards:
 		data.append({ "uid": c.uid, "def_id": c.def_id })
-	board._update_group_progress(pile, ComboRules.evaluate(data))
+	board._update_group_progress(pile, ComboRules.evaluate(data, _main.state.combo_mods(_main.foe_seat)))
 
 ## uid → 所在 BOT 摞的 key；摞里全部 uid（攻击阶段点摞顶时用来找摞内的合法靶）
 var _bot_pile_of_uid := {}

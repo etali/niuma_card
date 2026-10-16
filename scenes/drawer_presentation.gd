@@ -14,11 +14,16 @@ const CardConfig = preload("res://engine/card_config.gd")
 const TutorialCatalog = preload("res://engine/tutorial_catalog.gd")
 const TutorialProgress = preload("res://engine/tutorial_progress.gd")
 const TutorialContext = preload("res://engine/tutorial_context.gd")
+const ResultFx = preload("res://scenes/result_fx.gd")
 
 # 展示顺序与动作ID分开，增加首页不会改变既有设置入口。
 const UTILITY_RULEBOOK := 7
 const UTILITY_REPLAY := 8
 const UTILITY_CARDS := 9
+## 窄屏底栏放不下角色按钮时，选项菜单里临时出现的替身入口（见 _fit_role_button）
+const UTILITY_ROLE := 10
+## 底栏里给即时提示至少留这么宽（逻辑像素），挤不出来就不放角色按钮
+const ROLE_MESSAGE_MIN := 200.0
 const UTILITY_PAGES := [
 	[1, "BOT 强度"], [2, "提示记录"],
 	[3, "UI"], [4, "入口大小"], [5, "存录像"], [UTILITY_REPLAY, "读入录像"], [6, "局域网对战"], [UTILITY_CARDS, "卡牌配置"],
@@ -59,6 +64,13 @@ var _utility: PanelContainer
 var _utility_title: Label
 var _utility_body: VBoxContainer
 var _rulebook_button: Button
+## 底栏角色按钮：显示这一局本方的角色，点开向上弹出角色面板（README.md §「2.12 角色」）。
+## 按钮上念短名（「牛马」「产品经理」），面板标题和列表念全名「我是XXX」：
+## 底栏一行贴着窗口宽，短名让 667 宽的横屏手机也放得下全部角色
+var _role_button: Button
+var _role_popup: PopupPanel
+var _role_detail_title: Label
+var _role_detail_text: Label
 var _end_tutorial_button: Button
 var _tutorial_resign_visible := false
 var _utility_scroll: ScrollContainer
@@ -67,6 +79,8 @@ var _ui_status: Label
 var _active_utility_id := -1
 var _rulebook: Control
 var _learning_invitation: PanelContainer
+var _invitation_layer: CanvasLayer
+var _invitation_scrim: ColorRect
 var _invitation_offered := false
 var _learning_focus := false
 var tutorial: Control
@@ -140,6 +154,7 @@ func bind(main: Node) -> void:
 	_build_footer()
 	_build_utility()
 	_build_details()
+	TutorialProgress.settle_returning_player()
 	_build_learning_invitation()
 	for panel in [_header, _footer, _detail, _main.table_hud]:
 		_guard_table_panel(panel, false)
@@ -158,6 +173,7 @@ func bind(main: Node) -> void:
 		_handle.pointer_released.connect(_main.drawer_window.handle_release)
 		_handle.hide()
 		add_child(_handle)
+		_handle.set_first_run_hint(not TutorialProgress.handle_opened())
 		_main.drawer_window.handle_hovered.connect(_handle.set_hovered)
 		_main.drawer_window.handle_size_changed.connect(_on_handle_size_changed)
 		_main.drawer_window.attention_requested.connect(_handle.greet)
@@ -585,43 +601,71 @@ func _refresh_pin_button() -> void:
 	_pin.tooltip_text = "已钉住，点击取消" if pinned else "钉住"
 	_pin.accessibility_name = _pin.tooltip_text
 
+## 首次邀请是一生一次的模态选择：压暗整张牌桌并挡住全部桌面输入，玩家必须二选一。
+## 独立画布层高于提示记录、通知和终局层；面板本身仍走原来的收起暂存与展开恢复。
 func _build_learning_invitation() -> void:
 	_invitation_offered = TutorialProgress.invitation_seen()
+	_invitation_layer = CanvasLayer.new()
+	_invitation_layer.name = "FirstPlayInvitationLayer"
+	_invitation_layer.layer = 21
+	add_child(_invitation_layer)
+	_invitation_scrim = ColorRect.new()
+	_invitation_scrim.name = "InvitationScrim"
+	_invitation_scrim.color = Color(Palette.semantic("ink"), 0.5)
+	_invitation_scrim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_invitation_scrim.hide()
+	_invitation_layer.add_child(_invitation_scrim)
 	_learning_invitation = PanelContainer.new()
 	_learning_invitation.name = "FirstPlayInvitation"
-	_learning_invitation.z_index = 19
-	_learning_invitation.add_theme_stylebox_override("panel", _style(Palette.semantic("surface")))
-	add_child(_learning_invitation)
+	_learning_invitation.custom_minimum_size = Vector2(420, 0)
+	_learning_invitation.set_meta("drawer_surface", Palette.semantic("surface"))
+	_learning_invitation.set_meta("drawer_margin_base", 20)
+	_invitation_layer.add_child(_learning_invitation)
+	_learning_invitation.visibility_changed.connect(func(): _invitation_scrim.visible = _learning_invitation.visible)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 8)
+	column.add_theme_constant_override("separation", 12)
 	_learning_invitation.add_child(column)
+	var mascot := ResultFx.MascotPose.new()
+	mascot.set_pose("idle")
+	mascot.custom_minimum_size = Vector2(72, 72)
+	mascot.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	column.add_child(mascot)
 	var title := _label(TutorialCatalog.ui("hub.invitation"), UI_FONT_TITLE)
 	title.name = "InvitationTitle"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(title)
+	var body := _label(TutorialCatalog.ui("hub.invitation_body"))
+	body.name = "InvitationBody"
+	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(body)
 	var actions := HFlowContainer.new()
+	actions.alignment = FlowContainer.ALIGNMENT_CENTER
+	actions.add_theme_constant_override("h_separation", 12)
+	actions.add_theme_constant_override("v_separation", 8)
 	column.add_child(actions)
 	var start := _button(TutorialCatalog.ui("hub.invitation_start"))
 	start.name = "InvitationStart"
 	start.set_meta("ui_role", "primary")
 	start.pressed.connect(func():
-		_dismiss_learning_invitation()
+		_dismiss_learning_invitation("tutorial")
 		var courses := TutorialCatalog.courses()
 		if not courses.is_empty():
 			start_tutorial(str(courses[0]["id"])))
 	actions.add_child(start)
 	var skip := _button(TutorialCatalog.ui("hub.invitation_skip"))
 	skip.name = "InvitationSkip"
-	skip.pressed.connect(_dismiss_learning_invitation)
+	skip.pressed.connect(_dismiss_learning_invitation.bind("skip"))
 	actions.add_child(skip)
 	_learning_invitation.hide()
 	_guard_table_panel(_learning_invitation, true)
 	_apply_tree_theme(_learning_invitation)
 
-func _dismiss_learning_invitation() -> void:
+func _dismiss_learning_invitation(choice: String) -> void:
 	_invitation_offered = true
 	_suspended_panels.erase(_learning_invitation)
 	_learning_invitation.hide()
-	if not TutorialProgress.dismiss_invitation():
+	if not TutorialProgress.dismiss_invitation(choice):
 		_main._show_message(TutorialCatalog.ui("hub.save_failed"), Palette.semantic("warning"))
 
 func _offer_learning_invitation() -> void:
@@ -630,10 +674,30 @@ func _offer_learning_invitation() -> void:
 			return
 		_invitation_offered = true
 		_learning_invitation.show()
+		# 键盘玩家直接按 Enter 即可跟教程；面板外的点击都被压暗层吃掉。
+		_learning_invitation.find_child("InvitationStart", true, false).grab_focus.call_deferred()
 	if _learning_invitation.visible:
+		var viewport := get_viewport().get_visible_rect().size
+		_invitation_scrim.position = Vector2.ZERO
+		_invitation_scrim.size = viewport
 		_learning_invitation.size = _learning_invitation.get_combined_minimum_size()
-		_learning_invitation.position = _content.position + Vector2(
-			maxf(0, (_content.size.x - _learning_invitation.size.x) * 0.5), _px(8))
+		_learning_invitation.position = ((viewport - _learning_invitation.size) * 0.5).max(Vector2.ZERO).round()
+
+func is_learning_invitation_open() -> bool:
+	return is_instance_valid(_learning_invitation) and _learning_invitation.is_visible_in_tree()
+
+## 首次邀请选了直接开局、从没开过课程的玩家，第一次输掉单机局时在结算页补一次教程入口；只出现这一次。
+func add_post_game_tutorial(body: VBoxContainer) -> void:
+	if not TutorialProgress.wants_post_game_nudge():
+		return
+	TutorialProgress.mark_post_game_nudged()
+	var learn := _button(TutorialCatalog.ui("hub.post_game_nudge"))
+	learn.name = "ResultTutorial"
+	learn.pressed.connect(func():
+		var courses := TutorialCatalog.courses()
+		if not courses.is_empty():
+			start_tutorial(str(courses[0]["id"])))
+	body.add_child(learn)
 
 ## 课程在原牌桌上进行；规则页仅负责选择课程，不再承载第二张牌桌。
 func start_tutorial(id: String) -> bool:
@@ -662,6 +726,7 @@ func start_tutorial(id: String) -> bool:
 	_tutorial_resign_visible = _main.btn_resign.visible
 	_main.btn_resign.hide()
 	_end_tutorial_button.show()
+	_refresh_role_button()
 	relayout()
 	return true
 
@@ -672,6 +737,7 @@ func finish_tutorial(show_courses := false) -> void:
 	tutorial = null
 	if is_instance_valid(_end_tutorial_button):
 		_end_tutorial_button.hide()
+	_refresh_role_button()
 	if not _tearing_down:
 		close_panels()
 	if is_instance_valid(player):
@@ -742,6 +808,7 @@ func _build_footer() -> void:
 	_main.lbl_msg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_main.lbl_msg.custom_minimum_size = Vector2.ZERO
 	_main.lbl_msg.tooltip_text = ""
+	_build_role_button(row)
 	_rulebook_button = _button(TutorialCatalog.ui("hub.title"))
 	_rulebook_button.name = "RulebookButton"
 	_rulebook_button.pressed.connect(_open_utility.bind(UTILITY_RULEBOOK))
@@ -760,6 +827,235 @@ func _build_footer() -> void:
 	_main.msg_log.hide()
 	_main.msg_log.scale = Vector2.ONE
 	_main.msg_log._frame.minimum_size_changed.connect(_position_log)
+
+func _build_role_button(row: HBoxContainer) -> void:
+	_role_button = _button(Roles.tag(Roles.DEFAULT))
+	_role_button.name = "RoleButton"
+	_role_button.pressed.connect(_show_role_popup)
+	row.add_child(_role_button)
+	# 用 PopupPanel 而不是 PopupMenu：菜单项只能挂原生 tooltip，角色说明要和
+	# 卡牌详情、设置页一样用抽屉自己的面板与字号来排
+	_role_popup = PopupPanel.new()
+	_role_popup.name = "RolePopup"
+	_role_button.add_child(_role_popup)
+	_refresh_role_button()
+
+## 按钮念的是**这一局**本方坐的角色。教程里牌桌换成了教学局面（双方默认角色），
+## 按钮仍念玩家自己的选择 —— 教程结束回到的是那一局
+func _active_role() -> String:
+	if is_instance_valid(tutorial) or _main.state == null:
+		return RolePref.selected()
+	return _main.state.role_of(_main.my_seat)
+
+## 联网、录像、教程中都不能换角色：联网双方固定默认角色，录像和教程不是可以重开的单机局
+func _role_lock_reason() -> String:
+	var info: Dictionary = _main.role_info()
+	if bool(info["replay_locked"]):
+		return "正在播放录像；退出录像后才能切换角色"
+	if bool(info["network_locked"]):
+		return "联网对局双方固定为「%s」" % Roles.role_name(Roles.DEFAULT)
+	if is_instance_valid(tutorial):
+		return "教程中不能切换角色"
+	return ""
+
+func _refresh_role_button() -> void:
+	if not is_instance_valid(_role_button):
+		return
+	var role := _active_role()
+	var text := Roles.tag(role)
+	if _role_button.text != text:
+		_role_button.text = text
+	_role_button.accessibility_name = "角色：" + Roles.role_name(role)
+	var lock := _role_lock_reason()
+	_role_button.disabled = lock != ""
+	# 只留短提示（和「选项」「钉住」这些按钮一样）；角色效果在弹出的面板里看
+	_role_button.tooltip_text = lock
+	if _menu != null:
+		var index := _menu.get_popup().get_item_index(UTILITY_ROLE)
+		if index >= 0:
+			_menu.get_popup().set_item_text(index, "角色：" + text)
+			_menu.get_popup().set_item_disabled(index, lock != "")
+
+## 底栏放得下才显示角色按钮。游戏只按横屏设计，短名在 667 宽以上的横屏都放得下；
+## 这里兜的是更小的横屏和 Web 被竖着拿的情况：放不下时按钮藏起来，免得把「完成行动」
+## 挤出屏幕，同一个角色面板改由选项菜单里的「角色：XXX」打开。教程里按钮本来就锁着，直接不占位
+func _fit_role_button(width: float) -> void:
+	if not is_instance_valid(_role_button):
+		return
+	var spare := _footer_room(width) - _role_button.get_combined_minimum_size().x \
+		- float(_role_button.get_parent().get_theme_constant("separation"))
+	var fits := not is_instance_valid(tutorial) and spare >= _px(ROLE_MESSAGE_MIN)
+	_role_button.visible = fits
+	var popup := _menu.get_popup()
+	var index := popup.get_item_index(UTILITY_ROLE)
+	var fallback := not fits and not is_instance_valid(tutorial)
+	if fallback and index < 0:
+		popup.add_item("", UTILITY_ROLE)
+	elif not fallback and index >= 0:
+		popup.remove_item(index)
+	_refresh_role_button()
+
+## 底栏一行里，除角色按钮外的其他控件都按最小宽度摆下之后，留给即时提示的宽度
+func _footer_room(width: float) -> float:
+	var row: Container = _role_button.get_parent()
+	var panel := _footer.get_theme_stylebox("panel")
+	var room := width - (panel.get_minimum_size().x if panel != null else 0.0)
+	var shown := 0
+	for child in row.get_children():
+		if not child is Control or child == _role_button or not child.visible:
+			continue
+		shown += 1
+		if child != _main.lbl_msg:
+			room -= child.get_combined_minimum_size().x
+	return room - float(row.get_theme_constant("separation")) * maxi(0, shown - 1)
+
+## 角色面板从按钮**上方**弹出：底栏贴着窗口下沿，往下弹会被裁掉或盖住按钮本身。
+## 左边是角色按钮，右边是悬停（或键盘选中）那一项的效果说明，默认说明当前角色。
+## 说明全由 Roles.describe 从卡表字段生成。面板、按钮、字号都走抽屉的设计令牌，
+## 和设置页、卡牌详情是同一套样式。
+## 窗口窄时说明改排到按钮下面；按钮一列竖着放不下（横屏手机）时改成两列
+func _show_role_popup(anchor_control: Control = null) -> void:
+	if anchor_control == null:
+		anchor_control = _role_button
+	if _role_lock_reason() != "":
+		_refresh_role_button()
+		return
+	for child in _role_popup.get_children():
+		_role_popup.remove_child(child)
+		child.queue_free()
+	var panel := _style(Palette.get_color("world", "table_frame"))
+	_role_popup.add_theme_stylebox_override("panel", panel)
+	var current := _active_role()
+	var choices := GridContainer.new()
+	choices.name = "RoleChoices"
+	choices.add_theme_constant_override("h_separation", 8)
+	choices.add_theme_constant_override("v_separation", 8)
+	var group := ButtonGroup.new()
+	for id in Roles.ids():
+		var role_id: String = id
+		var button := _button(Roles.role_name(role_id))
+		button.name = "Role_" + role_id
+		button.toggle_mode = true
+		button.button_group = group
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.set_pressed_no_signal(role_id == current)
+		button.mouse_entered.connect(_show_role_detail.bind(role_id))
+		button.focus_entered.connect(_show_role_detail.bind(role_id))
+		button.pressed.connect(_choose_role.bind(role_id))
+		choices.add_child(button)
+	var detail := VBoxContainer.new()
+	detail.name = "RoleDetail"
+	detail.add_theme_constant_override("separation", 8)
+	_role_detail_title = _label("", UI_FONT_TITLE)
+	_role_detail_title.name = "RoleDetailTitle"
+	detail.add_child(_role_detail_title)
+	_role_detail_text = _label("", UI_FONT_BODY)
+	_role_detail_text.name = "RoleDetailText"
+	_role_detail_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	detail.add_child(_role_detail_text)
+	var hint := _label("选中即开始新的单机局", UI_FONT_SMALL)
+	hint.name = "RoleDetailHint"
+	detail.add_child(hint)
+	_apply_tree_theme(choices)
+	_apply_tree_theme(detail)
+	# 先挂进（还没弹出的）面板再量：控件不在树里时最小尺寸缓存不会随列数、宽度更新
+	var staging := VBoxContainer.new()
+	_role_popup.add_child(staging)
+	staging.add_child(choices)
+	staging.add_child(detail)
+
+	var anchor := Rect2(anchor_control.get_screen_position(), anchor_control.get_global_rect().size)
+	var window := Rect2(anchor.position - anchor_control.get_global_rect().position, get_viewport().get_visible_rect().size)
+	var pad := _px(PAD)
+	var gap := _px(6)
+	var margin := panel.get_minimum_size()
+	var spacing := _px(16)
+	var room_above := anchor.position.y - window.position.y - gap - pad
+	var room_below := window.end.y - anchor.end.y - gap - pad
+	var room_wide := window.size.x - pad * 2.0
+	# 依次试：一列并排、两列并排、一列上下、两列上下，取第一个放得下的。
+	# 先找能放在按钮上方的，没有再找能放在下方的（顶栏菜单打开时），都不行取最矮的那个
+	var options: Array = []
+	for side in [true, false]:
+		for columns in [1, 2]:
+			choices.columns = columns
+			var list_size := choices.get_combined_minimum_size()
+			var width := minf(_px(400), room_wide - margin.x - list_size.x - spacing) if side \
+				else minf(maxf(list_size.x, _px(260)), room_wide - margin.x)
+			if width < _px(220):
+				continue
+			_size_role_detail(width, hint)
+			var detail_size := detail.get_combined_minimum_size()
+			var total := Vector2(list_size.x + spacing + detail_size.x, maxf(list_size.y, detail_size.y)) if side \
+				else Vector2(maxf(list_size.x, detail_size.x), list_size.y + spacing + detail_size.y)
+			options.append({"columns": columns, "side": side, "width": width, "size": total + margin})
+	var chosen: Dictionary = {}
+	for room in [room_above, room_below]:
+		for option in options:
+			if chosen.is_empty() and option["size"].y <= room:
+				chosen = option
+	if chosen.is_empty():
+		for option in options:
+			if chosen.is_empty() or option["size"].y < chosen["size"].y:
+				chosen = option
+	choices.columns = int(chosen["columns"])
+	_size_role_detail(float(chosen["width"]), hint)
+	var box: BoxContainer = HBoxContainer.new() if chosen["side"] else VBoxContainer.new()
+	box.name = "RolePicker"
+	box.add_theme_constant_override("separation", roundi(spacing))
+	_role_popup.add_child(box)
+	choices.reparent(box, false)
+	detail.reparent(box, false)
+	_role_popup.remove_child(staging)
+	staging.queue_free()
+	_show_role_detail(current)
+	_role_popup.reset_size()
+	var size := Vector2(_role_popup.size)
+	var x: float = clampf(anchor.position.x + anchor.size.x - size.x, window.position.x + pad,
+		maxf(window.position.x + pad, window.end.x - pad - size.x))
+	var y: float = anchor.position.y - size.y - gap
+	if size.y > room_above:
+		# 上方放不下（顶栏的选项菜单打开时就是这样），改为贴着下沿往下弹
+		y = minf(anchor.end.y + gap, maxf(window.position.y, window.end.y - size.y))
+	_role_popup.popup(Rect2i(Vector2i(roundi(x), roundi(y)), Vector2i(size)))
+
+## 说明区按最长的那个角色定高：悬停换角色时面板不跳
+func _size_role_detail(width: float, hint: Label) -> void:
+	var text_height := 0.0
+	for id in Roles.ids():
+		text_height = maxf(text_height, _wrapped_height(_role_detail_lines(id), width, _role_detail_text))
+	_role_detail_text.custom_minimum_size = Vector2(width, text_height)
+	_role_detail_title.custom_minimum_size.x = width
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.custom_minimum_size = Vector2(width, _wrapped_height(hint.text, width, hint))
+
+func _role_detail_lines(id: String) -> String:
+	return "\n".join(Roles.describe(id).map(func(line): return "· " + line))
+
+func _show_role_detail(id: String) -> void:
+	if not is_instance_valid(_role_detail_title):
+		return
+	_role_detail_title.text = Roles.role_name(id)
+	_role_detail_text.text = _role_detail_lines(id)
+
+## 自动换行文本在给定宽度下的高度。面板要在弹出前定好尺寸，而标签要排进容器之后才知道
+## 自己会折成几行，所以按同一字体、字号和断行规则先量一遍
+func _wrapped_height(text: String, width: float, label: Label) -> float:
+	var font: Font = label.get_theme_font("font")
+	var font_size: int = label.get_theme_font_size("font_size")
+	var size := font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, width, font_size, -1,
+		TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE)
+	var lines := maxi(1, roundi(size.y / maxf(1.0, font.get_height(font_size))))
+	return size.y + float(label.get_theme_constant("line_spacing")) * lines + _px(4)
+
+func _choose_role(role_id: String) -> void:
+	_role_popup.hide()
+	if role_id == _active_role():
+		return
+	var result: Dictionary = _main.apply_role(role_id)
+	_main._show_message(str(result["reason"]), Palette.semantic("success" if result.get("ok", false) else "danger"))
+	_refresh_role_button()
 
 ## 底栏只占一行，长消息可悬停读全；换主题和窗口大小后仍保持可读对比度。
 func present_message(text: String, color: Color) -> void:
@@ -818,6 +1114,9 @@ func _build_utility() -> void:
 	_utility.hide()
 
 func _open_utility(id: int) -> void:
+	if id == UTILITY_ROLE:
+		_show_role_popup(_menu)
+		return
 	if is_instance_valid(tutorial) and id != UTILITY_RULEBOOK:
 		finish_tutorial(false)
 	if is_instance_valid(_learning_invitation):
@@ -1187,6 +1486,8 @@ func _on_handle_size_changed(_size: Vector2i) -> void:
 
 func close_panels() -> void:
 	hide_preview_card_detail()
+	if _role_popup != null and _role_popup.visible:
+		_role_popup.hide()
 	# 显式关闭同时取消展开恢复，避免收起期间关闭的旧页复活。
 	_suspended_panels.erase(_utility)
 	_suspended_panels.erase(_main.msg_log)
@@ -1230,6 +1531,7 @@ func close_panels() -> void:
 
 func panels_open() -> bool:
 	return (_utility != null and _utility.visible) or (_menu != null and _menu.get_popup().visible) \
+		or (_role_popup != null and _role_popup.visible) \
 		or (_main.msg_log != null and _main.msg_log.visible and _main.msg_log.expanded())
 
 ## 这些工具页均为非模态；只能在自己的可见矩形内挡住牌桌输入。
@@ -1237,8 +1539,8 @@ func pointer_over_panels(point: Vector2) -> bool:
 	if is_instance_valid(tutorial) and tutorial.is_visible_in_tree() \
 		and tutorial.get_global_rect().has_point(point):
 		return true
-	if is_instance_valid(_learning_invitation) and _learning_invitation.is_visible_in_tree() \
-		and _learning_invitation.get_global_rect().has_point(point):
+	# 首次邀请是模态的：压暗层铺满视口，任何位置都不能悬停或操作牌桌。
+	if is_learning_invitation_open():
 		return true
 	if _utility.visible and _utility.get_global_rect().has_point(point):
 		return true
@@ -1662,7 +1964,9 @@ func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 	var id := card.def_id
 	var def: Dictionary = CardDB.get_def(id)
 	# 升级说明会遍历可合成路线，只在卡表/规则改变时重建；配置导入后同名卡也刷新。
-	var source_signature: Array = [CardDB.CARDS.hash(), CardDB.GAME.hash(), CardDB.UPGRADE.hash()]
+	# 本方的牌按本方角色念数（HR 的云课堂要 2 个用户），同名牌在双方手里说明不同，角色修正也进签名
+	var mods: Dictionary = _main.board.card_mods(card)
+	var source_signature: Array = [CardDB.CARDS.hash(), CardDB.GAME.hash(), CardDB.UPGRADE.hash(), mods.hash()]
 	if id != _detail_id or card.is_market != _detail_market or source_signature != _detail_source_signature:
 		_detail_id = id
 		_detail_market = card.is_market
@@ -1676,9 +1980,10 @@ func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 		if card.is_market:
 			_detail_fact("购买", "%d 资金" % int(def.get("price", 0)))
 		if def.get("kind", "") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
-			_detail_fact("配方", "%s × %d" % [CardDB.card_label(str(def.recipe_res)), int(def.recipe_n)])
+			_detail_fact("配方", "%s × %d" % [CardDB.card_label(str(def.recipe_res)), ComboRules.recipe_need(def, mods)])
 			if def.kind == CardDB.KIND_PRODUCT:
-				_detail_fact("产出", "每回合 %s + %d" % [CardDB.res_label(str(def.output_res)), int(def.output_n)])
+				_detail_fact("产出", "每回合 %s + %d" % [CardDB.res_label(str(def.output_res)),
+					ComboRules.scaled_output(int(def.output_n), str(def.output_res), mods)])
 			else:
 				_detail_fact("攻击", "移除对方%s × %d" % [CardDB.card_label(str(def.attack_res)), int(def.attack_n)])
 			_detail_effect = _detail_facts.get_child(_detail_facts.get_child_count() - 1)
@@ -1686,12 +1991,12 @@ func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 		if pawn > 0:
 			_detail_fact("典当", "资金 + %d" % pawn)
 		_detail_scroll.scroll_vertical = 0
-		var notes: String = _main.board.describe_def(id)
+		var notes: String = _main.board.describe_def(id, mods)
 		if def.get("kind", "") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
 			notes = "\n".join(notes.split("\n").slice(2))
 		_detail_text.text = notes.replace("\n→ ", " → ").replace("\n张数须精确\n不能夹杂其他牌", "\n须精确张数，不混入其他牌")
 	if _detail_effect != null:
-		var value := int(def.get("output_n", def.get("attack_n", 0))) * card.effect_mult()
+		var value := card.effect_value()
 		_detail_effect.text = "每回合 %s + %d" % [CardDB.res_label(str(def.output_res)), value] if def.kind == CardDB.KIND_PRODUCT else "移除对方%s × %d" % [CardDB.card_label(str(def.attack_res)), value]
 	# 进度属于当前实体，不能沿用同名卡另一组的状态。
 	_detail_status.text = "购入后拖入理牌区组合" if card.is_market else card.recipe_status_text()
@@ -1812,6 +2117,9 @@ func set_collapsed(collapsed: bool) -> void:
 	if is_instance_valid(_handle):
 		_handle.visible = collapsed
 		_handle.position = Vector2.ZERO
+		if not collapsed and _handle.has_first_run_hint():
+			_handle.set_first_run_hint(false)
+			TutorialProgress.mark_handle_opened()
 	if collapsed:
 		suspend_panels()
 	else:
@@ -1850,6 +2158,7 @@ func relayout() -> void:
 	_fit_header_width(w - pad * 2.0)
 	_header.position = Vector2(roundf((w - _header.size.x) * 0.5), pad)
 	var header_h := _header.size.y
+	_fit_role_button(w - pad * 2)
 	var footer_h := maxf(_px(60), _footer.get_combined_minimum_size().y)
 	_footer.position = Vector2(pad, h - footer_h - pad)
 	_footer.size = Vector2(w - pad * 2, footer_h)
@@ -1898,11 +2207,13 @@ func _fit_header_width(available: float) -> void:
 ## 主场景先生成完整读数；首行只显示余额，细目仍在对应标签的悬停提示内。
 ## 不把长括号折成第二行，待付归零的警告也保留在紧凑读数上。
 func compact_header_resources() -> void:
+	_refresh_role_button()
 	if _main.state == null:
 		return
 	_main.lbl_round.tooltip_text = _main.lbl_round.text
 	_main.lbl_round.text = _main.lbl_round.text.replace("行动阶段", "行动").replace("攻击阶段", "攻击")
-	for item in [[_main.lbl_player_res, _main.my_seat, "你的公司"], [_main.lbl_bot_res, _main.foe_seat, "对手公司"]]:
+	for item in [[_main.lbl_player_res, _main.my_seat, _main.company_label(_main.my_seat)],
+			[_main.lbl_bot_res, _main.foe_seat, _main.company_label(_main.foe_seat)]]:
 		var label: Label = item[0]
 		var seat: String = item[1]
 		var full := label.text

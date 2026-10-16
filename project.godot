@@ -23,15 +23,15 @@ config/features=PackedStringArray("4.7")
 
 ; 这里**没有** use_custom_user_dir / custom_user_dir_name，是有意的。
 ;
-; 录像不走 user://（见 engine/tape.gd 的 PATH_DIR 那一段）：它存在
-; ~/.niumapai_record 底下，user:// 落在哪儿影响不到它。
+; 玩家数据不走 user://（见 engine/save_paths.gd）：录像存在 ~/.niumapai_record 根目录，
+; 学习进度、UI、配色、静音、卡牌配置、角色存在 ~/.niumapai_record/settings/，
+; user:// 落在哪儿影响不到它们；旧版留在 user:// 的这几份第一次读取时自动搬过去。
 ; 而 use_custom_user_dir 只换得掉 user:// 最后那一层目录名，
 ; 换不掉上面那几层 —— 开着它顶多把 …/Godot/app_userdata/牛马牌/
 ; 变成 …/Application Support/牛马牌/，还在 Application Support 底下,
-; 而那正是用户点名要挪走的地方。
+; 而那正是用户点名要挪走的地方。user:// 现在只剩引擎日志和着色器缓存（手机、网页除外）。
 ;
-; 玩家配色仍使用 user://（engine/palette.gd 的 palette.json），
-; 改目录会让已有配色设置失效。BOT 参数仅在本次运行中生效，
+; BOT 参数仅在本次运行中生效，
 ; engine/bot_search.gd 初始化时清理旧 bot_search.json，不再读取或写入。
 
 [configuration]

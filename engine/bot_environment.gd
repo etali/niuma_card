@@ -15,6 +15,7 @@ static func copy(src: GameState) -> GameState:
 	dst.draw_first = src.draw_first
 	dst.winner = src.winner
 	dst.win_reason = src.win_reason
+	dst.roles = src.roles.duplicate()
 	dst.set_uid(src.peek_uid())
 	dst.rng_restore(src.rng_snapshot())
 	dst.stats = src.stats.duplicate(true)

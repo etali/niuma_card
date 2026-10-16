@@ -13,13 +13,21 @@ const ConfigData = preload("res://engine/config_data.gd")
 ##   2. 可执行文件上三级目录的 cards.json —— macOS .app 旁边的 cards.json
 ##   3. 项目根目录 cards.json（开发期）   —— 编辑器/源码运行：改完直接重跑
 ##   4. res://data/cards.json            —— 打包进游戏的内置默认配置（兜底）
-## kind: unit / product / attack / buff / legend
+## kind: unit / product / attack / buff / legend / special
 
 const KIND_UNIT := "unit"
 const KIND_PRODUCT := "product"
 const KIND_ATTACK := "attack"
 const KIND_BUFF := "buff"
 const KIND_LEGEND := "legend"
+## 角色专属卡（README.md §「2.12 角色」）：不进公共区、不能典当、不能被攻击，
+## 具体做什么看 def 的 special 字段。归成一个 kind 而不是每张开一个：
+## 它们共同的性质（不是核心、不是材料、不是资源）正是各处 match kind 要分辨的那一层
+const KIND_SPECIAL := "special"
+## special 字段认得的取值。「给我」当付款凭证白拿购牌区一张牌（GameState.buy）；
+## Idea 在升级组合里顶替一张 T1 生产卡（ComboRules.upgrade_target_for_ids）
+const SPECIAL_GRAB := "grab"
+const SPECIAL_IDEA := "idea"
 
 const RES_CASH := "cash"
 const RES_USER := "user"
@@ -53,12 +61,15 @@ const SECTION_GAME := "_game"
 const SECTION_UPGRADE := "_upgrade"
 const SECTION_SFX := "_sfx"
 const SECTION_SIM := "_sim"
+## 开局角色表（键见 data/cards.json 的 _roles 段 _note）
+const SECTION_ROLES := "_roles"
 
 static var CARDS: Dictionary = {}
 static var GAME: Dictionary = {}
 static var UPGRADE: Dictionary = {}
 static var SFX: Dictionary = {}
 static var SIM: Dictionary = {}
+static var ROLES: Dictionary = {}
 static var UNITS: Dictionary = {}   # res -> 资源卡 def_id，随 CARDS 一起建
 static var loaded_from := ""
 
@@ -111,6 +122,7 @@ static func load_from(path: String) -> bool:
 	UPGRADE = _merge_section(sections, SECTION_UPGRADE, path)
 	SFX = _merge_section(sections, SECTION_SFX, path)
 	SIM = _merge_section(sections, SECTION_SIM, path)
+	ROLES = _roles_section(parsed, path)
 	_check_buff_types(path)
 	_check_upgrade_routes(path)
 	_check_sfx_actions(path)
@@ -235,6 +247,27 @@ static func _check_sfx_actions(path: String) -> void:
 			path, SECTION_SFX, ", ".join(bad)])
 			+ "认得的音效是：%s" % ", ".join(sounds.keys()))
 
+## 角色表整段取用，不逐键补齐：每个角色是一份完整的规则组合，
+## 拿内置表的 HR 去补外置表的 HR 等于拼出一个两边都没写过的角色。
+## 外置表整段缺失（旧版 cards.json）才退回内置那份，并点名警告。
+## 默认角色缺了也要响：联网和 BOT 固定坐这个角色，查不到就会静默按「没有角色」开局
+static func _roles_section(parsed: Dictionary, path: String) -> Dictionary:
+	var roles: Variant = parsed.get(SECTION_ROLES)
+	if typeof(roles) != TYPE_DICTIONARY:
+		roles = _builtin_section(SECTION_ROLES)
+		if path != BUILTIN_PATH:
+			push_warning("CardDB: %s 没有 %s 段，角色按内置配置（%s）" % [path, SECTION_ROLES, BUILTIN_PATH])
+	var out: Dictionary = (roles as Dictionary).duplicate(true)
+	if not out.has(Roles.DEFAULT):
+		push_error("CardDB: %s 的 %s 段缺少默认角色「%s」" % [path, SECTION_ROLES, Roles.DEFAULT])
+	for id in out:
+		if str(id).begins_with("_"):
+			continue
+		for def_id in (out[id] as Dictionary).get("start_cards", []):
+			if not CARDS.has(str(def_id)):
+				push_error("CardDB: %s 的角色「%s」开局发的卡「%s」不在卡表里" % [path, id, def_id])
+	return out
+
 ## 读一个配置段，缺的键从内置配置那份补齐，并把缺了哪些点名警告。
 ## 兜底值照用（改坏一个字段就开不了局太脆），但不能不响：
 ## 这些是开局资源、胜利线、BOT 阈值，静默按另一套数值开局比直接崩更难查 ——
@@ -285,6 +318,7 @@ static func reset() -> void:
 	SFX = {}
 	SIM = {}
 	UNITS = {}
+	ROLES = {}
 	loaded_from = ""
 
 ## 全局规则数值（键见 data/cards.json 的 _game 段 _note）
@@ -319,6 +353,16 @@ static func pawn_rate() -> float:
 static func pawn_user() -> int:
 	ensure_loaded()
 	return int(GAME.get("pawn_user", 1))
+
+## 角色表（键见 data/cards.json 的 _roles 段 _note）；查询走 Roles
+static func role_rules() -> Dictionary:
+	ensure_loaded()
+	return ROLES
+
+## 角色专属卡的 special 字段（不是专属卡返回空串）
+static func special_type(def_id: String) -> String:
+	var def: Dictionary = get_def(def_id)
+	return str(def.get("special", "")) if def.get("kind", "") == KIND_SPECIAL else ""
 
 ## 升级路线表（键见 data/cards.json 的 _upgrade 段 _note）
 static func upgrade_rules() -> Dictionary:
@@ -433,6 +477,10 @@ static func total_weight() -> int:
 static func pawn_value(def_id: String) -> int:
 	var def: Dictionary = get_def(def_id)
 	if def.is_empty():
+		return 0
+	# 角色专属卡不能典当：这是规则不是定价，所以写在 pawn 字段之前，
+	# 外置卡表给它填了回收价也不生效
+	if def.get("kind") == KIND_SPECIAL:
 		return 0
 	if def.has("pawn"):
 		return int(def["pawn"])

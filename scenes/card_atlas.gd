@@ -16,7 +16,7 @@ const CARD_ASPECT := CardEntity.CARD_SIZE.x / CardEntity.CARD_SIZE.z
 const TILE_WIDTH := TILE_HEIGHT * CARD_ASPECT
 const NODE_WIDTH := NODE_HEIGHT * CARD_ASPECT
 const STACK_STEP := 0.20
-const KIND_ORDER := {"unit": 0, "product": 1, "attack": 2, "buff": 3, "legend": 4}
+const KIND_ORDER := {"unit": 0, "product": 1, "attack": 2, "buff": 3, "legend": 4, "special": 5}
 
 var mode := "cards"
 var entries: Array = []
@@ -144,12 +144,23 @@ static func card_entries() -> Array:
 				entry.effect = Catalog.ui("atlas.resource_note")
 			CardDB.KIND_LEGEND:
 				entry.effect = Catalog.ui("atlas.legend_pawn", {"count": entry.pawn})
+			CardDB.KIND_SPECIAL:
+				entry.effect = Catalog.ui("atlas.special." + CardDB.special_type(def_id), {"role": _granted_by(def_id)})
 		out.append(entry)
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		var left := int(KIND_ORDER.get(a.kind, 5))
 		var right := int(KIND_ORDER.get(b.kind, 5))
 		return int(a.tier) < int(b.tier) if left == right else left < right)
 	return out
+
+
+## 开局发这张专属卡的角色名（「「我是BOSS」」）；没有角色发它就说「角色」
+static func _granted_by(def_id: String) -> String:
+	var names: Array = []
+	for role in Roles.ids():
+		if Roles.start_cards(role).has(def_id):
+			names.append("「%s」" % Roles.role_name(role))
+	return "、".join(names) if not names.is_empty() else "角色"
 
 
 ## 普通边保留来源卡身份；传说按目标合并 T1/T2 两种选项，不复制 N→目标算法。

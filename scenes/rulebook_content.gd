@@ -202,6 +202,8 @@ static func _purchase_badge(def: Dictionary) -> String:
 
 
 static func _pawn_source_text(def: Dictionary) -> String:
+	if def.get("kind", "") == CardDB.KIND_SPECIAL:
+		return "角色专属卡，不能典当。"
 	if def.has("pawn"):
 		return "使用该卡的固定回收价。"
 	if def.get("kind", "") == CardDB.KIND_UNIT:

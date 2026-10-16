@@ -3430,21 +3430,22 @@ MUTATIONS = [
      "开局是**收起**的", "tests/test_no_vanishing.gd"),
     # 56m：录像目录退回 user://。改完路径照样报得出来、文件也真在那儿,
     # 只是落在 …/Application Support/… 底下 —— 正是用户点名要挪走的地方。
-    # 「存哪儿」这种事没有判据的话，改回去谁也不会发现
-    ("engine/tape.gd",
+    # 「存哪儿」这种事没有判据的话，改回去谁也不会发现。
+    # 家目录逻辑在 engine/save_paths.gd，录像和设置共用；根目录给空串，录像就退回 user://replays
+    ("engine/save_paths.gd",
      "\treturn home.path_join(DIR_NAME)",
-     "\treturn ProjectSettings.globalize_path(PATH_DIR_FALLBACK)",
+     "\treturn \"\"",
      "不在 Application Support 底下", "tests/test_no_vanishing.gd"),
     # 56n：`~` 不展开。存出来的是一个**真叫 `~` 的相对目录**，
     # 落在进程的工作目录底下 —— 也就是仓库根，录像存进 git 里去了。
     # 而这个坏法在屏幕上看不出来：面板照样念出一条路径，文件也真在那条路径上
-    ("engine/tape.gd",
+    ("engine/save_paths.gd",
      '\t\tvar v := OS.get_environment(key)\n\t\tif v != "":\n\t\t\treturn v',
      '\t\tvar v := OS.get_environment(key)\n\t\tif v != "":\n\t\t\treturn "~"',
      "`~` 展开过了", "tests/test_no_vanishing.gd"),
     # 56o：目录名改了。`.niumapai_record` 是用户点名的那个名字,
     # 少个点、写错一个字母，玩家按他记的路径去 Finder 里找就是空的
-    ("engine/tape.gd",
+    ("engine/save_paths.gd",
      'const DIR_NAME := ".niumapai_record"',
      'const DIR_NAME := "niumapai_record"',
      "录像目录就是 ~/.niumapai_record", "tests/test_no_vanishing.gd"),

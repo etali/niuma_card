@@ -80,7 +80,7 @@ static func _minimum_recipe_cards(cards: Array, ev: Dictionary) -> int:
 		for c in cards:
 			var d := CardDB.get_def(c["def_id"])
 			if d.get("kind") == CardDB.KIND_BUFF and d.get("buff_type") == "user_fill": return 1
-	return int(CardDB.get_def(ev.get("leader","")).get("recipe_n",0))
+	return int(ev.get("recipe_need",CardDB.get_def(ev.get("leader","")).get("recipe_n",0)))
 
 static func select(nodes: Array, limit: int, who: String, field := "rank", diverse := false, p: Dictionary = {}) -> Array:
 	nodes.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return compare_nodes(a,b,who,field,p))
@@ -510,7 +510,7 @@ static func _formation_variants(state: GameState, who: String, variants: Array, 
 	for ids in variants:
 		var cards: Array = []
 		for uid in ids: cards.append(state.find_card(who,uid))
-		var ev := ComboRules.evaluate(cards)
+		var ev := ComboRules.evaluate(cards, state.combo_mods(who))
 		if not ev["valid"]: continue
 		rows.append({"uids":ids,"complexity":_unit_complexity(cards,ev),"defense":StateCodec.canon(_defense_summary(cards,ev,threats)),"key":StateCodec.canon(ids)})
 	rows.sort_custom(func(a: Dictionary,b: Dictionary) -> bool:
@@ -544,7 +544,7 @@ static func formations(state: GameState, who: String, base: Array, p: Dictionary
 		var ids: Array = option["uids"]
 		var cards: Array = []
 		for uid in ids: cards.append(state.find_card(who,uid))
-		var ev := ComboRules.evaluate(cards)
+		var ev := ComboRules.evaluate(cards, state.combo_mods(who))
 		if ev["type"] == "upgrade": continue
 		var variants: Array = [ids]
 		for res in units:

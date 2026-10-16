@@ -401,6 +401,16 @@
         "file": "icon/icon_zuokong.png",
         "zh": "做空报告",
         "style": "诙谐手绘简笔画，原色透明插画"
+      },
+      "geiwo": {
+        "file": "icon/icon_geiwo.png",
+        "zh": "给我",
+        "style": "诙谐手绘简笔画，原色透明插画（tools/gen_role_icons.py 生成）"
+      },
+      "idea": {
+        "file": "icon/icon_idea.png",
+        "zh": "Idea",
+        "style": "诙谐手绘简笔画，原色透明插画（tools/gen_role_icons.py 生成）"
       }
     },
     "misc": {
@@ -528,6 +538,12 @@
       },
       "jiangjia": {
         "file": "icon/icon_jiangjia.png"
+      },
+      "geiwo": {
+        "file": "icon/icon_geiwo.png"
+      },
+      "idea": {
+        "file": "icon/icon_idea.png"
       }
     },
     "hover": {
@@ -869,6 +885,28 @@
           "loop_pause": 0.65,
           "codec": "hdelta-v1",
           "file": "icon/hover/zuokong.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
+        },
+        "geiwo": {
+          "frames": 24,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/geiwo.hdelta",
+          "frame_size": [
+            384,
+            384
+          ]
+        },
+        "idea": {
+          "frames": 24,
+          "play_mode": "loop",
+          "loop_pause": 0.65,
+          "codec": "hdelta-v1",
+          "file": "icon/hover/idea.hdelta",
           "frame_size": [
             384,
             384

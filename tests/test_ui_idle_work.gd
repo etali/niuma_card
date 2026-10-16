@@ -25,9 +25,9 @@ class DetailHost extends Node3D:
 
 class DetailBoard extends Board:
 	var descriptions := 0
-	func describe_def(id: String) -> String:
+	func describe_def(id: String, mods: Dictionary = {}) -> String:
 		descriptions += 1
-		return super.describe_def(id)
+		return super.describe_def(id, mods)
 
 class HoverBoard extends Board:
 	var target: CardEntity

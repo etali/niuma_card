@@ -41,7 +41,7 @@ static func snapshot(s: GameState, include_log := true) -> Dictionary:
 			"uids": Intent.ints(combo["uids"]),
 			"eval": (combo["eval"] as Dictionary).duplicate(true),
 		})
-	return {
+	var out := {
 		"players": players,
 		"market": s.market.duplicate(),
 		"combos": combos,
@@ -53,6 +53,11 @@ static func snapshot(s: GameState, include_log := true) -> Dictionary:
 		"uid": s.peek_uid(),
 		"rng": s.rng_snapshot(),
 	}
+	# 角色只在有人不是默认角色时才写：角色改配方和产出，必须进状态哈希；
+	# 两个牛马的局不多一个字段，旧录像逐步存下的哈希照样对得上
+	if s.has_custom_roles():
+		out["roles"] = s.roles.duplicate()
+	return out
 
 ## 一张卡的可上网形态。旧快照里的 armed_round 保留往返兼容，
 ## 新防御 Buff 不再写入它，保护规则也不读取它。
@@ -100,6 +105,13 @@ static func restore(s: GameState, d: Dictionary) -> void:
 	s.log = Array(d.get("log", [])).duplicate(true)
 	s.set_uid(int(d.get("uid", 0)))
 	s.rng_restore(d.get("rng", {}))
+	# 缺这个字段 = 双方默认角色。必须显式复位：覆盖进已有对象时（联网入座、重连），
+	# 上一局单机的角色不能带进这一局
+	s.roles = { GameState.PLAYER: Roles.DEFAULT, GameState.BOT: Roles.DEFAULT }
+	var roles: Variant = d.get("roles", {})
+	if roles is Dictionary:
+		for who in roles:
+			s.set_role(str(who), str(roles[who]))
 
 ## 不修改状态的边界校验，网络与录像共用。等待入座时允许空桌，开局后必须有双方。
 static func snapshot_issue(value: Variant) -> String:
@@ -145,6 +157,12 @@ static func snapshot_issue(value: Variant) -> String:
 	for entry in d["log"]:
 		issue = log_issue(entry)
 		if issue != "": return issue
+	if d.has("roles"):
+		if not d["roles"] is Dictionary: return "快照角色格式错误"
+		for seat in d["roles"]:
+			if seat not in [GameState.PLAYER, GameState.BOT] or not d["roles"][seat] is String \
+					or not Roles.exists(d["roles"][seat]):
+				return "快照角色无效"
 	if not d["rng"] is Dictionary: return "随机状态格式错误"
 	for field in ["seed", "state"]:
 		var text: Variant = d["rng"].get(field)
@@ -210,13 +228,13 @@ static func eval_issue(value: Variant) -> String:
 	if not value is Dictionary: return "组合效果必须是对象"
 	var issue := Intent.field_types(value,
 		["type", "leader", "reason", "output_res", "output_card", "attack_res", "recipe_res"],
-		["output_n", "attack_n", "recipe_pay_n"], [],
+		["output_n", "attack_n", "recipe_pay_n", "recipe_need"], [],
 		["valid", "protect_user", "protect_cash", "filled_by_fission"])
 	if issue != "": return issue
 	if value.get("type") not in ["production", "upgrade", "attack"] or not value.get("leader") is String:
 		return "组合效果类型或核心缺失"
 	if CardDB.get_def(value["leader"]).is_empty(): return "组合核心未知"
-	for field in ["output_n", "attack_n", "recipe_pay_n"]:
+	for field in ["output_n", "attack_n", "recipe_pay_n", "recipe_need"]:
 		if value.has(field) and not Intent.valid_integer(value[field], 0): return "组合效果数量无效"
 	match value["type"]:
 		"production":
@@ -318,12 +336,32 @@ static func table_hash() -> String:
 	return canon_hash(rules_snapshot())
 
 ## 网络指纹和录像规则证据共用同一份完整规则载荷。
+## 角色表也在里面：录像里坐 HR 的那一方，换一份 HR 倍率重放就会分叉
 static func rules_snapshot() -> Dictionary:
 	CardDB.ensure_loaded()
 	return {"cards": CardDB.all_cards().duplicate(true), "game": CardDB.game_rules().duplicate(true),
+		"upgrade": CardDB.upgrade_rules().duplicate(true), "roles": CardDB.role_rules().duplicate(true)}
+
+## 加入角色之前的规则载荷：去掉角色段和角色专属卡，只供旧录像迁移。
+## 那时只有默认角色，而专属卡权重为 0、不进公共区，两个牛马的局在加入角色前后逐步相同，
+## 所以规则证据和这一份一致的旧录像照样能载入、重放。网络握手不认它
+static func pre_role_rules_snapshot() -> Dictionary:
+	CardDB.ensure_loaded()
+	return {"cards": _pre_role_cards(), "game": CardDB.game_rules().duplicate(true),
 		"upgrade": CardDB.upgrade_rules().duplicate(true)}
 
+static func pre_role_table_hash() -> String:
+	return canon_hash(pre_role_rules_snapshot())
+
+static func _pre_role_cards() -> Dictionary:
+	var cards := {}
+	for id in CardDB.all_cards():
+		if CardDB.get_def(str(id)).get("kind", "") != CardDB.KIND_SPECIAL:
+			cards[id] = CardDB.get_def(str(id)).duplicate(true)
+	return cards
+
 ## 只供带完整规则配置的旧录像迁移；网络握手不可接受缺少升级规则的旧指纹。
+## 这种录像比角色更早，卡牌同样按加入角色之前的口径算
 static func legacy_table_hash() -> String:
 	CardDB.ensure_loaded()
-	return canon_hash({"cards": CardDB.all_cards(), "game": CardDB.game_rules()})
+	return canon_hash({"cards": _pre_role_cards(), "game": CardDB.game_rules()})

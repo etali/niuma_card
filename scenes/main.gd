@@ -429,6 +429,8 @@ func _ready() -> void:
 	# 而 state 每局换新，board 上存一份就是「第二局还在问上一局」
 	# （memory: member-that-survives-a-restart）
 	board.cancel_anim = _cancel_fly
+	# 读 state 而不是捕获一份字典：重开、入座、录像、教程都会换掉 state
+	board.combo_mods = func() -> Dictionary: return state.combo_mods(my_seat) if state != null else {}
 	board.dropped_on_market.connect(_on_dropped_on_market)
 	board.dropped_on_pawn.connect(_on_dropped_on_pawn)
 	board.attack_clicked.connect(_on_attack_clicked)
@@ -460,7 +462,7 @@ func _ready() -> void:
 		_replay_presenter.bind(self)
 		_render_replay_step()
 		return
-	state = GameState.new()
+	state = _new_solo_state()
 	# 开发用：CARD_SEED=<整数> 固定发牌，两次运行画面一致，截图才能逐像素比对
 	var seed_env := OS.get_environment("CARD_SEED")
 	if seed_env != "":
@@ -1666,7 +1668,10 @@ func _on_dropped_on_pawn_impl(drag_cards: Array) -> void:
 			cash_cards.append(c)
 	if uids.is_empty():
 		sfx.play("deny")
-		_show_message("典当行不收现金卡", Palette.semantic("danger"))
+		# 专属卡和现金卡一样回收价为 0，但不能报成「不收现金卡」
+		var special: Array = drag_cards.filter(func(c): return CardDB.get_def(c.def_id).get("kind") == CardDB.KIND_SPECIAL)
+		_show_message("「%s」是角色专属卡，不能典当" % CardDB.card_name(special[0].def_id) if not special.is_empty()
+			else "典当行不收现金卡", Palette.semantic("danger"))
 		_return_cards_to_player_zone(drag_cards)
 		return
 	# 自杀护栏：用户归零 = 当场判负。规则本身在 GameState.pawn() 里兜着，
@@ -1929,7 +1934,7 @@ func _register_player_combos() -> bool:
 		var cards: Array = []
 		for uid in uids:
 			cards.append(state.find_card(my_seat, uid))
-		if not ComboRules.evaluate(cards)["valid"]:
+		if not ComboRules.evaluate(cards, state.combo_mods(my_seat))["valid"]:
 			continue
 		var r: Dictionary = await pipe.submit(Intent.create_combo(my_seat, uids), my_seat)
 		if not _session_current(session):
@@ -4303,6 +4308,8 @@ func _show_game_over() -> void:
 	var btn: Button = result["button"]
 	if _net != null:
 		_add_rematch_row(vb, btn)
+	elif drawer_presentation != null and state.winner != my_seat:
+		drawer_presentation.add_post_game_tutorial(vb)
 	# 在全部控件（含联机按钮）建好后接入，主题、尺寸、收放走同一入口。
 	# 必须同步注册：联机局可能在抽屉已经收起时才收到胜负结果。
 	ResultPresentation.present(result, drawer_presentation)
@@ -4482,11 +4489,54 @@ func apply_selected_card_config() -> Dictionary:
 	if not _teardown_for_new_game(true):
 		return {"ok": false, "reason": "当前牌桌还没有准备好"}
 	_reset_session_flags()
-	state = GameState.new()
+	state = _new_solo_state()
 	state.new_game()
 	_rebuild_pipe()
 	_sync_round()
 	return {"ok": true, "reason": "已应用卡牌配置并开始新单机局"}
+
+## 单机局的新 GameState：玩家坐偏好里的角色，对手固定是默认角色（README.md §「2.12 角色」）。
+## 三条开新单机局的路（启动、应用卡牌配置、再战一局）都走这里，
+## 漏掉一条就是「选了 HR，重开之后又变回牛马」
+func _new_solo_state() -> GameState:
+	var s := GameState.new()
+	s.set_role(SOLO_SEATS[0], RolePref.selected())
+	return s
+
+## 底栏角色按钮要的读数：存下的选择、这一局实际坐的角色、能不能切
+func role_info() -> Dictionary:
+	return {"selected": RolePref.selected(),
+		"active": state.role_of(my_seat) if state != null else Roles.DEFAULT,
+		"network_locked": _net != null or _host != null, "replay_locked": replay_session != null}
+
+## 选一个角色并立即开新单机局。不在局中途热换：开局资源和专属卡只在开局发一次
+func apply_role(role_id: String) -> Dictionary:
+	if replay_session != null:
+		return {"ok": false, "reason": "请先退出录像，再切换角色。"}
+	if _net != null or _host != null:
+		return {"ok": false, "reason": "联网对局双方固定为「%s」" % Roles.role_name(Roles.DEFAULT)}
+	if _local_turn_flows > 0 or (board != null and not board._drag_cards.is_empty()):
+		return {"ok": false, "reason": "当前行动尚未结束，请在回合边界切换角色"}
+	var saved := RolePref.select(role_id)
+	if not saved.get("ok", false):
+		return saved
+	if not _teardown_for_new_game(true):
+		return {"ok": false, "reason": "当前牌桌还没有准备好"}
+	_reset_session_flags()
+	if not _apply_solo_cards_or_stop():
+		return {"ok": false, "reason": "卡表加载失败"}
+	state = _new_solo_state()
+	state.new_game()
+	_rebuild_pipe()
+	_sync_round()
+	return {"ok": true, "reason": "已切换为「%s」并开始新单机局" % Roles.role_name(role_id)}
+
+## 读数里的公司名：非默认角色在后面带上短名，「你的公司（HR）」
+func company_label(seat: String) -> String:
+	var base := "你的公司" if seat == my_seat else "对手公司"
+	if state == null or state.role_of(seat) == Roles.DEFAULT:
+		return base
+	return "%s（%s）" % [base, Roles.tag(state.role_of(seat))]
 
 func _on_restart() -> void:
 	if not _teardown_for_new_game():
@@ -4494,7 +4544,7 @@ func _on_restart() -> void:
 	_reset_session_flags()
 	if not _apply_solo_cards_or_stop():
 		return
-	state = GameState.new()
+	state = _new_solo_state()
 	state.new_game()
 	# 换 state 就必须重建管道 —— 漏掉这句的后果见 _rebuild_pipe 的注释：
 	# 第二局什么都做不了，而且不报错
@@ -4668,7 +4718,7 @@ func _update_hud() -> void:
 	# 在岗/闲置反过来**一直写**：闲置为 0 是这条读数唯一的好消息，
 	# 藏掉的话玩家分不清「全部在岗」和「这个读数没算」
 	user_txt += "（在岗 %d / 闲置 %d）" % [int(dep["on_duty"]), int(dep["idle"])]
-	lbl_player_res.text = "你的公司 · %s · %s" % [cash_txt, user_txt]
+	lbl_player_res.text = "%s · %s · %s" % [company_label(my_seat), cash_txt, user_txt]
 	# 对手侧同样拆开。他的摞不在 board.groups 里（那是玩家能拖能典当的东西），
 	# 得从 state.combos 现搭 —— 于是行动阶段读不到（那时 combos 是空的，
 	# 见 pending_pay 的注释），**攻击阶段起才有数**。
@@ -4697,8 +4747,9 @@ func _update_hud() -> void:
 	# 玩家侧不会遇到这个（board.groups 一直在），所以只有这一侧要这道判断
 	if not foe_piles.is_empty():
 		foe_user += "（在岗 %d / 闲置 %d）" % [int(foe_dep["on_duty"]), int(foe_dep["idle"])]
-	lbl_bot_res.text = "对手公司 · %s · %s" % [foe_cash, foe_user]
+	lbl_bot_res.text = "%s · %s · %s" % [company_label(foe_seat), foe_cash, foe_user]
 	if is_instance_valid(hud_player_card):
+		hud_player_card.set_company(company_label(my_seat))
 		hud_player_card.set_resources(state.resource_count(my_seat, CardDB.RES_CASH),
 			state.resource_count(my_seat, CardDB.RES_USER), due,
 			int(dep["on_duty"]), int(dep["idle"]), true,
@@ -4902,10 +4953,10 @@ func _cache_group_shields(group: Dictionary, records: Dictionary, grouped: Dicti
 		if records.has(int(uid)):
 			cards.append(records[int(uid)])
 			live_uids.append(int(uid))
-	var effect := ComboRules.evaluate(cards)
+	var owner: String = group["owner"]
+	var effect := ComboRules.evaluate(cards, state.combo_mods(owner))
 	if not effect.get("valid", false):
 		return
-	var owner: String = group["owner"]
 	var authoritative := group.has("eval")
 	var combo := group if authoritative else {"owner": owner, "uids": live_uids, "eval": effect}
 	var protected_cash := state.protected_uids(owner, combo, CardDB.RES_CASH)

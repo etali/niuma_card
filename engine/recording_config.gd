@@ -15,5 +15,10 @@ static func dump() -> Dictionary:
 		"bot_parameters": bot.resolved_parameters().duplicate(true), "ui_defaults": UIConfig.read_defaults(),
 		"sfx": CardDB.sfx_rules().duplicate(true), "palette": Palette._cfg.duplicate(true)}}
 
+## 加入角色之前录的录像存的是那时的完整规则；和当前规则去掉角色部分后一致也算匹配
+## （见 StateCodec.pre_role_rules_snapshot）
 static func matches(snapshot: Dictionary) -> bool:
-	return snapshot.get("rules") is Dictionary and StateCodec.canon_hash(snapshot["rules"]) == StateCodec.canon_hash(rules())
+	if not snapshot.get("rules") is Dictionary:
+		return false
+	var saved := StateCodec.canon_hash(snapshot["rules"])
+	return saved == StateCodec.canon_hash(rules()) or saved == StateCodec.pre_role_table_hash()

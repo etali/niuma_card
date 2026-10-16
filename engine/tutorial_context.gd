@@ -32,7 +32,8 @@ func begin(main: Node) -> bool:
 		return false
 	_main = weakref(main)
 	_rules = {"cards": CardDB.CARDS, "game": CardDB.GAME, "upgrade": CardDB.UPGRADE,
-		"units": CardDB.UNITS, "sfx": CardDB.SFX, "sim": CardDB.SIM, "source": CardDB.loaded_from}
+		"units": CardDB.UNITS, "sfx": CardDB.SFX, "sim": CardDB.SIM, "roles": CardDB.ROLES,
+		"source": CardDB.loaded_from}
 	for key in MAIN_FIELDS:
 		_saved_main[key] = main.get(key)
 	var board: Board = main.board
@@ -129,6 +130,7 @@ func release(shutting_down := false) -> void:
 	CardDB.UNITS = _rules["units"]
 	CardDB.SFX = _rules["sfx"]
 	CardDB.SIM = _rules["sim"]
+	CardDB.ROLES = _rules["roles"]
 	CardDB.loaded_from = _rules["source"]
 	_rules.clear()
 	if shutting_down:

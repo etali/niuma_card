@@ -44,6 +44,8 @@ func spawn_card(record: Dictionary, at: Vector3, draggable: bool,
 		if draggable: at = host.board.clamp_player_position(at)
 	var card: CardEntity = host._table_scene.spawn_card(host.board, record, at, draggable)
 	host.entities[card.uid] = card
+	# 本方的牌按本方角色念墨团（对手固定是默认角色，见 README.md §「2.12 角色」）
+	card.apply_rule_mods(host.board.card_mods(card))
 	if from_pos != null: _motion()._fly_from(card, from_pos, at, index, total)
 	return card
 
@@ -99,7 +101,7 @@ func purchase_payment(cards: Array, price: int) -> Dictionary:
 			if not is_instance_valid(card): continue
 			var record: Dictionary = host.state.find_card(host.my_seat, card.uid)
 			if not record.is_empty(): records.append(record)
-		var evaluation := ComboRules.evaluate(records)
+		var evaluation := ComboRules.evaluate(records, host.state.combo_mods(host.my_seat))
 		if evaluation.get("valid", false) and evaluation.get("type") in ["production", "attack"]:
 			for record in records: reserved[record["uid"]] = true
 	var available: Array = host.state._loose_unit_uids(host.my_seat, CardDB.RES_CASH)
@@ -158,6 +160,7 @@ func purchase(index: int, card: CardEntity, result: Dictionary, placement: Dicti
 	card.freeze = true
 	card.uid = int(result["new_uid"])
 	host.entities[card.uid] = card
+	card.apply_rule_mods(host.board.card_mods(card))
 	# 等现金吸收后再完成到货，直接拖入的商品也沿用同一付款节奏。
 	motion.move_above_table(card, target, Motion.TRANSFER)
 	if not placement.is_empty():
@@ -686,7 +689,7 @@ func group_ready(cards: Array) -> void:
 	for card in cards:
 		if is_instance_valid(card):
 			data.append({"uid": card.uid, "def_id": card.def_id})
-	var effect := ComboRules.evaluate(data)
+	var effect := ComboRules.evaluate(data, host.board.group_mods(cards))
 	if not effect.get("valid", false):
 		return
 	for card in cards:

@@ -6,7 +6,8 @@
   "fixed_text_paths": [
     "_comment",
     "_game._note",
-    "_upgrade._note"
+    "_upgrade._note",
+    "_roles._note"
   ],
   "editable": {
     "_game": {

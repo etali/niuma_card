@@ -22,8 +22,15 @@ const REASON_DUPLICATE_CARD := "同一张卡不能在一个组合中重复使用
 ##   attack_res/attack_n: 有效攻击（已含热搜翻倍）,
 ##   protect_user/protect_cash: 防御Buff标记,
 ##   recipe_res/recipe_pay_n: 结算时要被吃掉的配方料（用户配方为 0，见下）,
+##   recipe_need: 角色改过的配方需求量（只在和卡面 recipe_n 不同时才有这个键）,
 ##   filled_by_fission: 这一组的用户配方是靠裂变鬼才补满的,
 ## }
+##
+## mods：组合主人的角色修正（Roles.mods），空字典 = 按卡面原值。
+##   recipe_mult —— 配方需求按配方资源缩放（HR：需要用户的配方 ×0.5）
+##   output_mult —— 生产组合的最终产出按产出资源缩放（Buff 倍率乘完之后再缩放）
+## 缩放一律向上取整（Roles.scale）。只有带 mods 的组才会写 recipe_need，
+## 默认角色的 eval 和改动前逐字相同 —— eval 进快照和状态哈希，旧录像要能对上
 ##
 ## 资源不对称（重构后）：**配方里的现金会被吃掉，配方里的用户永久驻场。**
 ## 所以 recipe_pay_n 只在 recipe_res == cash 时非零；用户配方是席位不是成本。
@@ -60,7 +67,19 @@ static func stacked_multiplier(buff_type: String, count: int) -> int:
 	return multiplier
 
 
-static func evaluate(cards: Array) -> Dictionary:
+## 这张核心卡在 mods 之下实际要几张配方料
+static func recipe_need(def: Dictionary, mods: Dictionary = {}) -> int:
+	return Roles.scale(int(def.get("recipe_n", 0)), mods, "recipe_mult", str(def.get("recipe_res", "")))
+
+## 生产卡在 mods 之下的产出量。base 已含 Buff 倍率（卡面墨团传 卡面值×倍数）
+static func scaled_output(base: int, res: String, mods: Dictionary = {}) -> int:
+	return Roles.scale(base, mods, "output_mult", res)
+
+## Idea 这类「顶替一张 T1 生产卡」的万能材料
+static func is_wild(def_id: String) -> bool:
+	return CardDB.special_type(def_id) == CardDB.SPECIAL_IDEA
+
+static func evaluate(cards: Array, mods: Dictionary = {}) -> Dictionary:
 	var result := {
 		"valid": false, "type": "invalid", "leader": "", "reason": "",
 		"output_res": "", "output_n": 0, "output_card": "",
@@ -91,6 +110,13 @@ static func evaluate(cards: Array) -> Dictionary:
 		var def: Dictionary = CardDB.get_def(c["def_id"])
 		match def.get("kind", ""):
 			CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK, CardDB.KIND_LEGEND:
+				leaders.append(c)
+			CardDB.KIND_SPECIAL:
+				# Idea 只能当升级材料，按核心卡收进来，交给下面的升级分支判；
+				# 「给我」不进任何组合
+				if not is_wild(str(c["def_id"])):
+					result["reason"] = "「%s」不能编进组合" % CardDB.card_name(str(c["def_id"]))
+					return result
 				leaders.append(c)
 			CardDB.KIND_BUFF:
 				buffs.append(c)
@@ -128,7 +154,12 @@ static func evaluate(cards: Array) -> Dictionary:
 			return result
 		result["valid"] = true
 		result["type"] = "upgrade"
+		# 领头记第一张真生产卡：Idea 排在最前面时，战报和演出也该说「云课堂升级」
 		result["leader"] = ids[0]
+		for id in ids:
+			if not is_wild(str(id)):
+				result["leader"] = id
+				break
 		result["output_card"] = target
 		return result
 
@@ -140,26 +171,33 @@ static func evaluate(cards: Array) -> Dictionary:
 	var leader_id: String = leaders[0]["def_id"]
 	var ldef: Dictionary = CardDB.get_def(leader_id)
 	result["leader"] = leader_id
+	if is_wild(leader_id):
+		result["reason"] = "「%s」要和一张 T1 生产卡叠在一起才能升级" % CardDB.card_name(leader_id)
+		return result
 
 	# 生产和攻击的配方检查是同一条规则，只有产出字段不同
 	if ldef["kind"] == CardDB.KIND_PRODUCT or ldef["kind"] == CardDB.KIND_ATTACK:
-		var fills := _fission_fills(ldef, user_n, user_fill)
-		var miss := _recipe_miss_reason(ldef, cash_n, user_n, fills)
+		var need := recipe_need(ldef, mods)
+		var fills := _fission_fills(ldef, user_n, user_fill, need)
+		var miss := _recipe_miss_reason(ldef, cash_n, user_n, fills, need)
 		if miss != "":
 			result["reason"] = miss
 			return result
 		result["valid"] = true
 		result["filled_by_fission"] = fills
+		if need != int(ldef["recipe_n"]):
+			result["recipe_need"] = need
 		# 只有现金配方会被吃掉；用户配方是永久席位
 		result["recipe_res"] = ldef["recipe_res"]
 		if ldef["recipe_res"] == CardDB.RES_CASH:
-			result["recipe_pay_n"] = int(ldef["recipe_n"])
+			result["recipe_pay_n"] = need
 		if ldef["kind"] == CardDB.KIND_PRODUCT:
 			# 单张 T2 只会生产。升级走的是纯生产卡那条路，跟资源无关，
 			# 所以这里没有「升级判定抢在生产前面」的先后问题
 			result["type"] = "production"
 			result["output_res"] = ldef["output_res"]
-			result["output_n"] = ldef["output_n"] * int(multipliers["output"])
+			result["output_n"] = scaled_output(int(ldef["output_n"]) * int(multipliers["output"]),
+				str(ldef["output_res"]), mods)
 		else:
 			result["type"] = "attack"
 			result["attack_res"] = ldef["attack_res"]
@@ -173,7 +211,7 @@ static func evaluate(cards: Array) -> Dictionary:
 ## 裂变鬼才这一组算不算「补满」。
 ## 三条同时成立才算：带裂变、核心卡吃用户、组里至少一张用户卡。
 ## 「至少一张」是硬门槛——裂变自己变不出用户，它只放大已有的那一张。
-static func _fission_fills(ldef: Dictionary, user_n: int, user_fill: bool) -> bool:
+static func _fission_fills(ldef: Dictionary, user_n: int, user_fill: bool, need := -1) -> bool:
 	if not user_fill:
 		return false
 	if ldef["recipe_res"] != CardDB.RES_USER:
@@ -181,15 +219,16 @@ static func _fission_fills(ldef: Dictionary, user_n: int, user_fill: bool) -> bo
 	if user_n < 1:
 		return false
 	# 本来就够的组不叫补满，席位占用与保护额度仍按完整配方计算
-	return user_n < int(ldef["recipe_n"])
+	return user_n < (need if need >= 0 else int(ldef["recipe_n"]))
 
 ## 配方材料够不够。够返回空串，不够返回给玩家看的原因
 static func _recipe_miss_reason(
-	ldef: Dictionary, cash_n: int, user_n: int, filled_by_fission: bool
+	ldef: Dictionary, cash_n: int, user_n: int, filled_by_fission: bool, need := -1
 ) -> String:
 	if filled_by_fission:
 		return ""
-	var need: int = ldef["recipe_n"]
+	if need < 0:
+		need = int(ldef["recipe_n"])
 	var have := cash_n if ldef["recipe_res"] == CardDB.RES_CASH else user_n
 	if have >= need:
 		return ""
@@ -241,12 +280,26 @@ static func legend_upgrade_target(tier: int, n: int) -> String:
 	return ""
 
 ## 实际材料的唯一升级查询。UI、BOT 与 evaluate 均可复用，不各自实现混名/混档判断。
+##
+## Idea（is_wild）顶替一张 T1 生产卡：真材料全同名时它算同名副本（Idea+云课堂 = 两张云课堂），
+## 否则它算同档异名的一张。至少要有一张真生产卡定下「顶替的是谁」，
+## 也不能混进 T2 —— 它只认 T1，和「T1/T2 不能混用」是同一条线
 static func upgrade_target_for_ids(ids: Array) -> String:
 	if ids.size() < 2: return ""
+	var real: Array = []
+	for id in ids:
+		if not id is String: return ""
+		if not is_wild(id): real.append(id)
+	if real.size() < ids.size():
+		if real.is_empty(): return ""
+		for id in real:
+			var def := CardDB.get_def(id)
+			if def.get("kind") != CardDB.KIND_PRODUCT or int(def.get("tier",0)) != 1: return ""
+		var same_real := real.all(func(id): return id == real[0])
+		return upgrade_target(str(real[0]),ids.size()) if same_real else legend_upgrade_target(1,ids.size())
 	var tier := -1
 	var same := true
 	for id in ids:
-		if not id is String: return ""
 		var def := CardDB.get_def(id)
 		var card_tier := int(def.get("tier",0))
 		if def.get("kind") != CardDB.KIND_PRODUCT or card_tier not in [1,2]: return ""
@@ -282,6 +335,19 @@ static func _routes_for(src: Dictionary) -> Array:
 	return out
 
 static func _upgrade_ids_miss_reason(ids: Array) -> String:
+	var real: Array = ids.filter(func(id): return not is_wild(str(id)))
+	if real.size() < ids.size():
+		var wild_name := CardDB.card_name(str(ids.filter(func(id): return is_wild(str(id)))[0]))
+		if real.is_empty(): return "「%s」要和一张 T1 生产卡叠在一起才能升级" % wild_name
+		for id in real:
+			var def := CardDB.get_def(str(id))
+			if def.get("kind") == CardDB.KIND_LEGEND: return REASON_LEGEND_INERT
+			if def.get("kind") != CardDB.KIND_PRODUCT or int(def.get("tier",0)) != 1:
+				return "「%s」只能顶替 T1 生产卡，不能和其他类型的牌一起升级" % wild_name
+		if real.all(func(id): return id == real[0]):
+			return _upgrade_miss_reason(str(real[0]), ids.size())
+		return "「%s」顶替一张 T1：同档 T1 升传说需恰好 %s 张（现有 %d 张）" % [
+			wild_name, "/".join(_legend_counts(1)), ids.size()]
 	var tier := -1
 	var same := true
 	for id in ids:
@@ -293,11 +359,16 @@ static func _upgrade_ids_miss_reason(ids: Array) -> String:
 		if int(def["tier"]) != tier: return "升级要求全部同档，T1/T2 不能混合"
 		if id != ids[0]: same = false
 	if same: return _upgrade_miss_reason(str(ids[0]),ids.size())
+	var counts := _legend_counts(tier)
+	if counts.is_empty(): return "T%d 生产卡没有传说升级路线" % tier
+	return "同档 T%d 生产卡升传说需恰好 %s 张（现有 %d 张）；升对应 T2 仍需同名" % [tier,"/".join(counts),ids.size()]
+
+## 这一档生产卡升传说认哪些张数（文本形式，给报错用）
+static func _legend_counts(tier: int) -> Array:
 	var counts: Array = []
 	for n in range(2,CardDB.max_upgrade_n()+1):
 		if legend_upgrade_target(tier,n) != "": counts.append(str(n))
-	if counts.is_empty(): return "T%d 生产卡没有传说升级路线" % tier
-	return "同档 T%d 生产卡升传说需恰好 %s 张（现有 %d 张）；升对应 T2 仍需同名" % [tier,"/".join(counts),ids.size()]
+	return counts
 
 ## 同名材料张数不对：列出它支持的全部档位，区分 T2 与传说对同名的要求。
 static func _upgrade_miss_reason(dup_id: String, n: int) -> String:

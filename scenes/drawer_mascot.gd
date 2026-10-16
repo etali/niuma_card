@@ -16,6 +16,9 @@ const ENTRY_SIZE := Vector2(168, 192)
 const ICON_RECT := Rect2(12, 44, 144, 144)
 const HOVER_ZOOM := 1.08
 const INVITATION_TEXT := "来摸一局？"
+## 从没展开过抽屉的新玩家，入口不等悬停就指明点哪里，并隔一会儿招一次手；第一次展开后恢复安静。
+const FIRST_RUN_TEXT := "点这里开局"
+const FIRST_RUN_WAVE_INTERVAL := 8.0
 const MAX_TILT := 0.05235988 # 3 度；整张图同步左右摆动。
 const MASCOT_SHADER := """
 shader_type canvas_item;
@@ -70,9 +73,13 @@ const STATE_RESOLVING := "resolving"
 const STATE_SUCCESS := "success"
 const STATE_DEFEAT := "defeat"
 const STATE_DANGER := "danger"
+## 首次提示只替换"轮到玩家"的文案；连接、对手行动、终局等业务状态照常显示。
+const FIRST_RUN_STATES := [STATE_IDLE, STATE_OPENING, STATE_FOE_DONE, STATE_YOUR_TURN]
 var _state := STATE_IDLE
 var _pointer_return_state := STATE_IDLE
 var _visual_state := ""
+var _first_run_hint := false
+var _wave_elapsed := 0.0
 var _face_zoom := 1.0:
 	set(value):
 		_face_zoom = value
@@ -96,6 +103,8 @@ func _init() -> void:
 	tooltip_text = ""
 
 func _ready() -> void:
+	# 引擎在 _ready 前按是否定义 _process 自动开启逐帧处理；只有首次提示期间才需要计时。
+	set_process(_first_run_hint)
 	_ensure_content()
 	# setup 可发生在入树之前，等最小尺寸缓存更新后再收紧入口矩形。
 	call_deferred("_layout_content")
@@ -247,10 +256,36 @@ func _rest_zoom() -> float:
 func state() -> String:
 	return _state
 
+func set_first_run_hint(value: bool) -> void:
+	if _first_run_hint == value:
+		return
+	_first_run_hint = value
+	_wave_elapsed = 0.0
+	set_process(value)
+	_visual_state = ""
+	set_state(_state)
+
+func has_first_run_hint() -> bool:
+	return _first_run_hint
+
+func _first_run_hint_active() -> bool:
+	return _first_run_hint and _state in FIRST_RUN_STATES
+
+func _process(delta: float) -> void:
+	if not _first_run_hint_active() or _hovered or _pressing or not is_visible_in_tree():
+		_wave_elapsed = 0.0
+		return
+	_wave_elapsed += delta
+	if _wave_elapsed >= FIRST_RUN_WAVE_INTERVAL:
+		_wave_elapsed = 0.0
+		_animate_greeting(1, true)
+
 func _state_copy() -> Dictionary:
 	var ink := Palette.get_color("card", "body")
 	var copy := {"text": "", "surface": Palette.get_color("world", "table_frame"), "accent": Palette.get_color("card", "frame"), "ink": ink}
-	if _state == STATE_OPENING:
+	if _first_run_hint_active():
+		copy = {"text": FIRST_RUN_TEXT, "surface": Palette.semantic("focus", copy.surface), "accent": Palette.semantic("focus", copy.accent), "ink": ink}
+	elif _state == STATE_OPENING:
 		copy["text"] = INVITATION_TEXT if _hovered else ""
 	elif _state == STATE_CONNECTING:
 		copy = {"text": "正在连接…", "surface": Palette.semantic("info", copy.surface), "accent": Palette.semantic("info", copy.accent), "ink": ink}
@@ -291,8 +326,8 @@ func set_hovered(hovered: bool) -> void:
 		_return_to_rest()
 
 func greet() -> void:
-	# 启动招呼仅播放图标动画；邀请文字仍必须有鼠标悬停。
-	if not is_inside_tree() or not is_visible_in_tree() or _state != STATE_OPENING:
+	# 启动招呼仅播放图标动画；邀请文字仍必须有鼠标悬停，首次提示除外。
+	if not is_inside_tree() or not is_visible_in_tree() or (_state != STATE_OPENING and not _first_run_hint_active()):
 		return
 	_animate_greeting(3, true)
 
@@ -323,7 +358,7 @@ func _return_to_rest() -> void:
 	var tween := _new_motion()
 	tween.tween_property(self, "_face_zoom", _rest_zoom(), 0.18)
 	tween.parallel().tween_property(self, "_face_tilt", 0.0, 0.18)
-	tween.parallel().tween_property(_bubble, "modulate:a", 1.0 if _has_status() else 0.0, 0.14)
+	tween.parallel().tween_property(_bubble, "modulate:a", 1.0 if _has_status() or _first_run_hint_active() else 0.0, 0.14)
 
 func _on_visibility_changed() -> void:
 	if is_visible_in_tree():

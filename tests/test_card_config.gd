@@ -8,8 +8,8 @@ const CardConfigClass = preload("res://engine/card_config.gd")
 const NetServerClass = preload("res://net/server.gd")
 
 func _initialize() -> void:
-	var had_pref := FileAccess.file_exists(CardConfigClass.PREF_PATH)
-	var previous_pref := FileAccess.get_file_as_string(CardConfigClass.PREF_PATH) if had_pref else ""
+	var had_pref := FileAccess.file_exists(CardConfigClass.pref_path())
+	var previous_pref := FileAccess.get_file_as_string(CardConfigClass.pref_path()) if had_pref else ""
 	var base_path := "res://data/cards.json"
 	var base := JSON.parse_string(FileAccess.get_file_as_string(base_path)) as Dictionary
 	var temp_path := "user://test-custom-cards.json"
@@ -65,11 +65,11 @@ func _initialize() -> void:
 	CardConfigClass.apply_default()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(temp_path))
 	if had_pref:
-		var pref := FileAccess.open(CardConfigClass.PREF_PATH, FileAccess.WRITE)
+		var pref := FileAccess.open(CardConfigClass.pref_path(), FileAccess.WRITE)
 		pref.store_string(previous_pref)
 		pref.close()
 	else:
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(CardConfigClass.PREF_PATH))
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(CardConfigClass.pref_path()))
 	finish()
 
 func _write_cards(path: String, cards: Dictionary) -> void:

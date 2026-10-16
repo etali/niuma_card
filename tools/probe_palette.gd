@@ -30,14 +30,14 @@ func _init() -> void:
 	print("C_signal=", ",".join(_got))
 
 	print("D_save=", Palette.save())
-	print("D_userfile=", FileAccess.file_exists("user://palette.json"))
+	print("D_userfile=", FileAccess.file_exists(Palette.user_path()))
 
 	Palette.restore_defaults()
 	var r_bg := Palette.get_color("world", "background")
 	var r_face := Palette.plate_color("plate_cash", "face")
 	print("E_bg_restored=", r_bg.to_html(false), " match=", r_bg.is_equal_approx(d0))
 	print("E_face_restored=", r_face.to_html(false))
-	print("E_userfile_gone=", not FileAccess.file_exists("user://palette.json"))
+	print("E_userfile_gone=", not FileAccess.file_exists(Palette.user_path()))
 
 	# 图标前景默认留空 → 跟随墨色，这是改造前的行为
 	print("F_icon_cfg=[", Palette.get_string("icon", "foreground"), "]")

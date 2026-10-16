@@ -22,7 +22,8 @@ func _run() -> void:
 
 func _check_cards() -> void:
 	var entries: Array = Atlas.card_entries()
-	check(entries.size() == 31 and entries.size() == CardDB.all_cards().size(), "总览包含当前卡表全部31张卡，不只列可购买卡")
+	# 张数从卡表读（加了角色专属卡之后是 33）；不只列可购买卡由下面逐张核对 def_id 保证
+	check(entries.size() == CardDB.all_cards().size(), "总览包含当前卡表全部%d张卡，不只列可购买卡" % CardDB.all_cards().size())
 	var ids: Array = []
 	var values_match := true
 	for entry: Dictionary in entries:
@@ -133,7 +134,7 @@ func _check_layout(viewport_size: Vector2i) -> void:
 					and real_card.freeze and not real_card.draggable \
 					and real_card.collision_layer == 0 and real_card.collision_mask == 0:
 				card_count += 1
-	check(card_count == 31, context + "：全部卡片由冻结的正式CardEntity绘制完整卡面，不是另画的插画缩略图")
+	check(card_count == CardDB.all_cards().size(), context + "：全部卡片由冻结的正式CardEntity绘制完整卡面，不是另画的插画缩略图")
 	var cloud: Control = atlas._tiles.yunketang.find_child("CardPreview_yunketang", true, false)
 	check(cloud.tooltip_text == descriptions.hover_desc_text("yunketang"), context + "：独立图鉴的效果提醒复用Board原文")
 	descriptions.free()
@@ -170,7 +171,7 @@ func _check_layout(viewport_size: Vector2i) -> void:
 	click.pressed = true
 	cloud.gui_input.emit(click)
 	await process_frame
-	check(atlas._grid.visible and atlas._grid.get_child_count() == 31 \
+	check(atlas._grid.visible and atlas._grid.get_child_count() == CardDB.all_cards().size() \
 		and cloud.mouse_default_cursor_shape == Control.CURSOR_ARROW and not cloud.has_signal("activated"),
 		context + "：点击卡片不切页、不展开详情，也没有可点击手型暗示")
 	var old_card: WeakRef = weakref(cloud.card)

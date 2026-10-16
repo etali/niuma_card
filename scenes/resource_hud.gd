@@ -101,6 +101,11 @@ func _label(parent: Node, text: String, font_size: int, bold := false) -> Label:
 	parent.add_child(label)
 	return label
 
+## 公司名可能带角色短名（「你的公司（HR）」）；角色效果在底栏角色按钮的列表里看
+func set_company(text: String) -> void:
+	if title.text != text:
+		title.text = text
+
 func set_resources(cash: int, users: int, due: int, on_duty: int, idle: int,
 		has_deployment: bool, at_risk: bool) -> void:
 	cash_value.text = str(cash)

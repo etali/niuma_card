@@ -19,7 +19,7 @@ func _check_preference_failure() -> void:
 	check(Store.save(first, base) and Store.save(second, base), "创建两份合法卡表")
 	check(CardConfig.select(first).get("ok", false), "原选择成功持久化")
 	var selected := CardConfig.selected_path()
-	var pref := ProjectSettings.globalize_path(CardConfig.PREF_PATH)
+	var pref := ProjectSettings.globalize_path(CardConfig.pref_path())
 	var backup := pref + ".previous"
 	check(DirAccess.rename_absolute(pref, backup) == OK and DirAccess.make_dir_absolute(pref) == OK,
 		"构造偏好文件不可写的失败条件")

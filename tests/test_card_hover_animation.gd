@@ -5,7 +5,8 @@ func _run() -> void:
 	# 帧序列回归按一倍速计算时间点，产品默认倍率由UI配置测试负责。
 	UIConfig.set_hover_animation_speed(1.0)
 	var art: Dictionary = UIConfig.read_section("art")
-	check(art.hover.cards.size() == 31, "31 张牌均登记小图差分动画")
+	# 张数从卡表读（加了角色专属卡之后是 33）：每张卡都要有动画，下面逐张核对
+	check(art.hover.cards.size() == CardDB.all_cards().size(), "%d 张牌均登记小图差分动画" % CardDB.all_cards().size())
 	check(art.hover.cards.values().all(func(config): return config.get("codec", "") == "hdelta-v1" and config.has("file") and not config.has("files")), "全部正式卡牌使用单文件差分动画")
 	check(art.hover.cards.values().all(func(config): return config.frame_size.max() <= 384), "全部正式动作最长边不超过 384 像素")
 	check(not art.has("motions"), "分层动画配置已移除")

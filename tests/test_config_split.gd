@@ -61,7 +61,7 @@ func _initialize() -> void:
 	check(CardDB.sim_rules()["max_rounds"] == 9 and BOTSearch.default_strength() == 0.2,
 		"外置 BOT 的模拟上限和搜索默认值实际生效")
 	Palette._loaded = false
-	var user_hud: Dictionary = Palette.read_json(Palette.USER_PATH).get("hud", {})
+	var user_hud: Dictionary = Palette.read_json(Palette.user_path()).get("hud", {})
 	check(Palette.get_string("hud", "player") == user_hud.get("player", "#123456"),
 		"配色从 ui.json 加载，已有玩家偏好仍能覆盖")
 	var changed := UIConfig.read_section("palette")

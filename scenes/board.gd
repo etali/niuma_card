@@ -188,6 +188,11 @@ var input_locked := false   # 输入锁：BOT 行动/结算演出期间屏蔽玩
 ## 窗口收起/切换/弹层独立于业务输入锁，控制器返回 true 时暂停桌面交互。
 var interaction_blocked := Callable()
 var hover_blocked := Callable()
+## 本方的角色修正（Roles.mods）从哪儿读，由游戏控制器接上。board.groups 只装本方的牌，
+## 这里的每一次组合判定都得和引擎结算时用同一份修正 —— HR 的云课堂 2 张用户就该亮
+## 「凑满」，否则桌上提示和结算结果各说各话。读的是 Callable 而不是存一份字典：
+## 重开、联网入座、录像、教程都会换掉控制器的 state，存下来的那份会过期
+var combo_mods := Callable()
 
 func _interaction_is_blocked() -> bool:
 	return interaction_blocked.is_valid() and bool(interaction_blocked.call())
@@ -1046,7 +1051,9 @@ func _hide_desc() -> void:
 ## 换行位置是写死的，不靠 autowrap：中文没有词间空格，
 ## AUTOWRAP_WORD_SMART 只能在任意字之间断，会切出「每回合资 / 金+12」这种断词。
 ## 手动在箭头处断行，「配方 → 效果」正好一行一段
-func describe_def(def_id: String) -> String:
+## mods：这张牌主人的角色修正（Roles.mods）。本方的牌传本方的，配方和产出按角色改过的数说；
+## 购牌区和对手的牌不传，念卡面原值
+func describe_def(def_id: String, mods: Dictionary = {}) -> String:
 	var def: Dictionary = CardDB.get_def(def_id)
 	# 配方和攻击目标数的是牌（现金×4），每回合产出说的是资源总量（资金+7）。
 	# 两种名字都得按这条分，否则同一个配方在悬停里叫「资金×4」、在配方不足的报错里叫「现金×4」
@@ -1054,13 +1061,14 @@ func describe_def(def_id: String) -> String:
 		CardDB.KIND_PRODUCT:
 			# 普通升级仍须同名；传说路线则可搭配同档的其他生产卡。
 			return "配齐%s×%d\n→ 每回合%s+%d\n%s%s" % [
-				CardDB.card_label(def["recipe_res"]), int(def["recipe_n"]),
-				CardDB.res_label(def["output_res"]), int(def["output_n"]),
+				CardDB.card_label(def["recipe_res"]), ComboRules.recipe_need(def, mods),
+				CardDB.res_label(def["output_res"]),
+				ComboRules.scaled_output(int(def["output_n"]), str(def["output_res"]), mods),
 				"资金结算时花掉" if def["recipe_res"] == CardDB.RES_CASH else "用户保留，持续生产",
 				_upgrade_line(def_id)]
 		CardDB.KIND_ATTACK:
 			return "配齐%s×%d\n→ 移除对方%s×%d\n%s" % [
-				CardDB.card_label(def["recipe_res"]), int(def["recipe_n"]),
+				CardDB.card_label(def["recipe_res"]), ComboRules.recipe_need(def, mods),
 				CardDB.card_label(def["attack_res"]), int(def["attack_n"]),
 				"资金装弹时花掉" if def["recipe_res"] == CardDB.RES_CASH else "用户保留，参与攻击"]
 		CardDB.KIND_LEGEND:
@@ -1097,6 +1105,13 @@ func describe_def(def_id: String) -> String:
 		CardDB.KIND_UNIT:
 			# 单位卡本身没有效果，说明它是配方材料，否则悬停时这类卡完全没有反馈
 			return "配方材料：%s" % CardDB.card_label(str(def.get("res", "")))
+		CardDB.KIND_SPECIAL:
+			# 行宽同样受 DESC_WIDTH 约束，按意群手动断行（见本函数开头那段）
+			match CardDB.special_type(def_id):
+				CardDB.SPECIAL_GRAB:
+					return "拖到购牌区任一张牌上\n→ 直接拿走，不花现金\n用完即消失\n不能典当"
+				CardDB.SPECIAL_IDEA:
+					return "和一张未升级的生产卡\n叠放 → 升级成它的\n升级版生产卡\n合成传说时\n可顶替其中一张\n用完即消失\n不能典当"
 	return ""
 
 ## 两处升级说明共用卡表里的阶段，玩家无需记住内部档位代号。
@@ -1123,8 +1138,8 @@ func _upgrade_line(def_id: String) -> String:
 ## 每张卡都写典当价，不只传说卡：典当是要不要出手的即时判断，
 ## 缺这一行就只能拖过去试 —— 和效果放在同一块白板上才比得出来。
 ## 现金卡不可典当（pawn_value 0），不写这一行免得白板上多一句「+0」
-func hover_desc_text(def_id: String) -> String:
-	var t := describe_def(def_id)
+func hover_desc_text(def_id: String, mods: Dictionary = {}) -> String:
+	var t := describe_def(def_id, mods)
 	var pawn := CardDB.pawn_value(def_id)
 	if pawn <= 0:
 		return t
@@ -1172,7 +1187,7 @@ func _update_hover_hint() -> void:
 		_hide_desc()
 		return
 	if picked != null:
-		var t := hover_desc_text(picked.def_id)
+		var t := hover_desc_text(picked.def_id, card_mods(picked))
 		var status := picked.recipe_status_text()
 		if status != "" and not picked.is_market:
 			t = status + "\n" + t
@@ -1523,6 +1538,23 @@ func _remove_group(g, keep_progress := false) -> void:
 ## 只写墨团，组顶不另挂填充进度条：那会是桌面上唯一一块不属于任何卡的悬浮物，
 ## 在摊开态压着牌列外的空桌面、在收拢态又得为了避开摞顶单独往镜头方向挪，
 ## 而它显示的 have/need 和核心卡右下角的墨团完全是同一个数
+## 这张牌该按哪份角色修正来念：本方理牌区的牌用本方的，购牌区和对手的牌念卡面原值
+func card_mods(card: CardEntity) -> Dictionary:
+	return _mods() if is_instance_valid(card) and card.draggable and not card.is_market else {}
+
+## 一摞牌按谁的角色判：一摞里只会是同一个主人的牌，取第一张认得出的
+func group_mods(group_cards: Array) -> Dictionary:
+	for c in group_cards:
+		if is_instance_valid(c):
+			return card_mods(c)
+	return {}
+
+func _mods() -> Dictionary:
+	if not combo_mods.is_valid():
+		return {}
+	var mods: Variant = combo_mods.call()
+	return mods if mods is Dictionary else {}
+
 func _update_group_progress(g, eval: Dictionary) -> void:
 	_push_recipe_progress(g, _group_progress(g), eval["valid"])
 	_push_effect_mult(g)
@@ -1879,7 +1911,7 @@ func _group_progress(g) -> Dictionary:
 	for c in g["cards"]:
 		var def: Dictionary = CardDB.get_def(c.def_id)
 		if def.get("kind") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
-			var need: int = def.get("recipe_n", 0)
+			var need: int = ComboRules.recipe_need(def, card_mods(c))
 			var res: String = def.get("recipe_res", "")
 			if need == 0:
 				continue
@@ -2141,7 +2173,7 @@ func refresh_group(g, top_pos := Vector3.INF) -> bool:  # 返回: 这次更新�
 	var has_core := false
 	for c in g["cards"]:
 		var k: String = CardDB.get_def(c.def_id).get("kind", "")
-		if k in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK, CardDB.KIND_LEGEND]:
+		if k in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK, CardDB.KIND_LEGEND] or ComboRules.is_wild(c.def_id):
 			has_core = true
 			break
 	if not has_core:
@@ -2154,7 +2186,7 @@ func refresh_group(g, top_pos := Vector3.INF) -> bool:  # 返回: 这次更新�
 	var data: Array = []
 	for c in g["cards"]:
 		data.append({ "uid": c.uid, "def_id": c.def_id })
-	var eval := ComboRules.evaluate(data)
+	var eval := ComboRules.evaluate(data, group_mods(g["cards"]))
 
 	# 配方凑满：整条牌列金色高亮；首次凑满时发信号（音效提示）
 	var is_valid: bool = eval["valid"]
@@ -2202,7 +2234,7 @@ func _cards_valid(group_cards: Array) -> bool:
 		if not is_instance_valid(c):
 			return false
 		data.append({ "uid": c.uid, "def_id": c.def_id })
-	return bool(ComboRules.evaluate(data)["valid"])
+	return bool(ComboRules.evaluate(data, group_mods(group_cards))["valid"])
 
 ## g 是不是这次拎牌留在桌上的那半截（比对对象身份：
 ## Dictionary 的 == 是逐键深比较，两个内容一样的组会被判成同一个）
@@ -2258,7 +2290,7 @@ func make_group(group_cards: Array, compact := false, was_valid: Variant = null,
 		var data: Array = []
 		for c in g["cards"]:
 			data.append({"uid": c.uid, "def_id": c.def_id})
-		g["upgrade_target"] = _upgrade_target(ComboRules.evaluate(data)) if g["was_valid"] else ""
+		g["upgrade_target"] = _upgrade_target(ComboRules.evaluate(data, group_mods(g["cards"]))) if g["was_valid"] else ""
 	return g
 
 # ---------- 双击收拢/摊开 ----------
@@ -2306,6 +2338,7 @@ static func core_first_order(cards: Array) -> Array:
 				buffs.append(c)
 			_:
 				rest.append(c)
+	# Idea 是升级材料，跟在真生产卡后面：收拢摞顶露的该是「升谁」那一张
 	return core + buffs + rest
 
 ## 尝试把一张卡与附近的卡合并（附近的组优先，其次是散卡——两张散卡也能组起来）

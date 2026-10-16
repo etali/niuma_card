@@ -10,13 +10,15 @@ func _run() -> void:
 	check(Boot.entry_scene(["--animation-preview"]) == "res://scenes/animation_preview.tscn", "独立入口直接选择预览，不启动牌局")
 	UIConfig.save_preferences({"hover_animation_speed": 0.5})
 	UIConfig.set_hover_animation_speed(0.5)
-	var saved_preferences := FileAccess.get_file_as_string(UIConfig.USER_PATH)
+	var saved_preferences := FileAccess.get_file_as_string(UIConfig.user_path())
 	var engine_speed := Engine.time_scale
 	var preview: Node = load("res://scenes/animation_preview.tscn").instantiate()
 	root.add_child(preview)
 	preview.set_process(false)
 	await physics_frame
-	check(preview._ids.size() == 31 and preview._buttons.size() == 31, "独立入口列出全部 31 张牌")
+	# 张数从卡表读：加了角色专属卡之后从 31 变成 33，写死的数字只会跟着卡表漂
+	var total := CardDB.all_cards().size()
+	check(preview._ids.size() == total and preview._buttons.size() == total, "独立入口列出全部 %d 张牌" % total)
 	check(preview._motion.get_script() == Motion, "预览与正式对局使用同一运动实现")
 	check(not preview.table_hands.cursor_enabled, "悬停页使用小光标，避免遮挡主图动作")
 	await _check_hover_speed(preview)
@@ -83,7 +85,7 @@ func _run() -> void:
 	check(preview._hover_speed_slider.value == 0.5 and preview._cards[0].hover_animation_speed == 0.5,
 		"切换到撕牌页再返回仍保留选定插画速度")
 	check(Engine.time_scale == engine_speed and UIConfig.get_hover_animation_speed() == 0.5
-		and FileAccess.get_file_as_string(UIConfig.USER_PATH) == saved_preferences,
+		and FileAccess.get_file_as_string(UIConfig.user_path()) == saved_preferences,
 		"预览调速不改变全局时间、游戏实时速度或游戏偏好文件")
 	preview.queue_free()
 	await process_frame

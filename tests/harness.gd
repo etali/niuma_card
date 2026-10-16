@@ -22,6 +22,8 @@ extends SceneTree
 ## _initialize 留给各测试自己实现 —— 基类不定义它，否则子类那份会被当成覆写，
 ## SceneTree 只调一处，两份都想跑就得再约定调用顺序
 
+const SavePaths = preload("res://engine/save_paths.gd")
+
 var _pass := 0
 var _fail := 0
 var _test_data_dir := ""
@@ -43,10 +45,29 @@ func _isolate_user_data() -> void:
 		printerr("SCRIPT ERROR: 无法创建测试数据目录：" + _test_data_dir)
 		quit(1)
 		return
-	# 产品录像默认走 HOME，必须显式覆盖，才能和偏好一起隔离、清理。
+	# 产品录像和设置默认走 HOME 下的 ~/.niumapai_record，必须显式覆盖，才能一起隔离、清理。
+	# 设置放回 user:// 根目录：没有旧存档可搬，测试直接读写的文件也就是产品读写的那份。
 	Tape.directory_override = "user://replays"
+	SavePaths.settings_override = "user://"
+	# 本进程派生的游戏子进程（真实主场景、服务器）不跑 harness，靠继承环境留在同一沙箱。
+	OS.set_environment(SavePaths.DATA_DIR_ENV, _test_data_dir.path_join("player-data"))
+	seed_returning_player()
 	# runner 从日志读取实际平台路径；不推测 macOS/Linux 的用户目录布局。
 	print("CARD_TEST_USER_DIR=" + _test_data_dir)
+
+## 空白用户目录在产品里是新玩家：入口常驻提示、牌桌弹出模态教程邀请。
+## 其余测试按老玩家起步，新手引导的用例调 seed_first_run_player() 再起主场景。
+func seed_returning_player() -> void:
+	_write_tutorial_progress({"handle_opened": true, "invitation_seen": true, "courses": {}})
+
+func seed_first_run_player() -> void:
+	DirAccess.remove_absolute(SavePaths.settings_file("tutorial_progress.json"))
+
+func _write_tutorial_progress(value: Dictionary) -> void:
+	var file := FileAccess.open(SavePaths.settings_file("tutorial_progress.json"), FileAccess.WRITE)
+	if file != null:
+		file.store_string(JSON.stringify(value))
+		file.close()
 
 func _remove_test_data(path: String) -> void:
 	var directory := DirAccess.open(path)

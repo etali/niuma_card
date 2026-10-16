@@ -37,47 +37,26 @@ const VERSION := 2
 const RecordingConfig = preload("res://engine/recording_config.gd")
 const JsonStore = preload("res://engine/json_store.gd")
 const LegacyNames = preload("res://engine/legacy_names.gd")
+const SavePaths = preload("res://engine/save_paths.gd")
 
-## 录像存哪儿：**家目录下的 `~/.niumapai_record`**（用户指定）。
-##
-## 不走 `user://`：那个前缀落在哪儿是引擎定的（macOS 上
-## `~/Library/Application Support/…`），改不到家目录来 ——
-## `use_custom_user_dir` 只能换掉最后那一层目录名，换不掉上面那几层。
-## 所以这里存的是**绝对路径**，`FileAccess` / `DirAccess` 都直接吃。
-##
-## `~` 得自己展开：Godot 不展开它，照原样传下去会得到一个真叫 `~` 的目录
-## （落在进程的工作目录底下，而那是仓库根 —— 录像存进仓库里去了，
-## 而且这个坏法在屏幕上看不出来，路径照样报得出来）。
-## 见 `_home_dir()`
-const DIR_NAME := ".niumapai_record"
+## 录像存哪儿：**家目录下的 `~/.niumapai_record`** 根目录（用户指定），
+## 和设置、学习进度同一个玩家数据目录（见 engine/save_paths.gd，为什么不走 `user://` 也写在那儿）。
 
-## 家目录拿不到时的退路。走到这一支说明环境变量被清过（沙箱、某些 CI），
-## 此时**宁可回 `user://`** 也不要把录像撒在工作目录里
+## 没有可写家目录（手机、网页、环境变量被清过）时的退路
 const PATH_DIR_FALLBACK := "user://replays"
 
 ## 进程内目录覆盖；测试可指向隔离的 user://，空串保持产品默认目录。
 ## 不读取或修改 HOME，也不持久化为玩家偏好。
 static var directory_override := ""
 
-## 家目录。macOS/Linux 是 `HOME`，Windows 是 `USERPROFILE`。
-## 两个都没有就返回空串，让 path_dir() 走退路
-static func _home_dir() -> String:
-	for key in ["HOME", "USERPROFILE"]:
-		var v := OS.get_environment(key)
-		if v != "":
-			return v
-	return ""
-
 ## 录像目录的绝对路径。每次解析覆盖值，允许测试在独立沙箱内验证首次保存。
 static func path_dir() -> String:
 	if not directory_override.is_empty():
 		return ProjectSettings.globalize_path(directory_override)
-	if OS.has_feature("android") or OS.has_feature("ios"):
+	var root := SavePaths.root()
+	if root == "":
 		return ProjectSettings.globalize_path(PATH_DIR_FALLBACK)
-	var home := _home_dir()
-	if home == "":
-		return ProjectSettings.globalize_path(PATH_DIR_FALLBACK)
-	return home.path_join(DIR_NAME)
+	return root
 
 ## 开局那一刻（= 开始录的那一刻）的全量状态。StateCodec.snapshot 的形状
 var head: Dictionary = {}
@@ -247,8 +226,10 @@ static func from_dict(d: Dictionary) -> Dictionary:
 	t.head_view = d.get("head_view", {}).duplicate(true) if d.get("head_view", {}) is Dictionary else {}
 	if v == VERSION and not t.configuration.get("rules") is Dictionary:
 		return {"ok": false, "reason": "录像缺少卡牌规则配置，不能载入"}
-	# 旧 v2 的指纹未包含升级表；只在录像自己保存的完整规则也一致时迁移。
-	if t.table == StateCodec.legacy_table_hash() and RecordingConfig.matches(t.configuration):
+	# 旧 v2 的指纹未包含升级表、加入角色前的指纹未包含角色；
+	# 只在录像自己保存的完整规则也一致时迁移。
+	if t.table in [StateCodec.legacy_table_hash(), StateCodec.pre_role_table_hash()] \
+			and RecordingConfig.matches(t.configuration):
 		t.table = StateCodec.table_hash()
 	var snapshot_error := StateCodec.snapshot_issue(t.head)
 	if snapshot_error == "": snapshot_error = StateCodec.pools_issue(t.head_pools)

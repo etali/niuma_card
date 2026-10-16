@@ -193,7 +193,7 @@ static func _pay_recipe(state: GameState, combo: Dictionary, eval: Dictionary) -
 	return { "ok": true, "reason": "",
 		"net_prefix": "−%s%d → " % [CardDB.res_label(CardDB.RES_CASH), need] }
 
-## 升级消耗：吃掉全部参与材料；同档生产卡升传说时可以异名
+## 升级消耗：吃掉全部参与材料；同档生产卡升传说时可以异名，Idea 顶替的那张一并吃掉
 ## 升级是纯卡面合成，不吃现金也不吃用户，所以这里没有单位卡要清
 static func _consume_upgrade_materials(state: GameState, combo: Dictionary, _eval: Dictionary) -> void:
 	var owner: String = combo["owner"]
@@ -202,7 +202,7 @@ static func _consume_upgrade_materials(state: GameState, combo: Dictionary, _eva
 		if c.is_empty():
 			continue
 		var def: Dictionary = CardDB.get_def(c["def_id"])
-		if def.get("kind") in [CardDB.KIND_PRODUCT, CardDB.KIND_LEGEND]:
+		if def.get("kind") in [CardDB.KIND_PRODUCT, CardDB.KIND_LEGEND, CardDB.KIND_SPECIAL]:
 			state.remove_card(owner, u)
 
 ## 玩家点击完成行动前在副本上预演自己的消耗与产出。

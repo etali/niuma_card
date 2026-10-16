@@ -16,8 +16,11 @@ extends Node
 ## 而漏掉一处不会报错 —— 同一个动作在两个地方响两种音量，谁都听不出是 bug
 
 const POOL_SIZE := 10
-const PREF_PATH := "user://sound.json"
 const Store = preload("res://engine/json_store.gd")
+const SavePaths = preload("res://engine/save_paths.gd")
+
+static func pref_path() -> String:
+	return SavePaths.settings_file("sound.json")
 
 signal user_muted_changed(value: bool)
 
@@ -32,7 +35,7 @@ var user_muted := false
 var drawer_suspended := false
 
 func _ready() -> void:
-	var stored := UIConfig.read_json(PREF_PATH)
+	var stored := UIConfig.read_json(pref_path())
 	user_muted = stored.get("muted", false) if stored.get("muted", false) is bool else false
 	_apply_mute_state()
 	for key in sounds():
@@ -93,7 +96,7 @@ func set_user_muted(value: bool) -> bool:
 	_apply_mute_state()
 	if changed:
 		user_muted_changed.emit(value)
-	return Store.save(PREF_PATH, {"muted": value})
+	return Store.save(pref_path(), {"muted": value})
 
 func set_drawer_suspended(value: bool) -> void:
 	drawer_suspended = value

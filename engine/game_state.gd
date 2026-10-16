@@ -77,6 +77,10 @@ var combos: Array = []          # {owner, uids:[], eval:{}}
 var round_num := 1
 var draw_first: String = PLAYER # 本回合抽卡先手（组卡后手）
 var winner := ""                # "player" / "bot" / ""
+## 座位 → 角色 id（README.md §「2.12 角色」）。和 draw_first 一样是**开局设定**：
+## new_game 读它、不清它，单机「再战一局」换的是新 GameState，由场景层重新设。
+## 只有非默认角色才进快照（StateCodec.snapshot），旧录像读回来自然是两个牛马
+var roles: Dictionary = { PLAYER: Roles.DEFAULT, BOT: Roles.DEFAULT }
 var win_reason := ""
 var log: Array = []
 var _uid := 0
@@ -181,16 +185,47 @@ func new_game(first := "") -> void:
 		draw_first = first
 	var rules: Dictionary = CardDB.game_rules()
 	for who in [PLAYER, BOT]:
-		for i in rules["start_cash"]:
+		for i in Roles.start_cash(role_of(who)):
 			add_card(who, CardDB.unit_id(CardDB.RES_CASH))
-		for i in rules["start_user"]:
+		for i in Roles.start_user(role_of(who)):
 			add_card(who, CardDB.unit_id(CardDB.RES_USER))
-	# 初始资源由 cards.json 的 _game 段配置（之后没有自动补给，资源只能靠组合产出）
-	log_msg("开局！双方各有 %s×%d + %s×%d。没有回合补给，全靠经营。公共区每回合刷新，先到 %d %s者胜。" % [
-		CardDB.card_label(CardDB.RES_CASH), rules["start_cash"],
-		CardDB.card_label(CardDB.RES_USER), rules["start_user"],
-		rules["win_cash"], CardDB.res_label(CardDB.RES_CASH)])
+		for def_id in Roles.start_cards(role_of(who)):
+			add_card(who, def_id)
+	# 初始资源由 cards.json 的 _game 段配置，角色可以改写（之后没有自动补给，资源只能靠组合产出）
+	if has_custom_roles():
+		for who in [PLAYER, BOT]:
+			log_fmt("%s 是「%s」：" + " · ".join(Roles.describe(role_of(who))).replace("%", "%%"),
+				[seat_arg(who), Roles.role_name(role_of(who))])
+		log_msg("没有回合补给，全靠经营。公共区每回合刷新，先到 %d %s者胜。" % [
+			rules["win_cash"], CardDB.res_label(CardDB.RES_CASH)])
+	else:
+		log_msg("开局！双方各有 %s×%d + %s×%d。没有回合补给，全靠经营。公共区每回合刷新，先到 %d %s者胜。" % [
+			CardDB.card_label(CardDB.RES_CASH), rules["start_cash"],
+			CardDB.card_label(CardDB.RES_USER), rules["start_user"],
+			rules["win_cash"], CardDB.res_label(CardDB.RES_CASH)])
 	start_round()
+
+# ---------- 角色 ----------
+
+## 开局前设座位的角色。认不出的 id 一律退回默认角色，不报错：
+## 存在玩家偏好里的角色可能来自另一份卡表
+func set_role(who: String, role_id: String) -> void:
+	roles[who] = role_id if Roles.exists(role_id) else Roles.DEFAULT
+
+func role_of(who: String) -> String:
+	return str(roles.get(who, Roles.DEFAULT))
+
+## 有没有哪个座位不是默认角色。快照和开局战报都只在这时候才多写东西
+func has_custom_roles() -> bool:
+	for who in roles:
+		if str(roles[who]) != Roles.DEFAULT:
+			return true
+	return false
+
+## 这个座位编组时 ComboRules 要用的角色修正。引擎里每一处 evaluate 都要传它：
+## 结算前的齐整检查、攻击选靶的保护额度、HUD 的预收预付读的是同一份组合判定
+func combo_mods(who: String) -> Dictionary:
+	return Roles.mods(role_of(who))
 
 func add_card(who: String, def_id: String, locked := false) -> Dictionary:
 	var card := {
@@ -275,6 +310,11 @@ func buy(who: String, market_idx: int, pay_uids: Array = []) -> Dictionary:
 	var price: int = CardDB.get_def(def_id).get("price", -1)
 	if price < 0:
 		return { "ok": false, "code": "unbuyable", "reason": "该卡不可购买" }
+	# 「给我」是付款凭证：拿它付就不看标价。走购买这条路而不是另开一个操作，
+	# 是为了让意图、阶段次序、联网协议和购买演出全部照旧（付掉的那张就是「给我」）
+	for u in pay_uids:
+		if CardDB.special_type(str(find_card(who, u).get("def_id", ""))) == CardDB.SPECIAL_GRAB:
+			return _grab(who, market_idx, pay_uids)
 	var pay: Array
 	if pay_uids.is_empty():
 		pay = _loose_unit_uids(who, CardDB.RES_CASH)
@@ -310,6 +350,32 @@ func buy(who: String, market_idx: int, pay_uids: Array = []) -> Dictionary:
 	# 反查，但摆放要用它决定往哪个锚点落，直接给省一次反查
 	return { "ok": true, "removed_uids": removed, "new_uid": new_card["uid"],
 		"market_idx": market_idx, "def_id": def_id }
+
+## 用「给我」白拿一张购牌区的牌。「给我」随之离场（一次性）。
+## 只认单独一张：和现金混在一摞里拖过来时说不清是想刷卡还是想付钱，直接拒掉
+func _grab(who: String, market_idx: int, pay_uids: Array) -> Dictionary:
+	if pay_uids.size() != 1:
+		return { "ok": false, "code": "not_cash",
+			"reason": "「%s」要单独拖到想要的牌上" % CardDB.card_name(_grab_card_id()) }
+	var uid := int(pay_uids[0])
+	for combo in combos:
+		if combo["uids"].has(uid):
+			return { "ok": false, "code": "not_cash", "reason": "该卡本回合已参与其他组合" }
+	var def_id: String = market[market_idx]
+	remove_card(who, uid)
+	market.remove_at(market_idx)
+	var new_card := add_card(who, def_id)
+	log_fmt("%s 伸手「%s」，直接拿走「%s」（不花现金）",
+		[seat_arg(who), CardDB.card_name(_grab_card_id()), CardDB.card_name(def_id)])
+	return { "ok": true, "removed_uids": [uid], "new_uid": new_card["uid"],
+		"market_idx": market_idx, "def_id": def_id, "grabbed": true }
+
+## 卡表里那张「给我」的 def_id（只用来念卡名）
+static func _grab_card_id() -> String:
+	for id in CardDB.all_cards():
+		if CardDB.special_type(str(id)) == CardDB.SPECIAL_GRAB:
+			return str(id)
+	return ""
 
 ## 未被组合锁定的单位卡 uid 列表
 func _loose_unit_uids(who: String, res: String) -> Array:
@@ -370,6 +436,8 @@ func pawn(who: String, uids: Array) -> Dictionary:
 			var reason := "这张卡出售价格为 0，无法出售"
 			if def.get("kind") == CardDB.KIND_UNIT and def.get("res") == CardDB.RES_CASH:
 				reason = "典当行不收%s卡" % CardDB.card_label(CardDB.RES_CASH)
+			elif def.get("kind") == CardDB.KIND_SPECIAL:
+				reason = "「%s」是角色专属卡，不能典当" % CardDB.card_name(c["def_id"])
 			return { "ok": false, "reason": reason }
 		total += v
 	for u in uids:
@@ -404,7 +472,7 @@ func create_combo(who: String, uids: Array) -> Dictionary:
 	var cards: Array = []
 	for u in uids:
 		cards.append(find_card(who, u))
-	var eval := ComboRules.evaluate(cards)
+	var eval := ComboRules.evaluate(cards, combo_mods(who))
 	if not eval["valid"]:
 		return { "ok": false, "reason": eval["reason"] }
 	# 这里不设归零护栏，但**不是**因为编不出自杀局：现金配方就是第三条吃资源的路
@@ -549,7 +617,7 @@ func combo_intact_without(who: String, combo: Dictionary, removed: Dictionary) -
 	if not removed.is_empty():
 		alive = alive.filter(func(c): return not removed.has(c["uid"]))
 	if alive.size() < combo["uids"].size():
-		var eval := ComboRules.evaluate(alive)
+		var eval := ComboRules.evaluate(alive, combo_mods(who))
 		if not eval["valid"]:
 			return false
 		# 类型/产物都不能变（例如富余卡被啃到升级判定翻转成另一种产物）
@@ -560,7 +628,8 @@ func combo_intact_without(who: String, combo: Dictionary, removed: Dictionary) -
 	return true
 
 ## 防御 Buff 的保护额度：只护得住「配方真正需要的那几张」
-## 额度 = 核心卡的配方需求量；升级组合是纯卡面合成、里面一张单位卡都没有，额度 0
+## 额度 = 核心卡的配方需求量（角色改过需求时取改后的值，见 ComboRules 的 recipe_need）；
+## 升级组合是纯卡面合成、里面一张单位卡都没有，额度 0
 ## 允许超量投料，但超出配方的富余单位卡不在保护范围内——
 ## 否则一张 6 块的防御卡就能把全部身家停进一个组合，整条攻击线失效
 ##
@@ -572,6 +641,8 @@ static func protect_quota(eval: Dictionary) -> int:
 		return 0
 	if eval.get("filled_by_fission", false):
 		return 1
+	if eval.has("recipe_need"):
+		return int(eval["recipe_need"])
 	return int(CardDB.get_def(eval.get("leader", "")).get("recipe_n", 0))
 
 ## 把场景层现搭的 `piles` 逐摞解成 `[{cards, eval}]`，只留**成立**的那些。
@@ -593,7 +664,7 @@ func _valid_pile_evals(who: String, piles: Array) -> Array:
 				cards.append(c)
 		if cards.is_empty():
 			continue
-		var eval := ComboRules.evaluate(cards)
+		var eval := ComboRules.evaluate(cards, combo_mods(who))
 		if not bool(eval["valid"]):
 			continue
 		out.append({ "cards": cards, "eval": eval })

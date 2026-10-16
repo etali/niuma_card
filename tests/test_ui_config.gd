@@ -145,7 +145,7 @@ func _check_speed_controls(main: Node) -> void:
 	card._process(0.2)
 	check(is_equal_approx(card._hover_elapsed, elapsed + 0.1) and card._hover_frame == 9,
 		"同一次悬停改为半速后立即减速，保持动作连续")
-	check(not FileAccess.file_exists(Config.USER_PATH), "实时调速不会提前写入玩家保存文件")
+	check(not FileAccess.file_exists(Config.user_path()), "实时调速不会提前写入玩家保存文件")
 	page.close_panels()
 	page._open_utility(3)
 	speed = page._utility_body.find_child("HoverAnimationSpeed", true, false)
@@ -254,7 +254,7 @@ func _check_shared_ui_actions(main: Node) -> void:
 		"统一保存同时持久化背景纹理与配色")
 	page._ui_footer.get_node("ResetUISettings").pressed.emit()
 	var defaults := Config.validated_defaults(Config.read_section("defaults"))
-	check(not FileAccess.file_exists(Config.USER_PATH) and not FileAccess.file_exists(Palette.USER_PATH),
+	check(not FileAccess.file_exists(Config.user_path()) and not FileAccess.file_exists(Palette.user_path()),
 		"统一还原清除显示和配色的玩家覆盖")
 	check(page.perspective_angle == defaults["perspective_angle"]
 		and page.camera_view.zoom == defaults["table_zoom"]

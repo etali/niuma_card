@@ -470,7 +470,7 @@ static func recipe_options(state: GameState, who: String, core: Dictionary, para
 				var cards: Array = []
 				for uid in ids:
 					cards.append(state.find_card(who, uid))
-				var ev := ComboRules.evaluate(cards)
+				var ev := ComboRules.evaluate(cards, state.combo_mods(who))
 				if not bool(ev.get("valid", false)):
 					continue
 				var pay := int(ev.get("recipe_pay_n", 0))

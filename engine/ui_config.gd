@@ -6,12 +6,17 @@ class_name UIConfig
 extends RefCounted
 
 const ConfigData = preload("res://engine/config_data.gd")
+const SavePaths = preload("res://engine/save_paths.gd")
 
 ## 展示配置统一入口：启动默认值、配色、素材呈现、资源名称与音效。
 ## 独立于 CardDB / Palette，避免加载环；玩家偏好仍由各自的设置模块覆盖。
 const PATH := "res://data/ui.json"
 const EXTERNAL_FILE := "ui.json"
-const USER_PATH := "user://ui_preferences.json"
+
+## 玩家保存的显示偏好，在玩家数据目录的 settings/（见 engine/save_paths.gd）
+static func user_path() -> String:
+	return SavePaths.settings_file("ui_preferences.json")
+
 const FALLBACK := {
 	"window_fraction": 0.98,
 	"perspective_angle": 80.0,
@@ -113,7 +118,7 @@ static func _config_candidates() -> Array[String]:
 static func read_json(path: String, warn_missing := false) -> Dictionary:
 	return ConfigData.read_dictionary(path, warn_missing, "UI 配置")
 
-## 配置热重载/测试时使用，不触碰 user://palette.json。
+## 配置热重载/测试时使用，不触碰玩家保存的配色。
 static func reset_cache() -> void:
 	_cache.clear()
 	_source = ""
@@ -123,21 +128,21 @@ static func reset_cache() -> void:
 static func read_defaults(path: String = "") -> Dictionary:
 	var values := read_section("defaults", path)
 	if path.is_empty():
-		var user: Variant = read_json(USER_PATH).get("defaults", {})
+		var user: Variant = read_json(user_path()).get("defaults", {})
 		if user is Dictionary:
 			values = ConfigData.overlay(values, user)
 	return validated_defaults(values, path)
 
 static func save_preferences(values: Dictionary) -> bool:
-	var file := FileAccess.open(USER_PATH, FileAccess.WRITE)
+	var file := FileAccess.open(user_path(), FileAccess.WRITE)
 	if file == null:
 		return false
 	file.store_string(JSON.stringify({"defaults": validated_defaults(values)}, "  ", false))
 	return true
 
 static func restore_preferences() -> Dictionary:
-	if FileAccess.file_exists(USER_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(USER_PATH))
+	if FileAccess.file_exists(user_path()):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(user_path()))
 	var defaults := validated_defaults(read_section("defaults"))
 	_hover_animation_speed = defaults["hover_animation_speed"]
 	_screen_shake = defaults["screen_shake"]

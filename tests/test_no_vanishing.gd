@@ -270,10 +270,17 @@ func _t6_replays_live_under_home_dir() -> void:
 		return
 
 	# 默认产品路径只读验证；任何实际保存都必须恢复测试沙箱。
+	# harness 给子进程设的数据目录环境变量也要暂时拿掉，才读得到玩家机器上的默认值。
 	var saved_override: String = Tape.directory_override
+	var saved_data_dir := OS.get_environment(SavePaths.DATA_DIR_ENV)
 	Tape.directory_override = ""
+	OS.unset_environment(SavePaths.DATA_DIR_ENV)
 	var default_dir: String = Tape.path_dir()
+	var default_settings: String = SavePaths.root().path_join(SavePaths.SETTINGS_DIR)
 	Tape.directory_override = saved_override
+	OS.set_environment(SavePaths.DATA_DIR_ENV, saved_data_dir)
+	check(default_settings == default_dir.path_join("settings"),
+		"设置和学习进度与录像同在 ~/.niumapai_record，放在 settings/ 底下（实际 %s）" % default_settings)
 	check(default_dir == home.path_join(".niumapai_record"),
 		"录像目录就是 ~/.niumapai_record（实际 %s）" % default_dir)
 	check(not default_dir.contains("Application Support"),

@@ -308,6 +308,10 @@ static func plate_slot(def_id: String) -> String:
 			# T1/T2 共用功能色；升级、换名或导入新卡表都不应改变同一方向的配色。
 			return PLATE_T1_MONEY if def.get("output_res") == CardDB.RES_CASH \
 				else PLATE_T1_GROWTH
+		CardDB.KIND_SPECIAL:
+			# 角色专属卡借现有底板，不另开配色槽：「给我」和传说卡同属「不走市场的大牌」，
+			# Idea 和增强 Buff 一样是给别的牌加成的
+			return PLATE_T3 if CardDB.special_type(def_id) == CardDB.SPECIAL_GRAB else PLATE_BUFF_UP
 	return PLATE_T1_MONEY
 
 ## 程序化卡框几何（世界单位）；标题带高度为卡高占比。

@@ -25,7 +25,7 @@ func _run() -> void:
 	root.add_child(sound)
 	check(not sound.user_muted and not sound.muted, "抽屉临时静音不会写成用户偏好")
 
-	var path := ProjectSettings.globalize_path(Sfx.PREF_PATH)
+	var path := ProjectSettings.globalize_path(Sfx.pref_path())
 	DirAccess.remove_absolute(path)
 	DirAccess.make_dir_absolute(path)
 	check(not sound.set_user_muted(true) and sound.user_muted, "持久写入失败返回失败，当前静音仍即时生效")
@@ -40,14 +40,16 @@ func _run() -> void:
 	check(not sound.user_muted, "错误类型的旧偏好安全回退默认值")
 
 	# 两个真正的Godot进程共享runner的临时项目目录，不能依赖静态内存缓存。
-	# 子脚本不继承harness，避免harness按PID再隔离到两个不同目录。
+	# 子脚本不继承harness，避免harness按PID再隔离到两个不同目录；
+	# 设置目录显式指向本测试的沙箱，否则子进程会写进玩家真实的 ~/.niumapai_record。
 	var child_path := ProjectSettings.globalize_path("user://sound-child.gd")
 	file = FileAccess.open(child_path, FileAccess.WRITE)
 	file.store_string("""extends SceneTree
 func _initialize():
  call_deferred("_run")
 func _run():
- var sound = preload("res://scenes/sfx.gd").new()
+ preload("res://engine/save_paths.gd").settings_override = %s
+ var sound = preload("res://scenes/sfx.gd").new()""" % JSON.stringify(SavePaths.settings_dir()) + """
  root.add_child(sound)
  var save = "--save-sound" in OS.get_cmdline_user_args()
  var ok = sound.set_user_muted(true) if save else sound.user_muted

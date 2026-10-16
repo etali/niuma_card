@@ -113,7 +113,8 @@ def main():
                 args[:0] = ["--path", str(project)]
             if "--log-file" not in args:
                 args[:0] = ["--log-file", str(Path(temporary) / "godot.log")]
-            env = dict(os.environ, CARD_TEST_USER_DIR_NAME=token)
+            # 录像和设置默认在 ~/.niumapai_record（engine/save_paths.gd）；不跑 harness 的工具进程也留在沙箱里。
+            env = dict(os.environ, CARD_TEST_USER_DIR_NAME=token, CARD_DATA_DIR=str(user_dir / "player-data"))
             return subprocess.call([godot, *args], env=env)
     finally:
         cleanup_user_data(user_dir)

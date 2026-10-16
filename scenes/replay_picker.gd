@@ -4,6 +4,8 @@
 
 extends CanvasLayer
 
+const SavePaths = preload("res://engine/save_paths.gd")
+
 ## 与选项/联网表单相同的游戏内窗口，不创建 macOS 原生子窗口。
 ## 避免原生菜单关闭、FileDialog取得焦点和抽屉收放在同一回调中重入。
 signal file_selected(path: String)
@@ -107,12 +109,16 @@ func _browse(path: String) -> void:
 	var files := directory.get_files()
 	directories.sort()
 	files.sort()
+	# 录像根目录下的 settings/ 是设置与学习进度，不是录像，不列出来。
+	var settings_dir := SavePaths.settings_dir()
 	for name in directories:
+		if _directory.path_join(name).simplify_path() == settings_dir:
+			continue
 		_add_entry(name, true)
 	for name in files:
 		if name.get_extension().to_lower() == "json":
 			_add_entry(name, false)
-	_status.text = "此目录没有录像" if files.is_empty() and directories.is_empty() else ""
+	_status.text = "此目录没有录像" if _entries.is_empty() else ""
 
 func _add_entry(file: String, directory: bool) -> void:
 	_entries.append(_directory.path_join(file))

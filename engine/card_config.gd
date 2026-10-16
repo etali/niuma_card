@@ -7,10 +7,13 @@ extends RefCounted
 
 ## 单机自定义卡表选择器。
 ## 当前对局不热替换状态；选择成功后从下一局生效。联网入口要求先恢复内置卡表并重开。
-const PREF_PATH := "user://cards_config.json"
 const DEFAULT_PATH := "res://data/cards.json"
 const Rules = preload("res://engine/card_config_rules.gd")
 const JsonStore = preload("res://engine/json_store.gd")
+const SavePaths = preload("res://engine/save_paths.gd")
+
+static func pref_path() -> String:
+	return SavePaths.settings_file("cards_config.json")
 
 static var _selected_path := ""
 static var _loaded := false
@@ -96,16 +99,16 @@ static func _load_pref() -> void:
 	if _loaded:
 		return
 	_loaded = true
-	if not FileAccess.file_exists(PREF_PATH):
+	if not FileAccess.file_exists(pref_path()):
 		return
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(PREF_PATH))
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(pref_path()))
 	if parsed is Dictionary:
 		var path := str(parsed.get("path", ""))
 		if not path.is_empty() and _validate_custom(path)["ok"]:
 			_selected_path = _normalize(path)
 
 static func _save_pref(path: String) -> bool:
-	return JsonStore.save(PREF_PATH, {"path": path})
+	return JsonStore.save(pref_path(), {"path": path})
 
 static func _normalize(path: String) -> String:
 	var value := path.strip_edges()

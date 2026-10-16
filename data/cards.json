@@ -1,5 +1,5 @@
 {
-  "_comment": "牛马牌 · 卡牌配置。kind: unit/product/attack/buff/legend；price=-1 不进公共区；weight=公共区权重；recipe_*=生产或攻击配方；output_*=产出；attack_*=攻击；upgrade_from=升级来源：具体卡面 id 表示同名 T1 升对应 T2，历史占位键 dup_t2 表示同档生产卡升传说（允许同名或异名，T1/T2 不混用）；upgrade_dup_n=来源侧所需张数，实际材料数由 _upgrade.routes.per 折算，必须精确相等；升级只放生产卡，不夹资源、Buff、攻击、传说或未知卡，不吃现金和用户；buff_type=user_fill（组内有≥1张用户卡即视为用户配方补满）/output_x2/attack_x2/protect_user/protect_cash；pawn=可选固定出售价格，缺省按公式计算",
+  "_comment": "牛马牌 · 卡牌配置。kind: unit/product/attack/buff/legend/special；special=角色专属卡（special 字段区分 grab=「给我」白拿购牌区一张牌、idea=顶替一张 T1 生产卡参与升级；两者都不进公共区、不能典当、不能被攻击）；price=-1 不进公共区；weight=公共区权重；recipe_*=生产或攻击配方；output_*=产出；attack_*=攻击；upgrade_from=升级来源：具体卡面 id 表示同名 T1 升对应 T2，历史占位键 dup_t2 表示同档生产卡升传说（允许同名或异名，T1/T2 不混用）；upgrade_dup_n=来源侧所需张数，实际材料数由 _upgrade.routes.per 折算，必须精确相等；升级只放生产卡，不夹资源、Buff、攻击、传说或未知卡，不吃现金和用户；buff_type=user_fill（组内有≥1张用户卡即视为用户配方补满）/output_x2/attack_x2/protect_user/protect_cash；pawn=可选固定出售价格，缺省按公式计算",
   "_game": {
     "_note": "全局规则数值：market_size=每回合公共区卡位数；start_cash/start_user=开局资源；win_cash=资金胜利线；res_labels=资源的计量名（卡名取自各资源卡自己的 name）；buff_mult=各 buff_type 的倍率（键必须是 CardDB.KNOWN_BUFF_TYPES 里的值，缺一项就等于那张 Buff 不生效，所以 ComboRules 和卡面记号都从这里取，不各写一份 2）；attack_cost_per_card=点掉一张单位卡要几点攻击（组内组外同价，掩体由防御 Buff 提供；抬它等于全线削弱攻击射程，攻击量上限的判据会跟着放宽，见 test_simulator 那条一回合斩护栏）；pawn_rate=典当折价的除数（标价÷它、T2 材料购牌价之和也÷它；这个数原先在 CardDB.pawn_value 里写两遍、balance.md 和 README.md 里各抄了一份「÷2」，是纯经济旋钮，抬它等于全线削弱典当这条救命通道）；pawn_user=一张用户卡当掉给几块（现金卡不可当，恒为 0，那不是旋钮而是规则）。注意这两个只管**公式**：三张传说卡不走公式，价钱写在各自的 pawn 字段上",
     "market_size": 8,
@@ -45,6 +45,65 @@
         "require_multiple": true
       }
     ]
+  },
+  "_roles": {
+    "_note": "开局角色（README.md §「2.12 角色」）。每个非下划线键是一个角色，顺序即界面列表顺序；name=角色名，tag=牌桌读数里跟在公司名后面的短名；niuma 是默认角色，联网与 BOT 固定使用它。start_cash/start_user=开局资源，缺省沿用 _game 的同名值；start_cards=开局额外发的卡（def_id 列表）；recipe_mult=按配方资源缩放配方需求（如 user 0.5 = 需要用户的配方张数减半）；output_mult=按产出资源缩放生产组合的最终产出（已含 Buff 倍率）。缩放结果一律向上取整，产出与需求至少为 1；升级组合不受产出倍率影响。note=效果说明里数值以外的补充文字，数值由界面从上面的字段生成，不在文案里抄一份",
+    "niuma": {
+      "name": "我是牛马",
+      "tag": "牛马"
+    },
+    "boss": {
+      "name": "我是BOSS",
+      "tag": "BOSS",
+      "start_cards": [
+        "geiwo"
+      ],
+      "note": "把「给我」拖到购牌区任意一张牌上就能直接拿走，不花现金；用完即消失，不能典当。"
+    },
+    "yunying": {
+      "name": "我是运营",
+      "tag": "运营",
+      "start_cash": 8,
+      "start_user": 20
+    },
+    "hr": {
+      "name": "我是HR",
+      "tag": "HR",
+      "recipe_mult": {
+        "user": 0.5
+      }
+    },
+    "pm": {
+      "name": "我是产品经理",
+      "tag": "产品经理",
+      "start_cards": [
+        "idea"
+      ],
+      "note": "「Idea」可以顶替任意一张未升级的生产卡参与升级：和一张未升级的生产卡叠在一起，就升成它的升级版；合成传说时也能顶替其中一张。用完即消失，不能典当。"
+    },
+    "yongzeng": {
+      "name": "我是用增",
+      "tag": "用增",
+      "output_mult": {
+        "user": 2,
+        "cash": 0.5
+      }
+    },
+    "caiwu": {
+      "name": "我是财务",
+      "tag": "财务",
+      "output_mult": {
+        "cash": 2,
+        "user": 0.5
+      }
+    },
+    "touzi": {
+      "name": "我是投资人",
+      "tag": "投资人",
+      "start_cash": 25,
+      "start_user": 1,
+      "note": "开局用户只有 1 个，之后的增长不受这个数限制；但这 1 个用户一旦被打掉就会判负。"
+    }
   },
   "cash": {
     "name": "现金",
@@ -407,5 +466,23 @@
     "weight": 3,
     "buff_type": "protect_cash",
     "flavor": "你打价格战？我跟，全场五折还送券"
+  },
+  "geiwo": {
+    "name": "给我",
+    "kind": "special",
+    "special": "grab",
+    "tier": 0,
+    "price": -1,
+    "weight": 0,
+    "flavor": "老板伸手，从不说谢谢"
+  },
+  "idea": {
+    "name": "Idea",
+    "kind": "special",
+    "special": "idea",
+    "tier": 1,
+    "price": -1,
+    "weight": 0,
+    "flavor": "我有一个想法，明天就要"
   }
 }

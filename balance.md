@@ -170,3 +170,25 @@ Q10 衡量**导致胜利的最终机制**的分布：常规分为普通现金达
 | 热搜包年 | `C.resou` | `C.resou.buff_type` | `C._game.buff_mult.attack_x2` | `C.resou.price` / `C.resou.weight` | `pawn(C.resou)` |
 | 推送弹窗 | `C.tuisong` | `C.tuisong.buff_type` | 由 `ComboRules` / `GameState` 的规则语义决定 | `C.tuisong.price` / `C.tuisong.weight` | `pawn(C.tuisong)` |
 | 降价促销 | `C.jiangjia` | `C.jiangjia.buff_type` | 由 `ComboRules` / `GameState` 的规则语义决定 | `C.jiangjia.price` / `C.jiangjia.weight` | `pawn(C.jiangjia)` |
+
+### 角色专属卡
+
+| 卡牌 | 定义 | 用途 | 价格 / 权重 | 典当 |
+|---|---|---|---|---|
+| 给我 | `C.geiwo` | `C.geiwo.special`：白拿购牌区一张牌 | `C.geiwo.price` / `C.geiwo.weight` | `pawn(C.geiwo)` |
+| Idea | `C.idea` | `C.idea.special`：顶替一张 T1 生产卡参与升级 | `C.idea.price` / `C.idea.weight` | `pawn(C.idea)` |
+
+## 角色
+
+角色是固定规则段，不在手动调参的可编辑字段里；改角色数值请直接改 `C._roles`。开局资源缺省沿用 `C._game.start_cash` / `C._game.start_user`，倍率缩放一律向上取整（`Roles.scale`）。
+
+| 角色 | 开局资源 | 开局额外的卡 | 倍率 |
+|---|---|---|---|
+| 我是牛马 | 沿用 `C._game` | — | — |
+| 我是BOSS | 沿用 `C._game` | `C._roles.boss.start_cards` | — |
+| 我是运营 | `C._roles.yunying.start_cash` / `C._roles.yunying.start_user` | — | — |
+| 我是HR | 沿用 `C._game` | — | 配方需求 `C._roles.hr.recipe_mult.user` |
+| 我是产品经理 | 沿用 `C._game` | `C._roles.pm.start_cards` | — |
+| 我是用增 | 沿用 `C._game` | — | 产出 `C._roles.yongzeng.output_mult.user` / `C._roles.yongzeng.output_mult.cash` |
+| 我是财务 | 沿用 `C._game` | — | 产出 `C._roles.caiwu.output_mult.cash` / `C._roles.caiwu.output_mult.user` |
+| 我是投资人 | `C._roles.touzi.start_cash` / `C._roles.touzi.start_user` | — | — |
