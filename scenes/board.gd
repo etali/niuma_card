@@ -60,6 +60,8 @@ var _drag_src_upgrade := ""
 ## 同样是一次结果没变却响了的误报
 var _pickup_quiet := false
 var _grab_offset := Vector3.ZERO   # 点击瞬间：鼠标点 → 被点卡中心 的偏移
+## 拖拽平面上「手」抓着的那一点，见 drag_hand_point
+var _drag_hand_at := Vector3.INF
 var _hover_group = null
 var _hover_card: CardEntity = null
 ## 抽屉已有屏幕空间说明，只保留拾取和卡面悬停，不再建立被立即隐藏的 3D 文案。
@@ -122,6 +124,12 @@ var _pointer_at := Vector2.INF
 
 func pointer_position() -> Vector2:
 	return _pointer_at if touch_mode and _pointer_at != Vector2.INF else get_viewport().get_mouse_position()
+
+## 拖动中手在拖拽平面上的位置；没在拖时为 INF。
+## 不碰边界时投影回屏幕就是本帧读到的鼠标点；碰到边界时随牌一起停住。
+## 每帧在牌摆好的同时更新，TableHands 据此把手和牌画在同一帧（见 table_hands.gd）
+func drag_hand_point() -> Vector3:
+	return _drag_hand_at if not _drag_cards.is_empty() else Vector3.INF
 
 func _input(event: InputEvent) -> void:
 	if touch_mode and event is InputEventMouse:
@@ -500,6 +508,7 @@ func _on_card_clicked(card: CardEntity, notify_started := true) -> void:
 	# 抓取点 = 鼠标点击位置（而非卡中心），拖动时卡牌不跳位
 	var grab := _mouse_table_point()
 	_grab_offset = card.global_position - grab if grab != Vector3.INF else Vector3.ZERO
+	_drag_hand_at = grab
 	var anchor := card.global_position
 	for c in _drag_cards:
 		c.freeze = true
@@ -735,6 +744,8 @@ func _process(delta: float) -> void:
 	anchor.y = DRAG_HEIGHT
 	if screen_position_clamper.is_valid():
 		anchor = screen_position_clamper.call(anchor, held_bounds)
+	# 从夹取后的锚点反推，不直接用 target：碰到边界时手随牌停住，不与牌分开
+	_drag_hand_at = Vector3(anchor.x - _grab_offset.x, DRAG_HEIGHT, anchor.z - _grab_offset.z)
 	for i in _drag_cards.size():
 		var c := _drag_cards[i]
 		var pos := anchor + _drag_offsets[i]

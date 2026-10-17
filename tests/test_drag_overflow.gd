@@ -83,8 +83,29 @@ func _check_drag(size: Vector2i, pitch: float) -> void:
 		check(merged != null and members.all(func(c): return merged["cards"].has(c)), tag + "：按实际松手目标合并底部" + ("已有牌组" if grouped else "散卡"))
 		check((members + target_cards).all(func(c): return content.grow(0.2).encloses(_face(camera, c.position))), tag + "：合并完成后整个新组安全落回可见区")
 		await _clear(board, members + target_cards)
+	await _check_hand_point(world, board, requested, tag)
 	world.queue_free()
 	await process_frame
+
+## 手点 = 夹取后的锚点 − 抓取偏移：不碰边界时就是鼠标点，越界时随牌停住。
+func _check_hand_point(world: Node3D, board: PointerBoard, inside: Vector3, tag: String) -> void:
+	var loose := _pile(world, board, 1, Vector3(0, 0.05, 2.2))
+	await create_timer(0.25).timeout
+	var grip := Vector3(0.3, 0, -0.2)
+	board.pointer = loose[0].global_position + grip
+	board._on_card_clicked(loose[0])
+	check(board.drag_hand_point().is_equal_approx(board.pointer), tag + "：抓起当帧手点就是按下点")
+	board.pointer = inside + grip
+	board._process(0.016)
+	check(board.drag_hand_point().distance_to(board.pointer) < 0.001, tag + "：不碰边界时手点就是鼠标点")
+	board.pointer = inside + grip + Vector3(0, 0, 1000)
+	board._process(0.016)
+	var hand := board.drag_hand_point()
+	check(hand.z < board.pointer.z - 1.0 and Vector2(hand.x - loose[0].position.x, hand.z - loose[0].position.z).distance_to(Vector2(grip.x, grip.z)) < 0.001
+		and is_equal_approx(hand.y, Board.DRAG_HEIGHT), tag + "：越界时手随牌停在边上，仍抓着同一点")
+	board.cancel_drag()
+	check(board.drag_hand_point() == Vector3.INF, tag + "：放下后不再给手点")
+	await _clear(board, loose)
 
 func _pile(world: Node3D, board: Board, count: int, at: Vector3, compact := false) -> Array:
 	var cards: Array = []

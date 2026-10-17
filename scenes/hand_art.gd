@@ -4,7 +4,7 @@
 
 extends RefCounted
 
-## 系统光标与撕牌手势共享轮廓；轮廓只平滑一次，光标图片只在尺寸/姿势改变时生成。
+## 系统光标、拖动中的抓握手与撕牌手势共享轮廓；轮廓只平滑一次，光标图片只在尺寸/姿势改变时生成。
 const INK := Color(0.18, 0.16, 0.12)
 const PAPER := Color(0.96, 0.92, 0.81)
 const ANGRY := Color(0.72, 0.19, 0.15)
@@ -72,6 +72,13 @@ static func cursor_scale(canvas_scale: float, native_pixel_scale: float) -> floa
 static func cursor(mode: String, magnification: float) -> Dictionary:
 	var key := "%s:%.2f" % [mode, magnification]
 	if _cursors.has(key):
+		return _cursors[key]
+	if mode == "hidden":
+		# 拖动时手由场景与牌同帧绘制，系统光标换成透明图；不改 mouse_mode，
+		# 移出窗口仍是系统自己的指针。
+		var blank := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		blank.fill(Color(0, 0, 0, 0))
+		_cursors[key] = {"image": blank, "hotspot": Vector2.ZERO}
 		return _cursors[key]
 	var grip := mode == "grip"
 	var angry := mode == "angry"

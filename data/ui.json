@@ -405,12 +405,12 @@
       "geiwo": {
         "file": "icon/icon_geiwo.png",
         "zh": "给我",
-        "style": "诙谐手绘简笔画，原色透明插画（tools/gen_role_icons.py 生成）"
+        "style": "诙谐手绘简笔画，原色透明插画（imagegen 原稿，局部原像素动画）"
       },
       "idea": {
         "file": "icon/icon_idea.png",
         "zh": "Idea",
-        "style": "诙谐手绘简笔画，原色透明插画（tools/gen_role_icons.py 生成）"
+        "style": "诙谐手绘简笔画，原色透明插画（imagegen 原稿，局部原像素动画）"
       }
     },
     "misc": {
@@ -891,8 +891,8 @@
           ]
         },
         "geiwo": {
-          "frames": 24,
-          "play_mode": "loop",
+          "frames": 38,
+          "play_mode": "once",
           "loop_pause": 0.65,
           "codec": "hdelta-v1",
           "file": "icon/hover/geiwo.hdelta",
@@ -902,7 +902,7 @@
           ]
         },
         "idea": {
-          "frames": 24,
+          "frames": 42,
           "play_mode": "loop",
           "loop_pause": 0.65,
           "codec": "hdelta-v1",

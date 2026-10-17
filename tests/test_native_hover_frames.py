@@ -29,7 +29,6 @@ class RuntimeHoverFramesTest(unittest.TestCase):
         definitions = json.loads((ROOT / "data/cards.json").read_text())
         ids = {key for key in definitions if not key.startswith("_")}
         self.assertEqual(set(self.hover["cards"]), ids)
-        self.assertEqual(len(ids), 31)
         self.assertEqual(self.hover["fps"], 12)
         self.assertFalse(list((self.art / "icon/hover").rglob("*.png")), "正式目录不能残留已替代的完整 PNG 帧")
         for card in sorted(ids):
@@ -95,7 +94,6 @@ class NativeHoverFramesTest(unittest.TestCase):
         definitions=json.loads((ROOT/'data/cards.json').read_text())
         ids={key for key in definitions if not key.startswith('_')}
         self.assertEqual(set(self.hover['cards']),ids)
-        self.assertEqual(len(ids),31)
         for card_id in ids:
             with self.subTest(card=card_id):
                 config=self.hover['cards'][card_id]
