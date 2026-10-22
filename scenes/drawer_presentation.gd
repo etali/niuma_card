@@ -108,6 +108,7 @@ var _last_size := Vector2.ZERO
 var _viewport_pixels := Vector2.ZERO
 var _ui_scale := 1.0
 var _collapsed := false
+var contextual_coach: Control
 var _table_ui_suspended := false
 var _external_panels: Array[CanvasLayer] = []
 var _learning_hidden_panels: Array[Node] = []
@@ -156,6 +157,9 @@ func bind(main: Node) -> void:
 	_build_details()
 	TutorialProgress.settle_returning_player()
 	_build_learning_invitation()
+	contextual_coach = preload("res://scenes/contextual_coach.gd").new()
+	add_child(contextual_coach)
+	contextual_coach.bind(self)
 	for panel in [_header, _footer, _detail, _main.table_hud]:
 		_guard_table_panel(panel, false)
 	for panel in [_utility, _main.msg_log]:
@@ -710,6 +714,7 @@ func start_tutorial(id: String) -> bool:
 	if not scope.begin(_main):
 		return false
 	set_learning_focus(true)
+	contextual_coach.hide()
 	close_panels()
 	_learning_invitation.hide()
 	_tutorial_context = scope
@@ -751,6 +756,7 @@ func finish_tutorial(show_courses := false) -> void:
 	if not _tearing_down:
 		_main.btn_resign.visible = _tutorial_resign_visible
 		set_learning_focus(false)
+		contextual_coach.resume_after_tutorial()
 	if is_instance_valid(player):
 		player.queue_free()
 	if not _tearing_down and is_inside_tree() and is_instance_valid(_main) and not _main.is_queued_for_deletion():
@@ -1536,6 +1542,9 @@ func panels_open() -> bool:
 
 ## 这些工具页均为非模态；只能在自己的可见矩形内挡住牌桌输入。
 func pointer_over_panels(point: Vector2) -> bool:
+	if is_instance_valid(contextual_coach) and contextual_coach.is_visible_in_tree() \
+			and contextual_coach.get_global_rect().has_point(point):
+		return true
 	if is_instance_valid(tutorial) and tutorial.is_visible_in_tree() \
 		and tutorial.get_global_rect().has_point(point):
 		return true
@@ -1572,6 +1581,7 @@ func _close_native_popups(node: Node) -> void:
 ## 收起时隐藏工具页和终局提示，不清除输入、不取消联网；展开后还原原来的页。
 func suspend_panels() -> void:
 	_table_ui_suspended = true
+	if is_instance_valid(contextual_coach): contextual_coach.hide()
 	# 隐藏祖先画布，后台攻击/回合刷新仍可更新子控件的真实可见状态。
 	# 这样收起期间新出现的攻击提示不会渲染，展开也不会恢复过期状态。
 	_main.table_hud.hide()

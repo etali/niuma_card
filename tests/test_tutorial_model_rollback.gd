@@ -214,8 +214,8 @@ func _test_surplus_preparation() -> void:
 	var before := wrong.capture_operation()
 	var cash := _ids(wrong, "cash", 7)
 	_move(wrong, cash)
-	check(not wrong.review_operation(before, "layout", {"picked_uids": cash})["expected"]
-		and not wrong.review_operation(before, "layout")["expected"], "所需材料是用户，拆现金仍不是合法准备")
+	check(wrong.review_operation(before, "layout", {"picked_uids": cash})["expected"]
+		and wrong.review_operation(before, "layout")["expected"], "当前无需现金也允许整理纯现金摞")
 	wrong.restore_operation(before)
 	var users := _ids(wrong, "user", 8)
 	_move(wrong, users.slice(0, 2), int(cash[0]))
@@ -360,7 +360,7 @@ func _test_misplaced_resources() -> void:
 	var cash := _ids(session, "cash", 10)
 	var before := session.capture_operation()
 	_move(session, users, attack)
-	check(session.review_operation(before, "layout")["expected"] and not session.step_complete, "做空放10用户真实合法，不因示例只需6用户就拒绝")
+	check(session.review_operation(before, "layout")["expected"] and session.step_complete, "做空放10用户真实合法，攻击目标无需额外完成生产组合")
 	before = session.capture_operation()
 	_move(session, cash, business)
 	check(not session.review_operation(before, "layout")["expected"], "云课堂放整摞现金不能冒充增加用户的配方准备")
@@ -368,7 +368,7 @@ func _test_misplaced_resources() -> void:
 	for uid in cash:
 		before = session.capture_operation()
 		_move(session, [uid])
-		check(session.review_operation(before, "layout", {"picked_uids": [uid]})["expected"] and not session.step_complete,
+		check(session.review_operation(before, "layout", {"picked_uids": [uid]})["expected"] and session.step_complete,
 			"从历史错配中拆出现金%s属于修正，不被进度不增加拦截" % uid)
 	check(_counts(session, business) == {"yunketang": 1} and _counts(session, attack).get("user") == 10,
 		"最后一张错误现金也能拆走，保留另一组全部正确用户")
@@ -693,7 +693,7 @@ func _test_preparation_and_cleanup() -> void:
 	var prepared := recipe.capture_operation()
 	var cash := _ids(recipe, "cash", 1)
 	_move(recipe, cash)
-	check(not recipe.review_operation(prepared, "layout", {"picked_uids": cash})["expected"], "当前不需要现金，拆现金不能冒充准备")
+	check(recipe.review_operation(prepared, "layout", {"picked_uids": cash})["expected"], "无关的纯现金整理不受目标限制")
 	var independent := TutorialSession.new("independent")
 	for _i in 3:
 		independent.run_example()

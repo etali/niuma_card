@@ -72,6 +72,30 @@ static func course(id: String) -> Dictionary:
 	var item: Variant = read().get("courses", {}).get(id, {})
 	return item if item is Dictionary else {}
 
+static func request_first_game_help() -> bool:
+	if tip_seen("first_game"): return true
+	var value := read()
+	value["first_game_help"] = true
+	return Store.save(path(), value)
+
+static func consume_first_game_help() -> bool:
+	var value := read()
+	if not value.get("first_game_help", false): return false
+	value["first_game_help"] = false
+	Store.save(path(), value)
+	return true
+
+static func tip_seen(id: String) -> bool:
+	var tips: Variant = read().get("tips", {})
+	return tips is Dictionary and bool(tips.get(id, false))
+
+static func mark_tip_seen(id: String) -> bool:
+	var value := read()
+	var tips: Dictionary = value.get("tips", {}) if value.get("tips", {}) is Dictionary else {}
+	tips[id] = true
+	value["tips"] = tips
+	return Store.save(path(), value)
+
 static func record(id: String, step: int, status: String) -> bool:
 	if id.is_empty() or status not in ["started", "completed", "viewed", "skipped"]:
 		return false

@@ -51,13 +51,13 @@ func _run() -> void:
 			check(not presentation._utility.visible and not arena.operation_pending and not arena._transition_busy
 				and not player._awaiting_result and player._notice.is_empty(), "连续切课不会回首页，也不留下旧操作锁、确认状态或提示")
 			check(_same_view(view), "连续切课保持原牌桌区域、相机、用户缩放和平移")
-	check(completed_courses == order and presentation.tutorial == null and not main._tutorial_active, "只有七门主线全部学完并点击末课小人后才结束教程")
-	check(visited_steps.size() == 20 and visited_steps.all(func(id): return visited_steps.count(id) == 1)
-		and confirmed_results.size() + reading_count + automatic_steps.size() == 20
-		and automatic_steps.size() == 7 and reading_count == 0,
-		"主线20步各完成一次：7项准备操作直接衔接，关键结果点击继续，没有纯阅读步骤")
+	check(completed_courses == order and presentation.tutorial == null and not main._tutorial_active, "三门基础课学完选择自己玩，结束教程")
+	check(visited_steps.size() == 9 and visited_steps.all(func(id): return visited_steps.count(id) == 1)
+		and confirmed_results.size() + reading_count + automatic_steps.size() == 9
+		and automatic_steps.size() == 6 and reading_count == 0,
+		"主线9步各完成一次：6项操作直接衔接，关键结果点击继续，没有纯阅读步骤")
 	check(main.state == original_state and main.board.cards == original_cards and StateCodec.state_hash(main.state) == original_hash
-		and main.tape.to_dict() == original_tape and _same_view(view), "连续七课后完整恢复原对局、原卡、录像和用户视角")
+		and main.tape.to_dict() == original_tape and _same_view(view), "连续三课后完整恢复原对局、原卡、录像和用户视角")
 	await process_frame
 	await _test_reference_and_switch()
 	await _test_result_wait_lifecycle()
@@ -116,7 +116,7 @@ func _complete_course(player: Node) -> void:
 			var cards: Array = main.board.cards.duplicate()
 			await create_timer(OBSERVATION_TIME).timeout
 			check(player.session.current_step()["id"] == step["id"] and player.session.capture_operation() == snapshot
-				and main.board.cards == cards and main.btn_pass.disabled and player.arena.board.input_locked and player._can_tap(),
+				and main.board.cards == cards and main.btn_pass.disabled and player.arena.board.input_locked and (player._can_tap() or player._checkpoint()),
 				"%s：等待期间保留同一结果牌桌，时间经过不会自动跳过" % step["id"])
 			var current: Dictionary = player.session.current_step()
 			check(player._goal.text.contains(str(current.get("completion_goal", current.get("explanation", "")))),
@@ -125,12 +125,19 @@ func _complete_course(player: Node) -> void:
 				"%s：结算说明里的卡牌与当前业务变量全部展开" % step["id"])
 			await relayout_drawer(main)
 			var index: int = player.session.step_index
+			var originals := {}
+			for entity in player.arena.entities.values():
+				if entity.draggable: originals[entity.uid] = {"entity": entity, "at": player.arena.board.rest_pos(entity)}
 			if confirmed_results.size() % 2 == 0:
 				await _tap_mascot(player)
 			else:
 				await _tap_goal(player)
-			check(player.session.course_id != id or int(player.session.step_index) == index + 1,
+			check(not is_instance_valid(player) or player.session.course_id != id or int(player.session.step_index) == index + 1,
 				"%s：真实点击小人或气泡后仅继续一步" % step["id"])
+			if is_instance_valid(player) and player.session.course_id != id and id in ["income", "growth"]:
+				check(originals.keys().all(func(uid): return player.arena.entities.get(uid) == originals[uid]["entity"] \
+					and player.arena.board.rest_pos(player.arena.entities[uid]).is_equal_approx(originals[uid]["at"])),
+					id + "跨课保留原玩家实体与精确牌位，新发教学牌不会重新理桌")
 		await process_frame
 	if is_instance_valid(presentation.tutorial) and player.session.course_id == id and player.session.completed:
 		check(TutorialCatalog.next_course_id(id).is_empty() and player._goal.text == TutorialCatalog.ui("coach.completed"), "非阅读末步完成后只在最终课程显示结束对白")
@@ -193,13 +200,11 @@ func _test_reference_and_switch() -> void:
 
 func _test_middle_start() -> void:
 	var seen: Array = []
-	check(presentation.start_tutorial("upgrade"), "允许从指定中段课程进入连续教学")
+	check(presentation.start_tutorial("upgrade"), "允许直接选择升级选修")
 	var player: Node = presentation.tutorial
 	player.course_completed.connect(func(id): seen.append(id))
 	await _complete_course(player)
-	check(presentation.tutorial == player and player.session.course_id == "independent", "从升级与变现完成后自动接自己经营，不退回前面课程")
-	await _complete_course(player)
-	check(seen == ["upgrade", "independent"] and presentation.tutorial == null, "中段进入只沿配置顺序教完后续主线，不进入进阶教程")
+	check(seen == ["upgrade"] and presentation.tutorial == null, "选修完成即结束，不强制接独立练习或基础主线")
 	await process_frame
 
 func _test_result_wait_lifecycle() -> void:
@@ -277,10 +282,16 @@ func _test_stop_during_transition() -> void:
 	check(presentation.tutorial == null and not main._tutorial_active and seen.is_empty(), "小人×立即终止，旧等待不会偷偷完成或开启下一课")
 
 func _tap_goal(player: Node) -> void:
+	if player._checkpoint():
+		await tap_drawer_control(player.find_child("ContinueBasics" if player.session.course_id == "income" else "StartPlaying", true, false))
+		return
 	var point: Vector2 = player._goal.get_global_rect().get_center()
 	await _tap_point(point)
 
 func _tap_mascot(player: Node) -> void:
+	if player._checkpoint():
+		await _tap_goal(player)
+		return
 	await _tap_point(player._mascot.get_global_rect().get_center())
 
 func _tap_point(point: Vector2) -> void:

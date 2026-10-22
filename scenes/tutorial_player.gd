@@ -8,6 +8,9 @@ extends Control
 const Catalog = preload("res://engine/tutorial_catalog.gd")
 const Session = preload("res://engine/tutorial_session.gd")
 const Arena = preload("res://scenes/tutorial_arena.gd")
+const Cues = preload("res://scenes/tutorial_cues.gd")
+const Gesture = preload("res://scenes/tutorial_gesture.gd")
+const Progress = preload("res://engine/tutorial_progress.gd")
 const CLICK_DRAG_THRESHOLD := 12.0
 
 signal exited
@@ -35,6 +38,10 @@ var _mascot: TextureRect
 var _bubble: SpeechBubble
 var _close: Button
 var _row: BoxContainer
+var _body: VBoxContainer
+var _choices: VBoxContainer
+var _gesture: Control
+var _cue: Dictionary = {}
 # 原牌桌行动按钮，不在教程中复制。
 var _finish: Button
 var _last_step := -1
@@ -69,9 +76,18 @@ func bind(presentation: Node, course_id: String) -> void:
 	arena.changed.connect(_refresh)
 	arena.operation_finished.connect(_operation_finished)
 	arena.configure_on_table(presentation._main, session)
+	arena.board.pile_toggled.connect(_guide_view_changed)
+	_gesture = Gesture.new()
+	_gesture.player = self
+	add_child(_gesture)
 	visibility_changed.connect(_visibility_changed)
 	resized.connect(_size_changed)
 	presentation._apply_tree_theme(self)
+	_refresh()
+
+func _guide_view_changed() -> void:
+	# 玩家已按提示展开/收起，下一句应指向当前能拿到的牌，不重复上一次错误。
+	_notice = ""
 	_refresh()
 
 func _build_dialogue() -> void:
@@ -105,7 +121,10 @@ func _build_dialogue() -> void:
 	var sentence := HBoxContainer.new()
 	sentence.add_theme_constant_override("separation", 4)
 	sentence.mouse_filter = Control.MOUSE_FILTER_PASS
-	_bubble.add_child(sentence)
+	_body = VBoxContainer.new()
+	_body.mouse_filter = Control.MOUSE_FILTER_PASS
+	_bubble.add_child(_body)
+	_body.add_child(sentence)
 	_goal = _presentation._label("", 15)
 	_goal.name = "TutorialGoal"
 	_goal.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -134,12 +153,47 @@ func _needs_result_confirmation() -> bool:
 		or session.current_step().get("advance", "confirm") == "confirm"
 
 func _can_tap() -> bool:
-	return not _closing and not _reference_open and not arena.operation_pending and (session.completed or _reading_step() or _awaiting_result)
+	return not _checkpoint() and not _closing and not _reference_open and not arena.operation_pending and (session.completed or _reading_step() or _awaiting_result)
+
+func _checkpoint() -> bool:
+	return _awaiting_result and session.course_id in ["income", "attack"] \
+		and int(session.step_index) == session.course_data["steps"].size() - 1
+
+func _refresh_choices() -> void:
+	if not _checkpoint():
+		if is_instance_valid(_choices):
+			_body.remove_child(_choices)
+			_choices.queue_free()
+			_choices = null
+		return
+	if is_instance_valid(_choices): return
+	_choices = VBoxContainer.new()
+	_choices.name = "TutorialChoices"
+	_body.add_child(_choices)
+	var play: Button = _presentation._button(Catalog.ui("coach.play"), 14)
+	play.name = "StartPlaying"
+	play.pressed.connect(_start_playing)
+	_choices.add_child(play)
+	if session.course_id == "income":
+		var more: Button = _presentation._button(Catalog.ui("coach.learn_more"), 14)
+		more.name = "ContinueBasics"
+		more.pressed.connect(_advance)
+		_choices.add_child(more)
+	_presentation._apply_tree_theme(_choices)
+
+func _start_playing() -> void:
+	if not _checkpoint() or _reference_open or arena.operation_pending: return
+	if not session.acknowledge().get("ok", false): return
+	_refresh()
+	Progress.request_first_game_help()
+	exit_tutorial()
 
 func _base_sentence() -> String:
 	if _awaiting_result:
 		var step: Dictionary = session.current_step()
 		var result_text: String = step.get("completion_goal", step.get("explanation", ""))
+		if _checkpoint():
+			return result_text + "\n" + Catalog.ui("coach.income_done" if session.course_id == "income" else "coach.basics_done")
 		# 课末结果同时预告下一课；多数课程以操作结尾，不再另设一个纯阅读步骤。
 		var next_course := Catalog.next_course_id(session.course_id)
 		if int(session.step_index) == session.course_data.get("steps", []).size() - 1 and not next_course.is_empty():
@@ -156,7 +210,7 @@ func _base_sentence() -> String:
 		return Catalog.ui("coach.tap_return", {"goal": goal})
 	if _reading_step():
 		return Catalog.ui("coach.tap_continue", {"goal": goal})
-	return goal
+	return str(_cue.get("text", goal))
 
 func _refresh() -> void:
 	if _closing or session == null or _finish == null:
@@ -166,12 +220,15 @@ func _refresh() -> void:
 		_notice = ""
 		_awaiting_result = false
 		arena.highlight_focus()
+	_cue = Cues.resolve(arena, _finish) if not _awaiting_result and not _reading_step() else {}
+	if is_instance_valid(_gesture): _gesture.set_cue(_cue)
+	_refresh_choices()
 	var sentence := _base_sentence()
 	if not _notice.is_empty():
 		sentence = _notice
 	if _goal.text != sentence:
 		_goal.text = sentence
-	# 展开牌摞时对白不变，但仍要避让牌的落点，不能挡住下一步要拿的牌。
+	# 展开牌摞后提示跟随可取出的牌更新，同时避让下一步要拿的牌。
 	layout_requested.emit()
 	_bubble.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if _can_tap() else Control.CURSOR_ARROW
 	_mascot.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if _can_tap() else Control.CURSOR_MOVE
@@ -230,7 +287,7 @@ func _advance() -> void:
 
 func _continue_course() -> bool:
 	var id := Catalog.next_course_id(session.course_id)
-	return _course_begin(id) if not id.is_empty() else false
+	return _course_begin(id, true) if not id.is_empty() else false
 
 ## 查看课程列表时选课也复用同一教学现场；点当前课继续，内部retry才从头重练。
 func switch_course(id: String) -> bool:
@@ -246,13 +303,13 @@ func _reset_step_feedback() -> void:
 	_notice = ""
 	_reset_pointer()
 
-func _course_begin(id: String) -> bool:
+func _course_begin(id: String, continue_table := false) -> bool:
 	if Catalog.course(id).is_empty(): return false
 	arena.cancel_pending_operation()
 	arena.board.cancel_pointer()
 	_reset_step_feedback()
-	if not session.start(id): return false
-	arena.sync_state(true)
+	if not session.start(id, continue_table): return false
+	arena.sync_state(not continue_table, {}, continue_table)
 	arena.set_transition_busy(_reference_open)
 	_refresh()
 	return true
@@ -293,6 +350,7 @@ func preferred_dock(_available: Vector2) -> String:
 	return "bottom"
 
 func _wants_compact(available: Vector2) -> bool:
+	if _checkpoint(): return false
 	var dpi: float = maxf(1.0, _presentation._ui_scale) if _presentation != null else 1.0
 	return available.y < 320 * dpi and available.x > available.y * 1.8
 
@@ -339,6 +397,7 @@ func preferred_size(available: Vector2) -> Vector2:
 	var factor: float = _presentation._responsive_factor()
 	var dpi: float = maxf(1.0, _presentation._ui_scale)
 	var width := floorf(minf(available.x, 160 * dpi if compact else maxf(330, 440 * factor)))
+	if _checkpoint(): width = minf(available.x, maxf(width, 500 * factor))
 	var avatar := _avatar_size(compact)
 	var panel: StyleBox = _bubble.get_theme_stylebox("panel")
 	var margin := panel.get_minimum_size()
@@ -353,6 +412,8 @@ func preferred_size(available: Vector2) -> Vector2:
 	var lines := paragraph.get_line_count()
 	var text_height := ceilf(text_size.y) + (lines - 1) * _goal.get_theme_constant("line_spacing") + 2
 	var bubble_height := maxf(text_height, _close.get_combined_minimum_size().y) + margin.y
+	if is_instance_valid(_choices):
+		bubble_height += _choices.get_combined_minimum_size().y + _body.get_theme_constant("separation")
 	var height := avatar.y + gap + bubble_height if compact else maxf(avatar.y, bubble_height)
 	return Vector2(width, minf(available.y, height))
 

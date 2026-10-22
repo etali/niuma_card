@@ -37,7 +37,7 @@ func _run() -> void:
 
 	# 两课都以结算收尾：点击结果后直接进入下一课首步。
 	await _settle_case("income", "income.settle", "growth.buy", {"cash": 4}, {"cash": "yunketang"})
-	await _settle_case("growth", "growth.settle", "reserve.buy", {"cash": 4, "user": 2},
+	await _settle_case("growth", "growth.settle", "attack.groups", {"cash": 4, "user": 2},
 		{"cash": "yunketang", "user": "ditui"}, 2)
 	await _settle_case("buffs", "buff.output", "buff.attack", {"cash": 8}, {"cash": "yunketang"})
 	await _growth_alternative()
@@ -116,7 +116,7 @@ func _growth_alternative() -> void:
 	await _finish_step("growth.groups", "growth.settle")
 	if not need(await _wait_step("growth.settle"), "云课堂与拼少少按各自真实配方编组，直接进入结算"): return
 	if not _watch_producers({"cash": "yunketang", "user": "pinshaoshao"}, "拼少少分支"): return
-	await _settle_current("growth", "growth.settle", "reserve.buy", {"cash": 4, "user": 4},
+	await _settle_current("growth", "growth.settle", "attack.groups", {"cash": 4, "user": 4},
 		{"cash": "yunketang", "user": "pinshaoshao"}, recipe)
 
 func _apply_checked_groups(core: CardEntity, groups: Array) -> void:
@@ -379,4 +379,4 @@ func _finish_step(step_id: String, next_step: String) -> void:
 		and StateCodec.snapshot(arena.state) == snapshot and arena.entities.values() == cards,
 		step_id + "：演出结束后结果和牌实体保留，必须点击继续")
 	await relayout_drawer(main)
-	await tap_drawer_control(player._bubble)
+	await tap_drawer_control(player.find_child("ContinueBasics", true, false) if player._checkpoint() else player._bubble)

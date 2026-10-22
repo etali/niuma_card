@@ -25,7 +25,7 @@ func _run() -> void:
 		"只复用App小人和原牌桌，不创建另一套渲染视口")
 	check(player.session.current_step().get("kind") == "buy", "第一句直接要求购牌")
 	check(TutorialCatalog.next_course_id("income") == "growth" and TutorialCatalog.next_course_id("independent") == "", "课程配置顺序决定连续下一课，末课没有多余课程")
-	var target: String = player.session.current_step().get("goal", "")
+	var target: String = player._base_sentence()
 	check(player._goal.text == target, "初始只显示当前目标，不预先堆放帮助")
 	var initial_step: int = player.session.step_index
 	# 跨过旧的自动跳步时限，且组件本身不再注册逐帧计时。
@@ -42,7 +42,7 @@ func _run() -> void:
 	player.arena.finish_action()
 	await create_timer(player.arena.ROLLBACK_DELAY + 0.15).timeout
 	var rollback_text: String = player._goal.text
-	check(rollback_text != target and rollback_text.contains(target) and not player._awaiting_result,
+	check(rollback_text != target and rollback_text.contains(player.session.current_step().get("goal", "")) and not player._awaiting_result,
 		"回滚只显示一句原因，不安排错误的下一步")
 	await create_timer(IDLE_OBSERVATION_TIME).timeout
 	check(player._goal.text == rollback_text and player.session.step_index == initial_step and not player._awaiting_result,
@@ -50,8 +50,8 @@ func _run() -> void:
 	var cash: Array = player.arena.entities.values().filter(func(card): return card.draggable and card.def_id == "cash")
 	player.arena.board.toggle_compact(cash[0])
 	player._refresh()
-	check(player._goal.text == rollback_text and player._notice == rollback_text,
-		"展开牌摞和普通界面刷新不会清掉回滚提示")
+	check(player._goal.text == player._base_sentence() and player._notice.is_empty(),
+		"展开牌摞后清除旧错误，显示当前手势目标")
 	var bought: CardEntity = player.arena.market_cards[0]
 	var purchase_results: Array = []
 	var record_purchase := func(result): purchase_results.append(result)
@@ -82,10 +82,10 @@ func _run() -> void:
 	await relayout_drawer(main)
 	await tap_drawer_control(player._bubble)
 	check(player.session.current_step().get("id") == "income.group" and player._notice.is_empty()
-		and player._goal.text == player.session.current_step().get("goal", ""),
+		and player._goal.text == player._base_sentence(),
 		"普通操作目标不能靠点击对白越过")
 	player.retry()
-	check(player._notice.is_empty() and player._goal.text == player.session.current_step().get("goal", ""),
+	check(player._notice.is_empty() and player._goal.text == player._base_sentence(),
 		"内部重试恢复目标，且不增添教程控制按钮")
 	player.session.step_complete = true
 	player._operation_finished({"expected": true, "rolled_back": false, "reason": ""})
@@ -115,7 +115,7 @@ func _run() -> void:
 		player.arena.sync_state(true)
 		player._refresh()
 		check(player.session.current_step().get("id") == example[1]
-			and player._goal.text == player.session.current_step().get("goal") and not player._goal.text.contains("{"),
+			and player._goal.text == player._base_sentence() and not player._goal.text.contains("{"),
 			"%s：布局使用本步真实目标，卡名与张数模板已经展开" % example[1])
 		await _check_dialogue_layout(main, presentation, player, example[1])
 		player._awaiting_result = true

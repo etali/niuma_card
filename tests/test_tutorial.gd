@@ -5,7 +5,7 @@ extends "res://tests/harness.gd"
 func _initialize() -> void:
 	CardDB.load_default()
 	check(TutorialCatalog.ui("hub.invitation") == "第一次玩牛马牌？", "首次邀请使用配置中的精确文案")
-	check(TutorialCatalog.courses().size() == 8, "七门主线加一门进阶课程")
+	check(TutorialCatalog.courses().size() == 8, "三门基础课、四门选修与兼容旧记录的自主练习")
 	check(TutorialCatalog.topics().size() == 6, "默认速查只呈现六条核心规则")
 	for course in TutorialCatalog.courses(): _test_course(course)
 	_test_early_finish()
@@ -304,6 +304,6 @@ func _test_defense_defeat() -> void:
 
 func _test_optional_chain() -> void:
 	var main: Array = TutorialCatalog.courses().filter(func(course): return not course.get("optional", false))
-	check(main.size() == 7 and TutorialCatalog.course("buffs").get("optional", false), "七门主线，强化牌为进阶教程")
+	check(main.size() == 3 and TutorialCatalog.course("buffs").get("optional", false), "三门主线，其余课程为进阶选修")
 	check(TutorialCatalog.next_course_id("independent") == "" and TutorialCatalog.next_course_id("buffs") == "", "连续教学不进入进阶教程，进阶教程也不接回主线")
-	check(TutorialCatalog.next_course_id("reserve") == "attack" and TutorialCatalog.next_course_id("attack") == "defense", "主线顺序：留现金、干扰对手、守住公司")
+	check(TutorialCatalog.next_course_id("income") == "growth" and TutorialCatalog.next_course_id("growth") == "attack" and TutorialCatalog.next_course_id("attack") == "" and TutorialCatalog.next_course_id("reserve") == "", "主线顺序：收入、扩张、攻击；选修学完即结束")

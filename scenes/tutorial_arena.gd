@@ -402,13 +402,31 @@ func _purchase(cards: Array, market: CardEntity) -> void:
 		result = session.buy(idx, payment["uids"])
 	state = session.state
 	if result.get("ok", false):
-		_table_actions.purchase(idx, market, result, placement)
+		var arrival := _lesson_business_anchor(definition)
+		if placement.is_empty() and arrival != Vector3.INF:
+			arrival = layout._free_spot(arrival, my_seat)
+		_table_actions.purchase(idx, market, result, placement, arrival)
 		_market_ids = state.market.duplicate()
 	else:
 		_table_actions.cancel_purchase_placement(market, placement)
 	if placement.is_empty(): _table_actions.return_purchase_payment(cards)
 	sync_state()
 	_complete_operation(before, "buy", result, {"index": idx, "def_id": definition, "picked_uids": picked_uids})
+
+## 前两课让材料与对应业务处在同侧，避免现金拖动路线穿过云课堂。
+## 只决定新到货/预设牌组的位置；玩家手动摆放和连续教学的既有布局照常保留。
+func _lesson_business_anchor(def_id: String) -> Vector3:
+	if session.course_id not in ["income", "growth"]:
+		return Vector3.INF
+	var definition := CardDB.get_def(def_id)
+	if definition.get("kind") != "product":
+		return Vector3.INF
+	match definition.get("recipe_res", ""):
+		CardDB.RES_USER:
+			return Vector3(6.4, 0.05, layout._unit_anchor(my_seat, CardDB.RES_USER).z)
+		CardDB.RES_CASH:
+			return Vector3(-3.8, 0.05, layout._unit_anchor(my_seat, CardDB.RES_CASH).z)
+	return Vector3.INF
 
 func _pawn(cards: Array) -> void:
 	if not _can_operate(): return
@@ -550,7 +568,7 @@ func _present_produced(event: Dictionary, center: Variant) -> void:
 func _return_cards(cards: Array) -> void:
 	_table_actions.return_cards(cards)
 
-func sync_state(force := false, restore_view: Dictionary = {}) -> void:
+func sync_state(force := false, restore_view: Dictionary = {}, preserve_layout := false) -> void:
 	if _released: return
 	if not _restoring_operation and (force or (operation_pending and _operation_generation != int(session.generation))):
 		cancel_pending_operation()
@@ -588,7 +606,7 @@ func sync_state(force := false, restore_view: Dictionary = {}) -> void:
 			entities.erase(uid)
 	if reset:
 		apply_groups(session.initial_groups)
-	if reset or not fresh.is_empty():
+	if reset or (not fresh.is_empty() and not preserve_layout):
 		layout._tidy_player_idle()
 	layout._layout_bot_idle()
 	if reset or _market_ids != state.market:
@@ -623,9 +641,13 @@ func apply_groups(groups: Array) -> void:
 		if members.is_empty():
 			continue
 		var ignore := {}
+		var anchor := Vector3(0.0, 0.05, 2.4)
 		for card in members:
 			ignore[card.uid] = true
-		var at: Vector3 = group_data.get("at", layout._free_spot(Vector3(0.0, 0.05, 2.4), my_seat, [], ignore)) if group_data is Dictionary else layout._free_spot(Vector3(0.0, 0.05, 2.4), my_seat, [], ignore)
+			var lesson_anchor := _lesson_business_anchor(card.def_id)
+			if lesson_anchor != Vector3.INF:
+				anchor = lesson_anchor
+		var at: Vector3 = group_data["at"] if group_data is Dictionary and group_data.has("at") else layout._free_spot(anchor, my_seat, [], ignore)
 		var compact: bool = group_data.get("compact", true) if group_data is Dictionary else true
 		var group: Dictionary = board.make_group(Board.core_first_order(members), compact)
 		board.groups.append(group)

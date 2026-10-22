@@ -96,7 +96,7 @@ func _navigate(page_id: String) -> void:
 func show_home() -> void:
 	_clear_page("home")
 	_page.add_child(_label(Catalog.ui("hub.short_intro")))
-	var courses := Catalog.courses()
+	var courses := Catalog.courses().filter(func(course): return not course.get("hidden", false))
 	if courses.is_empty():
 		_page.add_child(_label(Catalog.ui("hub.empty")))
 		_finish_page()

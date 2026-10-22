@@ -17,7 +17,7 @@ func _run() -> void:
 	print("=== 简约牌桌教学：真实操作、确认结果、单手撤销 ===")
 	main = await boot_drawer(Vector2i(1280, 800), 1.0, true)
 	if not need(main != null, "原对局启动成功"): return
-	# 到货仍使用正式随机挑空位；固定整条操作路线的表现RNG以便复现。
+	# 固定整条操作路线的表现RNG以便复现。
 	seed(444)
 	var p: Node = main.drawer_presentation
 	p._learning_invitation.hide()
@@ -103,7 +103,7 @@ func _run() -> void:
 	check(_same_table_view(initial_view), "按牌桌操作走到首次课末，始终不改变牌桌构图")
 	await _check_course_clicks()
 	check(p.tutorial == player and player.session.course_id == "growth" and player.arena == stage
-		and not p._utility.visible, "首课点小人后直接接上扩大生意，继续使用同一教学牌桌")
+		and not p._utility.visible, "首课选择继续后直接接上扩大生意，继续使用同一教学牌桌")
 	check(p._end_tutorial_button.visible and p._end_tutorial_button.text == "结束教程",
 		"连续教学时怎么玩旁提供结束教程")
 	await _click_button(p._end_tutorial_button)
@@ -173,13 +173,13 @@ func _check_course_clicks() -> void:
 	var view := _table_view()
 	var scope: RefCounted = main._tutorial_context
 	var next_id := TutorialCatalog.next_course_id(str(player.session.course_id))
-	var next_title := str(TutorialCatalog.course(next_id)["title"])
+	var next_title := TutorialCatalog.ui("coach.learn_more")
 	for touch in [false, true]:
 		if player.session.course_id != checkpoint["course_id"]:
 			await _restore_reading_checkpoint(checkpoint, visual)
 		var mode := "触摸" if touch else "鼠标"
-		check(player._goal.text.ends_with("（点我继续教程：%s）" % next_title),
-			"%s：课末结果同时提示下一课真实标题" % mode)
+		check(player.find_child("ContinueBasics", true, false).text == next_title and player.find_child("StartPlaying", true, false).text == "开始自己玩",
+			"%s：课末结果提供开始自己玩与继续学习两个明确选项" % mode)
 		var outside: Vector2 = main.lbl_round.get_global_rect().get_center()
 		for control in [player._mascot, player._goal]:
 			var target: Vector2 = control.get_global_rect().get_center()
@@ -222,13 +222,19 @@ func _check_course_clicks() -> void:
 		check(Codec.snapshot(stage.state) == checkpoint["state"] and stage.board._drag_cards.is_empty()
 			and _same_table_view(view), "%s：对白手势不改牌局或镜头，也不留下牌桌拖拽" % mode)
 		await _pointer_sequence(player._mascot.get_global_rect().get_center(), player._mascot.get_global_rect().get_center(), touch)
+		check(player.session.course_id == "income", "课末点击小人不会替玩家作选择")
+		var more: Control = player.find_child("ContinueBasics", true, false)
+		await _pointer_sequence(more.get_global_rect().get_center(), more.get_global_rect().get_center(), touch)
 		check(player.session.course_id == next_id and player.session.step_index == 0 and player.arena == stage
 			and main._tutorial_context == scope and player._pressed_control == null,
-			"%s：真实点击小人由输入释放链继续到下一课，复用原教学现场" % mode)
+			"%s：真实点击继续学习按钮到下一课，复用原教学现场" % mode)
 		await _restore_reading_checkpoint(checkpoint, visual)
 		await _pointer_sequence(player._goal.get_global_rect().get_center(), player._goal.get_global_rect().get_center(), touch)
+		check(player.session.course_id == "income", "点击结果对白不会替玩家作选择")
+		more = player.find_child("ContinueBasics", true, false)
+		await _pointer_sequence(more.get_global_rect().get_center(), more.get_global_rect().get_center(), touch)
 		check(player.session.course_id == next_id and player.session.step_index == 0 and player.arena == stage
-			and main._tutorial_context == scope, "%s：真实点击气泡和点击小人继续效果相同" % mode)
+			and main._tutorial_context == scope, "%s：气泡不跳课，明确选择后才继续" % mode)
 
 func _restore_reading_checkpoint(checkpoint: Dictionary, visual: Dictionary) -> void:
 	player.switch_course(str(checkpoint["course_id"]))

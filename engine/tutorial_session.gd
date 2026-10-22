@@ -35,7 +35,9 @@ var _step_rejected := false
 func _init(id: String = "") -> void:
 	if id != "": start(id)
 
-func start(id: String) -> bool:
+func start(id: String, continue_table := false) -> bool:
+	var preserve := continue_table and completed and TutorialCatalog.next_course_id(course_id) == id \
+		and phase == "review" and state != null and state.winner.is_empty()
 	course_data = TutorialCatalog.course(id)
 	if course_data.is_empty():
 		feedback = TutorialCatalog.ui("invalid_course")
@@ -47,9 +49,22 @@ func start(id: String) -> bool:
 	seen_demo = false
 	demo_active = false
 	_demo_snapshot.clear()
-	_scenario_id = ""
+	if preserve:
+		_continue_table(id)
+	else:
+		_scenario_id = ""
 	_enter_step()
 	return true
+
+## 连续基础课沿用玩家刚经营过的桌面，只补充下一课所需的市场与对手。
+func _continue_table(id: String) -> void:
+	_scenario_id = str(course_data["steps"][0]["scenario"])
+	_scenario = TutorialCatalog.scenario(_scenario_id)
+	if id == "attack":
+		state.add_card(GameState.PLAYER, "zuokong")
+		state.add_card(GameState.BOT, "pinshaoshao")
+	_preview_cache = null
+	_next_round()
 
 func current_step() -> Dictionary:
 	var steps: Array = course_data.get("steps", [])
@@ -60,11 +75,13 @@ func current_step() -> Dictionary:
 		var selected := _lesson_business("cash" if alias == "business" else "user")
 		for key in selected:
 			lesson_vars["lesson.%s.%s" % [alias, key]] = selected[key]
-	for field in ["goal", "instruction", "explanation", "hint", "ready_goal", "completion_goal", "rejected_goal"]:
+	for field in ["goal", "instruction", "explanation", "hint", "ready_goal", "completion_goal", "rejected_goal", "funded_goal"]:
 		if step.has(field):
 			step[field] = TutorialCatalog.format_text(str(step[field]), lesson_vars)
 	if _step_rejected and step.has("rejected_goal"):
 		step["goal"] = step["rejected_goal"]
+	if state != null and step.has("funded_goal") and state.resource_count(GameState.PLAYER, "cash") > int(CardDB.get_def("baoyue").get("price", 5)):
+		step["goal"] = step["funded_goal"]
 	if state != null and (_ready_on_entry or step.get("read_when_ready", false)) and _matches(step.get("condition", {})):
 		step["kind"] = "read"
 		step["goal"] = str(step.get("ready_goal", step.get("goal", "")))
@@ -698,6 +715,8 @@ func review_operation(before: Dictionary, action: String, detail: Dictionary = {
 func _operation_expected(before: Dictionary, action: String, detail: Dictionary) -> bool:
 	if detail.get("view_only", false): return true
 	if action == "layout" and _same_partition(before["groups"], _uid_groups(_groups)): return true
+	# 单一种资源的拆分、合拢、搬动不影响课程目标，任何行动步骤都允许整理。
+	if action == "layout" and phase == "action" and before["phase"] == "action" and _resource_only_relayout(before): return true
 	var step := current_step()
 	if action not in step.get("guide", {}).get("actions", []): return false
 	var new_events: Array = events.slice(before["events"].size())
@@ -707,6 +726,15 @@ func _operation_expected(before: Dictionary, action: String, detail: Dictionary)
 			if step.get("condition", {}).get("kind") == "split": return _expected_split(before, detail)
 			var targets := _guide_groups()
 			if targets.is_empty(): return false
+			# 主目标之外的既有业务也可正确配料、清理错料，但不能拆坏有效配方。
+			# 它们只用于判断整理是否合理，不成为必须完成的新目标。
+			var relevant := _target_core_ids(targets)
+			for card in state.players[GameState.PLAYER]["cards"]:
+				var id := str(card["def_id"])
+				var definition := CardDB.get_def(id)
+				if relevant.has(id) or definition.get("kind") not in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]: continue
+				targets.append({id: 1, str(definition["recipe_res"]): int(definition["recipe_n"])})
+				relevant[id] = true
 			var old_groups := _snapshot_groups(before)
 			if not _preserves_other_groups(old_groups, targets): return false
 			if _preparing_removal(old_groups, targets): return true
@@ -727,7 +755,12 @@ func _operation_expected(before: Dictionary, action: String, detail: Dictionary)
 		"pawn":
 			if before["step_complete"]: return false
 			var pawns := _events_of(new_events, Intent.OP_PAWN)
-			if pawns.size() != 1 or pawns[0].get("pawn_cards", []).size() != 1: return false
+			if pawns.size() != 1: return false
+			# 保底练习只要求买到业务且保有周转现金；不限定典当次数或整理方式。
+			if step.get("id") == "reserve.buy":
+				return state.winner.is_empty() and state.resource_count(GameState.PLAYER, "user") >= 1 \
+					and pawns[0].get("pawn_cards", []).all(func(id): return id == "user")
+			if pawns[0].get("pawn_cards", []).size() != 1: return false
 			for planned in step.get("demo", []):
 				if planned.get("op") == "pawn" and pawns[0]["pawn_cards"][0] == planned.get("card"):
 					return _planned_event_count(before["events"], Intent.OP_PAWN, planned) == 0
@@ -744,6 +777,15 @@ func _operation_expected(before: Dictionary, action: String, detail: Dictionary)
 			var hits := _events_of(new_events, Intent.OP_ATTACK)
 			return _expected_attack(before, hits, detail, step)
 	return false
+
+func _resource_only_relayout(before: Dictionary) -> bool:
+	var old_mixed: Array = []
+	var new_mixed: Array = []
+	for group in _snapshot_groups(before):
+		if _pure_resource(_counts(group)).is_empty(): old_mixed.append(_uids(group))
+	for group in _groups:
+		if _pure_resource(_counts(group)).is_empty(): new_mixed.append(_uids(group))
+	return _same_partition(old_mixed, new_mixed)
 
 func _expected_attack(before: Dictionary, hits: Array, detail: Dictionary, step: Dictionary) -> bool:
 	if hits.is_empty(): return false

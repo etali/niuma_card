@@ -1487,6 +1487,7 @@ func _try_buy_impl(market_idx: int, pay_uids: Array = []) -> Dictionary:
 		sfx.play("deny")
 		_show_message(result["reason"], Palette.semantic("danger"))
 		_shake(card)
+		_offer_cash_help(result)
 		return result
 	_commit_buy(market_idx, card, result)
 	return result
@@ -1495,11 +1496,17 @@ func _try_buy_impl(market_idx: int, pay_uids: Array = []) -> Dictionary:
 ## 拖拽买和程序化买共用这一份 —— 两处各抄一遍时，
 ## 「买到手恢复可拖动」这类改动漏掉一处就只在其中一条路上生效
 func _commit_buy(idx: int, card: CardEntity, result: Dictionary, placement: Dictionary = {}) -> void:
+	if is_instance_valid(drawer_presentation): drawer_presentation.contextual_coach.clear("cash")
 	_opening_action_pending = false
 	_refresh_mascot_state()
 	_table_actions.purchase(idx, card, result, placement)
 	_update_hud()
 	_show_message("购入「%s」" % CardDB.card_name(card.def_id), Palette.semantic("success"))
+
+func _offer_cash_help(result: Dictionary) -> void:
+	if result.get("code", "") in ["short", "zero_out"] and is_instance_valid(drawer_presentation) \
+			and is_instance_valid(drawer_presentation.contextual_coach):
+		drawer_presentation.contextual_coach.offer("cash")
 
 func _shake(card: CardEntity) -> void:
 	_card_motion._shake(card)
@@ -1621,6 +1628,7 @@ func _on_dropped_on_market_impl(drag_cards: Array, market_card: CardEntity, plac
 		if placement.is_empty(): _table_actions.return_purchase_payment(drag_cards)
 		sfx.play("deny")
 		_show_message(result["reason"], Palette.semantic("danger"))
+		_offer_cash_help(result)
 		return
 
 	_commit_buy(idx, market_card, result, placement)
@@ -1837,6 +1845,7 @@ func _finish_player_action() -> void:
 		UIMotion.deny_button(btn_pass)
 		sfx.play("deny")
 		_show_message(safety["reason"], Palette.semantic("danger"))
+		if is_instance_valid(drawer_presentation): drawer_presentation.contextual_coach.offer("recipe_cash")
 		return
 	if not _start_client_action():
 		return

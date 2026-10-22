@@ -149,12 +149,9 @@ func _victory_case(course: String, target: String, resize_and_collapse: bool) ->
 		and completed_courses.is_empty(), course + "：胜利演完保留本课结果，不会计时跳到下一课")
 	await _relayout_result()
 	await _click(player._bubble.get_global_rect().get_center())
-	for attempt in 120:
-		if player.session.course_id == next_id: break
-		await create_timer(0.025).timeout
-	check(player.session.course_id == next_id and player.session.step_index == 0
+	check(next_id.is_empty() and player.session.completed
 		and completed_courses == [course] and player.arena == arena and main._tutorial_context == scope,
-		course + "：演出完成并点击对白后进入配置中的下一课，继续复用原教学现场")
+		course + "：选修完成后停在结束对白，不进入其他课程")
 	check(_result_layer() == null and sound.events.count("win") == 1 and _original_untouched(),
 		course + "：续课无胜利面板或重复声音残留，正式对局和录像未被写入")
 	_check_unregistered(result_id, course + "确认续课清理胜利注册")

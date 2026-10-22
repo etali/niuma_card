@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "ui": {
     "complete_action": "完成行动",
     "finish_attack": "结束攻击",
@@ -61,13 +61,13 @@
     "hub.rules": "规则速查",
     "hub.cards": "卡牌总览",
     "hub.upgrades": "升级关系",
-    "hub.start": "开始连续教学",
+    "hub.start": "开始基础教学",
     "hub.resume": "继续本课：{title}",
-    "hub.resume_hint": "从当前课程起点继续，后续课程会依次接上；已完成记录会保留。",
+    "hub.resume_hint": "从本课起点继续练习，已完成记录会保留。基础课可依次衔接，选修学完即可结束。",
     "hub.started": "进行中",
     "hub.intro": "经营公司，争夺市场。配置用户赚钱，花现金扩大规模，也可以攻击对手、合成变现。先攒到 {win_cash} 现金，或把对手的现金、用户任意一种打空，即可获胜。",
     "hub.invitation": "第一次玩牛马牌？",
-    "hub.invitation_body": "从买牌、进攻到防守，七节短课边做边学；随时可以结束教程。",
+    "hub.invitation_body": "先学会赚第一笔钱，再任选扩张和攻击；三段基础教学，随时可以结束。",
     "hub.invitation_start": "带我上手",
     "hub.invitation_skip": "我会玩，直接开局",
     "hub.post_game_nudge": "学一下怎么玩",
@@ -169,18 +169,35 @@
     "coach.drag": "拖动小人，把提示挪开",
     "coach.tap_continue": "{goal}（点我继续）",
     "coach.tap_return": "{goal}（点我结束教程）",
-    "operation_rollback": "已撤回。{goal}",
+    "operation_rollback": "这一步需要先完成当前目标，刚才的操作已撤回。{goal}",
     "operation_rejected": "{reason}。{goal}",
     "hub.other_games": "其他玩法",
     "hub.other_games_close": "收起",
     "hub.short_intro": "先赚到{win_cash}资金，或打空对手的一种资源，就赢了。",
-    "hub.first_round": "从买牌、进攻到防守，按顺序学会七课玩法。",
+    "hub.first_round": "三段基础教学：赚到钱、扩大生意、打断对手。第一段学完即可自己玩。",
     "hub.end_tutorial": "结束教程",
     "coach.tap_next_course": "点我继续教程：{title}",
     "coach.result_next_course": "{goal}（点我继续教程：{title}）",
     "hub.continue_active": "继续教学：{title}",
     "hub.continue_active_hint": "返回牌桌，接着完成当前目标。",
-    "hub.advanced": "{title}（进阶教程）"
+    "hub.advanced": "{title}（进阶教程）",
+    "coach.income_done": "接下来可以开始自己玩，也可以继续学扩张和攻击。",
+    "coach.basics_done": "基础教学完成！去经营自己的公司吧，其他玩法随时可以选学。",
+    "coach.play": "开始自己玩",
+    "coach.learn_more": "继续学扩张和攻击",
+    "gesture.expand": "双击这里展开牌摞；展开后才能取出其中几张。",
+    "gesture.single": "按住最末端的这张{resource}，拖到{target}。",
+    "gesture.suffix": "按住这里，把它和后面的 {count} 张一起拖到{target}。",
+    "gesture.pile": "按住这摞{resource}，拖到{target}。",
+    "gesture.finish": "点击这里的「{action}」。",
+    "gesture.attack": "点击对手「{name}」这一摞，打掉它的配方资源。",
+    "gesture.empty": "牌桌空处",
+    "gesture.pawn": "典当行",
+    "context.cash": "购买后至少留 1 现金。总现金够用时，把散开的现金合成一摞再支付；钱不够可先典当富余用户，或选择更便宜的业务。",
+    "context.upgrade": "这两张同名业务可以升级：单独叠在一起，完成行动时合成。想了解更多，可到教程选学「{title}」。",
+    "context.first_game": "轮到你经营了：买一张业务，按卡面配方叠上资源，再点「完成行动」。需要时可随时打开教程。",
+    "context.dismiss": "知道了",
+    "context.recipe_cash": "配方付款不能把现金付到 0。双击现金业务那摞展开，把其中的现金拖回空处，减少本轮支出后再完成行动。"
   },
   "topics": [
     {
@@ -373,11 +390,11 @@
         },
         {
           "id": "growth.groups",
-          "goal": "把至少 {card.yunketang.recipe_n} 张用户拖到「{card.yunketang.name}」上，再把至少 {lesson.growth.recipe_n} 张现金拖到「{lesson.growth.name}」上。",
+          "goal": "保留赚钱业务，把 {lesson.growth.recipe_n} 张现金拖到「{lesson.growth.name}」上，给拉新业务配好材料。",
           "completion_goal": "赚钱和拉新已经各成一组，各用自己的配方资源；同一张资源不能同时供给两项业务。",
-          "instruction": "双击资源摞拆牌，给「{card.yunketang.name}」拖入至少 {card.yunketang.recipe_n} 张用户，给「{lesson.growth.name}」拖入至少 {lesson.growth.recipe_n} 张现金。",
+          "instruction": "保留赚钱业务，把 {lesson.growth.recipe_n} 张现金拖到「{lesson.growth.name}」上，给拉新业务配好材料。",
           "explanation": "分开两组，才能分别生效。业务牌与另一组的资源混在一起可能让配方失效。",
-          "hint": "双击资源摞拆牌，给「{card.yunketang.name}」拖入至少 {card.yunketang.recipe_n} 张用户，给「{lesson.growth.name}」拖入至少 {lesson.growth.recipe_n} 张现金。",
+          "hint": "保留赚钱业务，把 {lesson.growth.recipe_n} 张现金拖到「{lesson.growth.name}」上，给拉新业务配好材料。",
           "condition": {
             "kind": "groups",
             "requirements": [
@@ -496,6 +513,7 @@
           "kind": "buy",
           "guide": {
             "actions": [
+              "layout",
               "pawn",
               "buy"
             ]
@@ -503,7 +521,8 @@
           "advance": "confirm",
           "goal": "你有 5 现金，试着买下标价 {card.baoyue.price} 的「{card.baoyue.name}」。",
           "hint": "你有 5 现金，试着买下标价 {card.baoyue.price} 的「{card.baoyue.name}」。",
-          "instruction": "你有 5 现金，试着买下标价 {card.baoyue.price} 的「{card.baoyue.name}」。"
+          "instruction": "你有 5 现金，试着买下标价 {card.baoyue.price} 的「{card.baoyue.name}」。",
+          "funded_goal": "现金已经够了。把现金拖到「{card.baoyue.name}」上，支付 {card.baoyue.price} 现金买下它。"
         },
         {
           "id": "reserve.recipe",
@@ -546,7 +565,8 @@
           "hint": "「{card.pinshaoshao.name}」和「{card.ditui.name}」已经配好，用掉了全部现金。点「完成行动」试试。",
           "instruction": "「{card.pinshaoshao.name}」和「{card.ditui.name}」已经配好，用掉了全部现金。点「完成行动」试试。"
         }
-      ]
+      ],
+      "optional": true
     },
     {
       "id": "attack",
@@ -555,21 +575,15 @@
       "steps": [
         {
           "id": "attack.groups",
-          "goal": "双击用户摞展开，分出至少 {card.zuokong.recipe_n} 张拖到「{card.zuokong.name}」上，再把至少 {card.yunketang.recipe_n} 张拖到「{card.yunketang.name}」上。拖中间的一张，会连同它下面的牌一起拖走。",
-          "completion_goal": "经营与攻击配方都已成立。用户可以分配给不同业务，但不能重复使用。",
-          "instruction": "双击用户摞展开，分出至少 {card.zuokong.recipe_n} 张拖到「{card.zuokong.name}」上，再把至少 {card.yunketang.recipe_n} 张拖到「{card.yunketang.name}」上。拖中间的一张，会连同它下面的牌一起拖走。",
+          "goal": "把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」上，准备一次攻击。",
+          "completion_goal": "攻击配方已经成立。接下来用它打断对手的生产。",
+          "instruction": "把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」上，准备一次攻击。",
           "explanation": "用户增长后，才有余力同时支持经营和攻击。",
-          "hint": "双击用户摞展开，分出至少 {card.zuokong.recipe_n} 张拖到「{card.zuokong.name}」上，再把至少 {card.yunketang.recipe_n} 张拖到「{card.yunketang.name}」上。拖中间的一张，会连同它下面的牌一起拖走。",
+          "hint": "把至少 {card.zuokong.recipe_n} 张用户拖到「{card.zuokong.name}」上，准备一次攻击。",
           "condition": {
-            "kind": "groups",
-            "requirements": [
-              {
-                "type": "attack"
-              },
-              {
-                "type": "production"
-              }
-            ]
+            "kind": "group",
+            "type": "attack",
+            "leader": "zuokong"
           },
           "demo": [
             {
@@ -578,10 +592,6 @@
                 {
                   "zuokong": 1,
                   "user": 6
-                },
-                {
-                  "yunketang": 1,
-                  "user": 3
                 }
               ]
             }
@@ -615,10 +625,6 @@
                 {
                   "zuokong": 1,
                   "user": 6
-                },
-                {
-                  "yunketang": 1,
-                  "user": 3
                 }
               ]
             },
@@ -640,7 +646,7 @@
               "attack"
             ]
           },
-          "advance": "confirm"
+          "advance": "operation"
         },
         {
           "id": "attack.result",
@@ -786,7 +792,8 @@
           },
           "advance": "confirm"
         }
-      ]
+      ],
+      "optional": true
     },
     {
       "id": "upgrade",
@@ -894,7 +901,8 @@
           },
           "advance": "confirm"
         }
-      ]
+      ],
+      "optional": true
     },
     {
       "id": "independent",
@@ -984,7 +992,9 @@
           },
           "advance": "confirm"
         }
-      ]
+      ],
+      "optional": true,
+      "hidden": true
     },
     {
       "id": "buffs",

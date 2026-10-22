@@ -76,7 +76,9 @@ func _run() -> void:
 	await _expand(_resource_top("cash"))
 	before = _snapshot()
 	await _drag(main.board.group_of(_resource_top("cash"))["cards"][-1], _free_drop(), true)
-	await _rolled_back(before, "拆错资源恢复整个原组、卡序、展开态和精确位置")
+	await _wait_operation()
+	check(results[-1].expected and StateCodec.snapshot(arena.state) == before.logic.state,
+		"整理无关的现金摞应保留，只改布局不改资源或步骤")
 	await _expand(_resource_top("user"))
 	results.clear()
 	await _drag(main.board.group_of(_resource_top("user"))["cards"][-1], _free_drop())
@@ -214,8 +216,8 @@ func _check_attack_resource_recovery() -> void:
 	])
 	arena.session.preview_groups(arena.current_groups())
 	await create_timer(0.35).timeout
-	check(not arena.session.step_complete and _core_resource_count("yunketang", "cash") == 10
-		and _core_resource_count("zuokong", "user") == 10, "恢复截图：做空占十用户、云课堂错配十现金，目标尚未完成")
+	check(arena.session.step_complete and _core_resource_count("yunketang", "cash") == 10
+		and _core_resource_count("zuokong", "user") == 10, "恢复截图：攻击已配好，无需完成另一项赚钱业务")
 	await _expand(_card("yunketang"))
 	for index in 10:
 		var source := _core_resource_top("yunketang", "cash")
@@ -229,7 +231,7 @@ func _check_attack_resource_recovery() -> void:
 		if cash_group != null and not cash_group.get("compact", false):
 			main.board.toggle_compact(loose_cash)
 			await create_timer(0.25).timeout
-	check(_core_resource_count("yunketang", "cash") == 0 and not arena.session.step_complete,
+	check(_core_resource_count("yunketang", "cash") == 0 and arena.session.step_complete,
 		"最后一张错现金也能拆走，剩裸核心不会被错误回滚")
 
 	await _expand(_card("zuokong"))

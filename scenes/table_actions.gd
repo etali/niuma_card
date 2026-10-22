@@ -139,7 +139,7 @@ func return_cards(cards: Array, anchor := Vector3.INF, compact = null) -> void:
 	else:
 		remaining[0].freeze = false
 
-func purchase(index: int, card: CardEntity, result: Dictionary, placement: Dictionary = {}) -> void:
+func purchase(index: int, card: CardEntity, result: Dictionary, placement: Dictionary = {}, arrival_position := Vector3.INF) -> void:
 	var motion: Node = _motion()
 	for uid in result["removed_uids"]:
 		if host.entities.has(uid):
@@ -147,13 +147,15 @@ func purchase(index: int, card: CardEntity, result: Dictionary, placement: Dicti
 			host.entities.erase(uid)
 	host.market_cards.remove_at(index)
 	_drop_price(index)
-	# 直接拖商品时保留松手处；点击价签/拖现金仍由原占用规则选择到货位置。
+	# 直接拖商品时保留松手处；教程可指定已避让的到货位置，其余沿用随机空位。
 	var target: Vector3
-	if placement.is_empty():
+	if not placement.is_empty():
+		target = card.get_parent().to_local(placement["position"])
+	elif arrival_position != Vector3.INF:
+		target = arrival_position
+	else:
 		target = host.layout._free_spot(
 			Vector3(randf_range(-5, 5), 0.2, Regions.PLAYER_ZONE_Z + 1.6), host.my_seat)
-	else:
-		target = card.get_parent().to_local(placement["position"])
 	target.y = 0.2
 	card.is_market = false
 	card.draggable = true
