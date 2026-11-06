@@ -44,7 +44,7 @@ class BuildImportIsolationTest(unittest.TestCase):
             (reports / 'bot').mkdir(parents=True)
             (reports / 'bot/probe.gd').write_text('extends RefCounted\n')
             (reports / 'bot/probe.gd.uid').write_text('uid://3k6wk5agb61c\n')
-            (reports / 'ai').symlink_to('bot', target_is_directory=True)
+            (reports / 'previous-bot').symlink_to('bot', target_is_directory=True)
             duplicated = subprocess.run([GODOT, '--headless', '--path', tmp, '--import'],
                                         capture_output=True, text=True, timeout=45)
             self.assertEqual(duplicated.returncode, 0, duplicated.stdout + duplicated.stderr)
@@ -74,7 +74,7 @@ class BuildImportIsolationTest(unittest.TestCase):
             self.assertTrue((engine / 'engine.gd').is_file())
             self.assertTrue((engine / 'old.svg.import').is_file())
             self.assertTrue((reports / 'bot/probe.gd').is_file())
-            self.assertTrue((reports / 'ai').is_symlink())
+            self.assertTrue((reports / 'previous-bot').is_symlink())
 
     def test_ignore_marker_is_versioned_but_build_outputs_stay_ignored(self):
         self.assertTrue((ROOT / 'build/.gdignore').is_file())

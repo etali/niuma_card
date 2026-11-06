@@ -7,7 +7,7 @@ const Env = preload("res://engine/bot_environment.gd")
 var fixture: Dictionary
 
 func _initialize() -> void:
-	CardDB.load_from("res://data/cards.json")
+	CardDB.load_from("res://data/on_work_cards.json")
 	var original := CardDB.CARDS.duplicate(true)
 	fixture = JSON.parse_string(FileAccess.get_file_as_string("res://tests/fixtures/bot_formations.json"))
 	_test_replay_no_threat()

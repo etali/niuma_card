@@ -37,28 +37,26 @@ def validate_app(app):
     nonempty(packs[0])
 
 
-def archive_tree(archive, directory, prefix="", exclude_br=False):
+def archive_tree(archive, directory, prefix=""):
     for path in sorted(directory.rglob("*")):
-        if path.is_file() and not (exclude_br and path.suffix == ".br"):
+        if path.is_file():
             archive.write(path, (Path(prefix) / path.relative_to(directory)).as_posix())
 
 
 def package(stage):
     validate_app(stage / "牛马牌.app")
-    for name in ("index.html", "index.js", "index.wasm", "index.pck"):
-        nonempty(stage / "web" / name)
-    nonempty(stage / "cards.json")
-    names = ["web", "牛马牌.app", "cards.json", "牛马牌_web.zip", "牛马牌_mac.zip"]
-    with zipfile.ZipFile(stage / names[3], "w", zipfile.ZIP_DEFLATED) as archive:
-        archive_tree(archive, stage / "web", exclude_br=True)
-    with zipfile.ZipFile(stage / names[4], "w", zipfile.ZIP_DEFLATED) as archive:
+    card_tables = ("on_work_cards.json", "off_work_cards.json")
+    for filename in card_tables:
+        nonempty(stage / filename)
+    name = "牛马牌_mac.zip"
+    with zipfile.ZipFile(stage / name, "w", zipfile.ZIP_DEFLATED) as archive:
         archive_tree(archive, stage / "牛马牌.app", "牛马牌.app")
-        archive.write(stage / "cards.json", "cards.json")
-    for name in names[3:]:
-        with zipfile.ZipFile(stage / name) as archive:
-            if archive.testzip() is not None:
-                raise ValueError(f"压缩包校验失败：{name}")
-    return names
+        for filename in card_tables:
+            archive.write(stage / filename, filename)
+    with zipfile.ZipFile(stage / name) as archive:
+        if archive.testzip() is not None:
+            raise ValueError(f"压缩包校验失败：{name}")
+    return ["牛马牌.app", *card_tables, name]
 
 
 @contextmanager

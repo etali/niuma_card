@@ -6,6 +6,7 @@ shader_type spatial;
 // 实心卡面保留深度写入，堆叠时标题和数字不会穿透前面的牌。
 render_mode unshaded, cull_disabled, depth_draw_opaque;
 #include "res://shaders/card_frame.gdshaderinc"
+#include "res://shaders/card_title.gdshaderinc"
 
 // 设施牌可复用旧插画内部，不采样其毛边外框与标题分隔线。
 uniform bool has_artwork = false;
@@ -32,5 +33,5 @@ void fragment() {
 	float sweep = 1.0 - smoothstep(0.04, 0.15, abs(UV.y - feedback_phase));
 	vec3 lit = card_tint(color, d);
 	color = mix(lit, feedback_color, strength * (rim * 0.58 + sweep * inner * 0.10));
-	ALBEDO = color;
+	ALBEDO = printed_face(UV, color);
 }

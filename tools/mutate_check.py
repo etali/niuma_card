@@ -80,7 +80,7 @@ MUTATIONS = [
      '\t\tif false:',
      "逐键补齐"),
     # 闲置旋钮：配置里摆着但没人读。往 _game 段塞一个谁都不认的键
-    ("data/cards.json",
+    ("data/on_work_cards.json",
      '"start_cash": 20,',
      '"start_cash": 20, "win_user": 999,',
      "_game 段的每个键都有人读"),
@@ -829,7 +829,7 @@ MUTATIONS = [
     # 数据/代码漂移：buff_type 退回 V1.0 的 user_x2。三处消费方一处都不认，
     # 于是「卡不生效 + C 位记号错 + 悬停只剩典当+3」同时出现且**零报错** ——
     # 这是真实误报过一次的形态（旧 cards.json 落在可执行文件旁边）
-    ("data/cards.json",
+    ("data/on_work_cards.json",
      '"buff_type": "user_fill"',
      '"buff_type": "user_x2"',
      "代码不认识的 buff_type", "tests/test_fission_fill.gd"),
@@ -2647,14 +2647,14 @@ MUTATIONS = [
     # 断的是 upgrade_dup_n×2 那几档（【2b】整节），以及「一步和两步同一个终点」。
     # 路线表搬进配置之后，这个坏法**代码一个字都不用改** —— 表里少一行而已，
     # 所以变异也得下在表上，才是在验「少一条路线会不会被抓住」
-    ("data/cards.json",
+    ("data/on_work_cards.json",
      '      { "kind": "product", "tier": 1, "key": "dup_key", "per": 2, "require_multiple": true },\n',
      '',
      "直达", "tests/test_dup_upgrade.gd"),
     # 37b：奇数张也去顶 T2。整数除法把 3 张当 1 张用，而 dup_t2 没有「×1」那一档，
     # 所以 ×3 仍旧落空 —— 真正露出来的是 ×5（5/2==2，正好撞上最低那档）。
     # 关键词因此不能取「奇数张」那条（它压根不红），要取实际红的那句
-    ("data/cards.json",
+    ("data/on_work_cards.json",
      '{ "kind": "product", "tier": 1, "key": "dup_key", "per": 2, "require_multiple": true }',
      '{ "kind": "product", "tier": 1, "key": "dup_key", "per": 2, "require_multiple": false }',
      "只认偶数张", "tests/test_dup_upgrade.gd"),
@@ -2668,7 +2668,7 @@ MUTATIONS = [
     # 「T1 只认偶数张」（per=3 之后 ×9 也成立了）和写着具体张数的那几节。
     # 所以这条守的东西是：调这个旋钮，必然有判据拦下来要求同步 ——
     # 而不是悄悄改掉整套升级阶梯
-    ("data/cards.json",
+    ("data/on_work_cards.json",
      '{ "kind": "product", "tier": 1, "key": "dup_key", "per": 2, "require_multiple": true }',
      '{ "kind": "product", "tier": 1, "key": "dup_key", "per": 3, "require_multiple": true }',
      "直达", "tests/test_dup_upgrade.gd"),
@@ -2842,7 +2842,7 @@ MUTATIONS = [
     # 所以 test_pawn 照旧全绿 —— 红的是那三句留在原地的散文。
     # 这条和 46a-c 合起来说明分工：一边守「代码听不听配置」，
     # 一边守「文档跟不跟配置」，缺哪边都有一整类坏法没人看
-    ("data/cards.json",
+    ("data/on_work_cards.json",
      '    "pawn_rate": 2.0,',
      '    "pawn_rate": 3.0,',
      "T2 的折价率", "tools/check_balance_numbers.py"),
@@ -2853,7 +2853,7 @@ MUTATIONS = [
     # 折价率两处、T2 张数、三张传说卡的价钱，六个数全是手抄的、谁也不查
     #
     # 47a：用户卡价钱调了，README 没跟着改
-    ("data/cards.json",
+    ("data/on_work_cards.json",
      '    "pawn_user": 1\n  },',
      '    "pawn_user": 2\n  },',
      "用户卡的价钱", "tools/check_balance_numbers.py"),
@@ -2861,7 +2861,7 @@ MUTATIONS = [
     # 所以报得出来是**哪一张**漂了
     # 锚在 flavor 那行 + pawn 两行上：`"pawn": 70` 单独一句撞两处
     #（国民应用和上市敲钟同价），只改一处等于随机挑一张，报出来指不到人
-    ("data/cards.json",
+    ("data/on_work_cards.json",
      '    "flavor": "上至八十下至八岁，人手一个",\n    "pawn": 70',
      '    "flavor": "上至八十下至八岁，人手一个",\n    "pawn": 65',
      "的回收价", "tools/check_balance_numbers.py"),
@@ -3525,8 +3525,8 @@ TEST_FOR = {
     "scenes/board.gd": "tests/test_market.gd",
     "scenes/main.gd": "tests/test_arrivals.gd",
     "engine/card_db.gd": "tests/test_simulator.gd",
-    "data/cards.json": "tests/test_simulator.gd",
-    "data/bot.json": "tests/test_simulator.gd",
+    "data/on_work_cards.json": "tests/test_simulator.gd",
+    "data/on_work_bot.json": "tests/test_simulator.gd",
     "data/ui.json": "tests/test_config_complete.gd",
     "engine/match_simulator.gd": "tests/test_simulator.gd",
 }
@@ -3832,7 +3832,7 @@ def main():
         # c 来自 Dictionary（Variant），`:=` 推不出类型 → Parse Error，
         # settle_layout.gd 整份没加载，一条断言都没跑到，
         # tests/harness.gd 那时还照样打「8 通过 / 0 失败」退出码 0
-        # python 判据这一侧对应的是 Traceback：变异把 data/cards.json 改成非法 JSON
+        # python 判据这一侧对应的是 Traceback：变异把 data/on_work_cards.json 改成非法 JSON
         # 之后 json.loads 当场抛，退出码非 0 但一条 `  - ` 都没有 ——
         # 不单独认的话报出来是「MISS，退出码 1，失败 0 条」，
         # 和「判据没覆盖」长得一样，而这里该修的是变异本身

@@ -7,25 +7,32 @@
 from __future__ import annotations
 import argparse
 import copy
+import fcntl
 import hashlib
 import json
 import math
 import os
 from pathlib import Path
 import secrets
+import shutil
 import signal
 import subprocess
 import sys
 import tempfile
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from urllib.parse import unquote, urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from legacy_names import normalize_legacy
 from project_paths import relative_path, display_path, redact_paths, sanitize_file
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from tools.balance import realtime as off_work
+from tools.balance.storage import read_json, atomic_json
+from tools.balance.service import PageSessions, resolve_listener, store_key
+
 WEB = ROOT / 'tools/balance'
 DEFAULT_STORE = ROOT / 'reports/manual_balance'
 LABELS = {'price':'购买价格','pawn':'出售价格','weight':'市场权重','recipe_n':'配方数量','output_n':'产出数量',
@@ -52,6 +59,9 @@ def source_version():
     files = [Path(__file__).resolve(), WEB/'report.html', WEB/'report.js', WEB/'report.css',
              ROOT/'data/card_config_schema.json', Path(__file__).with_name('project_paths.py'),
              Path(__file__).with_name('legacy_names.py')]
+    files.extend(WEB.glob('mode-nav.*'))
+    files.append(Path(__file__).resolve().parent/'balance/service.py')
+    files.extend(WEB / name for name in ('storage.py', 'realtime.py', 'realtime_run.gd', 'realtime.html', 'realtime.js', 'realtime.css'))
     return hashlib.sha256(b''.join(p.read_bytes() for p in files)).hexdigest()[:16]
 
 
@@ -63,25 +73,6 @@ def project_id():
 def same_project(value):
     # 旧服务返回绝对目录；只用于识别并提示重启，不能继续复用旧接口。
     return value in (project_id(), str(ROOT))
-
-
-def read_json(path):
-    return json.loads(Path(path).read_text(encoding='utf-8'))
-
-
-def atomic_json(path, obj):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(obj, ensure_ascii=False, indent=2, allow_nan=False) + '\n'
-    fd, name = tempfile.mkstemp(prefix='.' + path.name, dir=path.parent)
-    try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            f.write(payload)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(name, path)
-    finally:
-        if os.path.exists(name): os.unlink(name)
 
 
 def digest(obj):
@@ -208,8 +199,11 @@ def validate_options(o, schema):
 
 
 def engine_fingerprint():
-    files = sorted((ROOT/'engine').glob('*.gd')) + sorted(WEB.glob('*.gd')) + [
-        ROOT/'tools/eval_report.gd', ROOT/'tools/bot_duel_report.gd', ROOT/'tools/bot_duel.gd', ROOT/'tools/bot_decision_stats.gd', ROOT/'data/bot.json', ROOT/'data/card_config_schema.json']
+    # 上班评估的指纹只覆盖参与回合模拟的规则；调整下班脚本不应使运行中的上班评估失效。
+    files = sorted(p for p in (ROOT/'engine').glob('*.gd') if not p.name.startswith('work_'))
+    files += [p for p in sorted(WEB.glob('*.gd')) if p.name != 'realtime_run.gd']
+    files += [
+        ROOT/'tools/eval_report.gd', ROOT/'tools/bot_duel_report.gd', ROOT/'tools/bot_duel.gd', ROOT/'tools/bot_decision_stats.gd', ROOT/'data/on_work_bot.json', ROOT/'data/card_config_schema.json']
     return digest({str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files})
 
 
@@ -217,7 +211,7 @@ class Workbench:
     def __init__(self, store, godot):
         self.store = Path(store)
         self.godot = str(godot)
-        self.base = read_json(ROOT/'data/cards.json')
+        self.base = read_json(ROOT/'data/on_work_cards.json')
         self.lock = threading.RLock()
         self.jobs = {}
         self.closing = False
@@ -601,7 +595,7 @@ class Workbench:
         self._file_lock.close()
 
 
-class Handler(BaseHTTPRequestHandler):
+class Handler(off_work.Routes, BaseHTTPRequestHandler):
     server_version = 'LocalBalance/1'
     def log_message(self,*args): pass
 
@@ -611,7 +605,11 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get('Origin')
         if origin and origin != 'http://'+expected: raise PermissionError('拒绝跨站请求')
         if self.headers.get('Sec-Fetch-Site') == 'cross-site': raise PermissionError('拒绝跨站请求')
-        if write and self.headers.get('X-Balance-Token') != self.server.token: raise PermissionError('请刷新页面后重试')
+        if write:
+            token = self.server.control_token if urlsplit(self.path).path == '/api/shutdown' else self.server.token
+            if self.headers.get('X-Balance-Token') != token: raise PermissionError('请刷新页面后重试')
+        if self.path not in ('/api/health','/api/session','/api/shutdown'):
+            self.server.pages.touch()
 
     def reply(self,obj,status=200,mime='application/json; charset=utf-8'):
         content = json.dumps(obj,ensure_ascii=False,allow_nan=False).encode() if not isinstance(obj,bytes) else obj
@@ -625,17 +623,36 @@ class Handler(BaseHTTPRequestHandler):
         try: self.wfile.write(content)
         except (BrokenPipeError,ConnectionResetError): pass
 
+    def route_off_work(self):
+        if urlsplit(self.path).path == '/off-work':
+            self.send_response(308)
+            self.send_header('Location', '/off-work/')
+            self.end_headers()
+            return True
+        if not self.path.startswith('/off-work/'):
+            return False
+        self.path = self.path.removeprefix('/off-work')
+        self.serve_realtime()
+        return True
+
+    def do_DELETE(self):
+        if not self.route_off_work():
+            self.reply({'error':'接口不存在'},404)
+
     def do_GET(self):
+        if self.route_off_work(): return
         try:
             self.guard()
             path = urlsplit(self.path).path
             app = self.server.app
-            if path=='/api/bootstrap':
+            if path=='/api/session':
+                self.server.pages.stream(self)
+            elif path=='/api/bootstrap':
                 self.reply({'token':self.server.token,'default_options':DEFAULT_OPTIONS,'definitions':DEFINITIONS,
                             'fields':mutable_fields(app.base),'labels':LABELS,'bot':app.metadata,
                             'configs':app.configs(),**app.run_overview()})
             elif path=='/api/runs': self.reply(app.run_overview())
-            elif path=='/api/health': self.reply({'app':'manual-balance-v1','project':project_id(),'source_version':self.server.source_version,'pid':os.getpid()})
+            elif path=='/api/health': self.reply({'app':'manual-balance-v1','project':project_id(),'source_version':self.server.source_version,'pid':os.getpid(),'lifecycle':1,'closing':self.server.pages.ended.is_set()})
             elif path.startswith('/api/recording/'):
                 parts = path.removeprefix('/api/recording/').split('/')
                 if len(parts) != 2: raise ValueError('录像路径无效')
@@ -649,15 +666,16 @@ class Handler(BaseHTTPRequestHandler):
                     self.reply({'error':'找不到卡牌图标'},404)
                 else:
                     self.reply(target.read_bytes(),mime='image/png')
-            elif path in ('/','/report.js','/report.css'):
+            elif path in ('/','/report.js','/report.css','/mode-nav.css','/mode-nav.js'):
                 file = 'report.html' if path=='/' else path[1:]
-                mime = {'report.html':'text/html; charset=utf-8','report.js':'text/javascript; charset=utf-8','report.css':'text/css; charset=utf-8'}[file]
+                mime = {'report.html':'text/html; charset=utf-8','report.js':'text/javascript; charset=utf-8','report.css':'text/css; charset=utf-8','mode-nav.css':'text/css; charset=utf-8','mode-nav.js':'text/javascript; charset=utf-8'}[file]
                 self.reply((WEB/file).read_bytes(),mime=mime)
             else: self.reply({'error':'找不到页面'},404)
         except PermissionError as e: self.reply({'error':redact_paths(str(e),ROOT)},403)
         except (ValueError,OSError,KeyError) as e: self.reply({'error':redact_paths(str(e),ROOT)},400)
 
     def do_POST(self):
+        if self.route_off_work(): return
         try:
             self.guard(True)
             size = int(self.headers.get('Content-Length','0'))
@@ -667,6 +685,10 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(body,dict): raise ValueError('请求必须是对象')
             app = self.server.app
             path = urlsplit(self.path).path
+            if path=='/api/shutdown':
+                stopped = self.server.pages.stop_if_idle()
+                self.reply({'stopping': stopped}, 200 if stopped else 409)
+                return
             if path=='/api/profile':
                 result=app.profile(body.get('strength'))
                 result['token']=self.server.token
@@ -685,46 +707,79 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--port',type=int,default=29861)
-    p.add_argument('--store',type=Path,default=DEFAULT_STORE)
-    p.add_argument('--godot',default=os.environ.get('GODOT','/Applications/Godot.app/Contents/MacOS/Godot'))
+    p.add_argument('--on-work-store','--store',dest='on_work_store',type=Path,default=DEFAULT_STORE,help='上班存档目录')
+    p.add_argument('--off-work-store',type=Path,help='下班存档目录；自定义 --on-work-store 时默认隔离于其下')
+    p.add_argument('--off-work',action='store_true',help='打开下班工作台')
+    p.add_argument('--godot',default=os.environ.get('GODOT') or shutil.which('godot') or '/Applications/Godot.app/Contents/MacOS/Godot')
     p.add_argument('--open',action='store_true',help='启动后打开默认浏览器')
+    p.add_argument('--reuse',action='store_true',help='供脚本复用或更新此工作台')
+    p.add_argument('--stop',action='store_true',help='停止此数据目录的空闲工作台')
     args = p.parse_args()
-    if not Path(args.godot).is_file(): p.error('找不到Godot，请设置GODOT为可执行文件路径')
     url = 'http://127.0.0.1:'+str(args.port)+'/'
     current_version = source_version()
-    # 重复双击只复用完全相同源码版本；旧版本服务必须显式退出后再启动。
-    if args.open:
-        import urllib.request
-        try:
-            existing=json.loads(urllib.request.urlopen(url+'api/health',timeout=1).read())
-            if (existing.get('app')=='manual-balance-v1' and existing.get('project')==project_id()
-                    and existing.get('source_version')==current_version):
-                import webbrowser
-                webbrowser.open(url)
-                print('已打开现有工作台：'+url,flush=True)
-                return
-            if existing.get('app')=='manual-balance-v1' and same_project(existing.get('project')):
-                p.error('检测到旧版本工作台仍占用端口。请关闭旧工作台终端后重新双击启动；不能继续复用旧代码。')
-        except (OSError,ValueError): pass
     try:
-        app = Workbench(args.store.resolve(),args.godot)
-        server = ThreadingHTTPServer(('127.0.0.1',args.port),Handler)
+        on_work_store = args.on_work_store.resolve()
+        off_work_store = (args.off_work_store or (off_work.REPORTS if on_work_store == DEFAULT_STORE
+                                                  else on_work_store / 'off-work')).resolve()
+        off_work_store.mkdir(parents=True, exist_ok=True)
+        # Concurrent double-clicks must observe the new health endpoint only
+        # after its discovery record and both storage locks are established.
+        launch_lock = (off_work_store / '.launch.lock').open('a+')
+        fcntl.flock(launch_lock, fcntl.LOCK_EX)
+        if args.port and (args.open or args.reuse or args.stop):
+            outcome = resolve_listener(args.port, current_version, same_project, on_work_store, off_work_store, args.stop)
+            if outcome == 'stopped':
+                print('工作台已停止，端口已释放。', flush=True)
+                return
+            if outcome == 'reuse':
+                launch_lock.close()
+                if args.open:
+                    import webbrowser
+                    webbrowser.open(url + ('off-work/' if args.off_work else ''))
+                print('已复用现有工作台：'+url,flush=True)
+                return
+        if args.stop: p.error('--stop 需要具体端口')
+        args.godot = shutil.which(args.godot)
+        if not args.godot: p.error('找不到Godot，请设置GODOT为可执行文件路径')
+        off_work_lock = (off_work_store / '.service.lock').open('a+')
+        try:
+            fcntl.flock(off_work_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ValueError('下班配置库已有服务运行，请使用现有工作台') from exc
+        class_cache = ROOT / '.godot/global_script_class_cache.cfg'
+        if not class_cache.is_file() or '"class": &"WorkConfig"' not in class_cache.read_text():
+            subprocess.run([args.godot, '--headless', '--editor', '--path', str(ROOT), '--import'], check=True)
+        app = Workbench(on_work_store,args.godot)
+        server = off_work.Lab(args.godot, args.port, handler=Handler, store=off_work_store)
     except (ValueError,OSError) as e: p.error(redact_paths(str(e),ROOT))
     server.app,server.token,server.source_version = app,secrets.token_urlsafe(32),current_version
-    print('手动调参工作台 '+url,flush=True)
-    print('数据目录：'+display_path(app.store,ROOT)+'；关闭此终端将停止服务。',flush=True)
-    if args.open:
-        import webbrowser
-        webbrowser.open(url)
+    url = f'http://127.0.0.1:{server.server_port}/'
+    server.control_token = secrets.token_urlsafe(32)
+    server.pages = PageSessions(server, transient=args.reuse and not args.open)
+    if args.open or args.reuse:
+        server.service_actions = lambda: server.pages.stop_if_idle(last_page=True)
     def interrupted(_signum,_frame): raise KeyboardInterrupt
     exit_signals = [signal.SIGINT,signal.SIGTERM,signal.SIGHUP]
     for signum in exit_signals: signal.signal(signum,interrupted)
-    try: server.serve_forever()
+    try:
+        atomic_json(off_work_store / 'service.json', {'url': url + 'off-work/', 'pid': os.getpid(),
+                    'control_token':server.control_token, 'on_work_store_key':store_key(on_work_store),
+                    'off_work_store_key':store_key(off_work_store)})
+        launch_lock.close()
+        print('牛马牌调参工作台 '+url,flush=True)
+        print('数据目录：'+display_path(app.store,ROOT)+'；关闭此终端将停止服务。',flush=True)
+        if args.open:
+            import webbrowser
+            webbrowser.open(url + ('off-work/' if args.off_work else ''))
+        server.serve_forever()
     except KeyboardInterrupt: pass
     finally:
-        # 清理期间重复退出信号不能打断子进程回收和结果落盘。
         for signum in exit_signals: signal.signal(signum,signal.SIG_IGN)
+        server.pages.ended.set()
+        server.close_jobs()
         app.close()
         server.server_close()
+        (off_work_store / 'service.json').unlink(missing_ok=True)
+        off_work_lock.close()
 
 if __name__=='__main__': main()

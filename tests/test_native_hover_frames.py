@@ -26,7 +26,7 @@ class RuntimeHoverFramesTest(unittest.TestCase):
         cls.hover = json.loads((ROOT / "data/ui.json").read_text())["art"]["hover"]
 
     def test_all_formal_cards_use_384_lossless_delta_and_preserve_endpoints(self):
-        definitions = json.loads((ROOT / "data/cards.json").read_text())
+        definitions = json.loads((ROOT / "data/on_work_cards.json").read_text())
         ids = {key for key in definitions if not key.startswith("_")}
         self.assertEqual(set(self.hover["cards"]), ids)
         self.assertEqual(self.hover["fps"], 12)
@@ -91,7 +91,7 @@ class NativeHoverFramesTest(unittest.TestCase):
         return [Image.open(ART / path).convert("RGBA") for path in entry["files"]]
 
     def test_all_current_cards_use_native_sequences_without_old_atlases(self):
-        definitions=json.loads((ROOT/'data/cards.json').read_text())
+        definitions=json.loads((ROOT/'data/on_work_cards.json').read_text())
         ids={key for key in definitions if not key.startswith('_')}
         self.assertEqual(set(self.hover['cards']),ids)
         for card_id in ids:

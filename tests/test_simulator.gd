@@ -13,7 +13,7 @@ extends "res://tests/harness.gd"
 func _raw_config() -> Dictionary:
 	var cards := _raw_json(CardDB.BUILTIN_PATH)
 	var ui := _raw_json("res://data/ui.json")
-	var bot := _raw_json("res://data/bot.json")
+	var bot := _raw_json("res://data/on_work_bot.json")
 	cards["_game"]["res_labels"] = ui.get("resource_labels", {})
 	cards["_sfx"] = ui.get("sfx", {})
 	cards["_sim"] = bot.get("simulation", {})

@@ -26,11 +26,6 @@ class ReleasePublicationTest(unittest.TestCase):
             output = root / "build"
             for content in ("previous", "new"):
                 stage = root / content
-                web = stage / "web"
-                web.mkdir(parents=True)
-                for name in ("index.html", "index.js", "index.wasm", "index.pck"):
-                    (web / name).write_text(content)
-                (web / "index.wasm.br").write_text("precompressed")
                 app = stage / "牛马牌.app/Contents"
                 (app / "MacOS").mkdir(parents=True)
                 (app / "Resources").mkdir()
@@ -38,18 +33,17 @@ class ReleasePublicationTest(unittest.TestCase):
                 (app / "MacOS/game").write_text(content)
                 (app / "MacOS/game").chmod(0o755)
                 (app / "Resources/game.pck").write_text(content)
-                (stage / "cards.json").write_text(content)
+                for table in ("on_work_cards.json", "off_work_cards.json"):
+                    (stage / table).write_text(content + table)
                 result = subprocess.run([sys.executable, str(ROOT / "tools/release_bundle.py"),
                                          str(stage), str(output)], capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual({path.name for path in output.glob("*.zip")},
-                                 {"牛马牌_web.zip", "牛马牌_mac.zip"})
-                with zipfile.ZipFile(output / "牛马牌_web.zip") as archive:
-                    self.assertEqual(archive.read("index.html"), content.encode())
-                    self.assertNotIn("index.wasm.br", archive.namelist())
+                                 {"牛马牌_mac.zip"})
                 with zipfile.ZipFile(output / "牛马牌_mac.zip") as archive:
                     self.assertEqual(archive.read("牛马牌.app/Contents/MacOS/game"), content.encode())
-                    self.assertEqual(archive.read("cards.json"), content.encode())
+                    for table in ("on_work_cards.json", "off_work_cards.json"):
+                        self.assertEqual(archive.read(table), (content + table).encode())
                 self.assertFalse(list(output.glob(".release-previous-*")))
 
     def test_midway_rename_failure_restores_all_previous_artifacts(self):
@@ -58,8 +52,8 @@ class ReleasePublicationTest(unittest.TestCase):
             stage, output = root / "stage", root / "build"
             stage.mkdir(); output.mkdir()
             for folder, text in ((stage, "new"), (output, "previous")):
-                (folder / "web").mkdir()
-                (folder / "web/index.html").write_text(text)
+                (folder / "牛马牌.app").mkdir()
+                (folder / "牛马牌.app/version").write_text(text)
                 (folder / "release.zip").write_text(text)
             replace = bundle.os.replace
             def fail(source, target):
@@ -68,10 +62,10 @@ class ReleasePublicationTest(unittest.TestCase):
                 return replace(source, target)
             with mock.patch.object(bundle.os, "replace", side_effect=fail):
                 with self.assertRaisesRegex(OSError, "fixture publication"):
-                    bundle.publish(stage, output, ["web", "release.zip"])
-            self.assertEqual((output / "web/index.html").read_text(), "previous")
+                    bundle.publish(stage, output, ["牛马牌.app", "release.zip"])
+            self.assertEqual((output / "牛马牌.app/version").read_text(), "previous")
             self.assertEqual((output / "release.zip").read_text(), "previous")
-            self.assertEqual((stage / "web/index.html").read_text(), "new")
+            self.assertEqual((stage / "牛马牌.app/version").read_text(), "new")
             self.assertFalse(list(output.glob(".release-previous-*")))
 
 

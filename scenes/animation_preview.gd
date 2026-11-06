@@ -6,6 +6,7 @@ extends Node3D
 ## 独立视觉验收场景：只创建正式卡面与运动，不启动牌局或写入玩家设置。
 const Motion = preload("res://scenes/card_motion.gd")
 const Hands = preload("res://scenes/table_hands.gd")
+const ModeSwitch = preload("res://scenes/preview_mode_switch.gd")
 const ButtonTheme = preload("res://scenes/ui_button_theme.gd")
 const ArtResolution = preload("res://scenes/preview_art_resolution.gd")
 const PreviewCard = preload("res://scenes/preview_card.gd")
@@ -22,6 +23,14 @@ const FX_DEMOS := [
 ## 特效页台面：左边一张生产牌（产出、升级、作废都盖在它身上），右边一叠被攻击的资源牌。
 const FX_CORE := Vector3(-1.9, 0.05, 0.0)
 const FX_TARGET := Vector3(1.9, 0.05, 0.0)
+@export var start_off_duty := false
+var off_duty := false
+var work_preview: Control
+var _modes: HBoxContainer
+var _layer: CanvasLayer
+var _resolution_caption: Label
+var _large: TextureRect
+var _magnify: CheckButton
 var board: Board
 var drawer_presentation: Node
 var table_hands: Node
@@ -55,6 +64,7 @@ var _play: Button
 var _reset: Button
 var _spacer: Control
 var _scale_factor := 1.0
+var _player_panel: PanelContainer
 var _hover_controls: VBoxContainer
 var _hover_pause: CheckButton
 var _hover_slow: CheckButton
@@ -92,16 +102,10 @@ class PreviewSurface extends Node:
 
 func _ready() -> void:
 	var window := get_window()
-	window.title = "牛马牌 · 动画预览"
-	window.transparent = false
-	window.transparent_bg = false
-	window.borderless = false
-	window.always_on_top = false
-	window.unresizable = false
-	window.content_scale_size = Vector2i.ZERO
-	window.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	window.min_size = Vector2i(960, 680)
-	window.size = Vector2i(1440, 960)
+	var window_settings: Dictionary = UIConfig.read_json("res://data/animation_preview.json", true).preview.window
+	ModeSwitch.configure_window(window, "牛马牌 · 动画预览 · 上班",
+		Vector2i(window_settings.minimum_size[0], window_settings.minimum_size[1]),
+		Vector2i(window_settings.size[0], window_settings.size[1]))
 	_ids = CardDB.all_cards().keys()
 	# 交付每五张时可以只列本批；普通预览仍包含全部卡牌。
 	var review_batch := OS.get_environment("CARD_PREVIEW_BATCH")
@@ -153,8 +157,66 @@ func _ready() -> void:
 	var requested_resolution := OS.get_environment("CARD_PREVIEW_RESOLUTION")
 	if not requested_resolution.is_empty():
 		set_resolution(int(requested_resolution))
+	if start_off_duty:
+		select_mode(true)
 	if OS.get_environment("CARD_PREVIEW_SHOT") != "":
 		_capture_preview()
+
+func select_mode(to_off: bool) -> void:
+	_modes.select(to_off)
+	if off_duty == to_off: return
+	var was_paused := _hover_pause.button_pressed
+	off_duty = to_off
+	get_window().title = "牛马牌 · 动画预览 · " + ("下班" if off_duty else "上班")
+	_stage.visible = not off_duty
+	table_hands.visible = not off_duty
+	_tabs.visible = not off_duty
+	for item in [_resolution_caption, _resolution, _resolution_note, _gallery]:
+		item.visible = not off_duty
+	if off_duty:
+		_clear_cards()
+		_clear_fx()
+		_set_busy(false)
+		table_hands.cursor_enabled = false
+		_attack_controls.hide()
+		_fx_controls.hide()
+		_spacer.hide()
+		_list.show()
+		_hover_controls.show()
+		if work_preview == null:
+			work_preview = preload("res://scenes/work_animation_preview.gd").new()
+			_layer.add_child(work_preview)
+			work_preview.bind(self)
+		work_preview.paused = was_paused
+		work_preview.activate()
+	else:
+		work_preview.deactivate()
+		_hover_seek.step = 1.0 / CardArt.hover_fps()
+		_large.material = null
+		_magnify.disabled = false
+		_hover_original.disabled = false
+		set_page(_page)
+		if was_paused and _page == 0: _seek_seconds(0.0)
+	_sync_magnifier()
+	_relayout()
+
+func _sync_magnifier() -> void:
+	var enlarged := _magnify.button_pressed and _hover_controls.visible
+	if off_duty:
+		enlarged = enlarged and not work_preview.is_scenario_mode()
+		if is_instance_valid(work_preview.card): work_preview.card.visible = not enlarged
+	else:
+		enlarged = enlarged and _page == 0 and not _cards.is_empty()
+		if _page == 0 and not _cards.is_empty():
+			_cards[0].visible = not enlarged
+			if enlarged: _large.texture = _cards[0]._icon.texture
+	_large.visible = enlarged
+
+func step_frame(direction: int) -> void:
+	if off_duty:
+		work_preview.step_frame(direction)
+	else:
+		_hover_seek.value = clampf(_hover_seek.value + direction * _hover_seek.step, 0.0, _hover_seek.max_value)
 
 func _drawer_input_blocked() -> bool:
 	return false
@@ -178,6 +240,7 @@ func _button(text: String, action: Callable) -> Button:
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
+	_layer = layer
 	layer.layer = 10
 	add_child(layer)
 	_sidebar = PanelContainer.new()
@@ -186,6 +249,10 @@ func _build_ui() -> void:
 	column.add_theme_constant_override("separation", 12)
 	_sidebar.add_child(column)
 	column.add_child(_label("动画预览", 24))
+	_modes = ModeSwitch.new()
+	column.add_child(_modes)
+	_modes.mode_selected.connect(select_mode)
+	_modes.select(false)
 	_tabs = HBoxContainer.new()
 	_tabs.add_theme_constant_override("separation", 8)
 	column.add_child(_tabs)
@@ -193,7 +260,8 @@ func _build_ui() -> void:
 	_tabs.add_child(_button("攻击撕牌", func(): set_page(1)))
 	_tabs.add_child(_button("牌桌特效", func(): set_page(FX_PAGE)))
 	_tabs.get_child(0).set_meta("ui_role", "primary")
-	column.add_child(_label("插画分辨率 · 最长边", 17))
+	_resolution_caption = _label("插画分辨率 · 最长边", 17)
+	column.add_child(_resolution_caption)
 	_resolution = OptionButton.new()
 	for limit in ArtResolution.LIMITS:
 		_resolution.add_item(ArtResolution.option_label(Vector2i.ZERO, limit), limit)
@@ -262,77 +330,81 @@ func _build_ui() -> void:
 	_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_spacer.hide()
 	column.add_child(_spacer)
+	_player_panel = PanelContainer.new()
+	layer.add_child(_player_panel)
 	_hover_controls = VBoxContainer.new()
-	_hover_controls.add_theme_constant_override("separation", 6)
-	column.add_child(_hover_controls)
-	_hover_controls.add_child(_label("逐牌 · 多帧动画检查", 17))
-	var speed_row := HBoxContainer.new()
-	_hover_controls.add_child(speed_row)
-	var speed_label := _label("播放速度", 17)
-	speed_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	speed_row.add_child(speed_label)
-	_hover_speed_value = _label("", 17)
-	_hover_speed_value.name = "HoverAnimationSpeedValue"
-	_hover_speed_value.autowrap_mode = TextServer.AUTOWRAP_OFF
-	_hover_speed_value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_hover_speed_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	speed_row.add_child(_hover_speed_value)
-	var speed_control := UIConfig.hover_speed_control()
-	_hover_speed_slider = HSlider.new()
-	_hover_speed_slider.name = "HoverAnimationSpeed"
-	_hover_speed_slider.min_value = speed_control["min"]
-	_hover_speed_slider.max_value = speed_control["max"]
-	_hover_speed_slider.step = speed_control["step"]
-	_hover_speed_slider.custom_minimum_size.y = 28
-	_hover_speed_slider.set_value_no_signal(_hover_speed)
-	_hover_speed_slider.tooltip_text = "调整后立即生效，保留当前动作进度"
-	_hover_speed_slider.accessibility_name = "卡牌插画播放速度"
-	_hover_speed_slider.value_changed.connect(set_hover_animation_speed)
-	_hover_controls.add_child(_hover_speed_slider)
+	_player_panel.add_child(_hover_controls)
+	var actions := HFlowContainer.new()
+	_hover_controls.add_child(actions)
+	actions.add_child(_button("上一步", step_frame.bind(-1)))
 	_hover_pause = CheckButton.new()
-	_hover_pause.text = "暂停动作"
+	_hover_pause.text = "暂停"
 	_hover_pause.toggled.connect(func(on):
-		if not _cards.is_empty(): _cards[0].hover_animation_paused = on)
-	_hover_controls.add_child(_hover_pause)
+		if off_duty: work_preview.set_paused(on)
+		elif not _cards.is_empty(): _cards[0].hover_animation_paused = on)
+	actions.add_child(_hover_pause)
+	actions.add_child(_button("下一步", step_frame.bind(1)))
+	_hover_replay = _button("重播", replay_motion)
+	actions.add_child(_hover_replay)
 	_hover_slow = CheckButton.new()
 	_hover_slow.text = "¼ 慢放"
-	_hover_slow.tooltip_text = "按当前所选速度的四分之一播放，便于查看细节"
 	_hover_slow.toggled.connect(func(_on): _apply_hover_speed())
-	_hover_controls.add_child(_hover_slow)
+	actions.add_child(_hover_slow)
 	_hover_original = CheckButton.new()
-	_hover_original.text = "只看原图"
-	_hover_original.toggled.connect(func(on):
-		if _cards.is_empty(): return
-		var card := _cards[0]
-		card.set_hover_visual(false, false)
-		_hover = null
-		if not on and _hover_pause.button_pressed:
-			card.set_hover_visual(true, false)
-			card._hover_elapsed = _hover_seek.value + 0.15
-			card.seek_hover_animation(_hover_seek.value)
-			_hover = card)
-	_hover_controls.add_child(_hover_original)
-	for toggle in [_hover_pause, _hover_slow, _hover_original]:
+	_hover_original.text = "原图"
+	_hover_original.toggled.connect(_compare_original)
+	actions.add_child(_hover_original)
+	_magnify = CheckButton.new()
+	_magnify.text = "放大插画"
+	_magnify.toggled.connect(func(_on): _sync_magnifier())
+	actions.add_child(_magnify)
+	for toggle in [_hover_pause, _hover_slow, _hover_original, _magnify]:
 		toggle.add_theme_color_override("font_color", Palette.get_color("card", "body"))
-	_hover_controls.add_child(_label("拖动时间轴检查动作（秒）", 14))
+	var sliders := HBoxContainer.new()
+	sliders.add_theme_constant_override("separation", 8)
+	_hover_controls.add_child(sliders)
+	var timeline_caption := _label("时间轴（秒）", 15)
+	timeline_caption.autowrap_mode = TextServer.AUTOWRAP_OFF
+	sliders.add_child(timeline_caption)
 	_hover_seek = HSlider.new()
+	_hover_seek.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_hover_seek.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_hover_seek.min_value = 0
 	_hover_seek.max_value = 1.8
 	_hover_seek.step = 1.0 / CardArt.hover_fps()
-	_hover_seek.value_changed.connect(func(value):
-		if _cards.is_empty(): return
-		_hover_original.set_pressed_no_signal(false)
-		_hover_pause.set_pressed_no_signal(true)
-		var card := _cards[0]
-		card.set_hover_visual(true, false)
-		card.hover_animation_paused = true
-		card._hover_elapsed = value + 0.15
-		card.seek_hover_animation(value)
-		_hover = card)
-	_hover_controls.add_child(_hover_seek)
-	_hover_replay = _button("重新播放动作", replay_motion)
-	_hover_controls.add_child(_hover_replay)
-	column.add_child(_label("悬停页可用 ← / → 切换卡牌。", 14))
+	_hover_seek.accessibility_name = "动画时间轴"
+	_hover_seek.drag_started.connect(func():
+		if off_duty: work_preview._timeline_dragging = true)
+	_hover_seek.drag_ended.connect(func(changed):
+		if off_duty: work_preview._finish_timeline_drag(changed))
+	_hover_seek.value_changed.connect(_seek_seconds)
+	sliders.add_child(_hover_seek)
+	var speed_caption := _label("播放速度", 15)
+	speed_caption.autowrap_mode = TextServer.AUTOWRAP_OFF
+	sliders.add_child(speed_caption)
+	_hover_speed_slider = HSlider.new()
+	_hover_speed_slider.name = "HoverAnimationSpeed"
+	var speed_control := UIConfig.hover_speed_control()
+	_hover_speed_slider.min_value = speed_control["min"]
+	_hover_speed_slider.max_value = speed_control["max"]
+	_hover_speed_slider.step = speed_control["step"]
+	_hover_speed_slider.custom_minimum_size.x = 88
+	_hover_speed_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_hover_speed_slider.set_value_no_signal(_hover_speed)
+	_hover_speed_slider.accessibility_name = "卡牌插画播放速度"
+	_hover_speed_slider.value_changed.connect(set_hover_animation_speed)
+	sliders.add_child(_hover_speed_slider)
+	_hover_speed_value = _label("", 15)
+	_hover_speed_value.name = "HoverAnimationSpeedValue"
+	_hover_speed_value.autowrap_mode = TextServer.AUTOWRAP_OFF
+	sliders.add_child(_hover_speed_value)
+	_large = TextureRect.new()
+	_large.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_large.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_large.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_large.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	layer.add_child(_large)
+	_large.hide()
 	_heading = _label("", 27)
 	_hint = _label("", 17)
 	_status = _label("", 16)
@@ -340,6 +412,34 @@ func _build_ui() -> void:
 		label.add_theme_color_override("font_color", Palette.readable_ink(Palette.semantic("surface"), Palette.get_color("world", "table_felt")))
 		layer.add_child(label)
 	_attack_controls.hide()
+
+func _compare_original(on: bool) -> void:
+	if off_duty:
+		work_preview.show_original(on)
+		return
+	if _cards.is_empty(): return
+	var card := _cards[0]
+	card.set_hover_visual(false, false)
+	_hover = null
+	if not on and _hover_pause.button_pressed:
+		card.set_hover_visual(true, false)
+		card._hover_elapsed = _hover_seek.value + 0.15
+		card.seek_hover_animation(_hover_seek.value)
+		_hover = card
+
+func _seek_seconds(value: float) -> void:
+	if off_duty:
+		work_preview._timeline_changed(value)
+		return
+	if _cards.is_empty(): return
+	_hover_original.set_pressed_no_signal(false)
+	_hover_pause.set_pressed_no_signal(true)
+	var card := _cards[0]
+	card.set_hover_visual(true, false)
+	card.hover_animation_paused = true
+	card._hover_elapsed = value + 0.15
+	card.seek_hover_animation(value)
+	_hover = card
 
 func _theme(node: Node) -> void:
 	if node is Label:
@@ -371,11 +471,14 @@ func _relayout() -> void:
 	if _sidebar == null:
 		return
 	var size := get_viewport().get_visible_rect().size
-	_scale_factor = clampf(size.x / 1440.0, 0.85, 1.8)
+	_scale_factor = clampf(minf(size.x / 1440.0, size.y / 960.0), 0.8, 1.8)
 	var pad := 22.0 * _scale_factor
-	var side_width := 285.0 * _scale_factor
-	_sidebar.position = Vector2(pad, pad)
-	_sidebar.size = Vector2(side_width, size.y - pad * 2)
+	var side_width := 315.0 * _scale_factor
+	_sidebar.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	_sidebar.offset_left = pad
+	_sidebar.offset_top = pad
+	_sidebar.offset_bottom = -pad
+	_sidebar.offset_right = pad + side_width
 	var style := StyleBoxFlat.new()
 	style.bg_color = Palette.semantic("surface")
 	style.border_color = CardArt.frame_color()
@@ -383,24 +486,48 @@ func _relayout() -> void:
 	style.set_corner_radius_all(12)
 	style.set_content_margin_all(14 * _scale_factor)
 	_sidebar.add_theme_stylebox_override("panel", style)
-	_surface = Rect2(side_width + pad * 2, 125 * _scale_factor,
-		size.x - side_width - pad * 3, size.y - 205 * _scale_factor)
+	_theme(_sidebar)
+	_theme(_player_panel)
+	_player_panel.visible = _hover_controls.visible
+	_player_panel.add_theme_stylebox_override("panel", style)
+	var left := pad + maxf(_sidebar.get_combined_minimum_size().x, side_width) + pad
+	var width := size.x - left - pad
+	var player_height := 108.0 * _scale_factor
+	_player_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_player_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_player_panel.offset_left = left
+	_player_panel.offset_right = -pad
+	_player_panel.offset_top = -pad - player_height
+	_player_panel.offset_bottom = -pad
+	var bottom := size.y - pad - player_height if _player_panel.visible else size.y - pad
+	var top := 125.0 * _scale_factor
+	_surface = Rect2(left, top, width, maxf(1, bottom - 64 * _scale_factor - top))
 	_heading.position = Vector2(_surface.position.x, pad + 8 * _scale_factor)
 	_heading.size = Vector2(_surface.size.x, 42 * _scale_factor)
 	_hint.position = _heading.position + Vector2(0, 52 * _scale_factor)
 	_hint.size = Vector2(_surface.size.x, 55 * _scale_factor)
 	_status.position = Vector2(_surface.position.x, _surface.end.y + 20 * _scale_factor)
 	_status.size = Vector2(_surface.size.x, 55 * _scale_factor)
-	_theme(_sidebar)
+	_large.position = _surface.position
+	_large.size = _surface.size
+	if is_instance_valid(work_preview):
+		work_preview.position = _surface.position
+		work_preview.size = _surface.size
 	for label in [_heading, _hint, _status]:
 		_theme(label)
 	_position_cards()
 
 func _position_cards() -> void:
+	var card_framing := maxf(2.8, 1.95 * get_viewport().get_visible_rect().size.y / maxf(1, _surface.size.y))
+	if off_duty and is_instance_valid(work_preview) and is_instance_valid(work_preview.card):
+		_camera.size = card_framing
+		var center := _camera.project_ray_origin(_surface.get_center())
+		work_preview.card.position = Vector3(center.x, 0.05, center.z)
+		return
 	_camera.size = maxf(4.8, (1.35 * _cards.size() + 1.0) * get_viewport().get_visible_rect().size.y / _surface.size.x) \
 		if _page == 1 and _spread.button_pressed else 4.8
 	if _page == 0 and not _cards.is_empty() and _cards[0].hover_animation_duration > 0.0:
-		_camera.size = 2.8
+		_camera.size = card_framing
 	if _page == FX_PAGE:
 		_camera.size = 7.0
 	var ray := _camera.project_ray_origin(_surface.get_center())
@@ -442,6 +569,7 @@ func _spawn(id: String) -> void:
 	_cards.append(card)
 
 func set_page(page: int) -> void:
+	if off_duty: return
 	if _player_attack_busy != 0:
 		return
 	_page = page
@@ -632,6 +760,9 @@ func set_hover_animation_speed(value: float) -> void:
 	_apply_hover_speed()
 
 func _apply_hover_speed() -> void:
+	if off_duty:
+		work_preview.apply_speed(_hover_speed * (0.25 if _hover_slow.button_pressed else 1.0))
+		return
 	_hover_speed_value.text = UIConfig.hover_speed_text(_hover_speed)
 	if _page == 0:
 		for card in _cards:
@@ -764,6 +895,9 @@ func _update_resolution_note(progress := "") -> void:
 		_resolution_note.text += "\n高于源图的档位不放大。"
 
 func replay_motion() -> void:
+	if off_duty:
+		work_preview.replay()
+		return
 	if _cards.is_empty() or _cards[0].hover_animation_duration <= 0.0: return
 	_hover_original.set_pressed_no_signal(false)
 	_hover_pause.set_pressed_no_signal(false)
@@ -826,9 +960,10 @@ func play_attack() -> void:
 	_status.text = "已一次撕开 %d 张牌。点击“播放撕牌”可再看一次。" % count
 
 func _process(_delta: float) -> void:
-	if board == null or _player_attack_busy != 0:
+	if off_duty or board == null or _player_attack_busy != 0:
 		return
 	_update_hover(get_viewport().get_mouse_position())
+	_sync_magnifier()
 
 func _update_hover(pointer: Vector2) -> void:
 	if _resolution_busy:
@@ -841,9 +976,11 @@ func _update_hover(pointer: Vector2) -> void:
 		if _hover_pause.button_pressed:
 			_status.text = "动作已暂停 · %.2f 秒 · 可拖动时间轴" % _hover_seek.value
 			return
-	var card: CardEntity = board._pick_card(pointer) if _surface.has_point(pointer) else null
+	var card: CardEntity = null
+	if _surface.has_point(pointer):
+		card = _cards[0] if _page == 0 and _large.visible and not _cards.is_empty() else board._pick_card(pointer)
 	# 操作侧栏时继续保留当前动作，便于暂停、切换分辨率对照同一帧。
-	if _page == 0 and is_instance_valid(_hover) and _sidebar.get_global_rect().has_point(pointer):
+	if _page == 0 and is_instance_valid(_hover) and (_sidebar.get_global_rect().has_point(pointer) or _player_panel.get_global_rect().has_point(pointer)):
 		card = _hover
 	if card != _hover:
 		if is_instance_valid(_hover):
@@ -865,6 +1002,7 @@ func _update_hover(pointer: Vector2) -> void:
 			_status.text = "当前卡牌没有登记动作图集"
 
 func _unhandled_input(event: InputEvent) -> void:
+	if off_duty: return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
 		and _page == 1 and _player_attack_busy == 0 and _surface.has_point(event.position):
 		if _attack_hl.has(board._pick_card(event.position)):
@@ -872,8 +1010,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _input(event: InputEvent) -> void:
+	if off_duty: return
 	if event is InputEventKey and event.pressed and not event.echo and _page == 0:
-		if event.keycode in [KEY_LEFT, KEY_RIGHT]:
+		if event.keycode in [KEY_A, KEY_D]:
+			step_frame(1 if event.keycode == KEY_D else -1)
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_SPACE:
+			_hover_pause.button_pressed = not _hover_pause.button_pressed
+			get_viewport().set_input_as_handled()
+		elif event.keycode in [KEY_LEFT, KEY_RIGHT]:
 			var step := 1 if event.keycode == KEY_RIGHT else -1
 			show_card(_ids[posmod(_selection + step, _ids.size())])
 			get_viewport().set_input_as_handled()

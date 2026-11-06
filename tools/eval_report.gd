@@ -25,7 +25,7 @@ func _initialize() -> void:
 		quit(2)
 		return
 	var request := _json(args[0])
-	BOTConfig._source = "res://data/bot.json"
+	BOTConfig._source = BOTConfig.PATH
 	if request.get("action") == "metadata":
 		var strength := float(request.get("strength", BOTSearch.default_strength()))
 		var profile := BOTSearch.from_strength(strength)
@@ -49,18 +49,18 @@ func _initialize() -> void:
 		printerr("不是手动评估请求")
 		quit(2)
 		return
-	var cards_path := str(request.get("cards_path", ""))
+	var cards_path := CardDB.ConfigData.bundled_path(str(request.get("cards_path", "")))
 	var output := str(request.get("output_path", ""))
 	_progress = str(request.get("progress_path", ""))
 	_options = request.get("options", {})
 	var errors := validate_options(_options)
-	errors.append_array(Logic.validate(_json(cards_path), _json("res://data/cards.json")))
+	errors.append_array(Logic.validate(_json(cards_path), _json("res://data/on_work_cards.json")))
 	if not errors.is_empty():
 		_write(output,{"schema":"manual-balance-eval-v1","status":"invalid","errors":errors})
 		quit(2)
 		return
 	CardDB.reset()
-	BOTConfig._source = "res://data/bot.json"
+	BOTConfig._source = BOTConfig.PATH
 	if not CardDB.load_from(cards_path):
 		quit(2)
 		return
@@ -90,7 +90,7 @@ func _initialize() -> void:
 	var result := {"schema":"manual-balance-eval-v1","status":"complete",
 		"metrics":_metrics,"games":_games,
 		"meta":{"options":_options,"cards_sha256":FileAccess.get_sha256(cards_path),
-		"bot_sha256":FileAccess.get_sha256("res://data/bot.json"),"bot_parameters":_cfg.resolved_parameters(),
+		"bot_sha256":FileAccess.get_sha256(BOTConfig.PATH),"bot_parameters":_cfg.resolved_parameters(),
 		"metric_version":"manual-eleven-v4","elapsed_seconds":(Time.get_ticks_usec()-started)/1000000.0}}
 	if not _write(output,result):
 		quit(3)

@@ -44,6 +44,10 @@ const UNIT_ICON_FRAC := 0.093333  # 单位类型图标宽占卡宽：112/1200
 static var _art: Dictionary = {}
 static var _tex_cache: Dictionary = {}
 static var _loaded := false
+static var _untinted_paths: Dictionary = {}
+
+static func source_art_id(def_id: String, catalog: Script) -> String:
+	return str(catalog.get_def(def_id).get("source_art_id", def_id))
 
 static func hover_config(def_id: String) -> Dictionary:
 	_ensure_loaded()
@@ -273,12 +277,14 @@ static func _trim_hover_cache(current: String) -> void:
 	var max_cards := maxi(int(settings.get("cache_cards", 3)), 1)
 	var max_bytes := maxi(int(settings.get("cache_bytes", 268435456)), 1)
 	while _hover_lru.size() > 1 and (_hover_lru.size() > max_cards or _hover_cache_bytes() > max_bytes):
-		var oldest: String = _hover_lru[0]
-		if oldest == current:
-			_hover_lru.pop_front()
-			_hover_lru.append(oldest)
-			continue
-		_hover_lru.pop_front()
+		var oldest := ""
+		for candidate in _hover_lru:
+			if candidate != current and _hover_owners.get(candidate, {}).is_empty():
+				oldest = candidate
+				break
+		if oldest.is_empty():
+			break
+		_hover_lru.erase(oldest)
 		_hover_cache.erase(oldest)
 
 static func _ensure_loaded() -> void:
@@ -287,14 +293,23 @@ static func _ensure_loaded() -> void:
 	_loaded = true
 	# 素材与其他展示配置共用入口，外置 ui.json 也遵循相同的合并规则。
 	_art = UIConfig.read_section("art")
+	_untinted_paths.clear()
+	var icons: Dictionary = _art.get("icons", {})
+	var untinted := [CardDB.RES_CASH, CardDB.RES_USER]
+	untinted.append_array(_art.get("illustrations", {}).keys())
+	for id in untinted:
+		var entry: Dictionary = icons.get(id, {})
+		_untinted_paths[ART_DIR + str(entry.get("file", "icon/icon_" + str(id) + ".png"))] = true
 
 ## def_id → 配色槽位。按 cards.json 的类别、资源、产出和 Buff 类型推导，
 ## 同类卡牌共用配色，无需为每张卡单独维护映射。
-static func plate_slot(def_id: String) -> String:
-	var def: Dictionary = CardDB.get_def(def_id)
+static func plate_slot(def_id: String, catalog: Script = CardDB) -> String:
+	var def: Dictionary = catalog.get_def(def_id)
+	if def.has("plate_slot"):
+		return str(def.plate_slot)
 	match def.get("kind", ""):
 		CardDB.KIND_UNIT:
-			return PLATE_CASH if def.get("res") == CardDB.RES_CASH else PLATE_USER
+			return PLATE_CASH if def.get("res") == catalog.RES_CASH else PLATE_USER
 		CardDB.KIND_LEGEND:
 			return PLATE_T3
 		CardDB.KIND_ATTACK:
@@ -306,12 +321,12 @@ static func plate_slot(def_id: String) -> String:
 		CardDB.KIND_PRODUCT:
 			# 生产牌按实际资源方向分色：用户→现金是变现线，现金→用户是拉新线。
 			# T1/T2 共用功能色；升级、换名或导入新卡表都不应改变同一方向的配色。
-			return PLATE_T1_MONEY if def.get("output_res") == CardDB.RES_CASH \
+			return PLATE_T1_MONEY if def.get("output_res") == catalog.RES_CASH \
 				else PLATE_T1_GROWTH
 		CardDB.KIND_SPECIAL:
 			# 角色专属卡借现有底板，不另开配色槽：「给我」和传说卡同属「不走市场的大牌」，
 			# Idea 和增强 Buff 一样是给别的牌加成的
-			return PLATE_T3 if CardDB.special_type(def_id) == CardDB.SPECIAL_GRAB else PLATE_BUFF_UP
+			return PLATE_T3 if catalog.special_type(def_id) == CardDB.SPECIAL_GRAB else PLATE_BUFF_UP
 	return PLATE_T1_MONEY
 
 ## 程序化卡框几何（世界单位）；标题带高度为卡高占比。
@@ -332,15 +347,23 @@ static func configure_frame(material: ShaderMaterial, scale_factor := 1.0) -> vo
 	material.set_shader_parameter("stroke_pressure", FRAME_PRESSURE)
 
 ## 功能图标通常是可着色白色线稿；资源图标自带手绘墨色与纸色，缺失返回 null
-static func icon_texture(def_id: String) -> Texture2D:
+static func icon_texture(def_id: String, catalog: Script = CardDB) -> Texture2D:
 	# 两种资源只维护一份简笔符号，资源牌和所有配方/产出标记共用。
 	_ensure_loaded()
+	var definition: Dictionary = catalog.get_def(def_id)
+	if definition.has("art_file"):
+		return _load_tex(ART_DIR + str(definition.art_file))
+	def_id = str(definition.get("source_art_id", def_id))
 	var entry: Dictionary = _art.get("icons", {}).get(def_id, {})
 	return _load_tex(ART_DIR + str(entry.get("file", "icon/icon_" + def_id + ".png")))
 
 ## 情景插画保留原色；仅登记过的卡使用插画，其他卡继续使用功能图标。
-static func illustration_texture(def_id: String) -> Texture2D:
+static func illustration_texture(def_id: String, catalog: Script = CardDB) -> Texture2D:
 	_ensure_loaded()
+	var definition: Dictionary = catalog.get_def(def_id)
+	if definition.has("art_file"):
+		return _load_tex(ART_DIR + str(definition.art_file))
+	def_id = str(definition.get("source_art_id", def_id))
 	var entry: Dictionary = _art.get("illustrations", {}).get(def_id, {})
 	var path := str(entry.get("file", ""))
 	return _load_tex(ART_DIR + path) if path != "" else null
@@ -348,22 +371,17 @@ static func illustration_texture(def_id: String) -> Texture2D:
 ## 资源图标（cash / user）：卡面底部用它表示产出、攻击、配方需求的资源种类，
 ## 替掉「产7」「攻3」这类中文，便于多语言化。
 ## 同一资源的卡牌主图、配方和产出直接复用同一份符号贴图。
-static func res_icon_texture(res: String) -> Texture2D:
-	if res != CardDB.RES_CASH and res != CardDB.RES_USER:
+static func res_icon_texture(res: String, catalog: Script = CardDB) -> Texture2D:
+	if res != catalog.RES_CASH and res != catalog.RES_USER:
 		return null
-	return icon_texture(res)
+	return icon_texture(res, catalog)
 
 ## 共享资源简笔画含纸色填充与表情，主图和小徽标都保留原色。
 static func icon_preserves_color(texture: Texture2D) -> bool:
 	if texture == null:
 		return false
-	if texture == res_icon_texture(CardDB.RES_CASH) or texture == res_icon_texture(CardDB.RES_USER):
-		return true
 	_ensure_loaded()
-	for id in _art.get("illustrations", {}):
-		if texture == icon_texture(str(id)):
-			return true
-	return false
+	return _untinted_paths.has(texture.resource_path)
 
 static func icon_tint(texture: Texture2D, ink: Color) -> Color:
 	return Color.WHITE if icon_preserves_color(texture) else Palette.icon_color(ink)
@@ -384,20 +402,20 @@ static func overlay_texture(name: String) -> Texture2D:
 ## 卡面填充与轮廓都在 Shader 中绘制，插画不会改变配置色。
 
 ## 墨色：卡名/图标/数字的颜色
-static func ink_color(def_id: String) -> Color:
-	return Palette.plate_color(plate_slot(def_id), "ink")
+static func ink_color(def_id: String, catalog: Script = CardDB) -> Color:
+	return Palette.plate_color(plate_slot(def_id, catalog), "ink")
 
 ## 卡面填充色
-static func face_color(def_id: String) -> Color:
-	return Palette.plate_color(plate_slot(def_id), "face")
+static func face_color(def_id: String, catalog: Script = CardDB) -> Color:
+	return Palette.plate_color(plate_slot(def_id, catalog), "face")
 
 ## 标题带填充色
-static func band_color(def_id: String) -> Color:
-	return Palette.plate_color(plate_slot(def_id), "band")
+static func band_color(def_id: String, catalog: Script = CardDB) -> Color:
+	return Palette.plate_color(plate_slot(def_id, catalog), "band")
 
 ## 强调色：用于配方凑满、效果翻倍时的墨团和产出反馈。
-static func accent_color(def_id: String) -> Color:
-	return Palette.plate_color(plate_slot(def_id), "accent")
+static func accent_color(def_id: String, catalog: Script = CardDB) -> Color:
+	return Palette.plate_color(plate_slot(def_id, catalog), "accent")
 
 ## 程序边框与标题分隔线共用的墨色
 static func frame_color() -> Color:

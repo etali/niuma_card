@@ -6,7 +6,7 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	check(Boot.entry_scene([]) == "res://scenes/main.tscn", "默认启动仍进入正式游戏")
+	check(Boot.entry_scene([]) == "res://scenes/shift_host.tscn", "默认启动仍进入正式游戏")
 	check(Boot.entry_scene(["--animation-preview"]) == "res://scenes/animation_preview.tscn", "独立入口直接选择预览，不启动牌局")
 	UIConfig.save_preferences({"hover_animation_speed": 0.5})
 	UIConfig.set_hover_animation_speed(0.5)

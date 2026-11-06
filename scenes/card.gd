@@ -5,6 +5,9 @@
 class_name CardEntity
 extends RigidBody3D
 
+var card_catalog: Script = CardDB
+var combo_rules: Script = ComboRules
+
 ## 单卡实体：RigidBody3D 刚体卡牌
 ## 拖拽时冻结物理跟随鼠标，松手恢复刚体自然落定（Stacklands 手感）
 
@@ -102,11 +105,15 @@ const Y_OVERLAY := 0.038
 ## 低于下面那张卡的卡名，盖不住反被穿透。见 Board.STACK_GAP
 const FACE_SPAN_Y := Y_OVERLAY - Y_PLATE
 
-var def_id := ""
+var _art_id := ""
+var def_id := "":
+	set(value):
+		def_id = value
+		_art_id = CardArt.source_art_id(value, card_catalog)
 var uid := -1
 var dragging := false
 var highlighted := false
-var draggable := true    # AI 的牌不可拖
+var draggable := true    # BOT 的牌不可拖
 var hover_stack_member := false
 var is_market := false   # 公共区的牌：拖拽用于购买，不参与堆叠
 
@@ -181,11 +188,11 @@ var hover_animation_paused := false
 var hover_animation_speed := 1.0
 
 func _exit_tree() -> void:
-	CardArt.release_hover_frames(def_id, get_instance_id())
+	CardArt.release_hover_frames(_art_id, get_instance_id())
 
 func _stop_hover_animation() -> void:
 	set_process(false)
-	CardArt.release_hover_frames(def_id, get_instance_id())
+	CardArt.release_hover_frames(_art_id, get_instance_id())
 	_hover_frames = []
 	_hover_elapsed = 0.0
 	_hover_frame = 0
@@ -200,7 +207,7 @@ func _process(delta: float) -> void:
 		_stop_hover_animation()
 		return
 	if _hover_frames.is_empty():
-		_hover_frames = CardArt.hover_frames(def_id)
+		_hover_frames = CardArt.hover_frames(_art_id)
 		if _hover_frames.is_empty():
 			return
 		if not hover_animation_paused:
@@ -216,7 +223,7 @@ func _configured_hover_speed() -> float:
 
 func hover_animation_time() -> float:
 	var time := maxf(_hover_elapsed - 0.15, 0.0)
-	var config := CardArt.hover_config(def_id)
+	var config := CardArt.hover_config(_art_id)
 	if config.get("play_mode", "loop") == "once":
 		return minf(time, hover_animation_duration)
 	return minf(fmod(time, hover_animation_duration + float(config.get("loop_pause", 0.65))), hover_animation_duration)
@@ -226,7 +233,7 @@ func seek_hover_animation(seconds: float) -> void:
 		return
 	# 时间轴每步为 1/fps，容忍浮点舍入，避免整帧边界被读成上一帧。
 	_hover_frame = clampi(floori(seconds * CardArt.hover_fps() + 0.00001), 0, _hover_frames.size() - 1)
-	var config := CardArt.hover_config(def_id)
+	var config := CardArt.hover_config(_art_id)
 	# 兼容旧图集起止。新完整帧不替换终态，不裁切、变形或混帧。
 	if not config.has("files") and config.get("codec", "") != "hdelta-v1" \
 			and (_hover_frame < 2 or _hover_frame >= _hover_frames.size() - 2):
@@ -274,8 +281,8 @@ func _ready() -> void:
 func setup(p_uid: int, p_def_id: String) -> void:
 	uid = p_uid
 	def_id = p_def_id
-	var def: Dictionary = CardDB.get_def(def_id)
-	_ink = CardArt.ink_color(def_id)
+	var def: Dictionary = card_catalog.get_def(def_id)
+	_ink = CardArt.ink_color(def_id, card_catalog)
 
 	card_mesh = MeshInstance3D.new()
 	var box := BoxMesh.new()
@@ -298,17 +305,17 @@ func setup(p_uid: int, p_def_id: String) -> void:
 	_add_visual(_plate)
 
 	# 中央插画保留原色；未登记插画时回退到随配色着色的功能图标。
-	var icon_tex := CardArt.illustration_texture(def_id)
+	var icon_tex := CardArt.illustration_texture(def_id, card_catalog)
 	_illustrated = icon_tex != null
 	if icon_tex == null:
-		icon_tex = CardArt.icon_texture(def_id)
+		icon_tex = CardArt.icon_texture(def_id, card_catalog)
 	_illustrated = _illustrated or CardArt.icon_preserves_color(icon_tex)
 	if icon_tex:
 		_icon = Sprite3D.new()
 		_icon.texture = icon_tex
 		# 精灵主体外接框已归一化顶满画布，故 pixel_size 直接按图标框宽换算
 		var icon_width := 0.86 if _illustrated else CardArt.ICON_FRAC
-		if def_id == CardDB.RES_CASH:
+		if def_id == card_catalog.RES_CASH:
 			icon_width *= 0.90
 		_icon.pixel_size = CARD_SIZE.x * icon_width / float(icon_tex.get_width())
 		# 图标前景色：配置留空则跟随底板墨色（改造前的行为），填了就全卡统一
@@ -324,7 +331,7 @@ func setup(p_uid: int, p_def_id: String) -> void:
 		_face_elems.append(_icon)
 		_hover_original = icon_tex
 		_hover_pixel_size = _icon.pixel_size
-		hover_animation_duration = float(CardArt.hover_config(def_id).get("frames", 0)) / CardArt.hover_fps()
+		hover_animation_duration = float(CardArt.hover_config(_art_id).get("frames", 0)) / CardArt.hover_fps()
 
 	# 卡名（A 位）：底板墨色，落在标题带上
 	label = Label3D.new()
@@ -493,7 +500,7 @@ func _add_effect_badge(def: Dictionary, textured: bool) -> void:
 		return
 	_effect_base_n = n
 	_effect_mark = mark
-	var tex := CardArt.res_icon_texture(res)
+	var tex := CardArt.res_icon_texture(res, card_catalog)
 	var made := _add_blob_badge(CardArt.BLOB_R_CX if textured else 0.5,
 		mark + str(n), textured, tex, _res_icon_cx(CardArt.BLOB_R_CX))
 	_effect_blob = made["blob"]
@@ -516,7 +523,7 @@ func effect_mult() -> int:
 	return _effect_mult
 
 ## 刷新 效果位效果值：组里带了翻倍 Buff 就把卡面的数一起翻。
-## 由 Board 在成组/拆组后调用，倍数取自 ComboRules.effect_multipliers ——
+## 由 Board 在成组/拆组后调用，倍数取自 combo_rules.effect_multipliers ——
 ## 卡面和结算读同一条规则，不各自数一遍（不然会「卡面 ×2、结算发一份」）。
 ##
 ## 为什么卡面要跟着组变：这一格回答的是「打出去会发生什么」。
@@ -539,7 +546,7 @@ func set_effect_mult(mult: int) -> void:
 	# 翻倍生效：墨团换强调色并略微放大，和 配方位凑满同一套语汇
 	# （桌上「这一格不是原值」只靠这一点区分）
 	if _effect_blob and is_instance_valid(_effect_blob):
-		_effect_blob.modulate = CardArt.accent_color(def_id) if m > 1 else Color.WHITE
+		_effect_blob.modulate = CardArt.accent_color(def_id, card_catalog) if m > 1 else Color.WHITE
 		_effect_blob.scale = _effect_blob_scale * (BADGE_DONE_SCALE if m > 1 else 1.0)
 
 ## 当前效果值：卡面值 × Buff 倍数，产出再按主人的角色修正缩放（和 ComboRules 同一个式子）
@@ -547,7 +554,7 @@ func effect_value() -> int:
 	var n := _effect_base_n * _effect_mult
 	if _effect_kind != "output":
 		return n
-	return ComboRules.scaled_output(n, str(CardDB.get_def(def_id).get("output_res", "")), _rule_mods)
+	return combo_rules.scaled_output(n, str(card_catalog.get_def(def_id).get("output_res", "")), _rule_mods)
 
 ## 配方位的需求量（角色改过的值）；没有配方格返回 0
 func recipe_need() -> int:
@@ -560,7 +567,7 @@ func apply_rule_mods(mods: Dictionary) -> void:
 		return
 	_rule_mods = mods.duplicate(true)
 	if has_recipe_badge():
-		_recipe_need = ComboRules.recipe_need(CardDB.get_def(def_id), _rule_mods)
+		_recipe_need = combo_rules.recipe_need(card_catalog.get_def(def_id), _rule_mods)
 		_recipe_label.text = "%d/%d" % [_recipe_have, _recipe_need]
 	if has_effect_badge() and _effect_kind != "":
 		_effect_label.text = _effect_mark + str(effect_value())
@@ -591,9 +598,9 @@ func _add_kind_badge(def: Dictionary, textured: bool) -> void:
 				"attack_x2":
 					mark = "−×2"                              # 攻击翻倍
 				"protect_user":
-					mark = "◇"; res = CardDB.RES_USER        # 保护用户
+					mark = "◇"; res = card_catalog.RES_USER        # 保护用户
 				"protect_cash":
-					mark = "◇"; res = CardDB.RES_CASH        # 保护现金
+					mark = "◇"; res = card_catalog.RES_CASH        # 保护现金
 				_:
 					# 不认识的 buff_type 就**不画这一格**。原先兜底成「×2」，
 					# 那不是缺信息而是给错信息：一张实际没生效的卡被标成「翻倍」。
@@ -605,15 +612,15 @@ func _add_kind_badge(def: Dictionary, textured: bool) -> void:
 		CardDB.KIND_SPECIAL:
 			# 角色专属卡沿用同一套语法：「给我」付 0 现金拿牌 → [现金] ¥0；
 			# Idea 是升级材料 → ↑（不配资源图标，它不动资源；也不写档位代号，卡面只说玩家语言）
-			match CardDB.special_type(def_id):
+			match card_catalog.special_type(def_id):
 				CardDB.SPECIAL_GRAB:
-					mark = "¥0"; res = CardDB.RES_CASH
+					mark = "¥0"; res = card_catalog.RES_CASH
 				CardDB.SPECIAL_IDEA:
 					mark = "↑"
 	if mark == "":
 		return
 	var cx: float = CardArt.BLOB_L_CX if textured else 0.5
-	var tex := CardArt.res_icon_texture(res) if res != "" else null
+	var tex := CardArt.res_icon_texture(res, card_catalog) if res != "" else null
 	_add_blob_badge(cx, mark, textured, tex, _res_icon_cx(cx))
 
 ## 左下角配方进度徽标：资源图标 + 「have/need」。
@@ -623,7 +630,7 @@ func _add_recipe_badge(def: Dictionary, textured: bool) -> void:
 	var res: String = def.get("recipe_res", "")
 	if _recipe_need <= 0 or res == "":
 		return
-	var tex := CardArt.res_icon_texture(res)
+	var tex := CardArt.res_icon_texture(res, card_catalog)
 	var made := _add_blob_badge(CardArt.BLOB_L_CX if textured else 0.5,
 		"0/%d" % _recipe_need, textured, tex, _res_icon_cx(CardArt.BLOB_L_CX))
 	_recipe_blob = made["blob"]
@@ -649,7 +656,7 @@ func set_recipe_progress(have: int, done: bool) -> void:
 	_recipe_label.text = "%d/%d" % [have, _recipe_need]
 	if _recipe_blob and is_instance_valid(_recipe_blob):
 		# 凑满：墨团换强调色并略微放大
-		_recipe_blob.modulate = CardArt.accent_color(def_id) if done else Color.WHITE
+		_recipe_blob.modulate = CardArt.accent_color(def_id, card_catalog) if done else Color.WHITE
 		_recipe_blob.scale = _recipe_blob_scale * (BADGE_DONE_SCALE if done else 1.0)
 
 ## 状态从 Board 的真实组合评估传入；不根据卡面数字另算一遍规则。
@@ -657,12 +664,12 @@ func recipe_status_text() -> String:
 	if not has_recipe_badge():
 		return ""
 	if not _recipe_done:
-		var resource := CardDB.card_label(str(CardDB.get_def(def_id).get("recipe_res", "")))
+		var resource: String = card_catalog.card_label(str(card_catalog.get_def(def_id).get("recipe_res", "")))
 		return "还缺%d张%s" % [maxi(0, _recipe_need - _recipe_have), resource] if _recipe_have < _recipe_need else "组合无效，请检查材料"
-	var def := CardDB.get_def(def_id)
+	var def: Dictionary = card_catalog.get_def(def_id)
 	var n := effect_value()
 	return "可%s：%s%d%s" % ["攻击" if def.get("kind") == CardDB.KIND_ATTACK else "生产", _effect_mark, n,
-		CardDB.res_label(str(def.get("attack_res" if def.get("kind") == CardDB.KIND_ATTACK else "output_res", "")))]
+		card_catalog.res_label(str(def.get("attack_res" if def.get("kind") == CardDB.KIND_ATTACK else "output_res", "")))]
 
 ## 卡面材质不使用 mask/PNG；所有卡都走相同的圆角与标题分隔线。
 func _make_plate_material() -> ShaderMaterial:
@@ -693,8 +700,8 @@ func _push_back_colors(material: ShaderMaterial) -> void:
 
 ## 把当前配色写进底板材质。选色面板改一下颜色，桌上每张卡都会重走这里
 func _push_plate_colors(pmat: ShaderMaterial) -> void:
-	pmat.set_shader_parameter("face_color", CardArt.face_color(def_id))
-	pmat.set_shader_parameter("band_color", CardArt.band_color(def_id))
+	pmat.set_shader_parameter("face_color", CardArt.face_color(def_id, card_catalog))
+	pmat.set_shader_parameter("band_color", CardArt.band_color(def_id, card_catalog))
 	pmat.set_shader_parameter("ink_color", CardArt.frame_color())
 
 ## 墨团旁资源图标 + 墨团内文字的墨色刷新。
@@ -708,11 +715,11 @@ func _refresh_badge_ink() -> void:
 			ic.modulate = CardArt.icon_tint(ic.texture, _ink)
 	if _recipe_blob and is_instance_valid(_recipe_blob) \
 		and _recipe_blob.modulate != Color.WHITE:
-		_recipe_blob.modulate = CardArt.accent_color(def_id)
+		_recipe_blob.modulate = CardArt.accent_color(def_id, card_catalog)
 
 ## 配色变更后刷新这张卡（选色面板实时预览用）
 func refresh_palette() -> void:
-	_ink = CardArt.ink_color(def_id)
+	_ink = CardArt.ink_color(def_id, card_catalog)
 	var front: ShaderMaterial = _face_up_mat if _face_down else (_plate.material_override as ShaderMaterial)
 	if front:
 		_push_plate_colors(front)
@@ -784,8 +791,8 @@ func set_hover_visual(on: bool, lift_allowed := true) -> void:
 		if _hover_original == null:
 			_hover_original = _icon.texture
 			_hover_pixel_size = _icon.pixel_size
-		CardArt.request_hover_frames(def_id, get_instance_id())
-		_hover_frames = CardArt.hover_frames(def_id)
+		CardArt.request_hover_frames(_art_id, get_instance_id())
+		_hover_frames = CardArt.hover_frames(_art_id)
 		seek_hover_animation(0.0)
 		_hover_elapsed = 0.0
 		set_process(hover_animation_duration > 0.0)
@@ -1212,7 +1219,7 @@ func pulse_feedback(event: String, tint: Color = Color.TRANSPARENT, delay := 0.0
 		match event:
 			"attack", "broken": tint = Palette.semantic("danger")
 			"shield": tint = Palette.semantic("info")
-			"produce": tint = CardArt.accent_color(def_id)
+			"produce": tint = CardArt.accent_color(def_id, card_catalog)
 			_: tint = Palette.semantic("cash")
 	var face := _feedback_material()
 	face.set_shader_parameter("feedback_color", tint)

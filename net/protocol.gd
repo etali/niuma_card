@@ -177,11 +177,17 @@ const REMATCH_START := "rematch_start"   ## { my_seat, foe_seat, snapshot }
 const PING := "ping"                 ## { at: int 毫秒 }
 const PONG := "pong"                 ## { at: int 毫秒（原样回） }
 
+const WORK_ACTION := "work_action"
+const WORK_FRAME := "work_frame"
+const WORK_SEAT := "work_seat"
 ## 客户端**能发**的消息类型。白名单而不是黑名单：
 ## 以后加新消息忘了登记，只会「发不出去」，不会「客户端能伪造 seated」
-const CLIENT_MSGS := [JOIN, INTENT, DRAG, PILES, REMATCH, PING]
+const CLIENT_MSGS := [WORK_ACTION, JOIN, INTENT, DRAG, PILES, REMATCH, PING]
 
 const REQUIRED := {
+	WORK_ACTION: ["action"],
+	WORK_FRAME: ["frame"],
+	WORK_SEAT: ["my_seat", "frame"],
 	JOIN: ["room"],
 	INTENT: ["intent"],
 	DRAG: ["seq", "phase"],
@@ -619,7 +625,7 @@ static func _shape_issue(d: Dictionary, t: String) -> Dictionary:
 		var recovery_error := recovery_issue(d["recovery"])
 		if recovery_error != "": return err("bad_recovery", recovery_error)
 	var issue := Intent.field_types(d,
-		["t", "room", "table_hash", "resume_token", "my_seat", "foe_seat", "code", "reason", "phase", "actor"],
+		["t", "room", "game", "table_hash", "resume_token", "my_seat", "foe_seat", "code", "reason", "phase", "actor"],
 		["version", "seq", "at"], ["uids"])
 	if issue != "": return err("bad_field", issue)
 	for key in ["version", "seq", "at"]:
@@ -666,6 +672,15 @@ static func recovery_issue(value: Variant) -> String:
 	if not value["snapshot"].has("pools"): return "恢复检查点缺少攻击点数池"
 	return ""
 
+static func work_action(action: Dictionary) -> Dictionary:
+	return {"t": WORK_ACTION, "action": action}
+
+static func work_frame(frame: String) -> Dictionary:
+	return {"t": WORK_FRAME, "frame": frame}
+
+static func work_seat(seat: String, token: String, frame: String) -> Dictionary:
+	return {"t": WORK_SEAT, "my_seat": seat, "resume_token": token, "frame": frame}
+
 static func from_dict(d: Dictionary) -> Dictionary:
 	if d.has("t") and not d["t"] is String:
 		return err("bad_type", "消息类型必须是文本")
@@ -679,7 +694,18 @@ static func from_dict(d: Dictionary) -> Dictionary:
 	if not shape.is_empty(): return shape
 	var out := { "t": t }
 	match t:
+		WORK_ACTION:
+			if not d.action is Dictionary: return err("bad_action", "动作应为对象")
+			out.action = d.action
+		WORK_FRAME, WORK_SEAT:
+			if not d.frame is String: return err("bad_frame", "实时快照格式无效")
+			out.frame = d.frame
+			if t == WORK_SEAT:
+				if d.my_seat not in [GameState.PLAYER, GameState.BOT]: return err("bad_seat", "座位无效")
+				out.my_seat = d.my_seat
+				out.resume_token = str(d.get("resume_token", ""))
 		JOIN:
+			out["game"] = str(d.get("game", "on"))
 			out["version"] = int(d.get("version", 0))
 			out["room"] = normalize_room(str(d["room"]))
 			out["table_hash"] = str(d.get("table_hash", ""))

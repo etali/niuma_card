@@ -5,6 +5,9 @@
 class_name BOTPanel
 extends Control
 
+var preferences: Script = BOTSearch
+var help_text := "每回合计算与单项搜索节点上限可单独调整\n改变强度保留两个上限；计算使用比例只读\n修改立即生效，仅本次运行，下次启动恢复默认"
+
 ## 右上角「BOT 强度」面板，贴在配色面板下方。
 ## 结构照着 scenes/palette_panel.gd：折叠标题栏、mouse_filter = STOP、
 ## _syncing 护栏。BOT 参数仅保留在本次运行中，修改立即广播，下次启动恢复默认。
@@ -44,7 +47,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_build()
-	BOTSearch.bus().changed.connect(_on_preferences_changed)
+	preferences.bus().changed.connect(_on_preferences_changed)
 	_sync_rows()
 	_relayout()
 	if above != null:
@@ -84,7 +87,7 @@ func _build() -> void:
 	_body.add_child(_model_choice)
 	_body.add_child(_build_slider_row())
 	_body.add_child(_build_presets())
-	_body.add_child(_label("每回合计算与单项搜索节点上限可单独调整\n改变强度保留两个上限；计算使用比例只读\n修改立即生效，仅本次运行，下次启动恢复默认", 12, Color(0.72, 0.82, 0.62)))
+	_body.add_child(_label(help_text, 12, Color(0.72, 0.82, 0.62)))
 	_knobs_scroll = ScrollContainer.new()
 	_knobs_scroll.custom_minimum_size = Vector2(LIST_W, KNOBS_H)
 	_knobs_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -119,7 +122,7 @@ func _build_header() -> HBoxContainer:
 
 
 ## 连续强度滑块 —— 这是这个面板的主控件。
-## 一个数管全部旋钮（BOTSearch.from_strength 那张梯子），
+## 一个数管全部旋钮（preferences.from_strength 那张梯子），
 ## 拖它等于「整档换掉」；下面那些行是想单独抠某一项时才用的
 func _build_slider_row() -> VBoxContainer:
 	var col := VBoxContainer.new()
@@ -141,7 +144,7 @@ const PRESET_LABELS := {
 	"min": "最弱", "low": "低", "mid": "默认", "high": "高", "max": "最高",
 }
 
-## 档位快捷键。取的是 BOTSearch.PRESETS 里那几个名字 ——
+## 档位快捷键。取的是 preferences.PRESETS 里那几个名字 ——
 ## `tools/eval.sh` 的档位参数认的是同一批名字，面板和命令行说的是一种话
 func _build_presets() -> VBoxContainer:
 	var col := VBoxContainer.new()
@@ -149,13 +152,13 @@ func _build_presets() -> VBoxContainer:
 
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 4)
-	for key in BOTSearch.PRESETS:
+	for key in preferences.PRESETS:
 		var b := Button.new()
 		b.text = str(PRESET_LABELS.get(key, key))
-		b.tooltip_text = "强度 %.2f" % float(BOTSearch.PRESETS[key])
+		b.tooltip_text = "强度 %.2f" % float(preferences.PRESETS[key])
 		b.add_theme_font_override("font", Fonts.zh())
 		b.add_theme_font_size_override("font_size", 12)
-		b.pressed.connect(_on_preset.bind(float(BOTSearch.PRESETS[key])))
+		b.pressed.connect(_on_preset.bind(float(preferences.PRESETS[key])))
 		hb.add_child(b)
 	col.add_child(hb)
 	return col
@@ -171,7 +174,7 @@ func _rebuild_knobs(model: String) -> void:
 	_knobs_scroll.scroll_vertical = 0
 	_knobs_box.add_child(_label("逐项（改任一项 = 自定义）", 13, Color(0.72, 0.82, 0.62)))
 	var grouped := {}
-	for spec in BOTSearch.editable_knobs(model):
+	for spec in preferences.editable_knobs(model):
 		var group := str(spec.get("group", ""))
 		if not grouped.has(group): grouped[group] = []
 		grouped[group].append(spec)
@@ -262,26 +265,26 @@ func _label(txt: String, size: int, col: Color) -> Label:
 func _on_strength(v: float) -> void:
 	if _syncing:
 		return
-	BOTSearch.set_pref_strength(v)   # 会清掉逐项覆盖：拖滑块 = 整档换掉
+	preferences.set_pref_strength(v)   # 会清掉逐项覆盖：拖滑块 = 整档换掉
 	_sync_rows()
 	_status.text = ""
 
 func _on_preset(v: float) -> void:
-	BOTSearch.set_pref_strength(v)
+	preferences.set_pref_strength(v)
 	_sync_rows()
 	_status.text = ""
 
 func _on_knob_bool(on: bool, key: String) -> void:
 	if _syncing:
 		return
-	BOTSearch.set_override(key, on)
+	preferences.set_override(key, on)
 	_sync_rows()
 	_status.text = ""
 
 func _on_knob_number(v: float, key: String, kind: String) -> void:
 	if _syncing:
 		return
-	BOTSearch.set_override(key, int(v) if kind == "int" else v)
+	preferences.set_override(key, int(v) if kind == "int" else v)
 	_sync_rows()
 	_status.text = ""
 
@@ -303,14 +306,14 @@ func _on_knob_text(text: String, key: String, kind: String, spinbox: SpinBox) ->
 	edit.text = text
 	edit.caret_column = caret
 	_syncing = false
-	BOTSearch.set_override(key, int(spinbox.value) if kind == "int" else spinbox.value)
+	preferences.set_override(key, int(spinbox.value) if kind == "int" else spinbox.value)
 	_status.text = ""
 
 
 func _on_knob_enum(index: int, key: String, choice: OptionButton) -> void:
 	if _syncing:
 		return
-	BOTSearch.set_override(key, choice.get_item_metadata(index))
+	preferences.set_override(key, choice.get_item_metadata(index))
 	_sync_rows()
 	_status.text = ""
 
@@ -324,8 +327,8 @@ func _on_preferences_changed(_strength: float) -> void:
 ## 这也是 _syncing 护栏存在的理由：回填本身会触发 value_changed / toggled
 func _sync_rows() -> void:
 	_syncing = true
-	var cfg := BOTSearch.prefs()
-	var s := BOTSearch.pref_strength()
+	var cfg: RefCounted = preferences.prefs()
+	var s: float = preferences.pref_strength()
 	if _model_choice != null:
 		_sync_model_choices()
 		for i in _model_choice.item_count:
@@ -341,9 +344,11 @@ func _sync_rows() -> void:
 		if not is_instance_valid(node):
 			continue
 		var value: Variant = cfg.get_knob(str(r["key"]))
+		node.get_parent().visible = value != null
+		if value == null: continue
 		match str(r["kind"]):
 			"readonly":
-				(node as Label).text = "%.4f%%" % (float(value)*100.0)
+				(node as Label).text = value if value is String else "%.4f%%" % (float(value)*100.0)
 			"bool":
 				(node as CheckBox).button_pressed = bool(value)
 			"enum":
@@ -356,14 +361,14 @@ func _sync_rows() -> void:
 				(node as SpinBox).value = float(value)
 	# 有逐项覆盖时给档位读数加个星号：那时候滑块的数已经不能完整描述 BOT 的强度了，
 	# 不标出来的话「滑块在 0 但 BOT 在搜索」看着像 bug
-	var star := "*" if BOTSearch.has_overrides() else ""
+	var star := "*" if preferences.has_overrides() else ""
 	if _slider_val != null:
 		_slider_val.text = "%.2f%s" % [s, star]
 	_syncing = false
 
 
 func _sync_model_choices() -> void:
-	var models := BOTSearch.models()
+	var models: Array = preferences.models()
 	var changed := models.size() != _model_choice.item_count
 	if not changed:
 		for i in models.size():
@@ -394,11 +399,11 @@ func _on_toggle() -> void:
 
 
 func _on_reset() -> void:
-	BOTSearch.restore_defaults()
+	preferences.restore_defaults()
 	_sync_rows()
 	# 念的是还原之后**真正的**档位，不写死一个名字：出厂默认改过一次
 	# （0 档贪心 → 满档），写死的那个字面量当时就地变成了假话
-	_status.text = "已还原（强度 %.2f）" % BOTSearch.pref_strength()
+	_status.text = "已还原（强度 %.2f）" % preferences.pref_strength()
 
 
 ## 锚在右上角、贴在 above 下方。理由同 palette_panel.gd 的 _relayout：
@@ -428,6 +433,6 @@ func _relayout() -> void:
 func _on_model(index: int) -> void:
 	if _syncing:
 		return
-	BOTSearch.set_pref_model(str(_model_choice.get_item_metadata(index)))
+	preferences.set_pref_model(str(_model_choice.get_item_metadata(index)))
 	_sync_rows()
 	_status.text = ""

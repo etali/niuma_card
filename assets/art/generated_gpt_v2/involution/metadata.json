@@ -1,0 +1,10 @@
+{
+  "tool": "built-in image_gen",
+  "source": "/Users/Yitan/.codex/generated_images/01a17423-1246-72b2-a616-d5f175b61fba/exec-8f202749-f8f8-4b3c-b900-0e710bb3dbad.png",
+  "reference": [
+    "/Users/Yitan/repos/niuma_card/assets/art/icon/icon_user.png",
+    "assets/art/icon/work_employee.png"
+  ],
+  "layout": "single master; runtime local motion",
+  "source_sha256": "7d61d1b807a71b12da66f8e6769146242ef8b940736f1e671b3c143523ab9521"
+}

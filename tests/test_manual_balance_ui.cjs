@@ -329,7 +329,7 @@ async function workbench({notes = {}, withRuns = false, activeRun = false, activ
 }
 
 for (const savePicker of [true, false]) {
-  test(`导出未保存草稿为可直接替换的 cards.json：${savePicker ? '浏览器保存窗口' : '备用保存 API'}`, async () => {
+  test(`导出未保存草稿为可直接替换的上班卡表：${savePicker ? '浏览器保存窗口' : '备用保存 API'}`, async () => {
     const exportPath = '/tmp/用户选择的位置/cards.json';
     const ui = await workbench({savePicker, exportPath, notes:{default:'原配置备注'}});
     const expected = ui.savedCards('default');
@@ -344,15 +344,15 @@ for (const savePicker of [true, false]) {
     ui.$('pairs').value = '0';
     await ui.$('pairs').dispatch('input');
     assert.equal(ui.$('run').disabled, true, '模拟参数无效不应阻止导出有效卡表');
-    assert.equal(ui.$('export').textContent, '导出 cards.json…');
-    assert.match(ui.$('export-hint').textContent, /直接替换项目 data\/cards\.json.*当前编辑的参数/);
+    assert.equal(ui.$('export').textContent, '导出上班卡表…');
+    assert.match(ui.$('export-hint').textContent, /直接替换项目 data\/on_work_cards\.json.*当前编辑的参数/);
 
     await ui.$('export').click();
 
     if (savePicker) {
       assert.equal(ui.fileSaves.length, 1);
       const file = ui.fileSaves[0];
-      assert.equal(file.options.suggestedName, 'cards.json');
+      assert.equal(file.options.suggestedName, 'on_work_cards.json');
       assert.deepEqual(file.options.types[0].accept, {'application/json':['.json']});
       assert.equal(file.writes.length, 1);
       assert.deepEqual(JSON.parse(file.writes[0]), expected, '保存文件只含当前完整卡表，不含配置或运行元信息');
@@ -362,7 +362,7 @@ for (const savePicker of [true, false]) {
     } else {
       assert.equal(ui.fileSaves.length, 0);
       assert.equal(ui.prompts.length, 1);
-      assert.equal(ui.prompts[0].suggested, 'cards.json');
+      assert.equal(ui.prompts[0].suggested, 'on_work_cards.json');
       assert.deepEqual(ui.posts(), [{url:'api/export', body:{path:exportPath, obj:expected}}],
         '备用通道只导出纯卡表到所选路径，不新增配置、运行或写备注');
     }
@@ -1633,7 +1633,7 @@ test('整体强度以滑钮映射全部BOT参数，修改滑钮保留计算和�
 
 
 test('三处强度滑钮拖动时同步应用全部可调参数，保留表单且不请求映射接口',async()=>{
- const botConfig=JSON.parse(readFileSync(path.join(__dirname,'../data/bot.json'),'utf8')).search.bot;
+ const botConfig=JSON.parse(readFileSync(path.join(__dirname,'../data/on_work_bot.json'),'utf8')).search.bot;
  const keys=Object.keys(botConfig).filter(key=>Array.isArray(botConfig[key])||typeof botConfig[key]==='number');
  assert.equal(keys.length,36);
  const schema=keys.map(key=>({key,label:key,kind:'int',min:0,max:10000000,step:1,hint:''}));
@@ -1789,7 +1789,7 @@ test('BOT对战的无效输入不会阻止卡表Q评估',async()=>{
 
 
 test('BOT 对战位于页面最下，双方完整呈现全部可调参数并保持各自的修改',async()=>{
- const botConfig=JSON.parse(readFileSync(path.join(__dirname,'../data/bot.json'),'utf8')).search.bot;
+ const botConfig=JSON.parse(readFileSync(path.join(__dirname,'../data/on_work_bot.json'),'utf8')).search.bot;
  const keys=Object.keys(botConfig).filter(key=>Array.isArray(botConfig[key])||typeof botConfig[key]==='number');
  const anchor=(key,index)=>{const value=Array.isArray(botConfig[key])?botConfig[key][index][1]:botConfig[key];return key==='search_fraction'?Math.round(value*1000000)/1000000:value};
  assert.equal(keys.length,36,'全部能力、预算与评估参数都应包含');

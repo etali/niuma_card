@@ -21,7 +21,7 @@ SPEC.loader.exec_module(WORKBENCH)
 
 class CardConfigContractTest(unittest.TestCase):
     def test_shared_import_contract(self):
-        base = json.loads((ROOT / 'data/cards.json').read_text())
+        base = json.loads((ROOT / 'data/on_work_cards.json').read_text())
         cases = json.loads((ROOT / 'tests/fixtures/card_config_contract.json').read_text())
         python_results = []
         for case in cases:

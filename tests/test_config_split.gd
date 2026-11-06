@@ -10,9 +10,9 @@ const CARDS_TEMP := "user://test_split_legacy_cards.json"
 
 func _initialize() -> void:
 	print("=== 展示 / 规则 / BOT 配置隔离 ===")
-	var cards := _json("res://data/cards.json")
+	var cards := _json("res://data/on_work_cards.json")
 	var ui := _json("res://data/ui.json")
-	var bot := _json("res://data/bot.json")
+	var bot := _json("res://data/on_work_bot.json")
 	check(not cards.has("_bot") and not cards.has("_sim") and not cards.has("_sfx"),
 		"cards.json 不再重复保存 BOT、模拟和音效参数")
 	check(not cards["_game"].has("res_labels"), "资源名称移出牌局规则源文件")

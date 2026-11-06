@@ -1,0 +1,269 @@
+{
+  "drawing": {
+    "source_size": 1024,
+    "display_size": 384,
+    "fps": 12,
+    "frames": 60,
+    "start_hold_frames": 4,
+    "end_hold_frames": 4,
+    "loop_pause": 0.65,
+    "stroke": 8,
+    "motion": {
+      "employee": {
+        "typing_cycles": 4,
+        "wrist_lift": 30,
+        "head_nod": 11,
+        "result_start": 0.35,
+        "result_end": 0.78,
+        "result_draw_rate": 5,
+        "smile_start": 0.43,
+        "smile_end": 0.65
+      },
+      "grinder": {
+        "typing_cycles": 8,
+        "wrist_lift": 42,
+        "head_nod": 5
+      },
+      "work": {
+        "compression": 29,
+        "loose_page_rise": 24,
+        "loose_page_fall": 19
+      },
+      "leader": {
+        "point_lift": 37,
+        "pie_growth": 0.18,
+        "emphasis_cycles": 3
+      },
+      "involution": {
+        "wheel_turns": 3,
+        "stride": 32
+      },
+      "overtime": {
+        "clock_turns": 1
+      },
+      "coffee": {
+        "steam_sway": 18,
+        "wake_threshold": 0.55
+      },
+      "transfer": {
+        "travel": 38,
+        "arc_height": 51,
+        "pan_rotation": 5
+      },
+      "meeting": {
+        "attendee_nod": 12,
+        "pointer_lift": 18
+      },
+      "bonus": {
+        "coin_rise": 29,
+        "coin_swing": 7
+      },
+      "slack": {
+        "catch_rise": 40,
+        "fish_sway": 6,
+        "fish_rotation": 8
+      },
+      "outsource": {
+        "compression": 15,
+        "paper_rotation": 1.5
+      },
+      "rework": {
+        "lift_end": 0.24,
+        "impact_at": 0.43,
+        "bounce_end": 0.58,
+        "return_end": 0.88,
+        "lift_height": 44,
+        "strike_depth": 85,
+        "recoil_height": 29
+      }
+    },
+    "palette": {
+      "ink": "#261e16",
+      "paper": "#fff1ce",
+      "gold": "#efcf84",
+      "shadow": "#d7bc87",
+      "red": "#ca775d",
+      "green": "#a6bd91",
+      "dark": "#65533c"
+    },
+    "cards": {
+      "work": {
+        "name": "工作",
+        "action": "纸山向下压，底下的打工人顶住，纸页弹起再落回。"
+      },
+      "employee": {
+        "name": "员工",
+        "action": "困眼员工交替敲键盘，屏幕打出勾，得意一瞬又继续。"
+      },
+      "leader": {
+        "name": "领导",
+        "action": "翘腿领导抬手指点江山，头顶的大饼越画越大，随后收手得意。"
+      },
+      "grinder": {
+        "name": "卷王",
+        "action": "绑头带的卷王眼睛放光，两只手高速敲出火花，纸张在桌边震起。"
+      },
+      "involution": {
+        "name": "内卷",
+        "action": "打工人在巨型仓鼠轮里奋力跑，轮子飞转，领带被甩平。"
+      },
+      "overtime": {
+        "name": "加班",
+        "action": "月亮趴在闹钟上打盹，钟下员工边敲键盘边点头，突然惊醒。"
+      },
+      "coffee": {
+        "name": "咖啡",
+        "action": "咖啡杯小睡打鼾，热汽翻涌，杯子睁大眼睛精神抖擞。"
+      },
+      "transfer": {
+        "name": "甩锅",
+        "action": "打工人托住装满文件的黑锅，一推一接地把锅甩向旁边的手。"
+      },
+      "meeting": {
+        "name": "开会",
+        "action": "领导反复指向圆饼，桌边两个员工打盹点头，又被敲醒。"
+      },
+      "bonus": {
+        "name": "奖金",
+        "action": "钓竿吊着大金币，员工垫脚伸手，总是差那么一点。"
+      },
+      "slack": {
+        "name": "摸鱼",
+        "action": "员工躲在办公桌后钓鱼，鱼从巨型咖啡杯里探头，悄悄落回。"
+      },
+      "outsource": {
+        "name": "外包",
+        "action": "大机械手接过整摞文件，压缩打包，工人松一口气。"
+      },
+      "rework": {
+        "name": "返工",
+        "action": "大印章重重盖下叉号，纸页和小人被震起，印章抬起准备再来。"
+      }
+    }
+  },
+  "gpt": {
+    "_说明": "历史九格GPT源稿打包配置，仅保留仍在卡池内的旧素材。罢工及新版主图由art_pipeline.json.masters登记，不通过此历史九格流程生成。现金沿用牛马牌。",
+    "registration": {
+      "mode": "bottom_center",
+      "alpha_threshold": 8,
+      "anchor_roi_space": "visible_bbox",
+      "anchor_roi": null
+    },
+    "grid": {
+      "columns": 3,
+      "rows": 3
+    },
+    "order": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "pose_hold_ticks": 2,
+    "start_extra_ticks": 2,
+    "return_to_first_ticks": 6,
+    "fps": 12,
+    "display_size": 384,
+    "loop_pause": 0.65,
+    "minimum_transparent_margin": 1,
+    "extraction_timeout_seconds": 90,
+    "review": {
+      "background": "#b0c69f",
+      "ink": "#261e16",
+      "font": "assets/fonts/NotoSansSC.ttf",
+      "font_size": 22,
+      "caption_height": 38,
+      "columns": 4,
+      "cell_size": 288
+    },
+    "cards": {
+      "work": {
+        "name": "工作",
+        "sheet": "assets/art/generated_gpt/work/sheet.png"
+      },
+      "employee": {
+        "name": "员工",
+        "sheet": "assets/art/generated_gpt/employee/sheet.png",
+        "registration": {
+          "anchor_roi": [
+            0,
+            0,
+            1,
+            0.4
+          ]
+        }
+      },
+      "involution": {
+        "name": "内卷",
+        "sheet": "assets/art/generated_gpt/involution/sheet.png"
+      },
+      "overtime": {
+        "name": "加班",
+        "sheet": "assets/art/generated_gpt/overtime/sheet.png"
+      },
+      "coffee": {
+        "name": "咖啡",
+        "sheet": "assets/art/generated_gpt/coffee/sheet.png"
+      },
+      "transfer": {
+        "name": "甩锅",
+        "sheet": "assets/art/generated_gpt/transfer/sheet.png"
+      },
+      "meeting": {
+        "name": "开会",
+        "sheet": "assets/art/generated_gpt/meeting/sheet.png"
+      },
+      "slack": {
+        "name": "摸鱼",
+        "sheet": "assets/art/generated_gpt/slack/sheet.png",
+        "registration": {
+          "anchor_roi": [
+            0,
+            0,
+            1,
+            0.35
+          ]
+        }
+      },
+      "outsource": {
+        "name": "外包",
+        "sheet": "assets/art/generated_gpt/outsource/sheet.png"
+      },
+      "leader": {
+        "name": "领导",
+        "sheet": "assets/art/generated_gpt/leader/sheet.png",
+        "registration": {
+          "anchor_roi": [
+            0,
+            0,
+            1,
+            0.2
+          ]
+        }
+      },
+      "grinder": {
+        "name": "卷王",
+        "sheet": "assets/art/generated_gpt/grinder/sheet.png"
+      }
+    },
+    "shared_padding_pixels": 4,
+    "maximum_grid_edge_alpha": 7
+  },
+  "masters": {
+    "_说明": "只做GPT单主图的整幅等比缩放和透明留边，不重画、不插值生成姿势。运行时动作参数单独在ui.json.icon_motion。其余卡保留上一版GPT首姿势，现金保留原图。",
+    "display_size": 384,
+    "source_canvas_fraction": 0.9,
+    "cards": {
+      "outsource": "assets/art/generated_gpt_v2/outsource/master.png",
+      "meeting": "assets/art/generated_gpt_v3/meeting/master.png",
+      "strike": "assets/art/generated_gpt_v2/strike/master.png",
+      "workaholic": "assets/art/generated_gpt_v4/workaholic/master.png",
+      "work_emperor": "assets/art/generated_gpt_v4/work_emperor/master.png"
+    }
+  }
+}

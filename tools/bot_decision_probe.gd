@@ -55,7 +55,7 @@ func _fixed(args: PackedStringArray) -> void:
 		quit(2)
 		return
 	CardDB.reset()
-	BOTConfig._source = "res://data/bot.json"
+	BOTConfig._source = BOTConfig.PATH
 	if not CardDB.load_default():
 		quit(2)
 		return

@@ -37,7 +37,7 @@ class BenchmarkPathsTest(unittest.TestCase):
         for project in (self.current, self.baseline):
             (project / 'tools').mkdir(parents=True)
             (project / 'data').mkdir()
-            (project / 'data/cards.json').write_text('{"fixture": true}')
+            (project / 'data/on_work_cards.json').write_text('{"fixture": true}')
         self.probe = self.current / 'tools/bot_equivalence_probe.gd'
         self.probe.write_text('# probe fixture\n')
 
@@ -114,7 +114,7 @@ class BenchmarkPathsTest(unittest.TestCase):
                 for key in ('cards_path', 'output_path', 'progress_path'):
                     self.assertFalse(Path(request[key]).is_absolute())
                 cards = (project / request['cards_path']).resolve()
-                self.assertEqual(cards, self.baseline / 'data/cards.json')
+                self.assertEqual(cards, self.baseline / 'data/on_work_cards.json')
                 self.assertEqual(json.loads(cards.read_text()), {'fixture': True})
                 output = (project / request['output_path']).resolve()
                 progress = (project / request['progress_path']).resolve()
@@ -127,12 +127,12 @@ class BenchmarkPathsTest(unittest.TestCase):
                 output.write_text(json.dumps(result))
                 progress.write_text('{}')
                 requests.append((project, request))
-            return self.process(f'loaded {project}/data/cards.json\n', self.usage_output())
+            return self.process(f'loaded {project}/data/on_work_cards.json\n', self.usage_output())
 
         argv = ['benchmark', '--baseline', str(self.baseline), '--current', str(self.current),
                 '--output', str(self.output), '--godot', 'godot', '--warmups', '0', '--repetitions', '3']
         with mock.patch.object(sys, 'argv', argv), mock.patch.object(equivalence, 'PROBE', self.probe), \
-                mock.patch.object(equivalence, 'fingerprint', return_value={'data/cards.json': 'same'}), \
+                mock.patch.object(equivalence, 'fingerprint', return_value={'data/on_work_cards.json': 'same'}), \
                 mock.patch.object(equivalence.subprocess, 'Popen', side_effect=launch), \
                 contextlib.redirect_stdout(io.StringIO()) as printed:
             equivalence.main()

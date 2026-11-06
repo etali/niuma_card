@@ -9,6 +9,7 @@ extends Node3D
 
 const RoundFlow = preload("res://engine/round_flow.gd")
 const ResultPresentation = preload("res://scenes/result_presentation.gd")
+const OnWorkSession = preload("res://scenes/on_work_session.gd")
 const TableSnapshot = preload("res://scenes/table_snapshot.gd")
 const ReplayPresentation = preload("res://scenes/replay_presentation.gd")
 const ReplaySession = preload("res://engine/replay_session.gd")
@@ -34,7 +35,6 @@ const HudFx = preload("res://scenes/hud_fx.gd")
 const ComicFx = preload("res://scenes/comic_fx.gd")
 const PlatformMode = preload("res://engine/platform_mode.gd")
 const TouchInput = preload("res://scenes/table_touch_input.gd")
-const WebFiles = preload("res://scenes/web_files.gd")
 const CardConfig = preload("res://engine/card_config.gd")
 
 const PLAYER_ZONE_Z := TableRegions.PLAYER_ZONE_Z
@@ -322,10 +322,6 @@ var force_drawer_layout := false
 ## Android/iOS 使用横屏完整牌桌；测试可在桌面用此开关模拟移动模式。
 var force_mobile_layout := false
 var mobile_mode := false
-## 浏览器复用完整牌桌，不创建桌面原生抽屉；测试可在无头模式走同一布局。
-var force_web_layout := false
-var web_mode := false
-var web_files: Node
 var drawer_ui_scale := 1.0
 var _drawer_owns_pause := false
 var _tutorial_active := false
@@ -407,12 +403,13 @@ var _table_felt_lit := false     # 台面毛毡素材在位时侧壁要压暗，
 
 var _debug_shot: DebugShot = null   # 开发用截图钩子（见 _ready 末尾）
 
+var _shift_save_elapsed := 0.0
+
+func save_shift_session() -> bool:
+	return OnWorkSession.save_session(self)
+
 func _ready() -> void:
 	mobile_mode = force_mobile_layout or PlatformMode.is_mobile() or PlatformMode.force_mobile()
-	web_mode = force_web_layout or OS.has_feature("web")
-	if web_mode:
-		web_files = WebFiles.new()
-		add_child(web_files)
 	# 先应用卡表再创建卡面/规则说明，避免界面缓存了默认值才切到试玩配置。
 	if replay_session == null and not _apply_solo_cards_or_stop():
 		return
@@ -467,9 +464,10 @@ func _ready() -> void:
 	var seed_env := OS.get_environment("CARD_SEED")
 	if seed_env != "":
 		state.set_seed(int(seed_env))
-	state.new_game()
-	_rebuild_pipe()
-	_sync_round()
+	if not OnWorkSession.restore(self):
+		state.new_game()
+		_rebuild_pipe()
+		_sync_round()
 	if CardConfig.has_launch_override():
 		print("CARDS_CONFIG_READY: " + CardDB.loaded_from)
 	# 启动参数里指定了服务器/房间码就直接进联网局（需求 5，网页版靠这条走）。
@@ -479,12 +477,32 @@ func _ready() -> void:
 	# 必须存住实例：run() 是协程，实例被回收就跑不到 await 之后
 	_debug_shot = DebugShot.new()
 	_debug_shot.run(self)
-	if drawer_window and not mobile_mode and DisplayServer.get_name() != "headless" and OS.get_environment("CARD_SHOT") == "":
+	if drawer_window and not get_meta("shift_enter_expanded",false) and not mobile_mode and DisplayServer.get_name() != "headless" and OS.get_environment("CARD_SHOT") == "":
 		drawer_window.start_collapsed(true)
 
 # ---------- 场景搭建 ----------
 
+var _shift_hidden := false
+var _shift_frozen_since := -1
+
+func shift_network_live() -> bool:
+	return _net != null or _host != null or _network_join_pending()
+
+func set_shift_hidden(hidden: bool) -> void:
+	_shift_hidden = hidden
+	if is_instance_valid(table_hands): table_hands.set_shift_hidden(hidden)
+	if is_instance_valid(board) and hidden and not board._drag_cards.is_empty():
+		board.cancel_drag()
+	if hidden and not shift_network_live() and _drawer_pause_at < 0:
+		_shift_frozen_since = Time.get_ticks_msec()
+	elif not hidden and _shift_frozen_since >= 0:
+		_drawer_pause_total += Time.get_ticks_msec() - _shift_frozen_since
+		_shift_frozen_since = -1
+	if is_instance_valid(sfx):
+		sfx.set_drawer_suspended(hidden or (drawer_window != null and not drawer_window.is_expanded()))
+
 func _on_window_files_dropped(files: PackedStringArray) -> void:
+	if _shift_hidden: return
 	if drawer_presentation != null:
 		drawer_presentation.handle_card_config_files(files)
 
@@ -529,12 +547,12 @@ func _refresh_world_palette() -> void:
 
 
 func _uses_fitted_table() -> bool:
-	return drawer_window != null or mobile_mode or web_mode
+	return drawer_window != null or mobile_mode
 
 func _setup_drawer_window() -> void:
 	var headless := DisplayServer.get_name() == "headless"
-	if mobile_mode or web_mode:
-		# 移动端和浏览器直接进入共享牌桌，不创建原生抽屉或运行收放状态机。
+	if mobile_mode:
+		# 移动端直接进入共享牌桌，不创建原生抽屉或运行收放状态机。
 		# UI尺寸按当前可见视口统一计算；卡牌大小由共享镜头决定。
 		get_window().content_scale_size = Vector2i.ZERO
 		get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
@@ -549,9 +567,6 @@ func _setup_drawer_window() -> void:
 		return
 	drawer_window = DrawerWindow.new()
 	drawer_window.name = "DrawerWindow"
-	var requested := OS.get_environment("CARD_DRAWER_SIZE").split("x")
-	if requested.size() == 2 and int(requested[0]) >= 900 and int(requested[1]) >= 600:
-		drawer_window.set_expanded_size(Vector2i(int(requested[0]), int(requested[1])))
 	add_child(drawer_window)
 	drawer_window.can_collapse = _drawer_can_collapse
 	drawer_window.expanded_changed.connect(_on_drawer_expanded_changed)
@@ -560,18 +575,11 @@ func _setup_drawer_window() -> void:
 		_drawer_stack_sway(expanded)
 		if not expanded and drawer_presentation:
 			drawer_presentation.suspend_panels())
+	drawer_ui_scale = drawer_window.setup_table_window(headless, drawer_ui_scale)
 	if headless:
-		get_window().content_scale_size = Vector2i.ZERO
-		get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-		drawer_window.setup(false, Rect2i(Vector2i.ZERO, get_window().size))
-		drawer_window.set_display_scale(drawer_ui_scale)
 		drawer_window.pin()
-	else:
-		drawer_window.setup()
-		drawer_ui_scale = clampf(DisplayServer.screen_get_scale(get_window().current_screen), 1.0, 2.0)
-		drawer_window.set_display_scale(drawer_ui_scale)
-		if OS.get_environment("CARD_SHOT") != "":
-			drawer_window.set_process(false)
+	elif OS.get_environment("CARD_SHOT") != "":
+		drawer_window.set_process(false)
 
 func _setup_drawer_presentation() -> void:
 	if not _uses_fitted_table():
@@ -618,6 +626,7 @@ func _on_drawer_expanded_changed(expanded: bool) -> void:
 ## 收起后让对手和自动结算继续进行；只有等待玩家操作时才暂停本地牌局。
 ## 网络握手、主机与客户端始终运行，暂停只由抽屉自己取得/释放。
 func _refresh_drawer_pause() -> void:
+	if _shift_hidden: return
 	if replay_session != null:
 		return
 	if not is_inside_tree():
@@ -691,13 +700,14 @@ func _drawer_stack_sway(expanding: bool) -> void:
 
 func _animation_now_ms() -> int:
 	var now := Time.get_ticks_msec()
-	var pending := now - _drawer_pause_at if _drawer_pause_at >= 0 else 0
+	var frozen_at := _drawer_pause_at if _drawer_pause_at >= 0 else _shift_frozen_since
+	var pending := now - frozen_at if frozen_at >= 0 else 0
 	return now - _drawer_pause_total - pending
 
 func _await_drawer_resume() -> void:
 	var session := _session_generation
 	# 真正暂停等待玩家时，工作线程结果仍等恢复；后台BOT回合不会取得暂停。
-	while _session_current(session) and get_tree().paused:
+	while _session_current(session) and (get_tree().paused or (_shift_hidden and not shift_network_live())):
 		await get_tree().process_frame
 
 func _market_slot(index: int, count: int) -> Vector3:
@@ -1032,7 +1042,7 @@ func _position_pass_button() -> void:
 func _input(event: InputEvent) -> void:
 	if is_instance_valid(_replay_picker) and _replay_picker.visible:
 		return
-	if (drawer_window or mobile_mode or web_mode) and event is InputEventKey and event.pressed and not event.echo 		and event.keycode == KEY_ESCAPE:
+	if (drawer_window or mobile_mode) and event is InputEventKey and event.pressed and not event.echo 		and event.keycode == KEY_ESCAPE:
 		if drawer_presentation and drawer_presentation.panels_open():
 			drawer_presentation.close_panels()
 		else:
@@ -1053,7 +1063,9 @@ func _input(event: InputEvent) -> void:
 		_save_replay()
 
 func _notification(what: int) -> void:
-	if not mobile_mode or not is_instance_valid(board):
+	if what in [NOTIFICATION_WM_CLOSE_REQUEST, NOTIFICATION_APPLICATION_PAUSED]:
+		save_shift_session()
+	if _shift_hidden or not mobile_mode or not is_instance_valid(board):
 		return
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		if is_instance_valid(_replay_picker) and _replay_picker.visible:
@@ -1065,6 +1077,7 @@ func _notification(what: int) -> void:
 		elif not board._drag_cards.is_empty():
 			board.cancel_pointer()
 		else:
+			save_shift_session()
 			get_tree().quit()
 	elif what == NOTIFICATION_APPLICATION_PAUSED:
 		board.cancel_pointer()
@@ -1082,17 +1095,6 @@ func _notification(what: int) -> void:
 ## 因为它在别处没有绑定（项目里没有 InputMap 动作），
 ## 而且拖着牌的时候手不用离开桌面
 func _save_replay() -> void:
-	if web_mode:
-		_flush_record_view()
-		var record: Tape = replay_session.record if replay_session != null else tape
-		var downloaded: bool = web_files.download_json(record.to_dict(), record.default_name())
-		if drawer_presentation != null:
-			drawer_presentation.show_record_download(downloaded)
-		if downloaded:
-			_show_message("已发起录像下载，请在浏览器下载列表查看。", Palette.semantic("success"))
-		else:
-			_show_message("浏览器下载不可用，请允许此页面下载文件后重试。", Palette.semantic("danger"))
-		return
 	if replay_session != null:
 		_present_save_result(replay_session.path, replay_session.record.size())
 		return
@@ -1120,11 +1122,23 @@ func _present_save_result(path: String, steps: int, failed := false) -> void:
 	else:
 		save_notice.show_saved(path, steps)
 
-func _drawer_timer(seconds: float) -> SceneTreeTimer:
+func _drawer_timer(seconds: float):
 	# 演出计时器遵守场景暂停；联网时不暂停场景，网络仍正常轮询。
-	return get_tree().create_timer(seconds, false)
+	if not has_meta("shift_session_enabled"): return get_tree().create_timer(seconds,false)
+	# The hosted timer inherits its table's suspend/resume state.
+	var timer := Timer.new()
+	timer.one_shot = true
+	add_child(timer)
+	timer.timeout.connect(timer.queue_free)
+	timer.start(maxf(seconds,0.001))
+	return timer
 
 func _process(delta: float) -> void:
+	if get_meta("shift_session_enabled", false):
+		_shift_save_elapsed += delta
+		if _shift_save_elapsed >= 5.0:
+			_shift_save_elapsed = 0.0
+			save_shift_session()
 	_flush_record_view()
 	_update_thinking_hint()
 	# 联网局的心跳。WebSocketPeer 是轮询式的，不 poll 就什么都不会发生
@@ -1721,6 +1735,7 @@ func _begin_action_phase(resume_actor := "") -> void:
 	_actor = resume_actor if resume_actor != "" else state.action_first()
 	if state.round_num > 1:
 		_opening_action_pending = false
+	OnWorkSession.save_session(self, true)
 	_set_mascot_state("idle")
 	_update_hud()
 	if _actor == my_seat:
@@ -1830,6 +1845,7 @@ func _on_action_done() -> void:
 		return
 	var local := _net == null
 	if local:
+		save_shift_session()
 		_local_turn_flows += 1
 	await _finish_player_action()
 	if local:
@@ -3532,6 +3548,7 @@ func _update_thinking_hint(force := false) -> void:
 ## `wait_to_finish` 就析构会报「Thread must be disposed」，而那条错误在导出版里
 ## 只进日志。玩家关窗口时 BOT 可能正在想（满档 1.7 秒，关窗口撞得上）
 func _exit_tree() -> void:
+	save_shift_session()
 	_invalidate_session()
 	tape.stop()
 	if _drawer_owns_pause and get_tree():
@@ -3662,6 +3679,7 @@ func _attack_turn(who: String) -> void:
 func _play_attack_turn(who: String, pools: Dictionary) -> Dictionary:
 	var session := _session_generation
 	_attack_actor = who
+	OnWorkSession.save_session(self, true)
 	_refresh_mascot_state()
 	if who == foe_seat:
 		_show_attack_label(_attack_label_text(TXT_ATTACK_FOE, pools), false)
@@ -4008,8 +4026,8 @@ func _target_center(target: Dictionary) -> Vector3:
 	return _table_actions.attack_target_center(target)
 
 ## 同一次攻击命中的全部卡共用抓握、撕开和退场节拍，数量不增加动画次数。
-func _animate_removed(removed: Array, toward_ai: bool, held_cards: Array = []) -> float:
-	var duration: float = _table_actions.animate_removed(removed, toward_ai, table_hands, held_cards)
+func _animate_removed(removed: Array, toward_bot: bool, held_cards: Array = []) -> float:
+	var duration: float = _table_actions.animate_removed(removed, toward_bot, table_hands, held_cards)
 	_track_attack_duration(duration)
 	return duration
 
@@ -4294,6 +4312,7 @@ func _show_game_over() -> void:
 		return   # 防重入：典当冲线的延时分支和正常流程可能都调到这里
 	_invalidate_session()
 	phase = PHASE_OVER
+	save_shift_session()
 	_set_mascot_state("success" if state.winner == my_seat else "defeat")
 	board.cancel_drag()
 	board.attack_mode = false
@@ -4451,7 +4470,7 @@ func _apply_solo_cards_or_stop() -> bool:
 	push_error(reason)
 	set_process(false)
 	set_physics_process(false)
-	if DisplayServer.get_name() != "headless" and not OS.has_feature("web"):
+	if DisplayServer.get_name() != "headless":
 		OS.alert(reason, "无法启动指定配置")
 	get_tree().quit(1)
 	return false
@@ -4467,7 +4486,7 @@ func choose_card_config(path: String) -> Dictionary:
 	if replay_session != null:
 		return {"ok": false, "reason": "请先退出录像，再修改卡牌配置。"}
 	if _net != null or _host != null:
-		return {"ok": false, "reason": "联网期间只使用默认 cards.json"}
+		return {"ok": false, "reason": "联网期间只使用上班默认卡表"}
 	var result := CardConfig.select(path)
 	if not result["ok"]:
 		return result
@@ -4477,7 +4496,7 @@ func clear_card_config() -> Dictionary:
 	if replay_session != null:
 		return {"ok": false, "reason": "请先退出录像，再修改卡牌配置。"}
 	if _net != null or _host != null:
-		return {"ok": false, "reason": "联网期间只使用默认 cards.json"}
+		return {"ok": false, "reason": "联网期间只使用上班默认卡表"}
 	if CardConfig.has_launch_override():
 		return {"ok": false, "reason": "本次启动由 --cards-config 指定卡表；关闭游戏后重新启动才能恢复默认"}
 	var cleared := CardConfig.clear_selection()
@@ -4489,7 +4508,7 @@ func apply_selected_card_config() -> Dictionary:
 	if replay_session != null:
 		return {"ok": false, "reason": "请先退出录像，再应用配置并开始新局。"}
 	if _net != null or _host != null:
-		return {"ok": false, "reason": "联网期间只使用默认 cards.json"}
+		return {"ok": false, "reason": "联网期间只使用上班默认卡表"}
 	if _local_turn_flows > 0 or (board != null and not board._drag_cards.is_empty()):
 		return {"ok": false, "reason": "当前行动尚未结束，请在回合边界切换卡牌配置"}
 	var loaded := _load_card_rules(true)
@@ -5024,17 +5043,6 @@ func _show_message(text: String, color: Color, record_text := "") -> void:
 
 # ---------- 录像播放 ----------
 func open_replay_picker() -> void:
-	if web_mode:
-		# 浏览器的文件选择必须直接来自用户点击，不能推迟到下一帧。
-		var session := _session_generation
-		web_files.request_json(func(result: Dictionary):
-			if not _session_current(session) or result.get("cancelled", false):
-				return
-			if not result.get("ok", false):
-				_show_message(str(result.get("reason", "读取文件失败")), Palette.semantic("danger"))
-				return
-			_load_replay(result["path"]))
-		return
 	# 菜单自己的关闭/焦点事件结束后再建立表单，避免同一输入回调内重入。
 	_show_replay_picker.call_deferred()
 

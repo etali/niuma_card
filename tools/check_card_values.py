@@ -34,7 +34,7 @@ KNOWN_PARETO = {
 
 
 def load():
-    d = json.loads((ROOT / "data" / "cards.json").read_text())
+    d = json.loads((ROOT / "data" / "on_work_cards.json").read_text())
     cards = {k: v for k, v in d.items() if not k.startswith("_") and isinstance(v, dict)}
     return cards
 

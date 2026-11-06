@@ -84,10 +84,12 @@ class AppIconTest(unittest.TestCase):
         self.assertEqual(hashlib.sha256(source_path.read_bytes()).digest(), before)
 
     def test_both_entrypoints_use_shared_gate_before_font_transaction(self):
-        for name in ("构建游戏.command", "打包发布.command"):
-            code = (ROOT / name).read_text()
-            self.assertIn("python3 tools/ensure_app_icon.py", code)
-            self.assertLess(code.index("ensure_app_icon || exit 1"), code.index("\nsubset_font"))
+        release = (ROOT / "打包发布.command").read_text()
+        self.assertIn("exec /bin/bash ./构建游戏.command --release", release)
+        code = (ROOT / "构建游戏.command").read_text()
+        self.assertIn("python3 tools/ensure_app_icon.py", code)
+        self.assertLess(code.index("ensure_app_icon || exit 1"), code.index("\nsubset_font"))
+
 
 
 if __name__ == "__main__":

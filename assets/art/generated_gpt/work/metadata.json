@@ -1,0 +1,87 @@
+{
+  "card": "work",
+  "tool": "image_gen.imagegen (built-in)",
+  "source": "/Users/Yitan/.codex/generated_images/01a188c8-cb19-73d1-bb6f-45ead7f842bc/exec-6a56bf3d-b5b7-4493-9d72-0dcc9d7b8210.png",
+  "reference_images": [
+    "/Users/Yitan/repos/niuma_card/assets/art/icon/icon_user.png",
+    "/Users/Yitan/repos/niuma_card/assets/art/icon/icon_cash.png"
+  ],
+  "layout": {
+    "columns": 3,
+    "rows": 3,
+    "generated_keyframes": 9
+  },
+  "prompt": "Use case: stylized-concept. Create ONE production sprite-sheet asset for the \"工作 / work\" card of an irreverent office game, using the two attached images ONLY as visual style references. Match their very simple cream flat fill, dark brown thick slightly irregular rounded ink outline, dot eyes, and sweet deadpan cartoon humor. No shading, no watercolor, no 3D, no texture, no realistic lighting.\nDraw precisely 9 consecutive complete animation frames of the SAME subject in a perfect 3-column by 3-row equal-cell grid, reading row-major, square 1536x1536 canvas, each cell square. Transparent alpha background. No grid lines, no frame outlines, no text/labels/numbers.\nSubject: ONE squat fat stack of cream office documents tied around its middle with a single ochre rubber band. Two tiny dot eyes and a small exhausted squiggle mouth on the front sheet make the pile itself look overworked. This paper stack is the whole subject; no people, desk, laptop, pencils, clocks or additional props. Large immediately readable silhouette.\nAnimation is a short dry comic breathing loop: 1 neutral slightly compressed stack, 2 the stack begins to inhale, 3 swells upward just a little as the rubber band stretches, 4 swells slightly more and eyes widen, 5 a brief maximum straining pose with one tiny sweat drop, 6 exhales, 7 compresses gently, 8 settles, 9 matches frame 1. Bottom of the pile remains anchored at the same position in every cell, identical size/camera/colors/ink thickness throughout; no floating whole image or sliding pile; the stack flexes by at most 5%. Keep all content inside the middle 74% of each cell with generous clear transparent gutters. Make this witty and elegant through the single expressive object, not complicated decoration. Exactly nine frames of one object, never nine different designs.",
+  "inspection": "Nine complete paper-pile poses; single subject, no layout text, transparent background, subtle expression/compression variation. Generated cels require extraction; no claim of 60 independently drawn frames.",
+  "actual_size": [
+    1254,
+    1254
+  ],
+  "mode": "RGBA",
+  "alpha_extrema": [
+    0,
+    255
+  ],
+  "sheet_sha256": "040948446b21aea86e560861eba3b18681357a24c065bab9b89a639935d1862b",
+  "cell_size": [
+    418,
+    418
+  ],
+  "visible_bounds_alpha_over_32": [
+    [
+      69,
+      146,
+      386,
+      398
+    ],
+    [
+      47,
+      139,
+      368,
+      399
+    ],
+    [
+      36,
+      125,
+      350,
+      399
+    ],
+    [
+      66,
+      85,
+      391,
+      362
+    ],
+    [
+      48,
+      68,
+      378,
+      362
+    ],
+    [
+      29,
+      102,
+      354,
+      362
+    ],
+    [
+      67,
+      79,
+      392,
+      332
+    ],
+    [
+      48,
+      80,
+      368,
+      332
+    ],
+    [
+      31,
+      81,
+      350,
+      332
+    ]
+  ],
+  "cell_edge_touching_frames": []
+}

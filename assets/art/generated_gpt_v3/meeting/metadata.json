@@ -1,0 +1,11 @@
+{
+  "tool": "built-in image_gen",
+  "source": "/Users/Yitan/.codex/generated_images/01a192e2-126b-76e2-afb9-27a172e1f0e4/exec-163aa5e9-f2ca-44ef-bc66-0efa4bb373b4.png",
+  "references": [
+    "assets/art/icon/work_leader.png"
+  ],
+  "type": "single_master",
+  "concept": "One existing leader character talking enthusiastically at a meeting, mouth wide open, raised index finger and open-palm gesture, no listener",
+  "postprocessing": "none; production icon is whole-master uniform resize with transparent padding",
+  "source_sha256": "9c76ea0ccde879b72e8dad023ec2ba46231908c8af3f93d68c7f7c99d5c2a4da"
+}

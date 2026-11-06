@@ -78,6 +78,10 @@ func clear() -> void:
 		_canvas.hide()
 	_restore_cursor()
 
+func set_shift_hidden(hidden: bool) -> void:
+	visible = not hidden
+	if hidden: _restore_cursor()
+
 func _restore_cursor() -> void:
 	if _cursor_owner == get_instance_id():
 		_apply_cursor(null)
@@ -103,8 +107,6 @@ func _native_pixel_scale() -> float:
 		# Godot 的 macOS 窗口/鼠标坐标统一使用所有屏幕的最大缩放；
 		# 混用 Retina 与普通外接屏时不能除以当前屏幕缩放。
 		return DisplayServer.screen_get_max_scale()
-	if OS.has_feature("web"):
-		return DisplayServer.screen_get_scale(host.get_window().current_screen)
 	return 1.0
 
 func _native_cursor_scale() -> float:
@@ -138,7 +140,7 @@ func _exit_tree() -> void:
 	_restore_cursor()
 
 func _process(delta: float) -> void:
-	if not is_instance_valid(host) or _canvas == null:
+	if not visible or not is_instance_valid(host) or _canvas == null:
 		_restore_cursor()
 		return
 	_pointer = host.get_viewport().get_mouse_position()

@@ -358,6 +358,8 @@ func _wait_presentation(source: Signal) -> void:
 	source.connect(beat.complete, CONNECT_ONE_SHOT)
 	await beat.finished
 	beat.queue_free()
+	if host.has_method("shift_network_live") and host._shift_hidden and not host.shift_network_live():
+		await host._await_drawer_resume()
 
 func _arrival_motions_pending(cards: Array) -> bool:
 	for card in cards:
@@ -597,7 +599,7 @@ func highlight_attack_targets(pools: Dictionary) -> Array:
 	return highlighted
 
 ## 正式对局、对手回放与教学都先从实体表摘除，再交唯一的整摞撕牌实现。
-func animate_removed(removed: Array, toward_ai: bool, hands: Node, held_cards: Array = [],
+func animate_removed(removed: Array, toward_bot: bool, hands: Node, held_cards: Array = [],
 		hitstop := Motion.HITSTOP, on_impact := Callable()) -> float:
 	var cards: Array = held_cards.filter(func(card): return is_instance_valid(card))
 	for uid in removed:
@@ -606,7 +608,7 @@ func animate_removed(removed: Array, toward_ai: bool, hands: Node, held_cards: A
 	for card in cards:
 		host.entities.erase(card.uid)
 		host.layout.kill_bot_move(card.uid)
-	return _motion().tear_batch(cards, hands, Vector3(0, 4, -2) if toward_ai else Vector3(0, 4, 2),
+	return _motion().tear_batch(cards, hands, Vector3(0, 4, -2) if toward_bot else Vector3(0, 4, 2),
 		hitstop, on_impact)
 
 ## 命中、抓握、撕开和等整批退场是同一条演出链；调用方只负责各自的局面有效期。

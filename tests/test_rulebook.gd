@@ -193,12 +193,18 @@ func _check_rulebook(main: Node, context: String) -> void:
 		and book.find_child("OtherTutorialsToggle", true, false) == null,
 		"%s：不再出现规则速查和其他玩法收起开关" % context)
 	var courses: Control = book.find_child("TutorialCourses", true, false)
-	check(courses != null and courses.visible and courses.get_child_count() == 8,
-		"%s：全部八课默认展开" % context)
+	if not need(courses != null, "%s：首页包含课程列表" % context): return
+	var visible_count := 0
 	for lesson in catalog.courses():
 		var button: Button = book.find_child("Course_" + lesson["id"], true, false)
-		check(button != null and button.is_visible_in_tree() and button.text.begins_with(lesson["title"]),
-			"%s：课程名称直接可选：%s" % [context, lesson["title"]])
+		if lesson.get("hidden", false):
+			check(button == null, "%s：隐藏课程不占列表入口：%s" % [context, lesson["title"]])
+			continue
+		visible_count += 1
+		check(button != null and button.get_parent() == courses and button.is_visible_in_tree()
+			and button.text.begins_with(lesson["title"]), "%s：课程名称直接可选：%s" % [context, lesson["title"]])
+	check(courses.is_visible_in_tree() and courses.get_child_count() == visible_count,
+		"%s：首页默认展开所有公开课程" % context)
 	var list_heading := false
 	for label: Label in book.find_children("*", "Label", true, false):
 		list_heading = list_heading or label.text == "课程与目标"

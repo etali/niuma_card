@@ -75,7 +75,7 @@ var _net: NetTransport = null
 var _url_edit: LineEdit
 var _room_edit: LineEdit
 var _btn: Button
-var _host_btn: Button = null       ## 网页版没有这一个（浏览器开不了监听端口）
+var _host_btn: Button = null
 var _status: Label
 ## 「对手该填我这边哪个地址」那一块（标题 + 只读输入框 + 复制）。
 ##
@@ -176,10 +176,9 @@ func _ready() -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 16)
 	_form.add_child(row)
-	if LaunchConfig.can_host():
-		_host_btn = _button("等待对局", _on_host)
-		_host_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(_host_btn)
+	_host_btn = _button("等待对局", _on_host)
+	_host_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(_host_btn)
 	_btn = _button("加入对局", _on_connect)
 	_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(_btn)
@@ -238,8 +237,7 @@ func _set_intro(waiting: bool) -> void:
 	if waiting:
 		_intro.text = "等待对手加入同一房间。\n取消后继续当前对局。"
 	else:
-		_intro.text = "等待对局：把地址和房间码发给对手。\n加入对局：填写对方提供的地址和房间码。" if LaunchConfig.can_host() \
-			else "填写对方提供的地址和房间码。\n网页版只能加入对局。"
+		_intro.text = "等待对局：把地址和房间码发给对手。\n加入对局：填写对方提供的地址和房间码。"
 
 func _select_address(index: int) -> void:
 	if index >= 0 and index < _available_addresses.size():
@@ -480,10 +478,10 @@ func _connect(url: String, room: String) -> void:
 	if _main != null and _main.has_method("prepare_network_cards"):
 		var cards_result: Dictionary = _main.prepare_network_cards()
 		if not cards_result.get("ok", false):
-			_say(str(cards_result.get("reason", "默认 cards.json 加载失败")), Color(1.0, 0.5, 0.45))
+			_say(str(cards_result.get("reason", "上班默认卡表 加载失败")), Color(1.0, 0.5, 0.45))
 			return
 	_mascot("connecting")
-	_net = NetTransport.new(url, room)
+	_net = _main.make_transport(url, room) if _main != null and _main.has_method("make_transport") else NetTransport.new(url, room)
 	_net.defer_scene_events()
 	# 三条信号都要接。**disconnected 是这个界面存在的主要理由**：
 	# 不接的话三种拒连（版本 / 卡表 / 房间满）在玩家眼里都是「按了没反应」
@@ -530,15 +528,7 @@ func apply_launch(cfg: Dictionary) -> void:
 		_room_edit.text = room
 	match str(cfg.get("mode", LaunchConfig.MODE_SOLO)):
 		LaunchConfig.MODE_HOST:
-			if LaunchConfig.can_host():
-				# --port= 传下去：不传的话它在 8910 开，而启动脚本
-				# 已经把那个数当成「第二份该去连的地方」报出去了
-				_on_host(int(cfg.get("port", 0)))
-			else:
-				# 网页版被要求开房间：**说清楚做不到**，别静默退回加入模式 ——
-				# 那样两边都在等对方开房，而画面上什么都不说
-				_say("网页版开不了房间（浏览器不能监听端口）——\n请对手按「等待对局」，然后把地址填在上面",
-					Color(1.0, 0.75, 0.4))
+			_on_host(int(cfg.get("port", 0)))
 		LaunchConfig.MODE_JOIN:
 			_on_connect()
 		_:

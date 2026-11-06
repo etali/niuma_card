@@ -70,8 +70,10 @@ unset CARD_BUILD_WORKER
 GODOT="${GODOT:-/Applications/Godot.app/Contents/MacOS/Godot}"
 
 # 不带参数继续使用已安装的完整模板；精简模式由独立工具准备专用模板后调用原流程。
+release_package=0
 if [ "$#" -gt 0 ]; then
 	case "$1" in
+		--release) release_package=1 ;;
 		--slim-engine|--slim|--engine-plan)
 			exec python3 tools/slim_engine.py --godot "$GODOT" "$@"
 			;;
@@ -86,7 +88,8 @@ if [ "$#" -gt 0 ]; then
 			cat <<'HELP'
 用法：
   ./安装构建环境.command                     首次使用：安装导出模板与 Python 依赖
-  ./构建游戏.command                         标准构建
+  ./构建游戏.command                         标准构建（上班和下班共用一个 App）
+  ./构建游戏.command --release               生成同一 App 和 macOS 发布压缩包
   ./构建游戏.command --engine-plan           扫描当前功能并查看裁剪计划，不下载、不编译
   ./构建游戏.command --slim-engine           编译精简模板后构建 App（首次较慢，之后使用缓存）
   ./安装安卓构建环境.command                   安装 Android SDK/JDK/导出模板
@@ -141,7 +144,13 @@ build_stage
 godot_checked --headless --export-release "macOS" "$_BUILD_STAGE/牛马牌.app"
 
 restore_font
-python3 tools/release_bundle.py "$_BUILD_STAGE" build --app-only
+if [ "$release_package" = 1 ]; then
+    cp data/on_work_cards.json data/off_work_cards.json "$_BUILD_STAGE/"
+    python3 tools/release_bundle.py "$_BUILD_STAGE" build
+    echo "发布包就绪：build/牛马牌_mac.zip"
+else
+    python3 tools/release_bundle.py "$_BUILD_STAGE" build --app-only
+fi
 
 echo ""
 echo "构建完成：build/牛马牌.app"

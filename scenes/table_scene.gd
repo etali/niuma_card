@@ -5,6 +5,7 @@
 extends RefCounted
 
 ## 正式对局和规则演示共用的牌桌构造。托盘、市场、典当设施、灯光及卡面只建这一份。
+const Backdrop = preload("res://scenes/table_backdrop.gd")
 const PriceTag = preload("res://scenes/market_price_tag.gd")
 const TableSurface = preload("res://scenes/table_surface.gd")
 const TableRegions = preload("res://scenes/table_regions.gd")
@@ -14,6 +15,7 @@ const FullLayout = preload("res://scenes/settle_layout.gd")
 const RenderWarmup = preload("res://scenes/table_render_warmup.gd")
 var host: Node3D
 var drawer_mode: bool
+var market_count: int
 var camera: Camera3D
 var _env: Environment
 var _table_mat: StandardMaterial3D
@@ -21,9 +23,10 @@ var _table_frame_mat: StandardMaterial3D
 var _table_felt_lit := false
 var _felt_material: ShaderMaterial
 
-func _init(parent: Node3D, drawer: bool) -> void:
+func _init(parent: Node3D, drawer: bool, slots := -1) -> void:
 	host = parent
 	drawer_mode = drawer
+	market_count = int(CardDB.game_rules()["market_size"]) if slots < 0 else slots
 
 func create_board() -> Board:
 	RenderWarmup.prepare(host)
@@ -53,7 +56,7 @@ func _market_slot(index: int, count: int) -> Vector3:
 	return TableRegions.market_slot(index, count, drawer_mode)
 
 func _pawn_position() -> Vector3:
-	return TableRegions.facility_position(int(CardDB.game_rules()["market_size"]), drawer_mode)
+	return TableRegions.facility_position(market_count, drawer_mode)
 
 func refresh_palette() -> void:
 	if _env:
@@ -114,62 +117,23 @@ func _setup_table() -> void:
 	body.add_child(shape)
 	host.add_child(body)
 
-	var mesh_inst := MeshInstance3D.new()
-	var plane := BoxMesh.new()
-	plane.size = Vector3(60, 0.15, 60) if drawer_mode else Vector3(34, 0.15, 22)
-	mesh_inst.mesh = plane
-	mesh_inst.position.y = -0.1
-	var mat := StandardMaterial3D.new()
-	# 台面与手绘卡面使用相同的平涂色；接触阴影独立绘制，灯光不再将绿底推成荧光色。
-	mat.albedo_color = Palette.get_color("world", "table_felt")
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.roughness = 0.9
-	mesh_inst.material_override = mat
-	_table_mat = mat
-	host.add_child(mesh_inst)
-
-	# 可选台面毛毡：贴图单独铺在顶面的平面上，避免同时贴到桌子侧壁。
-	var felt_tex := CardArt.table_texture("table_felt")
-	if felt_tex:
-		mat.albedo_color = Palette.get_color("world", "table_felt_lit")  # 侧壁配合毛毡压暗
-		_table_felt_lit = true
-		var felt := MeshInstance3D.new()
-		var fq := QuadMesh.new()
-		fq.size = Vector2(60, 60) if drawer_mode else Vector2(34, 22)
-		felt.mesh = fq
-		var fmat := StandardMaterial3D.new()
-		fmat.albedo_texture = felt_tex
-		# 与卡面底板同理：手绘平涂素材一律不受光，否则环境光+方向光把颜色顶到过曝
-		fmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		fmat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		felt.material_override = fmat
-		felt.rotation_degrees = Vector3(-90, 0, 0)
-		felt.position = Vector3(0, -0.024, 0)
-		host.add_child(felt)
+	var backdrop: Node3D
+	var acquire: Callable = host.get_meta("acquire_table_backdrop", Callable())
+	if acquire.is_valid():
+		backdrop = acquire.call(host, drawer_mode)
 	else:
-		var felt := MeshInstance3D.new()
-		felt.name = "PaperDesktop"
-		var surface := PlaneMesh.new()
-		surface.size = Vector2(60, 60) if drawer_mode else Vector2(34, 22)
-		felt.mesh = surface
-		_felt_material = ShaderMaterial.new()
-		_felt_material.shader = load("res://shaders/table_felt.gdshader")
-		_felt_material.set_shader_parameter("extent", surface.size)
-		_felt_material.set_shader_parameter("doodle_pattern", preload("res://assets/art/table/user_cash_pattern.svg"))
-		_felt_material.set_shader_parameter("felt_color", Palette.get_color("world", "table_felt"))
-		_felt_material.set_shader_parameter("doodle_ink", Palette.get_color("pattern", "ink"))
-		_felt_material.set_shader_parameter("pattern_density", Palette.get_number("pattern", "density"))
-		_felt_material.set_shader_parameter("pattern_spacing", Palette.get_number("pattern", "spacing"))
-		felt.material_override = _felt_material
-		felt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		felt.position.y = -0.024
-		host.add_child(felt)
+		backdrop = Backdrop.new()
+		host.add_child(backdrop)
+		backdrop.build(drawer_mode)
+	_table_mat = backdrop._table_mat
+	_table_felt_lit = backdrop._table_felt_lit
+	_felt_material = backdrop._felt_material
 
 	_setup_table_decor()
 
 func _add_market_slot_frames() -> void:
 	var tex := CardArt.table_texture("market_slot")
-	var n: int = CardDB.game_rules()["market_size"]
+	var n := market_count
 	for i in n:
 		var frame := TableSurface.new()
 		frame.configure(Vector2(CardEntity.CARD_SIZE.x, CardEntity.CARD_SIZE.z), "slot", tex)
@@ -180,22 +144,22 @@ func _add_market_slot_frames() -> void:
 		host.add_child(frame)
 
 func _add_zone_tray(mine: bool) -> void:
-	var rect := TableRegions.zone_rect(mine, drawer_mode, int(CardDB.game_rules()["market_size"]))
+	var rect := TableRegions.zone_rect(mine, drawer_mode, market_count)
 	var tray := TableSurface.new()
 	tray.configure(rect.size, "zone", CardArt.table_texture("zone_tray"))
-	tray.set_zone_owner("player" if mine else "ai")
+	tray.set_zone_owner("player" if mine else "bot")
 	tray.name = "PlayerZoneTray" if mine else "FoeZoneTray"
 	tray.position = Vector3(rect.get_center().x, 0.0, rect.get_center().y)
 	host.add_child(tray)
 
 func _add_market_tray() -> void:
-	var rect := TableRegions.market_rect(int(CardDB.game_rules()["market_size"]), drawer_mode)
+	var rect := TableRegions.market_rect(market_count, drawer_mode)
 	var tray := TableSurface.new()
 	tray.configure(rect.size, "market")
 	tray.position = Vector3(rect.get_center().x, 0.006, rect.get_center().y)
 	host.add_child(tray)
 	# 柜台与商品之间留一条短手绘分隔线。
-	var count := int(CardDB.game_rules()["market_size"])
+	var count := market_count
 	var facility := _pawn_position()
 	var last := _market_slot(maxi(count - 1, 0), count)
 	var divider := TableSurface.new()

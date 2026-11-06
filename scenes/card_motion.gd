@@ -118,7 +118,7 @@ func _fly_from(e: CardEntity, from_pos: Vector3, to_pos: Vector3,
 	e._visual.scale = Vector3.ONE * 0.55
 	var tw := create_tween().bind_node(e).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	if idx == 0 and not get_viewport().disable_3d:
-		var trace := func(): Feedback.trace(get_parent(), "arrival", from_pos, to_pos + Vector3.UP * 0.08, CardArt.accent_color(e.def_id), SPAWN_FLY_TIME)
+		var trace := func(): Feedback.trace(get_parent(), "arrival", from_pos, to_pos + Vector3.UP * 0.08, CardArt.accent_color(e.def_id, e.card_catalog), SPAWN_FLY_TIME)
 		if delay > 0.0:
 			tw.parallel().tween_callback(trace).set_delay(stagger)
 		else:
@@ -141,8 +141,8 @@ func _fly_from(e: CardEntity, from_pos: Vector3, to_pos: Vector3,
 	# 同一批逐张升调：一串落地声听得出「越来越多」，像收银机在数钱。
 	# 现金再叠一声硬币叮，用户没有这一声 —— 听得出到账的是钱还是人。
 	var pitch := 1.0 + ARRIVAL_PITCH_STEP * float(mini(idx, ARRIVAL_PITCH_STEPS))
-	var coin: bool = CardDB.get_def(e.def_id).get("res", "") == CardDB.RES_CASH \
-		and CardDB.get_def(e.def_id).get("kind", "") == CardDB.KIND_UNIT
+	var coin: bool = e.card_catalog.get_def(e.def_id).get("res", "") == e.card_catalog.RES_CASH \
+		and e.card_catalog.get_def(e.def_id).get("kind", "") == CardDB.KIND_UNIT
 	tw.parallel().tween_callback(func() -> void:
 		sfx.play("produce_land", pitch)
 		if coin:
@@ -151,7 +151,7 @@ func _fly_from(e: CardEntity, from_pos: Vector3, to_pos: Vector3,
 	# 落地撤掉归宿：此后实时坐标就是答案（见 _move_to）
 	tw.parallel().tween_callback(func() -> void:
 		_clear_dest(e)
-		e.pulse_feedback("arrive", CardArt.accent_color(e.def_id))) \
+		e.pulse_feedback("arrive", CardArt.accent_color(e.def_id, e.card_catalog))) \
 		.set_delay(stagger + SPAWN_FLY_TIME)
 	# 记在卡上，好让后面搬它的人（_move_to_spot）先掐掉这一段。
 	# Godot 不会因为同一个属性又被补间就作废前一条，两条一起跑会互相拉扯；

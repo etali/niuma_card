@@ -14,7 +14,7 @@ func check(ok: bool, label: String) -> void:
 		printerr("FAIL: ",label)
 
 func _initialize() -> void:
-	CardDB.load_from("res://data/cards.json")
+	CardDB.load_from("res://data/on_work_cards.json")
 	_test_limits()
 	_test_accumulation()
 	print("incremental balance: %d 通过 / %d 失败" % [passed,failed])

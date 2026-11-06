@@ -52,7 +52,7 @@ static func root() -> String:
 	var custom := OS.get_environment(DATA_DIR_ENV)
 	if custom.is_absolute_path():
 		return custom.simplify_path()
-	if OS.has_feature("android") or OS.has_feature("ios") or OS.has_feature("web"):
+	if OS.has_feature("android") or OS.has_feature("ios"):
 		return ""
 	var home := _home_dir()
 	if home == "":
@@ -91,3 +91,12 @@ static func _migrate_legacy(dir: String) -> void:
 			DirAccess.remove_absolute(legacy)
 		if FileAccess.file_exists(temporary):
 			DirAccess.remove_absolute(temporary)
+
+## 下班特有的操作偏好仍沿用原存储位置。
+static func work_settings_file(file_name: String) -> String:
+	var base := OS.get_environment("WORK_DATA_DIR")
+	if base.is_empty():
+		base = root().path_join("off_work") if not root().is_empty() else "user://off_work"
+	var directory := base.path_join(SETTINGS_DIR)
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(directory))
+	return directory.path_join(file_name)

@@ -6,11 +6,11 @@ See LICENSE in the project root.
 -->
 
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>牛马牌 · 手动调参工作台</title>
+<title>上班 · 牛马牌调参工作台</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='3' width='24' height='26' rx='3' fill='%232454b8'/%3E%3Cpath d='M10 23V15M16 23V9M22 23V12' stroke='white' stroke-width='3'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="report.css"><script src="report.js" defer></script></head>
-<body><main>
-<header><div><h1>牛马牌 · 手动调参</h1><p>改一份卡表，跑一批对局，再结合自己的试玩感受决定。</p></div><span class="local">仅本机运行 · 不改默认卡表</span></header>
+<link rel="stylesheet" href="report.css"><link rel="stylesheet" href="/mode-nav.css"><script src="/mode-nav.js" defer></script><script src="report.js" defer></script></head>
+<body><nav class="mode-nav" aria-label="游戏模式"><span class="mode-brand">牛马牌 <span>调参工作台</span></span><a href="/" aria-current="page">上班</a><a href="/off-work/">下班</a></nav><main>
+<header><div><h1>上班 · 手动调参</h1><p>改一份卡表，跑一批对局，再结合自己的试玩感受决定。</p></div><span class="local">仅本机运行 · 不改默认卡表</span></header>
 <div id="message" role="status" aria-live="polite">正在连接本地模拟器… 如果直接打开了此文件，请双击项目根目录「启动手动调参.command」。</div>
 <nav class="workbench-tabs" role="tablist" aria-label="工作台功能">
 <button id="tab-balance" type="button" role="tab" aria-selected="true" aria-controls="panel-balance" tabindex="0">平衡性调参</button>
@@ -21,8 +21,8 @@ See LICENSE in the project root.
 <section class="editor"><h2>编辑卡牌配置</h2>
 <div class="controls"><label class="grow">以这份配置为起点<select id="source"></select></label><label>导入完整卡表<input id="import" type="file" accept=".json,application/json"></label></div>
 <p class="muted">旧实验的 candidates/*.json 也可导入，只读取卡牌参数，不带入旧 Q 分数。</p>
-<div class="controls"><label class="grow">新版本名称<input id="name" maxlength="100" aria-describedby="name-error" placeholder="例如：降低黑公关价格"><small id="name-error" class="error" aria-live="polite" hidden></small></label><button id="export" aria-describedby="export-hint">导出 cards.json…</button></div>
-<p id="export-hint" class="muted">导出的文件可直接替换项目 data/cards.json；包含当前编辑的参数。</p>
+<div class="controls"><label class="grow">新版本名称<input id="name" maxlength="100" aria-describedby="name-error" placeholder="例如：降低黑公关价格"><small id="name-error" class="error" aria-live="polite" hidden></small></label><button id="export" aria-describedby="export-hint">导出上班卡表…</button></div>
+<p id="export-hint" class="muted">导出的文件可直接替换项目 data/on_work_cards.json；包含当前编辑的参数。</p>
 <p class="muted">创建新版本需要未使用的新名称和修改后的卡牌参数，先改哪一项都可以。只改名称或只改参数时不会启动模拟；名称、参数都未变化时复用当前配置，只新增模拟记录。</p><p id="dirty" class="muted"></p>
 <div class="config-notes"><label>试玩备注<textarea id="notes" rows="3" maxlength="10000" aria-describedby="notes-name notes-status" placeholder="记录这份配置的试玩感受：哪里爽、哪里拖、下一次想改什么…"></textarea></label><p id="notes-name" class="muted">请选择配置查看备注。</p><div class="controls notes-actions"><button id="save-notes" disabled>保存备注</button><p id="notes-status" class="muted" role="status" aria-live="polite">备注按配置保存，与评估记录无关。</p></div></div>
 <div class="play-controls"><button id="play" class="primary" aria-describedby="play-reason" disabled>保存并以当前配置启动游戏</button><p id="play-reason" class="muted" role="status" aria-live="polite">请选择配置，或保存修改后的新配置再试玩。</p><p id="play-result" class="muted" role="status" aria-live="polite" hidden></p></div>

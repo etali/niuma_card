@@ -62,7 +62,7 @@ func configure(price: int, card: CardEntity, board: Board) -> void:
 	_paper.position.y = -0.004
 	hanging.add_child(_paper)
 	_coin = Sprite3D.new()
-	_coin.texture = CardArt.res_icon_texture(CardDB.RES_CASH)
+	_coin.texture = CardArt.res_icon_texture(card.card_catalog.RES_CASH, card.card_catalog)
 	_coin.pixel_size = 0.29 / float(_coin.texture.get_width())
 	_coin.rotation_degrees.x = -90
 	_coin.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
@@ -148,7 +148,7 @@ func refresh_palette() -> void:
 		_hole_material.set_shader_parameter("ink", Palette.get_color("card", "frame"))
 		var card := _card.get_ref() as CardEntity
 		if is_instance_valid(card):
-			_hole_material.set_shader_parameter("paper", CardArt.face_color(card.def_id))
+			_hole_material.set_shader_parameter("paper", CardArt.face_color(card.def_id, card.card_catalog))
 	if _label:
 		_label.modulate = Palette.get_color("card", "frame")
 	if _string_material:
@@ -219,7 +219,7 @@ func _process(_delta: float) -> void:
 	if is_instance_valid(card) and is_instance_valid(_board) and not _board.input_locked and not _board._drag_cards.is_empty() and is_instance_valid(_board._drag_cards[0]):
 		valid = _board._market_card_near(_board._drag_cards[0].global_position) == card \
 			and _board._drag_cards.size() >= _price \
-			and _board._drag_cards.all(func(c): return is_instance_valid(c) and c.def_id == CardDB.RES_CASH)
+			and _board._drag_cards.all(func(c): return is_instance_valid(c) and c.def_id == c.card_catalog.RES_CASH)
 	_paper.set_feedback(valid)
 	_update_hover(_hovered or valid)
 

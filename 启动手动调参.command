@@ -7,4 +7,4 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PYTHON=${PYTHON:-/usr/bin/python3}
 PORT=${PORT:-29861}
-exec "$PYTHON" "$ROOT/tools/manual_balance.py" --port "$PORT" --open
+exec "$PYTHON" "$ROOT/tools/manual_balance.py" --port "$PORT" --open "$@"

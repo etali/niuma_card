@@ -173,7 +173,7 @@ def load_tests(loader, tests, pattern):
         for mode, expected in (("error", "Godot 导入报错"), ("hang", "超时")):
             with self.subTest(mode=mode):
                 (self.root / "import-mode").write_text(mode)
-                result = self.run_runner("--timeout", "0.3")
+                result = self.run_runner("--timeout", "0.3" if mode == "hang" else "5")
                 report = json.loads((self.logs / "results.json").read_text())
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertIn(expected, report["preparation"]["reason"])

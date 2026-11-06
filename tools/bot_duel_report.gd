@@ -26,10 +26,11 @@ func _initialize() -> void:
 		quit(2)
 		return
 	request = Report._json(args[0])
+	request["cards_path"] = CardDB.ConfigData.bundled_path(str(request.get("cards_path", "")))
 	options = request.get("options", {})
-	BOTConfig._source = "res://data/bot.json"
+	BOTConfig._source = BOTConfig.PATH
 	var configs: Array[BOTSearch] = []
-	var errors: Array = Logic.validate(Report._json(str(request.get("cards_path", ""))), Report._json("res://data/cards.json"))
+	var errors: Array = Logic.validate(Report._json(str(request.get("cards_path", ""))), Report._json("res://data/on_work_cards.json"))
 	for side in ["a","b"]:
 		var spec: Dictionary = options.get(side,{})
 		var checked := options.duplicate()

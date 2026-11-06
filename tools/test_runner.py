@@ -28,7 +28,8 @@ ROOT = Path(__file__).resolve().parents[1]
 STATIC_CHECKS = ("check_card_table.py", "check_balance_numbers.py", "check_shell_utf8.py",
                  "check_launch_script.py", "check_doc_refs.py", "check_no_line_refs.py")
 SUITES = {
-    "gd": ("tests/test_*.gd",),
+    "gd": ("tests/test_*.gd", "tests/realtime/test_*.gd"),
+    "off-work": ("tests/realtime/test_*.gd",),
     "python": ("tests/test_*.py",),
     "static": ("tools/check_*.py",),
     "drawer": ("tests/test_drawer_*.gd",),
@@ -54,6 +55,7 @@ class Result:
 
 def discover(root, pattern, suites=()):
     files = sorted(p for p in (root / "tests").glob("test_*") if p.suffix in (".gd", ".py"))
+    files += sorted((root / "tests/realtime").glob("test_*.gd"))
     files += [root / "tools" / name for name in STATIC_CHECKS if (root / "tools" / name).is_file()]
     selected = [glob for suite in suites for glob in SUITES[suite]]
     return [p for p in files
@@ -106,6 +108,8 @@ def parse_result(path, root, code, output, log):
     result = Result(path.relative_to(root).as_posix(), kind, "failed", log=relative_path(log, root))
     if kind == "gd":
         match = re.findall(r"(\d+) 通过 / (\d+) 失败", output)
+        if not match and path.is_relative_to(root / "tests/realtime"):
+            match = [(n, "0") for n in re.findall(r"(?m)^\w+ PASS \((\d+) checks?(?:[,;][^\n)]*)?\)$", output)]
         if not match:
             result.reason = "没有测试汇总（编译失败或未跑完）"
             return result
@@ -129,7 +133,7 @@ def parse_result(path, root, code, output, log):
         result.failed = failed
         # unittest 的类/模块准备跳过计入 skipped，却不计入 testsRun；普通方法跳过才应
         # 从 total 中扣除。verbose 输出保留了这两类跳过的公共名称。
-        setup_skips = len(re.findall(r"^setUp(?:Class|Module) \(.+\) \.\.\. skipped ", output, re.M))
+        setup_skips = len(re.findall(r"^(?:setUp(?:Class|Module) \(.+\) \.\.\. )?skipped ['\"]", output, re.M))
         method_skips = max(0, result.skipped - setup_skips)
         result.passed = max(0, total - result.failed - method_skips)
     else:
@@ -208,7 +212,10 @@ def run_file(path, root, output_dir, env, timeout, cancelled, takeover_lock):
     log = output_dir / (path.relative_to(root).as_posix().replace("/", "__") + ".log")
     kind = file_kind(path)
     relative = path.relative_to(root).as_posix()
-    command = ([env["GODOT"], "--headless", "-s", relative] if kind == "gd" else
+    graphical = {"tests/realtime/test_drawer_visual_startup.gd", "tests/realtime/test_moving_card_ink.gd",
+                 "tests/test_shift_visual.gd", "tests/test_preview_mode_switch.gd"}
+    engine_args = [] if relative in graphical else ["--headless"]
+    command = ([env["GODOT"], *engine_args, "-s", relative] if kind == "gd" else
                [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", path.name, "-v"]
                if kind == "python" else [sys.executable, relative])
     locked = kind == "gd" and re.search(r"start_takeover|start_local_host_takeover", path.read_text())

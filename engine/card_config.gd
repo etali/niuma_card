@@ -7,7 +7,8 @@ extends RefCounted
 
 ## 单机自定义卡表选择器。
 ## 当前对局不热替换状态；选择成功后从下一局生效。联网入口要求先恢复内置卡表并重开。
-const DEFAULT_PATH := "res://data/cards.json"
+const ConfigData = preload("res://engine/config_data.gd")
+const DEFAULT_PATH := ConfigData.ON_WORK_CARDS
 const Rules = preload("res://engine/card_config_rules.gd")
 const JsonStore = preload("res://engine/json_store.gd")
 const SavePaths = preload("res://engine/save_paths.gd")
@@ -26,7 +27,7 @@ static func selected_path() -> String:
 
 ## 命令行覆盖只属于当前进程；不写入玩家的持久化选择。
 static func has_launch_override() -> bool:
-	return not OS.has_feature("web") and LaunchConfig.current().has("cards_config")
+	return not LaunchConfig.desktop_args().has("--off-work-playtest") and LaunchConfig.current().has("cards_config")
 
 static func launch_path() -> String:
 	return _normalize(str(LaunchConfig.current().get("cards_config", "")))
@@ -36,7 +37,7 @@ static func has_custom() -> bool:
 
 static func display_name() -> String:
 	var path := selected_path()
-	return "默认 cards.json" if path.is_empty() else path
+	return "上班默认卡表" if path.is_empty() else path
 
 static func validate_file(path: String) -> Dictionary:
 	return _validate_custom(_normalize(path))
@@ -86,13 +87,13 @@ static func apply_solo() -> Dictionary:
 			if _save_pref(""):
 				_selected_path = ""
 			CardDB.load_from(DEFAULT_PATH)
-			return {"ok": false, "used_default": true, "reason": "自定义卡表加载失败，已回退默认 cards.json"}
-		return {"ok": false, "reason": "默认 cards.json 加载失败"}
+			return {"ok": false, "used_default": true, "reason": "自定义卡表加载失败，已回退上班默认卡表"}
+		return {"ok": false, "reason": "上班默认卡表 加载失败"}
 	return {"ok": true, "path": path, "custom": path != DEFAULT_PATH}
 
 static func apply_default() -> Dictionary:
 	if not CardDB.load_from(DEFAULT_PATH):
-		return {"ok": false, "reason": "默认 cards.json 加载失败"}
+		return {"ok": false, "reason": "上班默认卡表 加载失败"}
 	return {"ok": true, "path": DEFAULT_PATH, "custom": false}
 
 static func _load_pref() -> void:
@@ -104,8 +105,11 @@ static func _load_pref() -> void:
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(pref_path()))
 	if parsed is Dictionary:
 		var path := str(parsed.get("path", ""))
-		if not path.is_empty() and _validate_custom(path)["ok"]:
-			_selected_path = _normalize(path)
+		var resolved := _normalize(path)
+		if not resolved.is_empty() and _validate_custom(resolved)["ok"]:
+			_selected_path = resolved
+			if resolved != path:
+				_save_pref(resolved)
 
 static func _save_pref(path: String) -> bool:
 	return JsonStore.save(pref_path(), {"path": path})
@@ -114,7 +118,10 @@ static func _normalize(path: String) -> String:
 	var value := path.strip_edges()
 	if value.begins_with("~/"):
 		value = OS.get_environment("HOME").path_join(value.substr(2))
-	return ProjectSettings.globalize_path(value) if value.is_absolute_path() else value
+	value = ConfigData.bundled_path(value)
+	if value.begins_with("res://") or not value.is_absolute_path():
+		return value
+	return ProjectSettings.globalize_path(value)
 
 static func _read(path: String) -> Variant:
 	if not FileAccess.file_exists(path):
@@ -129,6 +136,6 @@ static func _validate_custom(path: String) -> Dictionary:
 		return {"ok": false, "reason": "不是有效的 JSON 对象"}
 	var builtin: Variant = _read(DEFAULT_PATH)
 	if not (builtin is Dictionary):
-		return {"ok": false, "reason": "内置 cards.json 读取失败"}
+		return {"ok": false, "reason": "上班内置卡表 读取失败"}
 	var errors := Rules.validate(parsed, builtin)
 	return {"ok": true} if errors.is_empty() else {"ok": false, "reason": "\n".join(errors)}

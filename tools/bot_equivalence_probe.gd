@@ -21,7 +21,7 @@ func _initialize() -> void:
 		quit(2)
 		return
 	CardDB.reset()
-	BOTConfig._source = "res://data/bot.json"
+	BOTConfig._source = BOTConfig.PATH
 	if not CardDB.load_default():
 		quit(2)
 		return
@@ -29,7 +29,7 @@ func _initialize() -> void:
 	var payload := _cases() if args[0] == "cases" else _games()
 	var report := {"schema":"bot-equivalence-v1", "mode":args[0], "payload":payload,
 		"failures":_failures, "elapsed_seconds":(Time.get_ticks_usec()-started)/1000000.0,
-		"cards_sha256":FileAccess.get_sha256("res://data/cards.json"),
+		"cards_sha256":FileAccess.get_sha256(CardDB.BUILTIN_PATH),
 		"godot":Engine.get_version_info()["string"]}
 	var file := FileAccess.open(args[1], FileAccess.WRITE)
 	if file == null:
@@ -135,7 +135,7 @@ func _cases() -> Array:
 	CardDB.UPGRADE["routes"].push_front({"kind":"product","tier":1,"key":"self","per":2,"require_multiple":true})
 	rows.append(_case("rules-mutated", _fixture("upgrade"), _config(0.0)))
 	# 同路径覆盖再加载 A→B→A，避免仅以路径、card ID 或上次搜索建立永久缓存。
-	var original: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/cards.json"))
+	var original: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/on_work_cards.json"))
 	var changed := original.duplicate(true)
 	changed["yunketang"]["pawn"] = 17
 	changed["_game"]["attack_cost_per_card"] = 2

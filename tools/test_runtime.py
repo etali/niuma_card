@@ -30,6 +30,8 @@ def isolated_project(root, target, token):
     for source in root.iterdir():
         if source.name not in {"project.godot", "override.cfg", ".git", "build", "tmp", "reports"}:
             (target / source.name).symlink_to(source, target_is_directory=source.is_dir())
+    (target / "reports").mkdir()
+    (target / "reports/.gdignore").touch()
     config = (root / "project.godot").read_text(encoding="utf-8")
     # override.cfg 属于玩家的本地配置；测试始终从版本化项目配置开始。
     config += '\n[application]\nconfig/use_custom_user_dir=true\nconfig/custom_user_dir_name="' + token + '"\n'
@@ -114,7 +116,8 @@ def main():
             if "--log-file" not in args:
                 args[:0] = ["--log-file", str(Path(temporary) / "godot.log")]
             # 录像和设置默认在 ~/.niumapai_record（engine/save_paths.gd）；不跑 harness 的工具进程也留在沙箱里。
-            env = dict(os.environ, CARD_TEST_USER_DIR_NAME=token, CARD_DATA_DIR=str(user_dir / "player-data"))
+            env = dict(os.environ, CARD_TEST_USER_DIR_NAME=token, CARD_DATA_DIR=str(user_dir / "player-data"),
+                       WORK_DATA_DIR=str(user_dir / "off-work-data"))
             return subprocess.call([godot, *args], env=env)
     finally:
         cleanup_user_data(user_dir)

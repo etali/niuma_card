@@ -87,7 +87,7 @@ float stamp_alpha(vec2 uv) {
 const SPATIAL_HEAD := """
 shader_type spatial;
 // 不做深度测试：盖在牌上时探出牌外的那截压在邻牌上，被同组后面的牌挡住一半就不像一枚章了。
-render_mode unshaded, cull_disabled, depth_draw_never, depth_test_disabled, blend_mix;
+render_mode unshaded, cull_disabled, depth_draw_never, %sblend_mix;
 """
 const SPATIAL_TAIL := """
 void fragment() {
@@ -103,6 +103,7 @@ void fragment() {
 	COLOR = vec4(ink.rgb, stamp_alpha(UV));
 }
 """
+static var _paper_stamp_shader: Shader
 static var _spatial_shader: Shader
 static var _canvas_shader: Shader
 ## 词 → 白字贴图（带 mipmap）。贴图对象一建好就能用，离屏视口画完后原地更新内容。
@@ -113,10 +114,15 @@ static func seal_ink() -> Color:
 	var value := str(UIConfig.read_section("fx").get("stamp_ink", ""))
 	return Color.from_string(value, FALLBACK_INK) if not value.is_empty() else FALLBACK_INK
 
-static func spatial_shader() -> Shader:
+static func spatial_shader(on_paper := false) -> Shader:
+	if on_paper:
+		if _paper_stamp_shader == null:
+			_paper_stamp_shader = Shader.new()
+			_paper_stamp_shader.code = (SPATIAL_HEAD % "") + STAMP_BODY + SPATIAL_TAIL
+		return _paper_stamp_shader
 	if _spatial_shader == null:
 		_spatial_shader = Shader.new()
-		_spatial_shader.code = SPATIAL_HEAD + STAMP_BODY + SPATIAL_TAIL
+		_spatial_shader.code = (SPATIAL_HEAD % "depth_test_disabled, ") + STAMP_BODY + SPATIAL_TAIL
 	return _spatial_shader
 
 static func canvas_shader() -> Shader:
@@ -127,7 +133,7 @@ static func canvas_shader() -> Shader:
 
 ## 在 parent 里 at 处搭一枚宽 width 的章，返回 {mesh, text}。章是 parent 的直接子节点：
 ## 牌上的章撕牌时要按位置分给上下片，不能套容器。priority 是绘制顺序。
-static func build(parent: Node3D, at: Vector3, text: String, width: float, priority := 2) -> Dictionary:
+static func build(parent: Node3D, at: Vector3, text: String, width: float, priority := 2, on_paper := false) -> Dictionary:
 	var mesh := MeshInstance3D.new()
 	mesh.name = "InkStamp"
 	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -135,7 +141,7 @@ static func build(parent: Node3D, at: Vector3, text: String, width: float, prior
 	quad.size = Vector2(width, width * ASPECT)
 	mesh.mesh = quad
 	var material := ShaderMaterial.new()
-	material.shader = spatial_shader()
+	material.shader = spatial_shader(on_paper)
 	material.render_priority = priority
 	_prime(material)
 	mesh.material_override = material
@@ -145,7 +151,7 @@ static func build(parent: Node3D, at: Vector3, text: String, width: float, prior
 	mesh.set_meta("stamp_rest", at)
 	mesh.set_meta("stamp_tilt", tilt)
 	parent.add_child(mesh)
-	var parts := {"mesh": mesh, "text": ""}
+	var parts := {"mesh": mesh, "text": "", "on_paper": on_paper}
 	set_text(parts, text)
 	return parts
 
@@ -201,7 +207,7 @@ static func slam(owner: Node, parts: Dictionary, landed := Callable(), delay := 
 	var mesh: MeshInstance3D = parts["mesh"]
 	var rest: Vector3 = mesh.get_meta("stamp_rest")
 	var width: float = (mesh.mesh as QuadMesh).size.x
-	mesh.position = rest + Vector3.UP * SLAM_LIFT * width
+	mesh.position = rest if parts.get("on_paper", false) else rest + Vector3.UP * SLAM_LIFT * width
 	mesh.scale = Vector3.ONE * SLAM_SCALE
 	set_alpha(parts, 0.0)
 	var tween := owner.create_tween()

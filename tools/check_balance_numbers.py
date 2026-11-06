@@ -273,12 +273,12 @@ def check_bot_tables(root, bot_config, bad):
     unknown = set(configured) - set(schema) - {"profile_version"}
     unknown = {key for key in unknown if not key.startswith("_")}
     if unknown:
-        bad.append("data/bot.json.search.bot 包含未注册参数：%s" % "、".join(sorted(unknown)))
+        bad.append("data/on_work_bot.json.search.bot 包含未注册参数：%s" % "、".join(sorted(unknown)))
     for key, spec in schema.items():
         raw = configured.get(key, spec["strength_points"])
         _, problems = configuration_points(raw, spec)
         if problems:
-            bad.append("data/bot.json.search.bot.%s 配置无效：%s" % (key, "；".join(problems)))
+            bad.append("data/on_work_bot.json.search.bot.%s 配置无效：%s" % (key, "；".join(problems)))
             continue
         expected = document_values(raw, spec)
         hits = [(i, line) for i, line in enumerate(lines, 1)
@@ -303,9 +303,9 @@ def validate(root=ROOT):
     root = pathlib.Path(root)
     bad = []
     try:
-        data = json.loads((root / "data" / "cards.json").read_text())
+        data = json.loads((root / "data" / "on_work_cards.json").read_text())
         cards = {key: card for key, card in data.items() if not key.startswith("_")}
-        bot_config = json.loads((root / "data" / "bot.json").read_text())
+        bot_config = json.loads((root / "data" / "on_work_bot.json").read_text())
         f = facts(data, cards)
         reference_errors, card_count, reference_count = check_card_table.validate(root)
         bad.extend(reference_errors)

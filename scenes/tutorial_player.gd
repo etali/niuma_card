@@ -76,7 +76,7 @@ func bind(presentation: Node, course_id: String) -> void:
 	arena.changed.connect(_refresh)
 	arena.operation_finished.connect(_operation_finished)
 	arena.configure_on_table(presentation._main, session)
-	arena.board.pile_toggled.connect(_guide_view_changed)
+	arena._connect_board("pile_toggled", _guide_view_changed)
 	_gesture = Gesture.new()
 	_gesture.player = self
 	add_child(_gesture)

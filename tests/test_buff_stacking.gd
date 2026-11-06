@@ -148,7 +148,7 @@ func _test_bot_options() -> void:
 
 func _test_external_multiplier() -> void:
 	var path := "user://stacking-cards.json"
-	var contents: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/cards.json"))
+	var contents: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/on_work_cards.json"))
 	if not contents.has("_game"): contents["_game"] = {}
 	contents["_game"]["buff_mult"] = {"output_x2":3,"attack_x2":4}
 	var file := FileAccess.open(path,FileAccess.WRITE)
@@ -163,4 +163,4 @@ func _test_external_multiplier() -> void:
 		check(ComboRules.effect_multipliers(cards)["output" if production else "attack"] == multiplier,"卡面叠加使用外置倍率")
 		check(ComboRules.evaluate(cards)[key] == int(CardDB.get_def(core)[key])*multiplier,"结算叠加使用外置倍率")
 		check(ComboRules.stacked_multiplier("output_x2" if production else "attack_x2",2) == multiplier,"BOT 数量倍率使用同一外置配置")
-	CardDB.load_from("res://data/cards.json")
+	CardDB.load_from("res://data/on_work_cards.json")

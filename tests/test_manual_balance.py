@@ -26,7 +26,7 @@ spec=importlib.util.spec_from_file_location('manual_balance',ROOT/'tools/manual_
 mb=importlib.util.module_from_spec(spec);spec.loader.exec_module(mb)
 
 class ManualBalanceTest(unittest.TestCase):
-    def setUp(self): self.base=json.loads((ROOT/'data/cards.json').read_text())
+    def setUp(self): self.base=json.loads((ROOT/'data/on_work_cards.json').read_text())
 
     def test_project_identity_is_private_stable_and_checkout_specific(self):
         identity=mb.project_id()
@@ -131,7 +131,7 @@ class ManualBalanceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=pathlib.Path(tmp)
             for relative in ['engine/state.gd','tools/bot_duel.gd','tools/bot_duel_report.gd','tools/bot_decision_stats.gd','tools/eval_report.gd','tools/balance/scoring.gd',
-                             'tools/balance/logic.gd','tools/balance/victory.gd','data/bot.json',
+                             'tools/balance/logic.gd','tools/balance/victory.gd','data/on_work_bot.json',
                              'data/card_config_schema.json']:
                 path=root/relative
                 path.parent.mkdir(parents=True,exist_ok=True)
@@ -145,8 +145,10 @@ class ManualBalanceTest(unittest.TestCase):
     def test_schema_change_invalidates_workbench_and_simulation_versions(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=pathlib.Path(tmp)
-            for relative in ['tools/bot_duel.gd','tools/bot_duel_report.gd','tools/bot_decision_stats.gd','tools/eval_report.gd','data/bot.json','data/card_config_schema.json',
-                             'tools/balance/report.html','tools/balance/report.js','tools/balance/report.css']:
+            for relative in ['tools/bot_duel.gd','tools/bot_duel_report.gd','tools/bot_decision_stats.gd','tools/eval_report.gd','data/on_work_bot.json','data/card_config_schema.json',
+                             'tools/balance/report.html','tools/balance/report.js','tools/balance/report.css',
+                             'tools/balance/storage.py','tools/balance/realtime.py','tools/balance/realtime_run.gd',
+                             'tools/balance/realtime.html','tools/balance/realtime.js','tools/balance/realtime.css']:
                 path=root/relative
                 path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_text('fixture')
@@ -190,7 +192,7 @@ class WorkbenchStorageTest(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(prefix='配置格式迁移 ')
         self.store=pathlib.Path(self.tmp.name)
-        self.base=json.loads((ROOT/'data/cards.json').read_text())
+        self.base=json.loads((ROOT/'data/on_work_cards.json').read_text())
         self.apps=[]
 
     def tearDown(self):
@@ -335,7 +337,7 @@ class WorkbenchStorageTest(unittest.TestCase):
 class WorkbenchPlayTest(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(prefix='试玩 空格 ')
-        self.base=json.loads((ROOT/'data/cards.json').read_text())
+        self.base=json.loads((ROOT/'data/on_work_cards.json').read_text())
         with mock.patch.object(mb.Workbench,'profile',return_value={'schema':[],'parameters':{}}):
             self.app=mb.Workbench(pathlib.Path(self.tmp.name)/'配置 存档','/应用 程序/Godot')
         cards=copy.deepcopy(self.base);cards['yunketang']['pawn']=0
@@ -393,7 +395,7 @@ class WorkbenchPlayTest(unittest.TestCase):
         self.assertEqual(self.app.configs(),before)
         self.assertEqual(self.app.runs(),[])
         self.assertEqual(self.app.run_overview()['active_run_ids'],[])
-        self.assertEqual(json.loads((ROOT/'data/cards.json').read_text()),self.base)
+        self.assertEqual(json.loads((ROOT/'data/on_work_cards.json').read_text()),self.base)
         self.assertEqual(len(commands),2)
         for key in ('cards_path','log_path'):
             self.assertFalse(pathlib.Path(first[key]).is_absolute())
@@ -678,6 +680,94 @@ write(output,{'status':'complete','games':[]})
         self.app.stop({'run_id':run['id']})
         self.assertEqual(path.read_bytes(),before)
         self.assertEqual(self.app.jobs,{})
+
+    def test_verified_old_service_is_replaced_and_other_listeners_are_preserved(self):
+        if not shutil.which('lsof'): self.skipTest('legacy ownership check requires lsof')
+        import socket
+        store = pathlib.Path(self.tmp.name) / 'migrate'
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1',0)); port = sock.getsockname()[1]
+        marker = store / 'off-work/service.json'
+        flags = ['--port',str(port),'--on-work-store',str(store),'--godot',str(self.fake)]
+        current = [sys.executable,str(ROOT/'tools/manual_balance.py'),*flags,'--reuse']
+        old = [sys.executable,'-c',f"""
+import sys
+sys.path.insert(0, {str(ROOT/'tools')!r})
+import manual_balance as app
+app.source_version=lambda:'old'
+reply=app.Handler.reply
+def legacy(self, data, *args, **kwargs):
+    if self.path=='/api/health':
+        data.pop('lifecycle',None)
+    return reply(self,data,*args,**kwargs)
+app.Handler.reply=legacy
+app.main()
+""", *flags]
+        with (pathlib.Path(self.tmp.name)/'upgrade.log').open('w+') as log:
+            legacy = subprocess.Popen(old,stdout=log,stderr=log)
+            new = None
+            try:
+                self.until(marker.exists,8)
+                wrong = subprocess.run(current+['--on-work-store',str(store/'other')],capture_output=True,text=True,timeout=5)
+                self.assertNotEqual(wrong.returncode,0)
+                self.assertIsNone(legacy.poll())
+                self.assertEqual(mb.read_json(marker)['pid'],legacy.pid)
+                new = subprocess.Popen(current,stdout=log,stderr=log)
+                self.assertEqual(legacy.wait(timeout=10),0)
+                self.until(lambda:marker.exists() and mb.read_json(marker)['pid']==new.pid,8)
+                self.assertEqual(mb.source_version(),json.load(urllib.request.urlopen(
+                    'http://127.0.0.1:%d/api/health' % port, timeout=2))['source_version'])
+                stopped = subprocess.run(current+['--stop'],capture_output=True,text=True,timeout=5)
+                self.assertEqual(stopped.returncode,0,stopped.stderr)
+                self.assertEqual(new.wait(timeout=5),0)
+                self.assertFalse(marker.exists())
+            finally:
+                for proc in [legacy,new]:
+                    if proc is not None and proc.poll() is None: proc.terminate();proc.wait(timeout=8)
+
+    def test_browser_sessions_reuse_and_exit_after_last_tab_and_experiment(self):
+        import socket
+        store = pathlib.Path(self.tmp.name) / 'browser-service'
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1',0)); port = sock.getsockname()[1]
+        address = store / 'off-work/service.json'
+        command = [sys.executable,str(ROOT/'tools/manual_balance.py'),'--port',str(port),
+                   '--store',str(store),'--godot',str(self.fake),'--open']
+        env = dict(os.environ, BROWSER='/usr/bin/true %s')
+        url = 'http://127.0.0.1:%d/' % port
+        with (pathlib.Path(self.tmp.name)/'browser.log').open('w+') as log:
+            worker = subprocess.Popen(command, env=env, stdout=log, stderr=log)
+            sessions = []
+            try:
+                self.until(address.exists)
+                session = lambda: urllib.request.urlopen(url+'api/session', timeout=3)
+                sessions = [session(),session()]
+                self.assertTrue(all(s.readline().startswith(b':') for s in sessions))
+                reuse = subprocess.run(command, env=env, capture_output=True, text=True, timeout=5)
+                self.assertEqual(reuse.returncode,0,reuse.stderr)
+                self.assertEqual(mb.read_json(address)['pid'],worker.pid)
+                sessions.pop().close()
+                boot = json.load(urllib.request.urlopen(url+'api/bootstrap',timeout=3))
+                body = {'config_id':'default','options':mb.DEFAULT_OPTIONS}
+                req = urllib.request.Request(url+'api/run',data=json.dumps(body).encode(),
+                    headers={'Content-Type':'application/json','X-Balance-Token':boot['token']})
+                run=json.load(urllib.request.urlopen(req, timeout=3))
+                target = store / 'runs' / run['id']
+                self.until((target/'progress.json').exists)
+                stopped = subprocess.run(command+['--stop'], env=env, capture_output=True,text=True,timeout=5)
+                self.assertNotEqual(stopped.returncode,0)
+                self.assertIn('实验正在运行',stopped.stderr)
+                sessions.pop().close()
+                time.sleep(10)
+                self.assertIsNone(worker.poll())
+                (target/'release').touch()
+                self.assertEqual(worker.wait(timeout=8),0)
+                self.assertEqual(mb.read_json(target/'run.json')['status'],'complete')
+                self.assertFalse(address.exists())
+                with self.assertRaises(OSError): urllib.request.urlopen(url+'api/health',timeout=1)
+            finally:
+                for session in sessions: session.close()
+                if worker.poll() is None: worker.terminate();worker.wait(timeout=8)
 
     def test_service_signals_cancel_and_reap_all_jobs(self):
         import socket

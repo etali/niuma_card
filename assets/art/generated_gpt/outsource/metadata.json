@@ -1,0 +1,87 @@
+{
+  "card": "outsource",
+  "tool": "image_gen.imagegen (built-in)",
+  "source": "/Users/Yitan/.codex/generated_images/01a188c8-cb19-73d1-bb6f-45ead7f842bc/exec-017a49ca-b26e-4132-9307-b000a3fe452d.png",
+  "reference_images": [
+    "/Users/Yitan/repos/niuma_card/assets/art/icon/icon_user.png",
+    "/Users/Yitan/repos/niuma_card/assets/art/icon/icon_cash.png"
+  ],
+  "layout": {
+    "columns": 3,
+    "rows": 3,
+    "generated_keyframes": 9
+  },
+  "prompt": "Use case: stylized-concept. One production animated icon sprite sheet for OUTSOURCING / 外包 in a humorous office card game. Attached images are STYLE REFERENCES only: the same plain cream / muted golden flat coloring, very thick dark brown rounded imperfect ink outline, dot eyes, tiny smile, stick limbs. No watercolor, no texture, no 3D, no soft shadows, no gradients.\nPrecisely NINE consecutive complete animation frames in a perfectly aligned THREE-COLUMN THREE-ROW equal square-cell grid, square 1536x1536 requested, genuinely transparent. No grid drawn, no frames or labels, no letters or words.\nONE main subject: a stout sealed cream cardboard delivery box that has grown exactly two small dark-brown stick legs with chunky simple feet. A single folded document corner peeks from the top seam, suggesting the work is being sent away. Two dot eyes and a smug tiny smile on the front of the box. No person inside, no arms, no conveyor, no delivery truck, no desk, no other props. Bold compact silhouette, subject in central 70% of each cell with transparent margins.\nNine-frame in-place sneak-walk loop, reading row-major: 1 both feet planted; 2 left knee bends and heel lifts; 3 left foot moves forward a little while right heel rises; 4 both feet pass underneath; 5 right foot steps forward; 6 left heel starts rising again; 7 both feet return toward neutral; 8 settles; 9 matches frame1. The BOX itself stays centered at the exact same height, size, camera angle and shape in all frames. Only its two legs and the tiny smug expression change, document corner stays fixed. Exactly two connected legs throughout, no trail of spare feet. Cute dry visual joke: the work package walks itself away. Nine moments of the same box, not variants.",
+  "inspection": "Nine complete walking work-package poses, exactly two legs, one box with fixed peeking document corner. Clear silhouette and simple face, no other characters or scenes. Original alpha retained; frame extraction/timing is packaging only.",
+  "actual_size": [
+    1254,
+    1254
+  ],
+  "mode": "RGBA",
+  "alpha_extrema": [
+    0,
+    255
+  ],
+  "sheet_sha256": "488b17d7ca4b4b3533a71cb8fe76240f74c9faac99f627e230fd5e8ec8bdffb8",
+  "cell_size": [
+    418,
+    418
+  ],
+  "visible_bounds_alpha_over_32": [
+    [
+      62,
+      59,
+      372,
+      393
+    ],
+    [
+      56,
+      59,
+      369,
+      393
+    ],
+    [
+      52,
+      59,
+      364,
+      393
+    ],
+    [
+      62,
+      35,
+      374,
+      370
+    ],
+    [
+      57,
+      36,
+      368,
+      368
+    ],
+    [
+      53,
+      36,
+      364,
+      366
+    ],
+    [
+      60,
+      13,
+      372,
+      346
+    ],
+    [
+      57,
+      14,
+      368,
+      346
+    ],
+    [
+      52,
+      13,
+      365,
+      346
+    ]
+  ],
+  "cell_edge_touching_frames": []
+}

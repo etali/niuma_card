@@ -1,0 +1,19 @@
+{
+  "generator": "built-in GPT image generation",
+  "generated_on": "2026-10-31",
+  "reference": "assets/art/icon/work_employee.png",
+  "prompt": "prompt.txt",
+  "master": "master.png",
+  "runtime": "assets/art/table/work_dismissal.png",
+  "size": [
+    1254,
+    1254
+  ],
+  "mode": "RGBA",
+  "alpha_extrema": [
+    0,
+    255
+  ],
+  "sha256": "1ebc06231d91c5b0249150f0f96026d3f5ae299445be894d340d4f2d1119731d",
+  "processing": "byte-identical copy; no redraw or editing"
+}

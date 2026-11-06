@@ -8,6 +8,9 @@ const TEMP_PATH := "user://test_bot_config_sections.json"
 func _initialize() -> void:
 	CardDB.ensure_loaded()
 	var search := BOTConfig.read_section("search")
+	check(BOTConfig.read_section("search", "res://data/bot.json") == search, "旧上班内置路径读取当前 BOT 配置")
+	check(WorkConfig.FILES.bot == BOTConfig.ConfigData.bundled_path("res://data/off_work_ai.json"),
+		"旧下班内置路径定位到当前 BOT 配置")
 	check(BOTConfig.read_section("behavior").is_empty() and not search.has("ladder"), "旧策略配置和阶梯已移除")
 	check(BOTSearch.default_model() == "bot" and BOTSearch.default_strength() == search["default_strength"], "默认实现/强度来自配置")
 	check(BOTSearch.PRESETS == search["presets"], "命名强度与配置一致")

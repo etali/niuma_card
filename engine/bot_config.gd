@@ -9,8 +9,8 @@ const ConfigData = preload("res://engine/config_data.gd")
 
 ## BOT 出厂参数。模拟参数供无头驱动使用，各实现的超参数独立读取，
 ## 不读取任何玩家偏好，也不依赖 CardDB、Palette 或 UIConfig，避免加载环。
-const PATH := "res://data/bot.json"
-const EXTERNAL_FILE := "bot.json"
+const PATH := ConfigData.ON_WORK_BOT
+const EXTERNAL_FILE := "on_work_bot.json"
 
 static var _cache: Dictionary = {}
 static var _source := ""
@@ -29,7 +29,7 @@ static func source_path() -> String:
 ## 外置覆盖内置，缺失字段（包括嵌套搜索阶梯）继续取内置值。
 ## 返回深拷贝，调用方不能改污染缓存；显式 path 供工具和测试读取指定配置。
 static func read_section(key: String, path := "") -> Dictionary:
-	var resolved := source_path() if path.is_empty() else path
+	var resolved := source_path() if path.is_empty() else ConfigData.bundled_path(path)
 	var builtin := builtin_section(key)
 	if resolved == PATH:
 		return builtin
@@ -48,12 +48,12 @@ static func _raw_section(key: String, path: String) -> Dictionary:
 
 static func _config_candidates() -> Array[String]:
 	var exe_dir := OS.get_executable_path().get_base_dir()
-	return [
-		exe_dir.path_join(EXTERNAL_FILE),
-		exe_dir.path_join("../../../" + EXTERNAL_FILE), # macOS .app 旁边
-		"res://" + EXTERNAL_FILE,
-		PATH,
-	]
+	var candidates: Array[String] = []
+	for directory in [exe_dir, exe_dir.path_join("../../.."), "res://"]:
+		candidates.append(str(directory).path_join(EXTERNAL_FILE))
+		candidates.append(str(directory).path_join("bot.json")) # 旧版外置配置
+	candidates.append(PATH)
+	return candidates
 
 ## 可选文件缺失时不警告；必需的出厂配置由调用方指定 warn_missing。
 ## FileAccess 同时支持 res:// 导出包内文件与外置绝对路径。

@@ -31,7 +31,7 @@ class ArtAssetsTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.art = self.root / "assets" / "art"
-        self.cards_path = self.root / "data" / "cards.json"
+        self.cards_path = self.root / "data" / "on_work_cards.json"
         self.manifest_path = self.root / "data" / "ui.json"
         for key, value in (("ROOT", self.root), ("ART", self.art),
                            ("CARDS_JSON", self.cards_path), ("UI_JSON", self.manifest_path)):

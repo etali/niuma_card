@@ -1,0 +1,272 @@
+{
+  "cards": {
+    "work": {
+      "name": "工作",
+      "category": "work",
+      "description": "交给员工，处理完赚钱。",
+      "price": 0,
+      "art": "work",
+      "purchasable": false,
+      "income": 1
+    },
+    "employee": {
+      "name": "员工",
+      "category": "person",
+      "description": "可以喝咖啡逐级晋升。",
+      "price": 4,
+      "art": "employee",
+      "purchasable": true,
+      "refund": 2
+    },
+    "money": {
+      "name": "金钱",
+      "category": "money",
+      "description": "买人员和工具，也能付钱外包。",
+      "price": 0,
+      "art": "money",
+      "purchasable": false
+    },
+    "overtime": {
+      "name": "加班",
+      "category": "tool",
+      "description": "同组每张加班使工作速度乘 {speed_multiplier}，倍率持续叠加，移走后失效。",
+      "price": 5,
+      "art": "overtime",
+      "purchasable": true
+    },
+    "coffee": {
+      "name": "咖啡",
+      "category": "ingredient",
+      "description": "与可晋升的人员组队。按员工、卷王、肝帝、打工皇帝的顺序逐级晋升。每段进度读满时消耗该级所需的咖啡。",
+      "price": 4,
+      "art": "coffee",
+      "purchasable": true
+    },
+    "transfer": {
+      "name": "甩锅",
+      "category": "tool",
+      "description": "人员与工作同组时，每 {seconds} 秒按在场人员的甩锅份数把工作交给对手。甩锅不产生收入。",
+      "price": 6,
+      "art": "transfer",
+      "purchasable": true
+    },
+    "meeting": {
+      "name": "开会",
+      "category": "tool",
+      "description": "主持人召集对方可参会人员，最多人数见主持人的卡面说明。会议持续 {duration_seconds} 秒，散会后冷却 {recovery_seconds} 秒。",
+      "price": 6,
+      "art": "meeting",
+      "purchasable": true
+    },
+    "slack": {
+      "name": "摸鱼",
+      "category": "tool",
+      "description": "与人员组队持续生产咖啡。基础周期 {seconds} 秒，每多一张摸鱼速度乘 {speed_multiplier}。每批每名在场人员产 {coffee_per_person} 杯。",
+      "price": 5,
+      "art": "slack",
+      "purchasable": true
+    },
+    "outsource": {
+      "name": "外包",
+      "category": "tool",
+      "description": "与金钱和工作同组，每份工作支付 {cost_per_work} 钱。读条 {seconds} 秒，期间补入的材料可加入本批次。完成后冷却 {recovery_seconds} 秒。",
+      "price": 6,
+      "art": "outsource",
+      "purchasable": true
+    },
+    "strike": {
+      "name": "罢工",
+      "category": "tool",
+      "description": "拖到对方有人员在场的工作或摸鱼组合，成功后消耗。被弹出人员罢工 {duration_seconds} 秒，期间能移动或开除，无法工作或组合。",
+      "price": 7,
+      "art": "strike",
+      "purchasable": true
+    },
+    "leader": {
+      "name": "领导",
+      "category": "person",
+      "description": "可主持会议、组织甩锅或带队摸鱼。",
+      "price": 8,
+      "art": "leader",
+      "purchasable": true,
+      "refund": 4
+    },
+    "grinder": {
+      "name": "卷王",
+      "category": "person",
+      "description": "由员工喝咖啡晋升而来。",
+      "price": 8,
+      "art": "grinder",
+      "purchasable": false,
+      "refund": 4
+    },
+    "workaholic": {
+      "name": "肝帝",
+      "category": "person",
+      "description": "由卷王喝咖啡晋升而来。",
+      "price": 16,
+      "art": "workaholic",
+      "purchasable": false,
+      "refund": 4
+    },
+    "work_emperor": {
+      "name": "打工皇帝",
+      "category": "person",
+      "description": "由肝帝喝咖啡晋升而来，已达最高等级。",
+      "price": 32,
+      "art": "work_emperor",
+      "purchasable": false,
+      "refund": 4
+    }
+  },
+  "roles": {
+    "employee": {
+      "work_seconds": 10.0,
+      "meeting_multiplier": 1.0,
+      "can_work": true,
+      "work_income_multiplier": 1,
+      "can_be_meeting_target": true,
+      "transfer_capacity": 1,
+      "work_capacity": 1
+    },
+    "leader": {
+      "work_seconds": 10.0,
+      "meeting_multiplier": 2.0,
+      "can_work": false,
+      "work_income_multiplier": 1,
+      "can_be_meeting_target": false,
+      "transfer_capacity": 2,
+      "work_capacity": 1
+    },
+    "grinder": {
+      "work_seconds": 10.0,
+      "meeting_multiplier": 0.5,
+      "can_work": true,
+      "work_income_multiplier": 2,
+      "can_be_meeting_target": true,
+      "transfer_capacity": 1,
+      "work_capacity": 1
+    },
+    "workaholic": {
+      "work_seconds": 10.0,
+      "meeting_multiplier": 0.5,
+      "can_work": true,
+      "work_income_multiplier": 4,
+      "can_be_meeting_target": true,
+      "transfer_capacity": 1,
+      "work_capacity": 1
+    },
+    "work_emperor": {
+      "work_seconds": 10.0,
+      "meeting_multiplier": 0.5,
+      "can_work": true,
+      "work_income_multiplier": 8,
+      "can_be_meeting_target": true,
+      "transfer_capacity": 1,
+      "work_capacity": 1
+    }
+  },
+  "rules": {
+    "simulation": {
+      "epsilon": 1e-06,
+      "default_seed": 20261027,
+      "owners": [
+        0,
+        1
+      ],
+      "maximum_events_per_advance": 10000,
+      "tie_winner": 2
+    },
+    "initial": {
+      "money": 8,
+      "groups": [
+        {
+          "work": 200
+        },
+        {
+          "employee": 1
+        },
+        {
+          "overtime": 1
+        },
+        {
+          "coffee": 1
+        }
+      ]
+    },
+    "overtime": {
+      "speed_multiplier": 1.2
+    },
+    "coffee": {
+      "seconds": 5.0,
+      "upgrades": {
+        "employee": {
+          "to": "grinder",
+          "cost": 1
+        },
+        "grinder": {
+          "to": "workaholic",
+          "cost": 2
+        },
+        "workaholic": {
+          "to": "work_emperor",
+          "cost": 4
+        }
+      }
+    },
+    "transfer": {
+      "seconds": 10.0,
+      "destination_policy": "largest_work_queue"
+    },
+    "meeting": {
+      "base_targets": 2,
+      "minimum_targets": 1,
+      "duration_seconds": 12.0,
+      "recovery_seconds": 24.0,
+      "auto_repeat": true
+    },
+    "slack": {
+      "seconds": 14.0,
+      "speed_multiplier": 1.2,
+      "coffee_per_person": 1
+    },
+    "outsource": {
+      "cost_per_work": 1,
+      "recovery_seconds": 18.0,
+      "seconds": 10.0
+    },
+    "strike": {
+      "duration_seconds": 20.0
+    },
+    "fire": {
+      "minimum_people": 0
+    },
+    "conveyor": {
+      "slots": 6,
+      "interval_seconds": 2.0,
+      "employee_every": 3,
+      "opening": [
+        "employee",
+        "coffee",
+        "overtime",
+        "meeting",
+        "leader",
+        "transfer"
+      ],
+      "pool": {
+        "employee": 4,
+        "leader": 1,
+        "overtime": 2,
+        "coffee": 2,
+        "transfer": 2,
+        "meeting": 2,
+        "slack": 1,
+        "outsource": 1,
+        "strike": 1
+      }
+    },
+    "income": {
+      "destination_policy": "oldest_cash_pile"
+    }
+  }
+}

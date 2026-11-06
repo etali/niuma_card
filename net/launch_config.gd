@@ -5,25 +5,10 @@
 class_name LaunchConfig
 extends RefCounted
 
-## 本次启动配置：联网入口供 Web 和桌面共用，桌面另支持指定单机试玩卡表。
-##
-## 这个类存在的全部理由是需求 6（逻辑只有一份）。同一件事有两个入口：
-##   Web    ：网址里的查询参数   index.html?server=ws://host:8910&room=ABCD
-##   桌面   ：命令行参数         牛马牌.app --server=ws://host:8910 --room=ABCD
-## 两者**只有取字符串那一步不同**（read_web / read_desktop），
-## 解析、归一化、决定进哪种模式全在 parse() 里，一份。
-##
-## 反过来做会怎样：web 那一侧单独写一段「读 URL → 连服务器」的代码，
-## 于是房间码归一化、默认端口、地址补 ws:// 这几件事各有一份实现，
-## 而两份的分歧只在网页上才看得见（本地测不出来）—— 那正是 执行入口各自实现同一逻辑造成的静默分叉。
-##
-## 判据在 tests/test_launch_config.gd。parse() 是**纯函数**（传字典进去），
-## 所以那条判据不需要浏览器、不需要端口，直接喂参数
-
-## 三种模式
+## 从启动参数读取房间、联机角色和指定的试玩卡表。
 const MODE_SOLO := "solo"     ## 什么都没指定 → 照旧单机开局，玩家自己点「联网对战」
 const MODE_HOST := "host"     ## 自己开服务器等人连进来（桌面版才做得到）
-const MODE_JOIN := "join"     ## 连一个已经在跑的服务器（网页版只有这一种）
+const MODE_JOIN := "join"     ## 连一个已经在跑的服务器
 
 ## 认得的参数名。长短两种都收 —— 网址是要手打/贴到聊天窗口里的，
 ## `?s=...&r=...` 比 `?server=...&room=...` 短一半
@@ -32,23 +17,17 @@ const KEYS_ROOM := ["room", "r"]
 const KEYS_HOST := ["host", "h"]
 const KEYS_PORT := ["port", "p"]
 
-## 桌面命令行认的前缀。**和 web 的参数名对齐**（--server= ←→ ?server=），
-## 两边记两套名字的话文档要写两遍，而写两遍必有一遍过期
+## 启动器可以将参数放在 Godot 的 -- 分隔符之前或之后。
 const FLAG_PREFIXES := ["--server=", "--room=", "--port=", "--host", "--cards-config=", "--cards-config"]
 
 # ---------- 解析 ----------
 
 ## 把一份 { 参数名: 值 } 解析成启动配置。
 ##
-## page_host 是网页自己所在的主机名（web 才有，桌面传空）。它的用途只有一个：
-## 只写了 ?room=ABCD 时**默认连发出这个网页的那台机器** ——
-## 网页是从服务器那台机器上发出来的，那台机器十有八九也跑着专服。
-## 少了这一条，最短的那条邀请链接（只带房间码）连不上任何东西。
-##
 ## 返回 { mode, url, room, port }；指定卡表时另带 cards_config。room 已经归一化过（Protocol.normalize_room），
 ## 非法的房间码会**退回 solo** 而不是带着一个连不上的码去连 ——
 ## 带着去连的症状是「网页打开就报房号不合法」，玩家不知道错在链接里
-static func parse(params: Dictionary, page_host := "") -> Dictionary:
+static func parse(params: Dictionary) -> Dictionary:
 	var out := { "mode": MODE_SOLO, "url": "", "room": "", "port": 0 }
 	# 保留“显式传了空路径”和“没传”的区别，前者应报错，不能悄悄试玩默认卡表。
 	if params.has("cards-config"):
@@ -70,9 +49,6 @@ static func parse(params: Dictionary, page_host := "") -> Dictionary:
 		return out
 
 	var url := normalize_url(raw_server, out["port"])
-	if url == "" and out["room"] != "" and page_host != "":
-		# 只带房间码的短链接：连发网页的那台机器
-		url = normalize_url(page_host, out["port"])
 	if url == "":
 		return out
 	out["url"] = url
@@ -108,62 +84,6 @@ static func normalize_url(text: String, default_port := 0) -> String:
 		return "ws://" + s
 	return "ws://%s:%d" % [s, p]
 
-# ---------- 取参数：Web ----------
-
-## 读网址里的查询串。**只有网页版会返回东西**。
-##
-## JavaScriptBridge 走 Engine.get_singleton 而不是直接写它的名字：
-## 那个单例只在 web 导出里注册，桌面版上直接引用是**编译期**报错 ——
-## 整个脚本解析失败，症状是「桌面版一启动就黑屏」，
-## 而这段代码本来只在网页上才该跑
-static func read_web() -> Dictionary:
-	var query := web_query()
-	if query == "":
-		return {}
-	return parse_query(query)
-
-## 网页自己所在的主机名（桌面版是空串）
-static func web_page_host() -> String:
-	return _js_eval("window.location.hostname")
-
-static func web_query() -> String:
-	return _js_eval("window.location.search")
-
-static func _js_eval(expr: String) -> String:
-	if not OS.has_feature("web"):
-		return ""
-	if not Engine.has_singleton("JavaScriptBridge"):
-		return ""
-	var js: Object = Engine.get_singleton("JavaScriptBridge")
-	var v: Variant = js.call("eval", expr, true)
-	return "" if v == null else str(v)
-
-## `?a=1&b=2` → { a: "1", b: "2" }。**纯函数**，判据直接喂字符串。
-##
-## 值要 uri_decode：地址里的 `://` 贴进聊天窗口常被转义成 `%3A%2F%2F`
-static func parse_query(query: String) -> Dictionary:
-	var out := {}
-	var q := query
-	if q.begins_with("?"):
-		q = q.substr(1)
-	for part in q.split("&", false):
-		var eq := part.find("=")
-		if eq < 0:
-			# `?host` 这种没有等号的开关也要认：写 `?host=1` 才生效的话，
-			# 一半的人会写 `?host` 然后以为功能坏了
-			out[part.uri_decode().to_lower()] = "1"
-			continue
-		var k := part.substr(0, eq).uri_decode().to_lower()
-		out[k] = part.substr(eq + 1).uri_decode()
-	return out
-
-# ---------- 取参数：桌面 ----------
-
-## 读命令行。`--server=... --room=... --host --port=... --cards-config=/path/cards.json`
-##
-## **两条命令行都扫**：get_cmdline_user_args() 只返回 `--` 之后的东西，
-## 少写那个分隔符时它是空的，于是参数被静默忽略 ——
-## 照着文档写却不生效，这个坑在 tools/pvp_server.gd 上踩过一次（见那里的 _args）
 static func read_desktop() -> Dictionary:
 	return parse_flags(desktop_args())
 
@@ -215,14 +135,7 @@ static func parse_flags(args) -> Dictionary:
 ## 当前进程的启动配置。**平台分歧只在这一个函数里**：
 ## 取参数的来源不同，往下全是同一条 parse()
 static func current() -> Dictionary:
-	if OS.has_feature("web"):
-		return parse(read_web(), web_page_host())
 	return parse(read_desktop())
-
-## 网页版开不了监听端口（net/embedded_host.gd 的平台限制），所以主机模式只有桌面版有。
-## 界面按这个决定要不要画「开房间」那个按钮 —— 画了点不动比不画糟糕
-static func can_host() -> bool:
-	return not OS.has_feature("web")
 
 static func _pick(params: Dictionary, keys: Array) -> String:
 	for k in keys:

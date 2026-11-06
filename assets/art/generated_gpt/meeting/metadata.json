@@ -1,0 +1,10 @@
+{
+  "tool": "built-in image_gen",
+  "source": "/Users/Yitan/.codex/generated_images/01a17423-1246-72b2-a616-d5f175b61fba/exec-2be64ae6-cf0c-489e-ae3f-187219cc5e60.png",
+  "reference": "/Users/Yitan/repos/niuma_card/assets/art/icon/icon_user.png",
+  "layout": [
+    3,
+    3
+  ],
+  "intended_frames": 9
+}

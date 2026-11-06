@@ -5,7 +5,7 @@ const Replay = preload("res://engine/replay_session.gd")
 const LegacyNames = preload("res://engine/legacy_names.gd")
 
 func _initialize() -> void:
-	CardDB.load_from("res://data/cards.json")
+	CardDB.load_from("res://data/on_work_cards.json")
 	check(GameState.BOT == "bot" and BOTSearch.models() == [{"id":"bot","label":"BOT"}],"新座位、模型和展示名称统一为 BOT")
 	var path := "res://tests/fixtures/legacy_recording_v2.json"
 	var original := FileAccess.get_file_as_string(path)

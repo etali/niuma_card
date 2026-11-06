@@ -12,7 +12,7 @@ const ConfigData = preload("res://engine/config_data.gd")
 ##   1. 可执行文件旁的 cards.json        —— 发布版：不重新打包即可改配置
 ##   2. 可执行文件上三级目录的 cards.json —— macOS .app 旁边的 cards.json
 ##   3. 项目根目录 cards.json（开发期）   —— 编辑器/源码运行：改完直接重跑
-##   4. res://data/cards.json            —— 打包进游戏的内置默认配置（兜底）
+##   4. res://data/on_work_cards.json            —— 打包进游戏的内置默认配置（兜底）
 ## kind: unit / product / attack / buff / legend / special
 
 const KIND_UNIT := "unit"
@@ -51,17 +51,17 @@ const KNOWN_BUFF_TYPES := [
 ## 两处不一致时 dup_key() 会 push_error 点名（见那个函数）
 const DUP_T2 := "dup_t2"
 
-const BUILTIN_PATH := "res://data/cards.json"
-const EXTERNAL_FILE := "cards.json"
+const BUILTIN_PATH := ConfigData.ON_WORK_CARDS
+const EXTERNAL_FILE := "on_work_cards.json"
 
 ## 运行时段名保留旧格式，供引擎、旧录像和旧外置 cards.json 兼容使用。
 ## 配置中的唯一来源：cards.json 的 _game / _upgrade；ui.json 的 sfx /
-## resource_labels；bot.json 的 simulation。缺键从各自内置文件补齐。
+## resource_labels；on_work_bot.json 的 simulation。缺键从各自内置文件补齐。
 const SECTION_GAME := "_game"
 const SECTION_UPGRADE := "_upgrade"
 const SECTION_SFX := "_sfx"
 const SECTION_SIM := "_sim"
-## 开局角色表（键见 data/cards.json 的 _roles 段 _note）
+## 开局角色表（键见 data/on_work_cards.json 的 _roles 段 _note）
 const SECTION_ROLES := "_roles"
 
 static var CARDS: Dictionary = {}
@@ -77,7 +77,7 @@ static var loaded_from := ""
 ## reset() 清的是「当前加载了哪份配置」，内置那份是只读的事实，清了也还是它
 static var _builtin: Dictionary = {}
 
-## 每张卡的定义字段见 data/cards.json 顶部 _comment
+## 每张卡的定义字段见 data/on_work_cards.json 顶部 _comment
 
 static func load_default() -> bool:
 	return load_from(BUILTIN_PATH)
@@ -92,6 +92,7 @@ static func ensure_loaded() -> void:
 
 ## 从指定 JSON 文件加载卡面配置；成功返回 true
 static func load_from(path: String) -> bool:
+	path = ConfigData.bundled_path(path)
 	if not FileAccess.file_exists(path):
 		return false
 	var f := FileAccess.open(path, FileAccess.READ)
@@ -321,12 +322,12 @@ static func reset() -> void:
 	ROLES = {}
 	loaded_from = ""
 
-## 全局规则数值（键见 data/cards.json 的 _game 段 _note）
+## 全局规则数值（键见 data/on_work_cards.json 的 _game 段 _note）
 static func game_rules() -> Dictionary:
 	ensure_loaded()
 	return GAME
 
-## 无头模拟器的旋钮（键见 data/bot.json 的 simulation 段 _note）
+## 无头模拟器的旋钮（键见 data/on_work_bot.json 的 simulation 段 _note）
 static func sim_rules() -> Dictionary:
 	ensure_loaded()
 	return SIM
@@ -354,7 +355,7 @@ static func pawn_user() -> int:
 	ensure_loaded()
 	return int(GAME.get("pawn_user", 1))
 
-## 角色表（键见 data/cards.json 的 _roles 段 _note）；查询走 Roles
+## 角色表（键见 data/on_work_cards.json 的 _roles 段 _note）；查询走 Roles
 static func role_rules() -> Dictionary:
 	ensure_loaded()
 	return ROLES
@@ -364,7 +365,7 @@ static func special_type(def_id: String) -> String:
 	var def: Dictionary = get_def(def_id)
 	return str(def.get("special", "")) if def.get("kind", "") == KIND_SPECIAL else ""
 
-## 升级路线表（键见 data/cards.json 的 _upgrade 段 _note）
+## 升级路线表（键见 data/on_work_cards.json 的 _upgrade 段 _note）
 static func upgrade_rules() -> Dictionary:
 	ensure_loaded()
 	return UPGRADE
@@ -502,5 +503,8 @@ static func _config_candidates() -> Array:
 		exe_dir.path_join(EXTERNAL_FILE),
 		exe_dir.path_join("../../../" + EXTERNAL_FILE),   # macOS .app 旁边
 		"res://" + EXTERNAL_FILE,
+		# 兼容旧版本位于应用旁或项目根的外置上班卡表。
+		exe_dir.path_join("cards.json"), exe_dir.path_join("../../../cards.json"),
+		"res://cards.json",
 		BUILTIN_PATH,
 	]

@@ -266,7 +266,13 @@ func _check_no_hud_overlap(main: Node, rect: Rect2, camera: Camera3D) -> void:
 	for child in main.get_children():
 		if not (child is CanvasLayer):
 			continue
-		for node in child.get_children():
+		var controls := child.get_children()
+		var chrome := child.get_node_or_null("TableChrome")
+		if chrome != null:
+			# 布局根铺满视口且允许穿透，只检查真正绘制的页眉和页脚。
+			controls.erase(chrome)
+			controls.append_array(chrome.get_children())
+		for node in controls:
 			if node is Control and node.visible:
 				var r := Rect2(node.global_position, node.size)
 				check(not r.intersects(card_rect), "HUD控件不覆盖市场卡牌面")

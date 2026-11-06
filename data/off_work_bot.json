@@ -1,0 +1,105 @@
+{
+  "bot": {
+    "enabled": true,
+    "owner": 1,
+    "decision_budget_ratio": 0.5,
+    "think_seconds": 2.8,
+    "first_action_seconds": 0.0,
+    "buy_chance": 0.65,
+    "min_reserve": 1,
+    "desired_people": 7,
+    "max_tool_copies": 1,
+    "purchase_priority": [
+      "employee",
+      "leader",
+      "overtime",
+      "transfer",
+      "meeting",
+      "coffee",
+      "strike",
+      "outsource",
+      "slack"
+    ],
+    "tool_priority": [
+      "meeting",
+      "transfer",
+      "overtime",
+      "coffee",
+      "strike",
+      "outsource",
+      "slack"
+    ],
+    "max_support_people": 1,
+    "production_reserve_people": 1,
+    "transfer_batch_size": 6,
+    "max_card_copies": {
+      "overtime": 4,
+      "coffee": 4
+    }
+  },
+  "preferences": {
+    "model_label": "电脑对手",
+    "help": "强度调整每次思考占行动间隔的比例。\n实际时限随间隔更新，完成后立即行动。",
+    "default_strength": 0.5,
+    "presets": {
+      "min": 0,
+      "low": 0.25,
+      "mid": 0.5,
+      "high": 0.75,
+      "max": 1
+    },
+    "knobs": [
+      {
+        "key": "enabled",
+        "label": "启用对手",
+        "kind": "bool",
+        "group": "对手设置"
+      },
+      {
+        "key": "decision_budget_ratio",
+        "label": "决策预算占行动间隔的比例",
+        "kind": "float",
+        "min": 0.01,
+        "max": 0.9,
+        "step": 0.01,
+        "group": "决策时限"
+      },
+      {
+        "key": "think_seconds",
+        "label": "行动间隔（游戏秒）",
+        "kind": "float",
+        "min": 0.2,
+        "max": 30,
+        "step": 0.1,
+        "group": "对手设置"
+      },
+      {
+        "key": "buy_chance",
+        "label": "购买概率",
+        "kind": "float",
+        "min": 0,
+        "max": 1,
+        "step": 0.05,
+        "group": "对手设置"
+      },
+      {
+        "key": "desired_people",
+        "label": "目标员工数",
+        "kind": "int",
+        "min": 1,
+        "max": 30,
+        "step": 1,
+        "group": "采购倾向"
+      },
+      {
+        "key": "min_reserve",
+        "label": "保留现金",
+        "kind": "int",
+        "min": 0,
+        "max": 50,
+        "step": 1,
+        "group": "采购倾向"
+      }
+    ]
+  }
+}

@@ -100,7 +100,7 @@ def inventory(root, capabilities):
     """游戏代码 + 被游戏实际引用的工具（包括 DebugShot），不让离线测试决定引擎能力。"""
     all_files = list(project_files(root))
     runtime = [p for p in all_files if (p.suffix in SOURCE_TYPES or p.name == 'project.godot')
-               and p.relative_to(root).parts[0] not in {"tools", "tests"}]
+               and not {"tools", "tests"}.intersection(p.relative_to(root).parts[:-1])]
     queue, read = list(runtime), {}
     while queue:
         path = queue.pop()
@@ -124,7 +124,7 @@ def inventory(root, capabilities):
             ancestors.add(parent)
             parent = parents.get(parent)
     resources = {p.suffix.lower() for p in all_files
-                 if p.relative_to(root).parts[0] not in {"tools", "tests"}}
+                 if not {"tools", "tests"}.intersection(p.relative_to(root).parts[:-1])}
     # 脚本也可能使用外置文件或动态组装路径，显式出现的扩展名同样保留解码器。
     resources.update(x.lower() for x in re.findall(r'\.(?:mp3|ogg|ogv|bmp|dds|jpg|jpeg|tga|hdr|exr|ktx|zip|gltf|glb|fbx)\b', text))
     digest = hashlib.sha256()

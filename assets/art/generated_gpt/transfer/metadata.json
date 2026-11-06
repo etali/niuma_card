@@ -1,0 +1,87 @@
+{
+  "card": "transfer",
+  "tool": "image_gen.imagegen (built-in)",
+  "source": "/Users/Yitan/.codex/generated_images/01a188c8-cb19-73d1-bb6f-45ead7f842bc/exec-f674b6a5-c3d3-49fe-8263-1ab5a3dae3f7.png",
+  "reference_images": [
+    "/Users/Yitan/repos/niuma_card/assets/art/icon/icon_user.png",
+    "/Users/Yitan/repos/niuma_card/assets/art/icon/icon_cash.png"
+  ],
+  "layout": {
+    "columns": 3,
+    "rows": 3,
+    "generated_keyframes": 9
+  },
+  "prompt": "Use case: stylized-concept. Production sprite sheet for the \"甩锅 / passing blame\" card. Use both attached images only as STYLE REFERENCES: very simple warm-cream flat fills, chunky rounded dark brown ink lines, tiny dot eyes, understated cartoon humor. Keep the same visual family; no gradients, watercolor, realistic shading, 3D, fuzzy texture or complicated scenes.\nMake exactly NINE consecutive animation cels of one object arranged in a perfectly regular THREE by THREE equal square-cell grid. Square canvas 1536x1536, genuinely transparent background. No grid or panels drawn. No words, Chinese characters, letters, numbers or labels.\nSubject: ONE squat black cooking pot with two little side handles, cream inner rim, and a guilty deadpan face on its front. The pot looks like it is about to shirk responsibility. Two small cream eyes and a cream uneasy mouth on the dark-brown body. One solitary pot, no people, hands, flames, papers, kitchen, desk or other props. Fill the central 70% of each cell with a clear bold silhouette.\nAction nine-frame loop row-major: 1 pot upright, guilty eyes looking forward; 2 eyes glance to the right; 3 one handle slightly lifts as pot tilts a little right; 4 tilts a little more with nervous squiggle mouth; 5 comic held guilty side-eye, 6 slowly rocks back; 7 small left recoil; 8 settles almost upright; 9 matches frame 1. Rotations at most eight degrees. Bottom contact point stays at same baseline in every cell. Same pot shape, scale, camera, handle geometry, color and line thickness throughout; every frame fully visible with generous clear gutters. The humor must come from this single pot's expression and hesitant movement. Nine moments of ONE icon, never nine designs.",
+  "inspection": "Nine complete guilty pot poses, no other figures/objects. Mostly stable silhouette with intended small tilt and side-eye. Thick dark shape reads against light card face; transparent surrounding pixels retained.",
+  "actual_size": [
+    1254,
+    1254
+  ],
+  "mode": "RGBA",
+  "alpha_extrema": [
+    0,
+    255
+  ],
+  "sheet_sha256": "6707c514718454cc9f489da9123274138032baba75d34cc1c5d5680a022aa8cb",
+  "cell_size": [
+    418,
+    418
+  ],
+  "visible_bounds_alpha_over_32": [
+    [
+      30,
+      127,
+      397,
+      348
+    ],
+    [
+      28,
+      127,
+      394,
+      348
+    ],
+    [
+      20,
+      126,
+      392,
+      348
+    ],
+    [
+      35,
+      101,
+      402,
+      324
+    ],
+    [
+      36,
+      105,
+      400,
+      323
+    ],
+    [
+      26,
+      104,
+      387,
+      324
+    ],
+    [
+      46,
+      74,
+      407,
+      292
+    ],
+    [
+      29,
+      73,
+      393,
+      292
+    ],
+    [
+      25,
+      73,
+      392,
+      292
+    ]
+  ],
+  "cell_edge_touching_frames": []
+}

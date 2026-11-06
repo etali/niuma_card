@@ -1,0 +1,46 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* The workbench layout, typography, comparison panels and controls use report.css. */
+[hidden] { display: none !important; }
+.global-grid, .card-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  align-items: start;
+  gap: 8px 12px;
+}
+.global-grid { margin-bottom: 18px; }
+.global-grid .wide, .card-fields .wide { grid-column: span 2; }
+.field-name, .stacked-cell, .card-identity-text { display: grid; gap: 1px; }
+.field-name code, .card-identity-text code {
+  overflow-wrap: anywhere; color: var(--muted); font-size: 11px;
+}
+input[type="checkbox"] { justify-self: start; min-height: auto; }
+.off-card-table { min-width: 660px; table-layout: fixed; }
+.off-card-table th:first-child { width: 22%; }
+.off-card-table th { position: sticky; top: 0; z-index: 1; }
+.off-card-table textarea { min-height: 42px; }
+.off-card-table .card-copy { grid-column: 1/-1; margin: 0; }
+.off-card-table .card-copy summary { font-size: 12px; padding: 1px 0; }
+.row-actions, .file-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.history-records { min-width: 1020px; }
+.history-records > tbody > tr > td:last-child { min-width: 160px; }
+.history-records:has(.acquisition-breakdown) { min-width: 1320px; }
+.acquisition-breakdown { margin: 2px 0 0; }
+.acquisition-breakdown summary { white-space: nowrap; font-size: 12px; }
+.acquisition-breakdown[open] > div { min-width: 230px; }
+.history-records .row-actions button { min-height: 32px; padding: 4px 8px; }
+.history-content { padding: 8px 12px; background: var(--bg); max-width: 90vw; }
+.history-content table, #comparisonResult table { background: var(--paper); }
+.history-content pre, #comparisonResult pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 350px; overflow: auto; }
+.card-fields label, .global-grid label, .bot-fields label, .compare-selectors label {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.compare-selectors > div, .compare-selectors select { min-width: 0; }
+#sharedProfile { margin: 12px 0; }
+#profile-q { padding: 12px; background: var(--bg); }
+#comparisonStatus { margin-top: 12px; }
+.hint, .footnote { color: var(--muted); }
+@media (max-width: 650px) {
+  .global-grid .wide { grid-column: 1/-1; }
+  #definitions article { grid-template-columns: 1fr; gap: 2px; }
+}

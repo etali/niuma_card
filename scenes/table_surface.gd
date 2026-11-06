@@ -32,6 +32,22 @@ float tag_distance(vec2 p, vec2 half_size) {
     float shoulder = (-p.x - half_size.x + abs(p.y) * 0.85) / 1.3124;
     return max(max(abs(p.y) - half_size.y, p.x - half_size.x), shoulder);
 }
+// Each tray retains its paper pattern as its left edge curls over to the right.
+uniform float roll = 0.0;
+varying float roll_shade;
+void vertex() {
+    float edge = (roll - 0.5) * extent.x;
+    float roll_radius = min(0.23, extent.x * 0.12);
+    float arc = max(0.0, edge - VERTEX.x) / roll_radius;
+    // Wind the trailing paper inside a compact cylinder instead of piling up
+    // coincident faces. Leave the flat, untouched portion exactly in place.
+    float r = roll_radius / (1.0 + 0.09 * arc);
+    if (arc > 0.0) {
+        VERTEX.x = edge - sin(arc) * r;
+        VERTEX.y += roll_radius - cos(arc) * r;
+    }
+    roll_shade = cos(min(arc, 3.14159)) * 0.15 + 0.85;
+}
 void fragment() {
     vec2 p = (UV - vec2(0.5)) * extent;
     float wave = sin(p.x * 4.3 + p.y * 1.7) * 0.012 + sin(p.y * 7.1 - p.x * 0.8) * 0.006;
@@ -81,6 +97,8 @@ void fragment() {
         ALBEDO = texel.rgb;
         ALPHA = texel.a * opacity;
     }
+    ALBEDO *= roll_shade;
+    ALPHA *= 1.0 - smoothstep(0.96, 1.0, roll);
 }
 """
 
@@ -97,6 +115,8 @@ func configure(extent: Vector2, role: String, artwork: Texture2D = null) -> void
 	name = "TableSurface_" + role
 	var plane := PlaneMesh.new()
 	plane.size = extent
+	if role in ["zone", "market"]:
+		plane.subdivide_width = clampi(ceili(extent.x * 9.0), 16, 192)
 	mesh = plane
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if _shader == null:
@@ -172,3 +192,6 @@ func _process(delta: float) -> void:
 	_feedback = lerpf(_feedback, _feedback_target, 1.0 - exp(-18.0 * delta))
 	if _surface_material:
 		_surface_material.set_shader_parameter("feedback", _feedback)
+
+func set_shift_roll(amount: float) -> void:
+	_surface_material.set_shader_parameter("roll", amount)

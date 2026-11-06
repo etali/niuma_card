@@ -18,8 +18,8 @@ func check(ok: bool, label: String) -> void:
 		printerr("FAIL: ", label)
 
 func _initialize() -> void:
-	CardDB.load_from("res://data/cards.json")
-	var base: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/cards.json"))
+	CardDB.load_from("res://data/on_work_cards.json")
+	var base: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/on_work_cards.json"))
 	check(Logic.validate(base, base).is_empty(), "默认卡表通过白名单")
 	var resale := base.duplicate(true)
 	resale["yunketang"]["pawn"] = 0
@@ -315,7 +315,7 @@ func _test_report_output() -> void:
 	var request := folder.path_join("request.json")
 	var progress := folder.path_join("progress.json")
 	EvalReport._write(request,{"schema":"manual-balance-request-v1",
-		"cards_path":ProjectSettings.globalize_path("res://data/cards.json"),"output_path":output,"progress_path":progress,
+		"cards_path":ProjectSettings.globalize_path("res://data/on_work_cards.json"),"output_path":output,"progress_path":progress,
 		"options":{"pairs":1,"max_rounds":1,"seed_start":93,"model":"bot","strength":0,"bot_parameters":{}}})
 	var logs: Array = []
 	var code := OS.execute(OS.get_executable_path(),PackedStringArray(["--headless","--path",

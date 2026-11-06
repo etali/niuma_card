@@ -7,7 +7,7 @@
 
 检查与安装范围：
 - Godot 编辑器（只检查，不自动安装；可用 --godot 或 GODOT 指定路径）
-- 与当前 Godot 版本匹配的全套导出模板（macOS / Web / Android 共用一次下载）
+- 与当前 Godot 版本匹配的全套导出模板（macOS / Android 共用一次下载）
 - Python 依赖：Pillow（应用图标与素材检查）、fonttools（字体子集化）
 - --toolchain：精简引擎所需的 Apple Clang 16+（Xcode 16 或更新的命令行工具）
 
@@ -34,8 +34,7 @@ from project_paths import redact_paths
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES_ROOT = Path.home() / "Library/Application Support/Godot/export_templates"
 # 标准 macOS 构建必须有 macos.zip；其余模板供 打包发布 / 安卓构建使用。
-REQUIRED_TEMPLATES = ("macos.zip", "web_release.zip", "web_debug.zip",
-                      "web_nothreads_release.zip", "web_nothreads_debug.zip",
+REQUIRED_TEMPLATES = ("macos.zip",
                       "android_debug.apk", "android_release.apk", "android_source.zip")
 PYTHON_PACKAGES = (("PIL", "Pillow"), ("fontTools", "fonttools"))
 # 当前 Godot 的 SConstruct 拒绝 Apple Clang <16。

@@ -1,5 +1,5 @@
 {
-  "_说明": "游戏展示配置：defaults=启动默认值；palette=配色；art=图标、插画与卡面呈现；resource_labels=资源计量名；sfx=音效与动作映射；fx=牌桌特效的强度与印章文字。规则和卡牌见 cards.json，BOT 参数见 bot.json。",
+  "_说明": "游戏展示配置：defaults=启动默认值；palette=配色；art=图标、插画与卡面呈现；resource_labels=资源计量名；sfx=音效与动作映射；fx=牌桌特效的强度与印章文字。上班与下班卡表分别见 on_work_cards.json、off_work_cards.json，BOT 参数分别见 on_work_bot.json、off_work_bot.json。",
   "defaults": {
     "window_fraction": 0.98,
     "perspective_angle": 80.0,
@@ -411,6 +411,45 @@
         "file": "icon/icon_idea.png",
         "zh": "Idea",
         "style": "诙谐手绘简笔画，原色透明插画（imagegen 原稿，局部原像素动画）"
+      },
+      "work_employee": {
+        "file": "icon/work_employee.png"
+      },
+      "work_work": {
+        "file": "icon/work_work.png"
+      },
+      "work_leader": {
+        "file": "icon/work_leader.png"
+      },
+      "work_grinder": {
+        "file": "icon/work_grinder.png"
+      },
+      "work_overtime": {
+        "file": "icon/work_overtime.png"
+      },
+      "work_coffee": {
+        "file": "icon/work_coffee.png"
+      },
+      "work_transfer": {
+        "file": "icon/work_transfer.png"
+      },
+      "work_meeting": {
+        "file": "icon/work_meeting.png"
+      },
+      "work_slack": {
+        "file": "icon/work_slack.png"
+      },
+      "work_outsource": {
+        "file": "icon/work_outsource.png"
+      },
+      "work_strike": {
+        "file": "icon/work_strike.png"
+      },
+      "work_workaholic": {
+        "file": "icon/work_workaholic.png"
+      },
+      "work_work_emperor": {
+        "file": "icon/work_work_emperor.png"
       }
     },
     "misc": {
@@ -544,6 +583,45 @@
       },
       "idea": {
         "file": "icon/icon_idea.png"
+      },
+      "work_employee": {
+        "file": "icon/work_employee.png"
+      },
+      "work_work": {
+        "file": "icon/work_work.png"
+      },
+      "work_leader": {
+        "file": "icon/work_leader.png"
+      },
+      "work_grinder": {
+        "file": "icon/work_grinder.png"
+      },
+      "work_overtime": {
+        "file": "icon/work_overtime.png"
+      },
+      "work_coffee": {
+        "file": "icon/work_coffee.png"
+      },
+      "work_transfer": {
+        "file": "icon/work_transfer.png"
+      },
+      "work_meeting": {
+        "file": "icon/work_meeting.png"
+      },
+      "work_slack": {
+        "file": "icon/work_slack.png"
+      },
+      "work_outsource": {
+        "file": "icon/work_outsource.png"
+      },
+      "work_strike": {
+        "file": "icon/work_strike.png"
+      },
+      "work_workaholic": {
+        "file": "icon/work_workaholic.png"
+      },
+      "work_work_emperor": {
+        "file": "icon/work_work_emperor.png"
       }
     },
     "hover": {
@@ -946,6 +1024,3450 @@
       "win_bankrupt": "对手破产",
       "win_exodus": "对手跑光",
       "win_resign": "对手认输"
+    }
+  },
+  "work": {
+    "_说明": "牛马牌原卡框、堆叠、相机和UI保持不变；GPT单主图由ui.json.icon_motion驱动连续局部动作。frame配置居中插画与任务条，主图登记来自data/ui.json.art。",
+    "frame": {
+      "size": [
+        1.8,
+        2.4
+      ],
+      "icon_y": 0.022,
+      "text_y": 0.03,
+      "art_width": 0.78,
+      "overlay_y": 0.038,
+      "raster_font": 64,
+      "art_cy": 0.54,
+      "art_cx": 0.5,
+      "art_scale_by_type": {
+        "coffee": 1.2,
+        "workaholic": 1.1,
+        "work_emperor": 1.1
+      }
+    },
+    "interaction": {
+      "pulse_duration": 0.34
+    },
+    "task_progress": {
+      "debug_timer": {
+        "format": "剩余 %.1fs",
+        "paused_format": "暂停 · %.1fs",
+        "font_size": 64,
+        "pixel_size": 0.0045,
+        "max_width": 1.42,
+        "outline_size": 8,
+        "surface_offset": 0.0002,
+        "z_offset": -0.26,
+        "color": "ink",
+        "outline_color": "surface"
+      },
+      "width": 1.42,
+      "height": 0.15,
+      "center_z": 0.88,
+      "surface_y": 0.048,
+      "border": 0.022,
+      "completion_hold_seconds": 0.1,
+      "frame_color": "ink",
+      "track_color": "surface",
+      "fill_color": "success",
+      "paused_color": "muted",
+      "phase_colors": {
+        "work": "success",
+        "transfer": "success",
+        "slack": "success",
+        "meeting": "success",
+        "coffee": "cash",
+        "recovering": "info",
+        "outsource": "success"
+      },
+      "dedicated_cards": {
+        "meeting": {
+          "active": "meeting",
+          "recovering": "recovering"
+        },
+        "coffee": {
+          "active": "coffee"
+        },
+        "outsource": {
+          "active": "outsource",
+          "recovering": "recovering"
+        }
+      },
+      "reverse_phases": {
+        "meeting": [
+          "recovering"
+        ],
+        "outsource": [
+          "recovering"
+        ]
+      }
+    },
+    "animation": {
+      "leave_duration": 0.8,
+      "leave_distance": 2.0,
+      "motion_speed_scale_max": 2.0,
+      "retire_duration": 0.62,
+      "retire_wait": 0.12,
+      "retire_scale": 0.5,
+      "retire_distance": 0.45,
+      "recovery_dim": 0.25,
+      "conveyor_load_distance": 0.45,
+      "landing_compress": [
+        1.1,
+        1.0,
+        0.84
+      ],
+      "landing_rebound": [
+        0.97,
+        1.0,
+        1.07
+      ],
+      "landing_compress_time": 0.09,
+      "landing_rebound_time": 0.14,
+      "landing_settle_time": 0.18,
+      "task_playback_speed": 1.0,
+      "leave_anticipation": 0.18,
+      "leave_clearance_duration": 0.22,
+      "leave_clearance_scale": 0.62,
+      "leave_clearance_padding": 0.12,
+      "leave_direction_by_owner": {
+        "0": 1.0,
+        "1": -1.0
+      },
+      "leave_stamp": "下班",
+      "person_task_activities": {
+        "employee": [
+          "work"
+        ],
+        "grinder": [
+          "work"
+        ],
+        "leader": [
+          "meeting",
+          "transfer",
+          "slack"
+        ],
+        "workaholic": [
+          "work"
+        ],
+        "work_emperor": [
+          "work"
+        ]
+      },
+      "leave_height": 0.75,
+      "leave_scale": 0.08,
+      "leave_tilt_degrees": -12.0
+    },
+    "card_plates": {
+      "work": "plate_t1_money",
+      "employee": "plate_user",
+      "money": "plate_cash",
+      "overtime": "plate_buff_up",
+      "coffee": "plate_buff_def",
+      "transfer": "plate_attack",
+      "meeting": "plate_attack",
+      "slack": "plate_t1_growth",
+      "outsource": "plate_t2",
+      "strike": "plate_attack",
+      "leader": "plate_t3",
+      "grinder": "plate_user",
+      "workaholic": "plate_user",
+      "work_emperor": "plate_user"
+    },
+    "card_status": {
+      "ready": "待命",
+      "active": "使用中",
+      "recovering": "整理中",
+      "work": "赶工",
+      "transfer": "交接",
+      "slack": "接咖啡",
+      "meeting": "开会",
+      "idle": "待命",
+      "paused": "被开会",
+      "striking": "罢工中",
+      "money": "资金",
+      "work_queue": "待处理",
+      "coffee": "喝咖啡 · 升级中"
+    },
+    "storage": {
+      "settings_directory": "user://settings"
+    },
+    "rig": {
+      "stamp_height": 0.25,
+      "stamp_y": 0.09,
+      "stamp_z": 0.0,
+      "stamp_tilt": -0.13,
+      "stamp_word": "完成",
+      "meeting_word": "开会",
+      "strike_word": "罢工"
+    },
+    "upgrade": {
+      "duration_seconds": 0.68,
+      "stamp_word": "升级",
+      "stamp_seconds": 0.64,
+      "color": "cash",
+      "ring_inner_radius": 0.55,
+      "ring_outer_radius": 0.59,
+      "ring_y": 0.046,
+      "ring_z": 0.1,
+      "ring_start_scale": 0.5,
+      "ring_end_scale": 1.8,
+      "ring_peak_alpha": 0.8,
+      "body_scale_kick": 0.13,
+      "body_kick_z": 0.06
+    },
+    "timer_status": {
+      "meeting": {
+        "ready": "准备开会",
+        "active": "开会中",
+        "recovering": "散会 · 冷却中"
+      },
+      "coffee": {
+        "ready": "员工＋咖啡，读条升级",
+        "active": "喝咖啡 · 升级中"
+      },
+      "outsource": {
+        "ready": "工作＋金钱，读条外包",
+        "active": "外包中 · 资金已预留",
+        "recovering": "外包完成 · 整理中"
+      }
+    }
+  },
+  "board": {
+    "_说明": "实时规则适配参数。拖拽、堆叠、双击和边界继承牛马牌；组合命中要求明确覆盖目标牌，飞行收入不参与交互。",
+    "local_owner": 0,
+    "opponent_owner": 1,
+    "default_compact": true,
+    "debug_mode": {
+      "enabled": false,
+      "preferences_file": "work_debug.json"
+    },
+    "stack_display": {
+      "money_visible_layers": 16,
+      "back_cards": [
+        "overtime"
+      ],
+      "expanded_visible_layers": 24,
+      "expanded_layer_height": 0.024,
+      "expanded_layer_clearance": 0.001,
+      "expanded_max_span": 3.6,
+      "expanded_detail_types": [
+        "employee",
+        "grinder",
+        "workaholic",
+        "work_emperor",
+        "leader",
+        "overtime",
+        "meeting",
+        "slack",
+        "outsource",
+        "transfer",
+        "strike"
+      ],
+      "expanded_repeat_gap": 0.12,
+      "expanded_type_gap": 0.4,
+      "expanded_title_min_gap": 0.32
+    },
+    "snapping": {
+      "hit_fraction": 0.75,
+      "min_hit_fraction": 0.1,
+      "max_hit_fraction": 1.0,
+      "step": 0.05,
+      "preferences_file": "work_interaction.json"
+    },
+    "spawn_columns": [
+      -8.5,
+      -5.1,
+      -1.7,
+      1.7,
+      5.1,
+      8.5
+    ],
+    "rest_y": 0.05,
+    "zone_inset": 0.12,
+    "market_uid_base": -1000,
+    "price_tag_offset": [
+      0.0,
+      0.15,
+      1.0
+    ],
+    "market_entry_offset": [
+      2.6,
+      0.0,
+      0.0
+    ],
+    "market_move_seconds": 0.34,
+    "non_cash_purchase_message": "把金钱拖到商品上购买",
+    "insufficient_stack_money_message": "这摞可用金钱不够买这张牌",
+    "dismiss_zone": {
+      "invalid_drop_message": "把己方人员拖到开除区换钱"
+    },
+    "opening_layout": {
+      "work": [
+        [
+          -8.6,
+          0.12
+        ],
+        [
+          -4.15,
+          0.12
+        ],
+        [
+          0.3,
+          0.12
+        ]
+      ],
+      "person": [
+        [
+          -6.1,
+          0.66
+        ],
+        [
+          -1.65,
+          0.82
+        ],
+        [
+          2.7,
+          0.6
+        ]
+      ],
+      "tool": [
+        [
+          4.65,
+          0.28
+        ],
+        [
+          6.7,
+          0.5
+        ]
+      ],
+      "money": [
+        [
+          8.9,
+          0.25
+        ]
+      ],
+      "edge_padding": 0.14,
+      "cash_stack_reserve": 0.35,
+      "ingredient": [
+        [
+          6.7,
+          0.5
+        ]
+      ]
+    },
+    "income_motion": {
+      "travel_seconds": 0.76,
+      "land_seconds": 0.14,
+      "emission_interval_seconds": 0.065,
+      "max_emission_window_seconds": 0.65,
+      "spawn_height": 0.16,
+      "arc_height": 0.65,
+      "launch_scale": 0.48,
+      "flight_scale": 0.58,
+      "scale_rise_fraction": 0.14,
+      "width_per_card": 0.065,
+      "max_stream_width": 0.9,
+      "width_change_speed": 6.0,
+      "spread_sequence": 0.61803398875,
+      "max_samples_per_payment": 12,
+      "max_decorative_cards_per_owner": 30,
+      "minimum_separation_pixels": 13.0,
+      "max_visible_notes_per_owner": 24,
+      "screen_padding_pixels": 10.0,
+      "density_fade_seconds": 0.09,
+      "opacity_visibility_threshold": 0.01
+    },
+    "meeting_motion": {
+      "pull_seconds": 0.72,
+      "return_seconds": 0.62,
+      "stagger_seconds": 0.065,
+      "arc_height": 2.2,
+      "return_arc_height": 1.35,
+      "fan_width": 0.3,
+      "seat_height": 0.05,
+      "seat_padding": 0.16,
+      "tilt_degrees": 15.0,
+      "landing_seconds": 0.15,
+      "landing_height": 0.14,
+      "ingredient_radius": 0.9,
+      "orbit_radius_x": 1.9,
+      "orbit_radius_z": 1.5,
+      "orbit_period_seconds": 4.8,
+      "orbit_start_angle": -0.7853981633974483,
+      "orbit_scale": 0.74,
+      "orbit_tilt_degrees": 7.0,
+      "orbit_below_center": 0.16,
+      "front_card": "meeting"
+    },
+    "strike_motion": {
+      "invalid_drop_message": "把罢工拖到对方正在处理工作或摸鱼、且有人在场的组合上",
+      "combination_blocked_message": "罢工中的人员不能组合，可移到空位或拖去开除",
+      "flight_seconds": 0.68,
+      "stagger_seconds": 0.045,
+      "max_stagger_seconds": 0.24,
+      "arc_height": 2.65,
+      "flight_tilt_degrees": 38.0,
+      "scatter_grid_step": 0.75,
+      "scatter_padding": 0.22,
+      "clearance_x": 1.55,
+      "clearance_z": 2.05,
+      "distance_weight": 0.018
+    },
+    "transfer_motion": {
+      "emission_interval_seconds": 0.035,
+      "max_emission_window_seconds": 0.54,
+      "spread_per_card": 0.55,
+      "max_spread_width": 3.0,
+      "travel_seconds": 0.62,
+      "land_seconds": 0,
+      "arc_height": 2.4,
+      "launch_scale": 1.0,
+      "flight_tilt_degrees": 0,
+      "landing_height": 0
+    },
+    "coffee_motion": {
+      "emission_interval_seconds": 0.09,
+      "max_emission_window_seconds": 0.54,
+      "spread_per_card": 0.12,
+      "max_spread_width": 0.6,
+      "travel_seconds": 0.76,
+      "land_seconds": 0.14,
+      "arc_height": 1.5,
+      "launch_scale": 0.6,
+      "flight_tilt_degrees": 18.0,
+      "landing_height": 0.13
+    },
+    "placement": {
+      "grid_step": 0.35,
+      "clearance": [
+        0.18,
+        0.18
+      ],
+      "overlap_tolerance": 0.0001
+    },
+    "opponent_layout": {
+      "enabled": true,
+      "grid_step": 0.45,
+      "gap": 0.16,
+      "side_label_padding": 1.3,
+      "overlap_tolerance": 0.0001,
+      "position_tolerance": 0.001,
+      "pack_x_weight": 100.0
+    },
+    "conveyor_visual": {
+      "belt_height": 0.026,
+      "rail_height": 0.04,
+      "rail_width": 0.065,
+      "end_width": 0.16,
+      "belt_paper_mix": 0.2,
+      "rail_ink_mix": 0.35,
+      "slot_below_card": 0.002,
+      "seam_width": 0.035,
+      "seam_inset": 0.2,
+      "seam_height": 0.048,
+      "direction_mark": "‹",
+      "mark_font_size": 52,
+      "mark_pixel_size": 0.007,
+      "mark_inset": 0.22,
+      "mark_z": -0.05,
+      "end_card_margin": 0.12,
+      "edge_fade_width": 0.5,
+      "cash_drop_radius": 1.5
+    },
+    "side_extract": {
+      "canvas_layer": 5,
+      "side_rows_per_column": 6,
+      "side_column_gap": 0.12,
+      "side_text_gap": 0.06,
+      "click_threshold": 24,
+      "type_order": [
+        "work",
+        "money",
+        "employee",
+        "grinder",
+        "workaholic",
+        "work_emperor",
+        "leader",
+        "overtime",
+        "coffee",
+        "meeting",
+        "transfer",
+        "slack",
+        "outsource",
+        "strike"
+      ],
+      "screen_margin": 18,
+      "top_margin": 84,
+      "bottom_margin": 88,
+      "edge_margin_fraction": 0.12,
+      "card_height": 190,
+      "min_card_height": 90,
+      "max_card_height": 220,
+      "source_size_ratio": 1.0,
+      "max_card_height_fraction": 0.6,
+      "max_height": 540,
+      "height_fraction": 0.68,
+      "card_step_ratio": 0.36,
+      "anchor_gap_ratio": 0.48,
+      "render_padding": 8,
+      "render_scale": 1.5,
+      "camera_height": 20,
+      "max_render_cards": 13,
+      "local_radius": 2,
+      "local_step_ratio": 0.18,
+      "cut_shift": 14,
+      "cut_gap": 12,
+      "drag_threshold": 8,
+      "open_seconds": 0.3,
+      "stagger_seconds": 0.045,
+      "ease_power": 3,
+      "hover_response": 18,
+      "face_layer_gap": 0.045
+    }
+  },
+  "presentation": {
+    "_说明": "HUD、终局、演出与音效参数。下班规则在 off_work_cards.json，牌桌和卡面参数在 ui.json.board 与 ui.json.work。",
+    "hud": {
+      "margin": 24,
+      "header_y": 12,
+      "header_height": 76,
+      "column_gap": 28,
+      "panel_padding": 12,
+      "panel_radius": 10,
+      "panel_border": 1,
+      "panel_opacity": 0.96,
+      "title_size": 22,
+      "body_size": 18,
+      "hint_size": 16,
+      "button_size": [
+        126,
+        44
+      ],
+      "button_gap": 10,
+      "button_margin": 9,
+      "button_radius": 10,
+      "bottom_height": 48,
+      "message_hold": 3.2,
+      "detail_width": 280,
+      "detail_height": 126,
+      "detail_offset": [
+        20,
+        24
+      ],
+      "refresh_interval": 0.1
+    },
+    "text": {
+      "title": "先清空工作，先下班",
+      "player": "你的工位",
+      "opponent": "对手工位",
+      "stats": "工作 %d    员工 %d    钱 %d",
+      "hint": "拖牌叠组开工 · 点侧边抽取同类牌 · 双击展开／收拢 · 拖中间带走后半摞",
+      "restart": "重新开局",
+      "mute": "声音：开",
+      "unmute": "声音：关",
+      "cancel": "取消选目标",
+      "target": "把罢工拖到对手正在处理工作的组合 · 右键取消",
+      "buy_ok": "已购入 %s",
+      "dismiss_ok": "开除 %d 人，换回 %d 金钱",
+      "buy_fail": "没买到：资金不足或商品已经离开",
+      "action_fail": "组合还未就绪：检查人员、工作和工具状态",
+      "drag_enemy": "对手的牌不能拖动",
+      "win": "下班",
+      "lose": "对手下班了",
+      "draw": "一起下班",
+      "win_body": "工作清空，电脑合上。今天就到这里。",
+      "lose_body": "还差 %d 份工作。换个分组，再来一局。",
+      "draw_body": "同一时刻清空工作，大家一起收工。",
+      "ready": "就绪",
+      "recovering": "恢复中",
+      "active": "使用中",
+      "meeting": "开会中",
+      "working": "工作中",
+      "idle": "待安排",
+      "complete": "完成",
+      "strike": "罢工",
+      "striking": "罢工中",
+      "transfer": "甩锅",
+      "fired": "开除",
+      "coffee_upgrade": "升级"
+    },
+    "dismiss_zone": {
+      "FacilityName": "开除",
+      "FacilityBadge": "人员",
+      "FacilityAction": ""
+    },
+    "dismiss_illustration": {
+      "texture": "res://assets/art/table/work_dismissal.png",
+      "width": 1.18,
+      "center_z": 0.12,
+      "show_category": false
+    },
+    "result": {
+      "delay": 1.6,
+      "width": 510,
+      "padding": 28,
+      "separation": 18,
+      "title_size": 56,
+      "body_size": 20,
+      "fade_duration": 0.35
+    },
+    "effects": {
+      "max_events": 36,
+      "duration": 0.7,
+      "stamp_duration": 0.65,
+      "meeting_duration": 0.75,
+      "coin_duration": 0.6,
+      "paper_size": [
+        24,
+        32
+      ],
+      "paper_spacing": 6,
+      "paper_lines": 3,
+      "paper_line_spacing": 6,
+      "line_width": 2.5,
+      "transfer_impact_fraction": 0.75,
+      "stamp_font_size": 29,
+      "stamp_scale_start": 1.7,
+      "stamp_angle": -0.12,
+      "stamp_impact_fraction": 0.25,
+      "coin_radius": 8,
+      "coin_rise": 40,
+      "burst_radius": 38,
+      "burst_rays": 8
+    },
+    "audio": {
+      "pool_size": 10,
+      "max_per_frame": 3,
+      "pitch_min": 0.96,
+      "pitch_max": 1.04,
+      "actions": {
+        "pickup": {
+          "file": "pickup.wav",
+          "db": -15,
+          "pitch": 1.0
+        },
+        "drop": {
+          "file": "stack.wav",
+          "db": -15,
+          "pitch": 1.0
+        },
+        "work_complete": {
+          "file": "stamp.wav",
+          "db": -17,
+          "pitch": 1.05
+        },
+        "transfer": {
+          "file": "drop.wav",
+          "db": -10,
+          "pitch": 0.8
+        },
+        "meeting_start": {
+          "file": "attack.wav",
+          "db": -16,
+          "pitch": 0.8
+        },
+        "meeting_end": {
+          "file": "confirm.wav",
+          "db": -18,
+          "pitch": 1.0
+        },
+        "strike": {
+          "file": "stamp.wav",
+          "db": -12,
+          "pitch": 0.8
+        },
+        "buy": {
+          "file": "buy.wav",
+          "db": -14,
+          "pitch": 1.0
+        },
+        "outsource": {
+          "file": "drop.wav",
+          "db": -12,
+          "pitch": 0.9
+        },
+        "fire": {
+          "file": "drop.wav",
+          "db": -17,
+          "pitch": 0.75
+        },
+        "win": {
+          "file": "bell.wav",
+          "db": -13,
+          "pitch": 1.0
+        },
+        "lose": {
+          "file": "lose.wav",
+          "db": -18,
+          "pitch": 1.0
+        },
+        "deny": {
+          "file": "deny.wav",
+          "db": -18,
+          "pitch": 1.0
+        },
+        "typing": {
+          "file": "pickup.wav",
+          "db": -36,
+          "pitch": 1.8
+        },
+        "coffee_upgrade": {
+          "file": "complete.wav",
+          "db": -15,
+          "pitch": 1.2
+        }
+      }
+    }
+  },
+  "card_display": {
+    "_说明": "将实时卡池投影到牛马牌原 CardEntity / Board 的展示字段；不包含回合结算规则。",
+    "work": {
+      "kind": "unit",
+      "res": "work",
+      "source_art_id": "work_work"
+    },
+    "money": {
+      "kind": "unit",
+      "res": "money",
+      "source_art_id": "cash"
+    },
+    "employee": {
+      "kind": "product",
+      "source_art_id": "work_employee"
+    },
+    "leader": {
+      "kind": "product",
+      "source_art_id": "work_leader"
+    },
+    "grinder": {
+      "kind": "product",
+      "source_art_id": "work_grinder"
+    },
+    "overtime": {
+      "kind": "buff",
+      "source_art_id": "work_overtime"
+    },
+    "coffee": {
+      "kind": "special",
+      "source_art_id": "work_coffee"
+    },
+    "transfer": {
+      "kind": "attack",
+      "source_art_id": "work_transfer"
+    },
+    "meeting": {
+      "kind": "attack",
+      "source_art_id": "work_meeting"
+    },
+    "slack": {
+      "kind": "buff",
+      "source_art_id": "work_slack"
+    },
+    "outsource": {
+      "kind": "buff",
+      "source_art_id": "work_outsource"
+    },
+    "_realtime": {
+      "money_amount_format": "×%d"
+    },
+    "strike": {
+      "kind": "attack",
+      "source_art_id": "work_strike"
+    },
+    "workaholic": {
+      "kind": "product",
+      "source_art_id": "work_workaholic"
+    },
+    "work_emperor": {
+      "kind": "product",
+      "source_art_id": "work_work_emperor"
+    }
+  },
+  "icon_motion": {
+    "_说明": "GPT主图保持同一纹理；每渲染帧按显式时间做局部连续运动，不切换九格姿势，不用重复帧凑帧率。60Hz只用于预览单步采样。相位以弧度表示；cycles为整数保证循环连续。",
+    "sample_fps": 60,
+    "max_regions": 8,
+    "inverse_iterations": 2,
+    "cards": {
+      "employee": {
+        "duration": 2.4,
+        "action": "脚稳住，头部点动，两手交替忙活",
+        "global": {
+          "pivot": [
+            0.5,
+            0.78
+          ],
+          "rotation": 0.008,
+          "translation": [
+            0,
+            0
+          ],
+          "scale": [
+            0,
+            0
+          ],
+          "phase": 0,
+          "cycles": 1
+        },
+        "regions": [
+          {
+            "center": [
+              0.5,
+              0.37
+            ],
+            "radius": [
+              0.28,
+              0.28
+            ],
+            "pivot": [
+              0.5,
+              0.62
+            ],
+            "rotation": 0.035,
+            "translation": [
+              0,
+              0.003
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1,
+            "inner": 0.8
+          },
+          {
+            "center": [
+              0.34,
+              0.66
+            ],
+            "radius": [
+              0.13,
+              0.12
+            ],
+            "pivot": [
+              0.43,
+              0.6
+            ],
+            "rotation": 0.15,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 2,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.67,
+              0.66
+            ],
+            "radius": [
+              0.13,
+              0.12
+            ],
+            "pivot": [
+              0.57,
+              0.6
+            ],
+            "rotation": -0.15,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 2,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.5,
+              0.7
+            ],
+            "radius": [
+              0.13,
+              0.13
+            ],
+            "pivot": [
+              0.5,
+              0.81
+            ],
+            "rotation": 0,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0.007,
+              0.012
+            ],
+            "phase": -1.5707963267948966,
+            "cycles": 1,
+            "inner": 0.65
+          }
+        ]
+      },
+      "grinder": {
+        "duration": 1.6,
+        "action": "头带卷王加快摆臂，稳住身体轮廓",
+        "global": {
+          "pivot": [
+            0.5,
+            0.78
+          ],
+          "rotation": 0.012,
+          "translation": [
+            0,
+            0
+          ],
+          "scale": [
+            0,
+            0
+          ],
+          "phase": 0,
+          "cycles": 1
+        },
+        "regions": [
+          {
+            "center": [
+              0.48,
+              0.38
+            ],
+            "radius": [
+              0.28,
+              0.27
+            ],
+            "pivot": [
+              0.5,
+              0.64
+            ],
+            "rotation": 0.025,
+            "translation": [
+              0,
+              0.004
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 2,
+            "inner": 0.8
+          },
+          {
+            "center": [
+              0.33,
+              0.69
+            ],
+            "radius": [
+              0.12,
+              0.14
+            ],
+            "pivot": [
+              0.43,
+              0.63
+            ],
+            "rotation": 0.22,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 4,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.66,
+              0.69
+            ],
+            "radius": [
+              0.12,
+              0.14
+            ],
+            "pivot": [
+              0.57,
+              0.63
+            ],
+            "rotation": -0.22,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 4,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.77,
+              0.26
+            ],
+            "radius": [
+              0.16,
+              0.12
+            ],
+            "pivot": [
+              0.65,
+              0.27
+            ],
+            "rotation": 0.07,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 2,
+            "inner": 0.65
+          }
+        ]
+      },
+      "leader": {
+        "duration": 2.8,
+        "action": "举喇叭讲个不停，点头强调",
+        "global": {
+          "pivot": [
+            0.5,
+            0.78
+          ],
+          "rotation": 0.012,
+          "translation": [
+            0,
+            0
+          ],
+          "scale": [
+            0,
+            0
+          ],
+          "phase": 0,
+          "cycles": 1
+        },
+        "regions": [
+          {
+            "center": [
+              0.5,
+              0.42
+            ],
+            "radius": [
+              0.24,
+              0.25
+            ],
+            "pivot": [
+              0.5,
+              0.65
+            ],
+            "rotation": 0.045,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1,
+            "inner": 0.8
+          },
+          {
+            "center": [
+              0.32,
+              0.6
+            ],
+            "radius": [
+              0.2,
+              0.13
+            ],
+            "pivot": [
+              0.44,
+              0.66
+            ],
+            "rotation": -0.1,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 2,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.63,
+              0.68
+            ],
+            "radius": [
+              0.12,
+              0.13
+            ],
+            "pivot": [
+              0.57,
+              0.62
+            ],
+            "rotation": 0.1,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1,
+            "inner": 0.65
+          }
+        ]
+      },
+      "work": {
+        "duration": 3.0,
+        "action": "文件堆沉重地起伏，上层纸张轻轻颤动",
+        "global": {
+          "pivot": [
+            0.5,
+            0.77
+          ],
+          "rotation": 0,
+          "translation": [
+            0,
+            0
+          ],
+          "scale": [
+            0.006,
+            -0.006
+          ],
+          "phase": 0,
+          "cycles": 1
+        },
+        "regions": [
+          {
+            "center": [
+              0.5,
+              0.41
+            ],
+            "radius": [
+              0.37,
+              0.16
+            ],
+            "pivot": [
+              0.5,
+              0.64
+            ],
+            "rotation": 0,
+            "translation": [
+              0,
+              -0.008
+            ],
+            "scale": [
+              0.005,
+              0.01
+            ],
+            "phase": -1.5707963267948966,
+            "cycles": 1,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.5,
+              0.69
+            ],
+            "radius": [
+              0.33,
+              0.14
+            ],
+            "pivot": [
+              0.5,
+              0.77
+            ],
+            "rotation": 0,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0.012,
+              -0.008
+            ],
+            "phase": 0,
+            "cycles": 1,
+            "inner": 0.65
+          }
+        ]
+      },
+      "money": {
+        "duration": 2.4,
+        "action": "沿用原现金图，硬币轻摆后弹回",
+        "global": {
+          "pivot": [
+            0.5,
+            0.5
+          ],
+          "rotation": 0.075,
+          "translation": [
+            0,
+            -0.008
+          ],
+          "scale": [
+            -0.04,
+            0
+          ],
+          "phase": -1.5707963267948966,
+          "cycles": 1
+        },
+        "regions": []
+      },
+      "coffee": {
+        "duration": 3.2,
+        "action": "杯身轻晃，蒸汽连续飘动",
+        "global": {
+          "pivot": [
+            0.5,
+            0.77
+          ],
+          "rotation": 0.018,
+          "translation": [
+            0,
+            0
+          ],
+          "scale": [
+            0,
+            0
+          ],
+          "phase": 0,
+          "cycles": 1
+        },
+        "regions": [
+          {
+            "center": [
+              0.48,
+              0.27
+            ],
+            "radius": [
+              0.16,
+              0.19
+            ],
+            "pivot": [
+              0.48,
+              0.41
+            ],
+            "rotation": 0.1,
+            "translation": [
+              0.007,
+              -0.005
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1,
+            "inner": 0.6
+          },
+          {
+            "center": [
+              0.77,
+              0.57
+            ],
+            "radius": [
+              0.17,
+              0.2
+            ],
+            "pivot": [
+              0.64,
+              0.6
+            ],
+            "rotation": 0.025,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": -1.5707963267948966,
+            "cycles": 1,
+            "inner": 0.65
+          }
+        ]
+      },
+      "overtime": {
+        "duration": 2.8,
+        "action": "闹钟强撑精神，铃铛抖动",
+        "global": {
+          "pivot": [
+            0.5,
+            0.76
+          ],
+          "rotation": 0.025,
+          "translation": [
+            0,
+            0
+          ],
+          "scale": [
+            0,
+            0
+          ],
+          "phase": 0,
+          "cycles": 1
+        },
+        "regions": [
+          {
+            "center": [
+              0.25,
+              0.25
+            ],
+            "radius": [
+              0.17,
+              0.14
+            ],
+            "pivot": [
+              0.35,
+              0.36
+            ],
+            "rotation": 0.09,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 4,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.75,
+              0.25
+            ],
+            "radius": [
+              0.17,
+              0.14
+            ],
+            "pivot": [
+              0.65,
+              0.36
+            ],
+            "rotation": -0.09,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 4,
+            "inner": 0.65
+          }
+        ]
+      },
+      "meeting": {
+        "duration": 2.4,
+        "action": "同一位领导张嘴滔滔不绝，嘴部快速连续开合，抬指头强调、摊手解释；没有听众或睡觉角色",
+        "global": {
+          "pivot": [
+            0.49,
+            0.8
+          ],
+          "rotation": 0.008,
+          "translation": [
+            0,
+            0
+          ],
+          "scale": [
+            0,
+            0
+          ],
+          "phase": 0,
+          "cycles": 2
+        },
+        "regions": [
+          {
+            "center": [
+              0.5,
+              0.394
+            ],
+            "radius": [
+              0.235,
+              0.221
+            ],
+            "pivot": [
+              0.5,
+              0.605
+            ],
+            "rotation": 0.014,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 2,
+            "inner": 0.8
+          },
+          {
+            "center": [
+              0.535,
+              0.463
+            ],
+            "radius": [
+              0.107,
+              0.089
+            ],
+            "pivot": [
+              0.533,
+              0.43
+            ],
+            "rotation": 0,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0.015,
+              0.17
+            ],
+            "phase": 0,
+            "cycles": 6,
+            "inner": 0.6
+          },
+          {
+            "center": [
+              0.286,
+              0.509
+            ],
+            "radius": [
+              0.118,
+              0.14
+            ],
+            "pivot": [
+              0.367,
+              0.605
+            ],
+            "rotation": 0.085,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 3,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.722,
+              0.601
+            ],
+            "radius": [
+              0.143,
+              0.12
+            ],
+            "pivot": [
+              0.631,
+              0.636
+            ],
+            "rotation": -0.07,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 2,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.747,
+              0.444
+            ],
+            "radius": [
+              0.052,
+              0.075
+            ],
+            "pivot": [
+              0.733,
+              0.468
+            ],
+            "rotation": 0,
+            "translation": [
+              0.003,
+              -0.001
+            ],
+            "scale": [
+              0.025,
+              0.025
+            ],
+            "phase": 0,
+            "cycles": 6,
+            "inner": 0.6
+          }
+        ]
+      },
+      "transfer": {
+        "duration": 2.6,
+        "action": "黑锅心虚地左右晃，锅耳跟着摆",
+        "global": {
+          "pivot": [
+            0.5,
+            0.74
+          ],
+          "rotation": 0.065,
+          "translation": [
+            0,
+            0
+          ],
+          "scale": [
+            0,
+            0
+          ],
+          "phase": 0,
+          "cycles": 1
+        },
+        "regions": [
+          {
+            "center": [
+              0.22,
+              0.48
+            ],
+            "radius": [
+              0.16,
+              0.12
+            ],
+            "pivot": [
+              0.34,
+              0.54
+            ],
+            "rotation": 0.045,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.8,
+              0.48
+            ],
+            "radius": [
+              0.16,
+              0.12
+            ],
+            "pivot": [
+              0.68,
+              0.54
+            ],
+            "rotation": -0.045,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1,
+            "inner": 0.65
+          }
+        ]
+      },
+      "slack": {
+        "duration": 3.6,
+        "action": "懒鱼身体缓慢呼吸，尾巴自在摆动",
+        "global": {
+          "pivot": [
+            0.5,
+            0.5
+          ],
+          "rotation": 0.012,
+          "translation": [
+            0,
+            0.004
+          ],
+          "scale": [
+            0,
+            0
+          ],
+          "phase": 0,
+          "cycles": 1
+        },
+        "regions": [
+          {
+            "center": [
+              0.74,
+              0.74
+            ],
+            "radius": [
+              0.21,
+              0.19
+            ],
+            "pivot": [
+              0.63,
+              0.66
+            ],
+            "rotation": 0.16,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 2,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.32,
+              0.49
+            ],
+            "radius": [
+              0.15,
+              0.2
+            ],
+            "pivot": [
+              0.41,
+              0.5
+            ],
+            "rotation": 0.04,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.51,
+              0.6
+            ],
+            "radius": [
+              0.2,
+              0.19
+            ],
+            "pivot": [
+              0.48,
+              0.63
+            ],
+            "rotation": 0,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0.01,
+              0.007
+            ],
+            "phase": 0,
+            "cycles": 1,
+            "inner": 0.65
+          }
+        ]
+      },
+      "outsource": {
+        "duration": 2.8,
+        "action": "工作文件从递出的一方滑向接手的一方",
+        "global": {
+          "pivot": [
+            0.5,
+            0.78
+          ],
+          "rotation": 0,
+          "translation": [
+            0,
+            0
+          ],
+          "scale": [
+            0,
+            0
+          ],
+          "phase": 0,
+          "cycles": 1
+        },
+        "regions": [
+          {
+            "center": [
+              0.509,
+              0.563
+            ],
+            "radius": [
+              0.189,
+              0.18
+            ],
+            "pivot": [
+              0.5,
+              0.59
+            ],
+            "rotation": 0,
+            "translation": [
+              0.01,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": -1.5707963267948966,
+            "cycles": 1,
+            "inner": 0.8
+          },
+          {
+            "center": [
+              0.248,
+              0.608
+            ],
+            "radius": [
+              0.198,
+              0.135
+            ],
+            "pivot": [
+              0.158,
+              0.608
+            ],
+            "rotation": -0.025,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": -1.5707963267948966,
+            "cycles": 1,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.779,
+              0.644
+            ],
+            "radius": [
+              0.144,
+              0.135
+            ],
+            "pivot": [
+              0.86,
+              0.644
+            ],
+            "rotation": 0.025,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": -1.5707963267948966,
+            "cycles": 1,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.518,
+              0.329
+            ],
+            "radius": [
+              0.198,
+              0.099
+            ],
+            "pivot": [
+              0.518,
+              0.329
+            ],
+            "rotation": 0,
+            "translation": [
+              0.012,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": -1.5707963267948966,
+            "cycles": 1,
+            "inner": 0.65
+          }
+        ]
+      },
+      "strike": {
+        "duration": 2.4,
+        "action": "举起罢工牌，脑袋得意摇摆，抬腿踩点跳舞；标牌文字保持清晰",
+        "global": {
+          "pivot": [
+            0.45,
+            0.82
+          ],
+          "rotation": 0.016,
+          "translation": [
+            0,
+            -0.004
+          ],
+          "scale": [
+            0,
+            0
+          ],
+          "phase": 0,
+          "cycles": 2
+        },
+        "regions": [
+          {
+            "center": [
+              0.382,
+              0.423
+            ],
+            "radius": [
+              0.248,
+              0.255
+            ],
+            "pivot": [
+              0.45,
+              0.64
+            ],
+            "rotation": -0.022,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 2,
+            "inner": 0.82
+          },
+          {
+            "center": [
+              0.722,
+              0.281
+            ],
+            "radius": [
+              0.249,
+              0.224
+            ],
+            "pivot": [
+              0.667,
+              0.549
+            ],
+            "rotation": 0.025,
+            "translation": [
+              0,
+              -0.003
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1,
+            "inner": 0.82
+          },
+          {
+            "center": [
+              0.619,
+              0.716
+            ],
+            "radius": [
+              0.165,
+              0.135
+            ],
+            "pivot": [
+              0.478,
+              0.706
+            ],
+            "rotation": 0.055,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 2,
+            "inner": 0.65
+          },
+          {
+            "center": [
+              0.365,
+              0.818
+            ],
+            "radius": [
+              0.145,
+              0.147
+            ],
+            "pivot": [
+              0.413,
+              0.733
+            ],
+            "rotation": -0.025,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 2,
+            "inner": 0.65
+          }
+        ]
+      },
+      "workaholic": {
+        "duration": 2.8,
+        "action": "肝帝困得轻轻点头，撑眼皮的手跟着抬起，松领带慢半拍晃动；轮廓保持稳定",
+        "global": {
+          "pivot": [
+            0.5,
+            0.8
+          ],
+          "rotation": 0.01,
+          "translation": [
+            0,
+            0
+          ],
+          "scale": [
+            0,
+            0
+          ],
+          "phase": 0,
+          "cycles": 1
+        },
+        "regions": [
+          {
+            "pivot": [
+              0.5,
+              0.59
+            ],
+            "rotation": 0.022,
+            "translation": [
+              0,
+              0.005
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1,
+            "center": [
+              0.5,
+              0.4
+            ],
+            "radius": [
+              0.32,
+              0.28
+            ],
+            "inner": 0.82
+          },
+          {
+            "pivot": [
+              0.67,
+              0.6
+            ],
+            "rotation": -0.035,
+            "translation": [
+              0,
+              -0.006
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1,
+            "center": [
+              0.68,
+              0.52
+            ],
+            "radius": [
+              0.14,
+              0.19
+            ],
+            "inner": 0.7
+          },
+          {
+            "pivot": [
+              0.53,
+              0.67
+            ],
+            "rotation": 0.06,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0.35,
+            "cycles": 1,
+            "center": [
+              0.54,
+              0.73
+            ],
+            "radius": [
+              0.09,
+              0.13
+            ],
+            "inner": 0.65
+          },
+          {
+            "pivot": [
+              0.43,
+              0.65
+            ],
+            "rotation": 0.06,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 2,
+            "center": [
+              0.38,
+              0.68
+            ],
+            "radius": [
+              0.13,
+              0.12
+            ],
+            "inner": 0.65
+          }
+        ]
+      },
+      "work_emperor": {
+        "duration": 2.6,
+        "action": "打工皇帝得意地歪头，王冠轻摆、扶冠的手随动，短披风与领带轻晃",
+        "global": {
+          "pivot": [
+            0.5,
+            0.81
+          ],
+          "rotation": 0.012,
+          "translation": [
+            0,
+            0
+          ],
+          "scale": [
+            0,
+            0
+          ],
+          "phase": 0,
+          "cycles": 1
+        },
+        "regions": [
+          {
+            "pivot": [
+              0.5,
+              0.62
+            ],
+            "rotation": 0.025,
+            "translation": [
+              0,
+              0.003
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1,
+            "center": [
+              0.51,
+              0.42
+            ],
+            "radius": [
+              0.35,
+              0.34
+            ],
+            "inner": 0.83
+          },
+          {
+            "pivot": [
+              0.68,
+              0.28
+            ],
+            "rotation": 0.045,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0.3,
+            "cycles": 1,
+            "center": [
+              0.68,
+              0.24
+            ],
+            "radius": [
+              0.19,
+              0.16
+            ],
+            "inner": 0.65
+          },
+          {
+            "pivot": [
+              0.7,
+              0.42
+            ],
+            "rotation": -0.035,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0.3,
+            "cycles": 1,
+            "center": [
+              0.75,
+              0.38
+            ],
+            "radius": [
+              0.1,
+              0.17
+            ],
+            "inner": 0.65
+          },
+          {
+            "pivot": [
+              0.5,
+              0.65
+            ],
+            "rotation": 0.045,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": -0.3,
+            "cycles": 1,
+            "center": [
+              0.5,
+              0.75
+            ],
+            "radius": [
+              0.3,
+              0.15
+            ],
+            "inner": 0.65
+          },
+          {
+            "pivot": [
+              0.5,
+              0.67
+            ],
+            "rotation": -0.045,
+            "translation": [
+              0,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0.4,
+            "cycles": 1,
+            "center": [
+              0.51,
+              0.72
+            ],
+            "radius": [
+              0.08,
+              0.11
+            ],
+            "inner": 0.65
+          }
+        ]
+      }
+    },
+    "activity_profiles": {
+      "striking": {
+        "employee": {
+          "duration": 2.4,
+          "action": "胯部画八字，肩头反向摆成S形；手臂错拍绕摆、双腿轮流点地，整个人沉醉地扭腰，牌框与标题稳定",
+          "global": {
+            "pivot": [
+              0.5,
+              0.8
+            ],
+            "rotation": 0.055,
+            "translation": [
+              0.018,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1
+          },
+          "regions": [
+            {
+              "center": [
+                0.5,
+                0.5
+              ],
+              "radius": [
+                0.95,
+                0.95
+              ],
+              "pivot": [
+                0.5,
+                0.85
+              ],
+              "rotation": 0,
+              "translation": [
+                0,
+                -0.018
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": -1.5707963267948966,
+              "cycles": 2,
+              "inner": 0.8
+            },
+            {
+              "center": [
+                0.5,
+                0.78
+              ],
+              "radius": [
+                0.34,
+                0.175
+              ],
+              "pivot": [
+                0.5,
+                0.66
+              ],
+              "rotation": 0.1,
+              "translation": [
+                0.055,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.22
+            },
+            {
+              "center": [
+                0.5,
+                0.37
+              ],
+              "radius": [
+                0.4,
+                0.34
+              ],
+              "pivot": [
+                0.5,
+                0.62
+              ],
+              "rotation": -0.075,
+              "translation": [
+                -0.026,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.75
+            },
+            {
+              "center": [
+                0.5,
+                0.78
+              ],
+              "radius": [
+                0.34,
+                0.175
+              ],
+              "pivot": [
+                0.5,
+                0.7
+              ],
+              "rotation": 0,
+              "translation": [
+                0,
+                0.014
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 2,
+              "inner": 0.25
+            },
+            {
+              "center": [
+                0.33,
+                0.685
+              ],
+              "radius": [
+                0.18,
+                0.115
+              ],
+              "pivot": [
+                0.44,
+                0.61
+              ],
+              "rotation": -0.17,
+              "translation": [
+                0,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": -0.35,
+              "cycles": 1,
+              "inner": 0.25
+            },
+            {
+              "center": [
+                0.67,
+                0.685
+              ],
+              "radius": [
+                0.18,
+                0.115
+              ],
+              "pivot": [
+                0.56,
+                0.61
+              ],
+              "rotation": 0.17,
+              "translation": [
+                0,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 2.791592653589793,
+              "cycles": 1,
+              "inner": 0.25
+            },
+            {
+              "center": [
+                0.41,
+                0.85
+              ],
+              "radius": [
+                0.19,
+                0.19
+              ],
+              "pivot": [
+                0.45,
+                0.76
+              ],
+              "rotation": 0.2,
+              "translation": [
+                -0.009,
+                -0.022
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.3
+            },
+            {
+              "center": [
+                0.61,
+                0.85
+              ],
+              "radius": [
+                0.19,
+                0.19
+              ],
+              "pivot": [
+                0.56,
+                0.76
+              ],
+              "rotation": -0.2,
+              "translation": [
+                0.009,
+                -0.022
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 3.141592653589793,
+              "cycles": 1,
+              "inner": 0.3
+            }
+          ]
+        },
+        "grinder": {
+          "duration": 2.4,
+          "action": "胯部画八字，肩头反向摆成S形；手臂错拍绕摆、双腿轮流点地，整个人沉醉地扭腰，牌框与标题稳定",
+          "global": {
+            "pivot": [
+              0.5,
+              0.8
+            ],
+            "rotation": 0.055,
+            "translation": [
+              0.018,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1
+          },
+          "regions": [
+            {
+              "center": [
+                0.5,
+                0.5
+              ],
+              "radius": [
+                0.95,
+                0.95
+              ],
+              "pivot": [
+                0.5,
+                0.85
+              ],
+              "rotation": 0,
+              "translation": [
+                0,
+                -0.018
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": -1.5707963267948966,
+              "cycles": 2,
+              "inner": 0.8
+            },
+            {
+              "center": [
+                0.5,
+                0.78
+              ],
+              "radius": [
+                0.34,
+                0.175
+              ],
+              "pivot": [
+                0.5,
+                0.66
+              ],
+              "rotation": 0.1,
+              "translation": [
+                0.055,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.22
+            },
+            {
+              "center": [
+                0.5,
+                0.37
+              ],
+              "radius": [
+                0.4,
+                0.34
+              ],
+              "pivot": [
+                0.5,
+                0.62
+              ],
+              "rotation": -0.075,
+              "translation": [
+                -0.026,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.75
+            },
+            {
+              "center": [
+                0.5,
+                0.78
+              ],
+              "radius": [
+                0.34,
+                0.175
+              ],
+              "pivot": [
+                0.5,
+                0.7
+              ],
+              "rotation": 0,
+              "translation": [
+                0,
+                0.014
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 2,
+              "inner": 0.25
+            },
+            {
+              "center": [
+                0.33,
+                0.685
+              ],
+              "radius": [
+                0.18,
+                0.115
+              ],
+              "pivot": [
+                0.44,
+                0.61
+              ],
+              "rotation": -0.15,
+              "translation": [
+                0,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": -0.35,
+              "cycles": 1,
+              "inner": 0.25
+            },
+            {
+              "center": [
+                0.67,
+                0.685
+              ],
+              "radius": [
+                0.18,
+                0.115
+              ],
+              "pivot": [
+                0.56,
+                0.61
+              ],
+              "rotation": 0.15,
+              "translation": [
+                0,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 2.791592653589793,
+              "cycles": 1,
+              "inner": 0.25
+            },
+            {
+              "center": [
+                0.41,
+                0.85
+              ],
+              "radius": [
+                0.19,
+                0.19
+              ],
+              "pivot": [
+                0.45,
+                0.76
+              ],
+              "rotation": 0.2,
+              "translation": [
+                -0.009,
+                -0.022
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.3
+            },
+            {
+              "center": [
+                0.61,
+                0.85
+              ],
+              "radius": [
+                0.19,
+                0.19
+              ],
+              "pivot": [
+                0.56,
+                0.76
+              ],
+              "rotation": -0.2,
+              "translation": [
+                0.009,
+                -0.022
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 3.141592653589793,
+              "cycles": 1,
+              "inner": 0.3
+            }
+          ]
+        },
+        "leader": {
+          "duration": 2.4,
+          "action": "胯部画八字，肩头反向摆成S形；手臂错拍绕摆、双腿轮流点地，整个人沉醉地扭腰，牌框与标题稳定",
+          "global": {
+            "pivot": [
+              0.5,
+              0.8
+            ],
+            "rotation": 0.055,
+            "translation": [
+              0.018,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1
+          },
+          "regions": [
+            {
+              "center": [
+                0.5,
+                0.5
+              ],
+              "radius": [
+                0.95,
+                0.95
+              ],
+              "pivot": [
+                0.5,
+                0.85
+              ],
+              "rotation": 0,
+              "translation": [
+                0,
+                -0.018
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": -1.5707963267948966,
+              "cycles": 2,
+              "inner": 0.8
+            },
+            {
+              "center": [
+                0.5,
+                0.78
+              ],
+              "radius": [
+                0.34,
+                0.175
+              ],
+              "pivot": [
+                0.5,
+                0.66
+              ],
+              "rotation": 0.1,
+              "translation": [
+                0.055,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.22
+            },
+            {
+              "center": [
+                0.5,
+                0.37
+              ],
+              "radius": [
+                0.4,
+                0.34
+              ],
+              "pivot": [
+                0.5,
+                0.62
+              ],
+              "rotation": -0.075,
+              "translation": [
+                -0.026,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.75
+            },
+            {
+              "center": [
+                0.5,
+                0.78
+              ],
+              "radius": [
+                0.34,
+                0.175
+              ],
+              "pivot": [
+                0.5,
+                0.7
+              ],
+              "rotation": 0,
+              "translation": [
+                0,
+                0.014
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 2,
+              "inner": 0.25
+            },
+            {
+              "center": [
+                0.3,
+                0.57
+              ],
+              "radius": [
+                0.19,
+                0.18
+              ],
+              "pivot": [
+                0.44,
+                0.61
+              ],
+              "rotation": -0.1,
+              "translation": [
+                0,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": -0.35,
+              "cycles": 1,
+              "inner": 0.25
+            },
+            {
+              "center": [
+                0.67,
+                0.685
+              ],
+              "radius": [
+                0.18,
+                0.115
+              ],
+              "pivot": [
+                0.56,
+                0.61
+              ],
+              "rotation": 0.17,
+              "translation": [
+                0,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 2.791592653589793,
+              "cycles": 1,
+              "inner": 0.25
+            },
+            {
+              "center": [
+                0.41,
+                0.85
+              ],
+              "radius": [
+                0.19,
+                0.19
+              ],
+              "pivot": [
+                0.45,
+                0.76
+              ],
+              "rotation": 0.2,
+              "translation": [
+                -0.009,
+                -0.022
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.3
+            },
+            {
+              "center": [
+                0.61,
+                0.85
+              ],
+              "radius": [
+                0.19,
+                0.19
+              ],
+              "pivot": [
+                0.56,
+                0.76
+              ],
+              "rotation": -0.2,
+              "translation": [
+                0.009,
+                -0.022
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 3.141592653589793,
+              "cycles": 1,
+              "inner": 0.3
+            }
+          ]
+        },
+        "workaholic": {
+          "duration": 2.4,
+          "action": "肝帝撑眼皮仍要妖娆扭胯，松领带跟着摆；肩头反向摇、双腿错拍点地，卡框标题稳定",
+          "global": {
+            "pivot": [
+              0.5,
+              0.8
+            ],
+            "rotation": 0.055,
+            "translation": [
+              0.018,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1
+          },
+          "regions": [
+            {
+              "center": [
+                0.5,
+                0.5
+              ],
+              "radius": [
+                0.95,
+                0.95
+              ],
+              "pivot": [
+                0.5,
+                0.85
+              ],
+              "rotation": 0,
+              "translation": [
+                0,
+                -0.018
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": -1.5707963267948966,
+              "cycles": 2,
+              "inner": 0.8
+            },
+            {
+              "center": [
+                0.5,
+                0.78
+              ],
+              "radius": [
+                0.34,
+                0.175
+              ],
+              "pivot": [
+                0.5,
+                0.66
+              ],
+              "rotation": 0.1,
+              "translation": [
+                0.055,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.22
+            },
+            {
+              "center": [
+                0.51,
+                0.4
+              ],
+              "radius": [
+                0.43,
+                0.37
+              ],
+              "pivot": [
+                0.5,
+                0.63
+              ],
+              "rotation": -0.075,
+              "translation": [
+                -0.026,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.82
+            },
+            {
+              "center": [
+                0.5,
+                0.78
+              ],
+              "radius": [
+                0.34,
+                0.175
+              ],
+              "pivot": [
+                0.5,
+                0.7
+              ],
+              "rotation": 0,
+              "translation": [
+                0,
+                0.014
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 2,
+              "inner": 0.25
+            },
+            {
+              "center": [
+                0.33,
+                0.685
+              ],
+              "radius": [
+                0.18,
+                0.115
+              ],
+              "pivot": [
+                0.44,
+                0.61
+              ],
+              "rotation": -0.15,
+              "translation": [
+                0,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": -0.35,
+              "cycles": 1,
+              "inner": 0.25
+            },
+            {
+              "center": [
+                0.75,
+                0.55
+              ],
+              "radius": [
+                0.12,
+                0.15
+              ],
+              "pivot": [
+                0.71,
+                0.53
+              ],
+              "rotation": 0.075,
+              "translation": [
+                0,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 2.791592653589793,
+              "cycles": 1,
+              "inner": 0.3
+            },
+            {
+              "center": [
+                0.41,
+                0.85
+              ],
+              "radius": [
+                0.19,
+                0.19
+              ],
+              "pivot": [
+                0.45,
+                0.76
+              ],
+              "rotation": 0.2,
+              "translation": [
+                -0.009,
+                -0.022
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.3
+            },
+            {
+              "center": [
+                0.61,
+                0.85
+              ],
+              "radius": [
+                0.19,
+                0.19
+              ],
+              "pivot": [
+                0.56,
+                0.76
+              ],
+              "rotation": -0.2,
+              "translation": [
+                0.009,
+                -0.022
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 3.141592653589793,
+              "cycles": 1,
+              "inner": 0.3
+            }
+          ]
+        },
+        "work_emperor": {
+          "duration": 2.4,
+          "action": "打工皇帝扶着歪王冠摇摆扭胯，小披风跟着起伏；肩头反向摇、双腿错拍点地，卡框标题稳定",
+          "global": {
+            "pivot": [
+              0.5,
+              0.8
+            ],
+            "rotation": 0.055,
+            "translation": [
+              0.018,
+              0
+            ],
+            "scale": [
+              0,
+              0
+            ],
+            "phase": 0,
+            "cycles": 1
+          },
+          "regions": [
+            {
+              "center": [
+                0.5,
+                0.5
+              ],
+              "radius": [
+                0.95,
+                0.95
+              ],
+              "pivot": [
+                0.5,
+                0.85
+              ],
+              "rotation": 0,
+              "translation": [
+                0,
+                -0.018
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": -1.5707963267948966,
+              "cycles": 2,
+              "inner": 0.8
+            },
+            {
+              "center": [
+                0.5,
+                0.78
+              ],
+              "radius": [
+                0.34,
+                0.175
+              ],
+              "pivot": [
+                0.5,
+                0.66
+              ],
+              "rotation": 0.1,
+              "translation": [
+                0.055,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.22
+            },
+            {
+              "center": [
+                0.51,
+                0.4
+              ],
+              "radius": [
+                0.43,
+                0.37
+              ],
+              "pivot": [
+                0.5,
+                0.63
+              ],
+              "rotation": -0.075,
+              "translation": [
+                -0.026,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.82
+            },
+            {
+              "center": [
+                0.5,
+                0.78
+              ],
+              "radius": [
+                0.34,
+                0.175
+              ],
+              "pivot": [
+                0.5,
+                0.7
+              ],
+              "rotation": 0,
+              "translation": [
+                0,
+                0.014
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 2,
+              "inner": 0.25
+            },
+            {
+              "center": [
+                0.33,
+                0.685
+              ],
+              "radius": [
+                0.18,
+                0.115
+              ],
+              "pivot": [
+                0.44,
+                0.61
+              ],
+              "rotation": -0.15,
+              "translation": [
+                0,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": -0.35,
+              "cycles": 1,
+              "inner": 0.25
+            },
+            {
+              "center": [
+                0.75,
+                0.55
+              ],
+              "radius": [
+                0.12,
+                0.15
+              ],
+              "pivot": [
+                0.71,
+                0.53
+              ],
+              "rotation": 0.075,
+              "translation": [
+                0,
+                0
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 2.791592653589793,
+              "cycles": 1,
+              "inner": 0.3
+            },
+            {
+              "center": [
+                0.41,
+                0.85
+              ],
+              "radius": [
+                0.19,
+                0.19
+              ],
+              "pivot": [
+                0.45,
+                0.76
+              ],
+              "rotation": 0.2,
+              "translation": [
+                -0.009,
+                -0.022
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 0,
+              "cycles": 1,
+              "inner": 0.3
+            },
+            {
+              "center": [
+                0.61,
+                0.85
+              ],
+              "radius": [
+                0.19,
+                0.19
+              ],
+              "pivot": [
+                0.56,
+                0.76
+              ],
+              "rotation": -0.2,
+              "translation": [
+                0.009,
+                -0.022
+              ],
+              "scale": [
+                0,
+                0
+              ],
+              "phase": 3.141592653589793,
+              "cycles": 1,
+              "inner": 0.3
+            }
+          ]
+        }
+      }
+    }
+  },
+  "hud": {
+    "debug_mode": {
+      "label": "Debug 模式",
+      "menu_id": 12,
+      "save_failed": "Debug 模式已切换，但偏好保存失败。"
+    },
+    "title": "下班",
+    "live_status": "",
+    "restart": "重新开局",
+    "pause": {
+      "label": "暂停",
+      "resume": "继续",
+      "help": "暂停双方、传送带与动画",
+      "resume_help": "从暂停的位置继续"
+    },
+    "resources": "%s · 工作%d · 员工%d · 钱%d",
+    "resources_reserved": "%s · 工作%d · 员工%d · 可用%d · 预留%d",
+    "cash_reservation_help": "现金共 %d；外包预留 %d，可用于购牌 %d。预留资金不会被购买动用。",
+    "cash_reservation_status": "可用 %d · 外包预留 %d",
+    "sides": [
+      "我方",
+      "对手"
+    ],
+    "content_width": 330,
+    "result": {
+      "margin": 24,
+      "gap": 16,
+      "title_font": 42,
+      "win": "下班",
+      "tie": "同时下班",
+      "lose": "对手下班了",
+      "complete": "所有工作已清空",
+      "remaining": "我方还剩 %d 份工作"
+    },
+    "drawer": {
+      "enabled": true,
+      "start_expanded": false,
+      "start_pinned": false,
+      "prewarm_on_start": true,
+      "pause_when_collapsed": true,
+      "animations_enabled": true
+    },
+    "unpurchasable": "仅通过组合获得",
+    "snap_distance": {
+      "ui_page_id": 3,
+      "label": "吸附距离",
+      "help": "以目标卡牌的宽、高为基准。数值越大，越容易吸附；收拢牌摞只按可见顶牌判定。",
+      "live_help": "已生效，尚未保存",
+      "saved": "已保存",
+      "restored": "已还原",
+      "save_failed": "保存失败"
     }
   }
 }

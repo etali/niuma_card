@@ -1,0 +1,94 @@
+{
+  "card": "coffee",
+  "tool": "image_gen.imagegen (built-in)",
+  "source": "/Users/Yitan/.codex/generated_images/01a188c8-cb19-73d1-bb6f-45ead7f842bc/exec-f71fd104-0aa7-46e8-bcdb-4e0717bcd910.png",
+  "reference_images": [
+    "/Users/Yitan/repos/niuma_card/assets/art/icon/icon_user.png",
+    "/Users/Yitan/repos/niuma_card/assets/art/icon/icon_cash.png"
+  ],
+  "layout": {
+    "columns": 3,
+    "rows": 3,
+    "generated_keyframes": 9
+  },
+  "prompt": "Use case: stylized-concept. One production sprite sheet for a funny office game's COFFEE card. Image 1 and image 2 are STYLE REFERENCES only: retain their extremely simple cream flat fill, very thick dark brown slightly irregular rounded ink contour, dot eyes and tiny smile. No 3D, no gradients, no shading, no watercolor, no paper texture. Simple elegant hand-inked icon, instantly readable at small card size.\nOutput exactly nine sequential animation cels in a perfectly regular THREE COLUMNS BY THREE ROWS square grid. Square canvas 1536x1536 requested. Transparent alpha background, no cell outlines or grid, no typography, no labels or numbers. Every cell is one same complete object, same camera, same scale, same anchor. Keep each object comfortably inside central 72% of its cell.\nSubject: ONE big rounded cream COFFEE MUG with a small chunky handle and dark coffee visible at the rim. Two tiny dot eyes and an exhausted little mouth on the mug, matching the simple reference face. The mug is the whole subject. One simple curling wisp of steam immediately above it; no saucer, spoon, beans, character, table, lightning or decorative stars.\nNine-frame gag loop, row major: 1 sleepy half-closed eyes, short steam curl; 2 eyelids sink; 3 closes eyes in a tiny yawn; 4 steam rises slightly while mouth yawns; 5 suddenly wide awake eyes and a delighted tiny smile; 6 smile settles; 7 eyelids soften; 8 almost sleepy again; 9 matches the initial sleepy state. Mug outline/handle/rim and base remain absolutely fixed; only face and continuous single steam curve change. Do not turn into another mug, do not drift, rotate or grow the whole mug. Make the single subject cute and deadpan, with unambiguous coffee semantics. Nine actual consecutive poses, not nine variants.",
+  "inspection": "Nine complete coffee-mug poses after GPT layout edit, no cell-edge clipping; single mug/steam, readable sleepy-to-awake sequence, native alpha unchanged.",
+  "actual_size": [
+    1254,
+    1254
+  ],
+  "mode": "RGBA",
+  "alpha_extrema": [
+    0,
+    255
+  ],
+  "sheet_sha256": "36064b2748cbbed269c4bdbe969e594968f4528b923cbdc25ae0d67f593f0847",
+  "cell_size": [
+    418,
+    418
+  ],
+  "visible_bounds_alpha_over_32": [
+    [
+      97,
+      113,
+      381,
+      403
+    ],
+    [
+      90,
+      107,
+      378,
+      403
+    ],
+    [
+      82,
+      97,
+      369,
+      403
+    ],
+    [
+      95,
+      76,
+      382,
+      384
+    ],
+    [
+      87,
+      87,
+      379,
+      386
+    ],
+    [
+      82,
+      99,
+      372,
+      385
+    ],
+    [
+      98,
+      62,
+      382,
+      347
+    ],
+    [
+      90,
+      57,
+      379,
+      348
+    ],
+    [
+      83,
+      67,
+      370,
+      349
+    ]
+  ],
+  "cell_edge_touching_frames": [],
+  "original_generation_source": "/Users/Yitan/.codex/generated_images/01a188c8-cb19-73d1-bb6f-45ead7f842bc/exec-63f10db5-4319-4784-8398-82fd6b354fe0.png",
+  "revision": {
+    "tool": "image_gen.imagegen (built-in)",
+    "reference_image": "/Users/Yitan/.codex/generated_images/01a188c8-cb19-73d1-bb6f-45ead7f842bc/exec-63f10db5-4319-4784-8398-82fd6b354fe0.png",
+    "prompt_file": "revision-01-prompt.txt",
+    "purpose": "Correct cell-bottom clipping by editing the sprite sheet to provide generous transparent gutters."
+  }
+}

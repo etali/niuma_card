@@ -1,5 +1,5 @@
 {
-  "source": "来自 20261003_130621_232步_b6ab6f600c8c8111fd0d35dc92810ae5.json，原始意图第68、143、220步执行前快照。使用默认data/cards.json，已删除战报；无需原录像或build文件即可重放测试。",
+  "source": "来自 20261003_130621_232步_b6ab6f600c8c8111fd0d35dc92810ae5.json，原始意图第68、143、220步执行前快照。使用默认data/on_work_cards.json，已删除战报；无需原录像或build文件即可重放测试。",
   "snapshots": {
     "68": {
       "state": {
@@ -1214,7 +1214,7 @@
       }
     },
     "mixed_40_31": {
-      "source": "20261003_144051_40步_02a7f137e5fce92787ba2bfaa81478cd.json 原始第31步前；使用默认data/cards.json。",
+      "source": "20261003_144051_40步_02a7f137e5fce92787ba2bfaa81478cd.json 原始第31步前；使用默认data/on_work_cards.json。",
       "state": {
         "combos": [],
         "draw_first": "bot",
@@ -1372,7 +1372,7 @@
       }
     },
     "mixed_40_35": {
-      "source": "20261003_144051_40步_02a7f137e5fce92787ba2bfaa81478cd.json 原始第35步前；使用默认data/cards.json。",
+      "source": "20261003_144051_40步_02a7f137e5fce92787ba2bfaa81478cd.json 原始第35步前；使用默认data/on_work_cards.json。",
       "state": {
         "combos": [],
         "draw_first": "bot",

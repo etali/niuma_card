@@ -4,68 +4,14 @@
 
 extends "res://tests/harness.gd"
 
-## 启动参数：**网页版和桌面版走同一条解析**（需求 5、6）
-##
-## 为什么这条判据非要有：网页那一半在测试里跑不到 ——
-## 没有浏览器就没有 window.location，于是 read_web() 永远返回空。
-## 如果「读 URL → 决定进哪种模式」这段逻辑长在 read_web() 里面，
-## 那它就是一段**只在网页上跑、而任何测试都碰不到**的代码，
-## 而它出错的形态是「链接打开就是单机局」—— 玩家不会报这种 bug，
-## 他只会觉得链接没用。
-##
-## 所以 LaunchConfig 被切成两半：取字符串（平台相关，测不了）
-## 和 parse()（纯函数，全在这里钉住）。这条判据钉的就是那道切口：
-## 只要 parse 是纯的，网页和桌面就不可能在「同一个参数进哪种模式」上分叉。
-##
-## 变异提示（都实跑确认过红，登记进 tools/mutate_check.py）：
-##   1. parse 里 `if _truthy(raw_host)` 改成 `if false`
-##      → T3「?host=1 进主机模式」红（网页/命令行要求开房被静默当成单机）
-##   2. normalize_url 里去掉补默认端口那一行（`return "ws://" + s`）
-##      → T2「光主机名补上了默认端口」红（连 ws://1.2.3.4 直接失败）
-##   3. parse 里 `if room != "" and Protocol.valid_room(room)` 去掉后半段
-##      → T4「非法房号退回单机」红（带着连不上的房号去连，报的是服务器的话）
-##   4. parse_query 里 `if eq < 0` 那一支直接 continue
-##      → T1「没有等号的开关也认」红（`?host` 静默失效）
-##   5. parse 里 page_host 那一支去掉
-##      → T5「只带房间码的短链接连发页面的那台机器」红
-
 func _initialize() -> void:
 	print("=== 启动参数测试 ===")
-	_t1_query_parse()
 	_t2_url_normalize()
 	_t3_modes()
 	_t4_bad_room()
-	_t5_short_link()
 	_t6_flags()
-	_t7_same_path()
+	check(LaunchConfig.current()["mode"] == LaunchConfig.MODE_SOLO, "无启动参数时进入单机")
 	finish()
-
-# ---------- T1 查询串 ----------
-
-func _t1_query_parse() -> void:
-	print("\n--- T1 查询串 ---")
-	var q := LaunchConfig.parse_query("?server=ws://1.2.3.4:8910&room=abcd")
-	check(str(q.get("server", "")) == "ws://1.2.3.4:8910",
-		"server 读出来了（实为 %s）" % str(q.get("server", "")))
-	check(str(q.get("room", "")) == "abcd", "room 读出来了")
-	check(LaunchConfig.parse_query("server=x").get("server", "") == "x",
-		"没有前导问号也能读")
-	# 贴进聊天窗口的链接常被转义。不解码的话地址里是 %3A%2F%2F，
-	# connect_to_url 失败，而报出来的是「连不上」—— 玩家去查网络，错在链接里
-	check(LaunchConfig.parse_query("?s=ws%3A%2F%2Fa.com%3A9000").get("s", "")
-			== "ws://a.com:9000",
-		"值做了 uri_decode —— 转义过的地址也要能用")
-	# `?host` 这种没有等号的开关：写 `?host=1` 才生效的话，
-	# 一半的人会写 `?host` 然后以为功能坏了。
-	#
-	# 这里必须走 .get 而不是 ["host"]：键不存在时下标是**运行时错误**，
-	# 它把 _t1 整个中断掉，后面两条断言压根不跑 —— 而 run_tests.sh
-	# 只数结果行、只 grep [FAIL]，于是「少跑了两条」在摘要里看不出来。
-	# 实测：把 parse_query 无等号那一支改成 continue，下标写法是
-	# 「49 通过 / 0 失败」（绿），.get 写法才是这条断言变红
-	check(str(LaunchConfig.parse_query("?host").get("host", "")) == "1",
-		"没有等号的开关也认（?host）")
-	check(LaunchConfig.parse_query("").is_empty(), "空查询串什么都不产")
 
 # ---------- T2 地址补全 ----------
 
@@ -153,25 +99,6 @@ func _t4_bad_room() -> void:
 		check(str(r["mode"]) == LaunchConfig.MODE_JOIN,
 			"房号 %s 现在能用 —— 原先的字母表会把它丢成空串" % code)
 
-# ---------- T5 最短的邀请链接 ----------
-
-func _t5_short_link() -> void:
-	print("\n--- T5 短链接 ---")
-	# 网页是从服务器那台机器上发出来的，那台机器十有八九也跑着专服。
-	# 少了这一条，`index.html?room=ABCD` 这种最短的邀请链接连不上任何东西
-	var r: Dictionary = LaunchConfig.parse({ "room": "abcd" }, "10.0.0.7")
-	check(str(r["mode"]) == LaunchConfig.MODE_JOIN,
-		"只带房间码 → 连发出这个网页的那台机器")
-	check(str(r["url"]) == "ws://10.0.0.7:%d" % EmbeddedHost.DEFAULT_PORT,
-		"地址就是页面的主机名 + 默认端口（实为 %s）" % str(r["url"]))
-	# 桌面版没有「页面主机名」这回事，所以同一份参数在那边只能是单机
-	check(str(LaunchConfig.parse({ "room": "abcd" })["mode"])
-			== LaunchConfig.MODE_SOLO,
-		"桌面版没有页面主机名 → 只有房号猜不出连谁")
-	check(str(LaunchConfig.parse({ "room": "abcd", "port": "9100" },
-			"10.0.0.7")["url"]) == "ws://10.0.0.7:9100",
-		"短链接也能指定端口")
-
 # ---------- T6 命令行 ----------
 
 func _t6_flags() -> void:
@@ -199,30 +126,3 @@ func _t6_flags() -> void:
 	# 而写两遍必有一遍过期
 	for k in LaunchConfig.KEYS_SERVER + LaunchConfig.KEYS_ROOM:
 		check(("--%s=" % k) != "", "参数名 %s 两边共用" % k)
-
-# ---------- T7 同一条路 ----------
-
-func _t7_same_path() -> void:
-	print("\n--- T7 网页和桌面同一条解析 ---")
-	# 需求 6 的判据：同一份参数，不管从查询串来还是从命令行来，
-	# parse() 的结果必须**逐字段相同**。
-	# 这两条取值路径是唯一的平台分歧，往下只有一份代码
-	var from_web: Dictionary = LaunchConfig.parse(
-		LaunchConfig.parse_query("?server=ws://1.2.3.4:8910&room=abcd"))
-	var from_cli: Dictionary = LaunchConfig.parse(
-		LaunchConfig.parse_flags(["--server=ws://1.2.3.4:8910", "--room=abcd"]))
-	for k in ["mode", "url", "room", "port"]:
-		check(str(from_web[k]) == str(from_cli[k]),
-			"网页和命令行解析出同一个 %s（%s / %s）"
-				% [k, str(from_web[k]), str(from_cli[k])])
-	# 无头跑测试时 current() 必须是单机 —— 不是的话每个测试进程都会试着连网
-	var cur: Dictionary = LaunchConfig.current()
-	check(str(cur["mode"]) == LaunchConfig.MODE_SOLO,
-		"测试进程自己的启动配置是单机（实为 %s）" % str(cur["mode"]))
-	check(LaunchConfig.can_host(),
-		"桌面版能开房 —— 网页版这一项为假，界面据此少画一个按钮")
-	# 网页那两个读取函数在非网页环境下要**安静地返回空**，不能报错：
-	# 它们走 Engine.get_singleton 而不是直接写 JavaScriptBridge 的名字，
-	# 后者在桌面版上是编译期报错（整个脚本解析失败 → 一启动就黑屏）
-	check(LaunchConfig.web_query() == "", "非网页环境下读查询串返回空，不报错")
-	check(LaunchConfig.web_page_host() == "", "非网页环境下读页面主机名返回空")

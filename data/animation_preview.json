@@ -1,0 +1,2773 @@
+{
+  "preview": {
+    "_说明": "独立动画查看器的窗口、排版和播放参数；配色、字体、卡面直接复用牛马牌，动作与游戏共用连续单主图动画；时间轴是采样检查，不是生成帧数。不会写入玩家偏好。",
+    "window": {
+      "size": [
+        1440,
+        960
+      ],
+      "minimum_size": [
+        960,
+        680
+      ]
+    },
+    "layout": {
+      "sidebar_button_height": 37,
+      "card_height": 0.05,
+      "scenario_viewport_size": [
+        1280,
+        720
+      ]
+    },
+    "playback": {
+      "hover_lead_in_seconds": 0.15,
+      "load_timeout_seconds": 15.0,
+      "capture_delay_seconds": 1.25,
+      "render_measurement_warmup_seconds": 1.0,
+      "scenario_sample_fps": 60.0
+    },
+    "cards": [
+      "employee",
+      "grinder",
+      "workaholic",
+      "work_emperor",
+      "leader",
+      "work",
+      "money",
+      "coffee",
+      "overtime",
+      "meeting",
+      "transfer",
+      "slack",
+      "outsource",
+      "strike"
+    ],
+    "default_card": "employee",
+    "categories": [
+      "卡牌动作",
+      "角色状态",
+      "组合演出",
+      "交互"
+    ],
+    "states": [
+      {
+        "id": "employee_striking",
+        "card": "employee",
+        "activity": "striking",
+        "category": "角色状态",
+        "name": "员工 · 罢工跳舞",
+        "description": "员工在卡牌内扭腰摆胯：胯部画八字、肩头反向摆出S形，双手错拍、两腿交替点地；卡框和标题稳定，与对局共用动作。"
+      },
+      {
+        "id": "grinder_striking",
+        "card": "grinder",
+        "activity": "striking",
+        "category": "角色状态",
+        "name": "卷王 · 罢工跳舞",
+        "description": "卷王在卡牌内扭腰摆胯：胯部画八字、肩头反向摆出S形，双手错拍、两腿交替点地；卡框和标题稳定，与对局共用动作。"
+      },
+      {
+        "id": "workaholic_striking",
+        "card": "workaholic",
+        "activity": "striking",
+        "category": "角色状态",
+        "name": "肝帝 · 罢工跳舞",
+        "description": "肝帝在卡牌内扭腰摆胯，身体和手臂错拍舞动；卡框、标题保持稳定，与对局共用动作。"
+      },
+      {
+        "id": "work_emperor_striking",
+        "card": "work_emperor",
+        "activity": "striking",
+        "category": "角色状态",
+        "name": "打工皇帝 · 跳舞",
+        "description": "打工皇帝在卡牌内扭腰摆胯，身体和手臂错拍舞动；卡框、标题保持稳定，与对局共用动作。"
+      },
+      {
+        "id": "leader_striking",
+        "card": "leader",
+        "activity": "striking",
+        "category": "角色状态",
+        "name": "领导 · 罢工跳舞",
+        "description": "领导在卡牌内扭腰摆胯：胯部画八字、肩头反向摆出S形，双手错拍、两腿交替点地；卡框和标题稳定，与对局共用动作。"
+      }
+    ]
+  },
+  "scenarios": {
+    "_说明": "独立动画预览场景目录。所有演出调用正式规则和卡牌组件，预览布景与动作时刻只作用于隔离样例。",
+    "runtime": {
+      "seed": 131,
+      "fixed_step": 0.016666666666666666,
+      "sync_interval": 0.05,
+      "camera_span": 26.5,
+      "camera_height": 20,
+      "camera_tilt": -72,
+      "camera_z": 5.4
+    },
+    "scenarios": [
+      {
+        "id": "work_single",
+        "name": "员工工作与单张收入",
+        "description": "共享工作条读满，盖章清理工作；一张真实金钱沿抛物线归堆。",
+        "category": "组合演出",
+        "duration": 12,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 18
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "bank",
+            "owner": 0,
+            "cards": {
+              "money": 1
+            },
+            "position": [
+              5.2,
+              0.05,
+              3.4
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "employee",
+                "owner": 0,
+                "index": 0
+              }
+            ],
+            "group": "my_work"
+          }
+        ],
+        "expects": [
+          "work_complete"
+        ],
+        "camera": {
+          "span": 12.5,
+          "position": [
+            1,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "work_batch",
+        "name": "多人统一结算",
+        "description": "三名员工和两名卷王共享一条进度，一次清五份工作，逐张抛出七元。",
+        "category": "组合演出",
+        "duration": 12,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 3,
+              "grinder": 2
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 18
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "bank",
+            "owner": 0,
+            "cards": {
+              "money": 1
+            },
+            "position": [
+              5.2,
+              0.05,
+              3.4
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "person",
+                "owner": 0,
+                "all": true
+              }
+            ],
+            "group": "my_work"
+          }
+        ],
+        "expects": [
+          "work_complete"
+        ],
+        "camera": {
+          "span": 12.5,
+          "position": [
+            1,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "money_stream",
+        "name": "大量金钱连续飞行",
+        "description": "六名卷王统一结算十二元；连续抛物线随数量展开，宽度与密度受正式参数限制。",
+        "category": "组合演出",
+        "duration": 12,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "grinder": 6
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 18
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "bank",
+            "owner": 0,
+            "cards": {
+              "money": 1
+            },
+            "position": [
+              5.2,
+              0.05,
+              3.4
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "person",
+                "owner": 0,
+                "all": true
+              }
+            ],
+            "group": "my_work"
+          }
+        ],
+        "expects": [
+          "work_complete"
+        ],
+        "camera": {
+          "span": 12.5,
+          "position": [
+            1,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "overtime_stack",
+        "name": "加班叠加与进度加速",
+        "description": "工作途中加入三张加班，保留进度并按正式倍率加速；增益牌留在后方。",
+        "category": "组合演出",
+        "duration": 12,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 2
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 18
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "buff",
+            "owner": 0,
+            "cards": {
+              "overtime": 3
+            },
+            "position": [
+              -4,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "bank",
+            "owner": 0,
+            "cards": {
+              "money": 1
+            },
+            "position": [
+              5.2,
+              0.05,
+              3.4
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "employee",
+                "owner": 0,
+                "all": true
+              }
+            ],
+            "group": "my_work"
+          },
+          {
+            "at": 3,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "overtime",
+                "owner": 0,
+                "all": true
+              }
+            ],
+            "group": "my_work"
+          }
+        ],
+        "expects": [
+          "work_complete"
+        ],
+        "camera": {
+          "span": 12.5,
+          "position": [
+            1,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "coffee_upgrade",
+        "name": "喝咖啡升级",
+        "description": "咖啡与员工读完升级条，消耗咖啡并切换为卷王，出现升级章和光环。",
+        "category": "组合演出",
+        "duration": 9,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 18
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "tool",
+            "owner": 0,
+            "cards": {
+              "coffee": 1
+            },
+            "position": [
+              -4,
+              0.05,
+              5.5
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "coffee",
+                "owner": 0,
+                "index": 0
+              }
+            ],
+            "group": "my_staff"
+          }
+        ],
+        "expects": [
+          "coffee_upgrade"
+        ],
+        "camera": {
+          "span": 12.5,
+          "position": [
+            1,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "coffee_upgrade_chain",
+        "name": "员工四级升级",
+        "description": "一次放入七杯咖啡，依次读完三段进度：一杯升卷王、两杯升肝帝、四杯升打工皇帝；每段结束才消耗材料，保留同一张人员卡。",
+        "category": "组合演出",
+        "duration": 19,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 18
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "tool",
+            "owner": 0,
+            "cards": {
+              "coffee": 7
+            },
+            "position": [
+              -4,
+              0.05,
+              5.5
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "coffee",
+                "owner": 0,
+                "all": true
+              }
+            ],
+            "group": "my_staff"
+          }
+        ],
+        "expects": [
+          "coffee_upgrade"
+        ],
+        "camera": {
+          "span": 12.5,
+          "position": [
+            1,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "employee_tier_income",
+        "name": "四级员工收入",
+        "description": "员工、卷王、肝帝、打工皇帝共享十秒工作进度，同时消耗四份工作，一次产出1＋2＋4＋8共十五张金钱；人员升级提高收入，不加快工作速度。",
+        "category": "组合演出",
+        "duration": 14,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 1,
+              "grinder": 1,
+              "workaholic": 1,
+              "work_emperor": 1
+            },
+            "position": [
+              -1.5,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 50
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 60,
+              "employee": 1
+            },
+            "position": [
+              0,
+              0.05,
+              -5
+            ]
+          },
+          {
+            "name": "income_bank",
+            "owner": 0,
+            "cards": {
+              "money": 1
+            },
+            "position": [
+              4.0,
+              0.05,
+              4.0
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "work",
+                "owner": 0,
+                "all": true
+              }
+            ],
+            "group": "my_staff"
+          }
+        ],
+        "expects": [
+          "work_complete"
+        ],
+        "camera": {
+          "span": 12.5,
+          "position": [
+            1,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "slack_coffee",
+        "name": "多人摸鱼与连续咖啡",
+        "description": "三名人员共享一条进度，中途增加摸鱼加速；每批三杯咖啡错峰弹到独立材料堆，完成后继续生产。",
+        "category": "组合演出",
+        "duration": 32,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 2,
+              "leader": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 18
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "tool",
+            "owner": 0,
+            "cards": {
+              "slack": 2
+            },
+            "position": [
+              -4,
+              0.05,
+              5.5
+            ]
+          },
+          {
+            "name": "coffee_pile",
+            "owner": 0,
+            "cards": {
+              "coffee": 1
+            },
+            "position": [
+              5.2,
+              0.05,
+              3.4
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "slack",
+                "owner": 0,
+                "index": 0
+              }
+            ],
+            "group": "my_staff"
+          },
+          {
+            "at": 6,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "slack",
+                "owner": 0,
+                "index": 1
+              }
+            ],
+            "group": "my_staff"
+          }
+        ],
+        "expects": [
+          "slack_complete"
+        ],
+        "camera": {
+          "span": 12.5,
+          "position": [
+            1,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "slack_meeting",
+        "name": "摸鱼被拉去开会",
+        "description": "两名摸鱼人员被领导拉走，咖啡进度冻结；散会返回后沿原进度继续，满条一起产两杯。",
+        "category": "组合演出",
+        "duration": 30,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 2
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 18
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 40
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "tool",
+            "owner": 0,
+            "cards": {
+              "slack": 1
+            },
+            "position": [
+              -4,
+              0.05,
+              5.5
+            ]
+          },
+          {
+            "name": "coffee_pile",
+            "owner": 0,
+            "cards": {
+              "coffee": 1
+            },
+            "position": [
+              5.2,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_host",
+            "owner": 1,
+            "cards": {
+              "leader": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              -3.0
+            ]
+          },
+          {
+            "name": "meeting_tool",
+            "owner": 1,
+            "cards": {
+              "meeting": 1
+            },
+            "position": [
+              -6,
+              0.05,
+              -3.0
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "slack",
+                "owner": 0,
+                "index": 0
+              }
+            ],
+            "group": "my_staff"
+          },
+          {
+            "at": 6,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "meeting",
+                "owner": 1
+              }
+            ],
+            "group": "enemy_host"
+          }
+        ],
+        "expects": [
+          "meeting_start",
+          "meeting_end",
+          "slack_complete"
+        ],
+        "camera": {
+          "span": 22,
+          "position": [
+            0,
+            20,
+            5.4
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "slack_strike",
+        "name": "摸鱼被罢工打断",
+        "description": "对方摸鱼组先产出两杯咖啡；罢工命中后两名人员弹出跳舞，留下的摸鱼牌保留进度并停产。",
+        "category": "组合演出",
+        "duration": 40,
+        "groups": [
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "employee": 1,
+              "work": 50
+            },
+            "position": [
+              -4,
+              0.05,
+              4
+            ]
+          },
+          {
+            "name": "strike_tool",
+            "owner": 0,
+            "cards": {
+              "strike": 1
+            },
+            "position": [
+              1,
+              0.05,
+              4
+            ]
+          },
+          {
+            "name": "enemy_staff",
+            "owner": 1,
+            "cards": {
+              "employee": 2,
+              "slack": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              -3
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 40
+            },
+            "position": [
+              4,
+              0.05,
+              -4
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 18,
+            "kind": "activate",
+            "card": {
+              "type": "strike",
+              "owner": 0
+            },
+            "group": "enemy_staff"
+          }
+        ],
+        "expects": [
+          "strike"
+        ],
+        "camera": {
+          "span": 22,
+          "position": [
+            0,
+            20,
+            5.4
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "meeting_employee",
+        "name": "员工开会",
+        "description": "随机吸来至多2名非领导人员，围绕开会牌转动；读满散会，蓝条退空后自动再开。",
+        "category": "组合演出",
+        "duration": 40,
+        "groups": [
+          {
+            "name": "host",
+            "owner": 0,
+            "cards": {
+              "employee": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "tool",
+            "owner": 0,
+            "cards": {
+              "meeting": 1
+            },
+            "position": [
+              0,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 12
+            },
+            "position": [
+              5.5,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 4,
+              "leader": 1
+            },
+            "position": [
+              0,
+              0.05,
+              -5
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "employee",
+                "owner": 0,
+                "index": 0
+              }
+            ],
+            "group": "tool"
+          },
+          {
+            "kind": "camera",
+            "at": 2,
+            "span": 12.5,
+            "position": [
+              0,
+              20,
+              9.9
+            ],
+            "seconds": 0.65
+          },
+          {
+            "kind": "camera",
+            "at": 11.5,
+            "span": 26.5,
+            "position": [
+              0,
+              20,
+              5.4
+            ],
+            "seconds": 0.65
+          },
+          {
+            "kind": "camera",
+            "at": 14.5,
+            "span": 12.5,
+            "position": [
+              0,
+              20,
+              9.9
+            ],
+            "seconds": 0.65
+          },
+          {
+            "kind": "camera",
+            "at": 35.5,
+            "span": 26.5,
+            "position": [
+              0,
+              20,
+              5.4
+            ],
+            "seconds": 0.65
+          },
+          {
+            "kind": "camera",
+            "at": 38.2,
+            "span": 12.5,
+            "position": [
+              0,
+              20,
+              9.9
+            ],
+            "seconds": 0.65
+          }
+        ],
+        "expects": [
+          "meeting_start",
+          "meeting_end"
+        ],
+        "camera": {
+          "span": 26.5,
+          "position": [
+            0,
+            20,
+            5.4
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "meeting_leader",
+        "name": "领导开会",
+        "description": "随机吸来至多4名非领导人员，围绕开会牌转动；读满散会，蓝条退空后自动再开。",
+        "category": "组合演出",
+        "duration": 40,
+        "groups": [
+          {
+            "name": "host",
+            "owner": 0,
+            "cards": {
+              "leader": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "tool",
+            "owner": 0,
+            "cards": {
+              "meeting": 1
+            },
+            "position": [
+              0,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 12
+            },
+            "position": [
+              5.5,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 4,
+              "leader": 1
+            },
+            "position": [
+              0,
+              0.05,
+              -5
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "leader",
+                "owner": 0,
+                "index": 0
+              }
+            ],
+            "group": "tool"
+          },
+          {
+            "kind": "camera",
+            "at": 2,
+            "span": 12.5,
+            "position": [
+              0,
+              20,
+              9.9
+            ],
+            "seconds": 0.65
+          },
+          {
+            "kind": "camera",
+            "at": 11.5,
+            "span": 26.5,
+            "position": [
+              0,
+              20,
+              5.4
+            ],
+            "seconds": 0.65
+          },
+          {
+            "kind": "camera",
+            "at": 14.5,
+            "span": 12.5,
+            "position": [
+              0,
+              20,
+              9.9
+            ],
+            "seconds": 0.65
+          },
+          {
+            "kind": "camera",
+            "at": 35.5,
+            "span": 26.5,
+            "position": [
+              0,
+              20,
+              5.4
+            ],
+            "seconds": 0.65
+          },
+          {
+            "kind": "camera",
+            "at": 38.2,
+            "span": 12.5,
+            "position": [
+              0,
+              20,
+              9.9
+            ],
+            "seconds": 0.65
+          }
+        ],
+        "expects": [
+          "meeting_start",
+          "meeting_end"
+        ],
+        "camera": {
+          "span": 26.5,
+          "position": [
+            0,
+            20,
+            5.4
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "transfer_work",
+        "name": "甩锅跨桌",
+        "description": "领导与员工共享进度，统一把工作甩给对方；真实工作跨桌落堆，不产生金钱。",
+        "category": "组合演出",
+        "duration": 23,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "leader": 1,
+              "employee": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 18
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "tool",
+            "owner": 0,
+            "cards": {
+              "transfer": 1
+            },
+            "position": [
+              -7,
+              0.05,
+              3.4
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "person",
+                "owner": 0,
+                "all": true
+              },
+              {
+                "type": "transfer",
+                "owner": 0,
+                "index": 0
+              }
+            ],
+            "group": "my_work"
+          },
+          {
+            "at": 0.5,
+            "kind": "activate",
+            "card": {
+              "type": "transfer",
+              "owner": 0,
+              "index": 0
+            }
+          }
+        ],
+        "expects": [
+          "transfer"
+        ]
+      },
+      {
+        "id": "outsource_batch",
+        "name": "外包补料与冷却",
+        "description": "外包读条时补入工作和金钱，原进度不重置；整批送走后显示反向冷却条。",
+        "category": "组合演出",
+        "duration": 31,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 8
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "bank",
+            "owner": 0,
+            "cards": {
+              "money": 7
+            },
+            "position": [
+              5.5,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "tool",
+            "owner": 0,
+            "cards": {
+              "outsource": 1
+            },
+            "position": [
+              -4,
+              0.05,
+              5.5
+            ]
+          },
+          {
+            "name": "reserve",
+            "owner": 0,
+            "cards": {
+              "work": 8
+            },
+            "position": [
+              4,
+              0.05,
+              5.7
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "money",
+                "owner": 0,
+                "all": true
+              },
+              {
+                "type": "outsource",
+                "owner": 0,
+                "index": 0
+              }
+            ],
+            "group": "my_work"
+          },
+          {
+            "at": 5,
+            "kind": "move_from_group",
+            "source": "reserve",
+            "count": 3,
+            "group": "my_work"
+          },
+          {
+            "at": 5,
+            "kind": "add",
+            "type": "money",
+            "count": 4,
+            "owner": 0,
+            "group": "my_work"
+          }
+        ],
+        "expects": [
+          "outsource"
+        ],
+        "camera": {
+          "span": 12.5,
+          "position": [
+            1,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "strike_ejection",
+        "name": "罢工弹飞与恢复",
+        "description": "罢工命中后人员沿弧线弹出，只有牌内角色跳舞；20秒后恢复普通散牌。",
+        "category": "组合演出",
+        "duration": 23,
+        "groups": [
+          {
+            "name": "tool",
+            "owner": 0,
+            "cards": {
+              "strike": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 12
+            },
+            "position": [
+              4,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 1,
+              "grinder": 1,
+              "leader": 1
+            },
+            "position": [
+              0,
+              0.05,
+              -5
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "activate",
+            "card": {
+              "type": "strike",
+              "owner": 0,
+              "index": 0
+            },
+            "group": "enemy_work"
+          }
+        ],
+        "expects": [
+          "strike",
+          "strike_end"
+        ]
+      },
+      {
+        "id": "dismiss_refund",
+        "name": "开除与返款",
+        "description": "三类人员依次移向开除入口并离场，按正式返款逐张抛出真实金钱。",
+        "category": "组合演出",
+        "duration": 9,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 1
+            },
+            "position": [
+              -2,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 18
+            },
+            "position": [
+              -6,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "bank",
+            "owner": 0,
+            "cards": {
+              "money": 2
+            },
+            "position": [
+              7,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "grinder",
+            "owner": 0,
+            "cards": {
+              "grinder": 1
+            },
+            "position": [
+              0,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "leader",
+            "owner": 0,
+            "cards": {
+              "leader": 1
+            },
+            "position": [
+              2,
+              0.05,
+              3.4
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "move_to_facility",
+            "card": {
+              "type": "employee",
+              "owner": 0,
+              "index": 0
+            }
+          },
+          {
+            "at": 1.2,
+            "kind": "dismiss",
+            "card": {
+              "type": "employee",
+              "owner": 0,
+              "index": 0
+            }
+          },
+          {
+            "at": 3,
+            "kind": "move_to_facility",
+            "card": {
+              "type": "grinder",
+              "owner": 0,
+              "index": 0
+            }
+          },
+          {
+            "at": 3.7,
+            "kind": "dismiss",
+            "card": {
+              "type": "grinder",
+              "owner": 0,
+              "index": 0
+            }
+          },
+          {
+            "at": 5.5,
+            "kind": "move_to_facility",
+            "card": {
+              "type": "leader",
+              "owner": 0,
+              "index": 0
+            }
+          },
+          {
+            "at": 6.2,
+            "kind": "dismiss",
+            "card": {
+              "type": "leader",
+              "owner": 0,
+              "index": 0
+            }
+          }
+        ],
+        "expects": [
+          "fire"
+        ]
+      },
+      {
+        "id": "win_departure",
+        "name": "胜利下班",
+        "description": "最后一份工作结算后锁定牌摞；人员先从摞中抽出，再盖下班章整卡离场。",
+        "category": "组合演出",
+        "duration": 13,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 2,
+              "grinder": 1,
+              "leader": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 1
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "person",
+                "owner": 0,
+                "all": true
+              }
+            ],
+            "group": "my_work"
+          }
+        ],
+        "expects": [
+          "win"
+        ],
+        "expected_winner": 0
+      },
+      {
+        "id": "conveyor_scroll",
+        "name": "传送带与价格标签",
+        "description": "六个凹槽、卡牌和价签同轨左移，空槽继续滚动，两端按正式样式渐隐。",
+        "category": "交互",
+        "duration": 9,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 18
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "bank",
+            "owner": 0,
+            "cards": {
+              "money": 8
+            },
+            "position": [
+              7,
+              0.05,
+              3.4
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.6,
+            "kind": "buy",
+            "slot": 0
+          }
+        ],
+        "conveyor": true,
+        "expects": [
+          "buy",
+          "conveyor"
+        ]
+      },
+      {
+        "id": "purchase_placement",
+        "name": "购牌落到空位",
+        "description": "购买真实报价，扣除单位金钱；新卡使用正式空位搜索，已有牌摞保留位置。",
+        "category": "交互",
+        "duration": 6,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 18
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "bank",
+            "owner": 0,
+            "cards": {
+              "money": 16
+            },
+            "position": [
+              7,
+              0.05,
+              3.4
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.8,
+            "kind": "buy",
+            "slot": 0
+          },
+          {
+            "at": 2.8,
+            "kind": "buy",
+            "slot": 1
+          }
+        ],
+        "conveyor": true,
+        "expects": [
+          "buy"
+        ]
+      },
+      {
+        "id": "card_hover_drag",
+        "name": "悬停、拿起与落下",
+        "description": "同一正式卡牌显示悬停动画、选中、原抓握手拿起、移位与落下回弹。",
+        "category": "交互",
+        "duration": 7,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 18
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "hover",
+            "card": {
+              "type": "employee",
+              "owner": 0,
+              "index": 0
+            },
+            "on": true
+          },
+          {
+            "at": 1.5,
+            "kind": "select",
+            "card": {
+              "type": "employee",
+              "owner": 0,
+              "index": 0
+            },
+            "on": true
+          },
+          {
+            "at": 2.2,
+            "kind": "drag_visual",
+            "card": {
+              "type": "employee",
+              "owner": 0,
+              "index": 0
+            },
+            "on": true
+          },
+          {
+            "at": 2.2,
+            "kind": "move_card",
+            "card": {
+              "type": "employee",
+              "owner": 0,
+              "index": 0
+            },
+            "position": [
+              0,
+              1.2,
+              4.5
+            ]
+          },
+          {
+            "at": 3.8,
+            "kind": "drag_visual",
+            "card": {
+              "type": "employee",
+              "owner": 0,
+              "index": 0
+            },
+            "on": false
+          },
+          {
+            "at": 3.8,
+            "kind": "move_card",
+            "card": {
+              "type": "employee",
+              "owner": 0,
+              "index": 0
+            },
+            "position": [
+              0,
+              0.05,
+              4.5
+            ]
+          },
+          {
+            "at": 4.1,
+            "kind": "land",
+            "card": {
+              "type": "employee",
+              "owner": 0,
+              "index": 0
+            }
+          },
+          {
+            "at": 5.3,
+            "kind": "hover",
+            "card": {
+              "type": "employee",
+              "owner": 0,
+              "index": 0
+            },
+            "on": false
+          },
+          {
+            "at": 5.3,
+            "kind": "select",
+            "card": {
+              "type": "employee",
+              "owner": 0,
+              "index": 0
+            },
+            "on": false
+          }
+        ],
+        "camera": {
+          "span": 12.5,
+          "position": [
+            1,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        },
+        "hands": true
+      },
+      {
+        "id": "stack_merge_split",
+        "name": "合组、展开与拆摞",
+        "description": "使用正式分组与理牌逻辑，演示并组、展开、拆出部分工作，再收拢。",
+        "category": "交互",
+        "duration": 8,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 2
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 7
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 3
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "buff",
+            "owner": 0,
+            "cards": {
+              "overtime": 2
+            },
+            "position": [
+              -4,
+              0.05,
+              3.4
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "person",
+                "owner": 0,
+                "all": true
+              },
+              {
+                "type": "overtime",
+                "owner": 0,
+                "all": true
+              }
+            ],
+            "group": "my_work"
+          },
+          {
+            "at": 2,
+            "kind": "toggle_stack",
+            "group": "my_work"
+          },
+          {
+            "at": 3.5,
+            "kind": "split",
+            "source": "my_work",
+            "type": "work",
+            "count": 3,
+            "name": "split",
+            "position": [
+              5,
+              0.05,
+              5.2
+            ]
+          },
+          {
+            "at": 5,
+            "kind": "merge_group",
+            "source": "split",
+            "group": "my_work"
+          },
+          {
+            "at": 6,
+            "kind": "toggle_stack",
+            "group": "my_work"
+          }
+        ],
+        "camera": {
+          "span": 12.5,
+          "position": [
+            1,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "lose_departure",
+        "name": "对方下班 · 我方失败",
+        "description": "对方先清空工作，复用真实人员离场和失败结算。",
+        "category": "组合演出",
+        "duration": 13,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 24
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 1
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "enemy_staff",
+            "owner": 1,
+            "cards": {
+              "employee": 1
+            },
+            "position": [
+              -4,
+              0.05,
+              -5
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "person",
+                "owner": 0,
+                "all": true
+              }
+            ],
+            "group": "my_work"
+          },
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "person",
+                "owner": 1,
+                "all": true
+              }
+            ],
+            "group": "enemy_work"
+          }
+        ],
+        "expects": [
+          "win"
+        ],
+        "expected_winner": 1
+      },
+      {
+        "id": "tie_departure",
+        "name": "同时下班 · 平局",
+        "description": "两侧同批清空最后一份工作，展示真实平局结算。",
+        "category": "组合演出",
+        "duration": 13,
+        "groups": [
+          {
+            "name": "my_staff",
+            "owner": 0,
+            "cards": {
+              "employee": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "work": 1
+            },
+            "position": [
+              1,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "work": 1
+            },
+            "position": [
+              0,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "enemy_staff",
+            "owner": 1,
+            "cards": {
+              "employee": 1
+            },
+            "position": [
+              -4,
+              0.05,
+              -5
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "person",
+                "owner": 0,
+                "all": true
+              }
+            ],
+            "group": "my_work"
+          },
+          {
+            "at": 0.5,
+            "kind": "combine",
+            "cards": [
+              {
+                "type": "person",
+                "owner": 1,
+                "all": true
+              }
+            ],
+            "group": "enemy_work"
+          }
+        ],
+        "expects": [
+          "win"
+        ],
+        "expected_winner": 2
+      },
+      {
+        "id": "drawer",
+        "name": "抽屉展开与收起",
+        "description": "沿用原抽屉滑动曲线与内容裁切，展示展开、收起和再次展开。",
+        "duration": 6,
+        "category": "界面",
+        "mode": "ui",
+        "actions": [],
+        "expects": []
+      },
+      {
+        "id": "drawer_mascot",
+        "name": "抽屉入口动作",
+        "description": "入口首次提示、悬停、按压、拖动、危险、胜利与失败。",
+        "duration": 12,
+        "category": "界面",
+        "mode": "ui",
+        "actions": [],
+        "expects": []
+      },
+      {
+        "id": "side_extract",
+        "name": "侧边抽取人员",
+        "description": "点击200份工作与5名员工组合侧边的员工图标，人员从原摞滑出，纵向错开且没有衬底；从第3张切走后3名员工放到另一组，再拨开大量工作。查看不停产。",
+        "category": "交互",
+        "duration": 11,
+        "groups": [
+          {
+            "name": "source",
+            "owner": 0,
+            "cards": {
+              "work": 200,
+              "employee": 5,
+              "overtime": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "target",
+            "owner": 0,
+            "cards": {
+              "work": 20
+            },
+            "position": [
+              4,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy",
+            "owner": 1,
+            "cards": {
+              "work": 30,
+              "employee": 1
+            },
+            "position": [
+              0,
+              0.05,
+              -5
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 1,
+            "kind": "side_open",
+            "group": "source",
+            "type": "employee"
+          },
+          {
+            "at": 2,
+            "kind": "side_hover",
+            "index": 2
+          },
+          {
+            "at": 3,
+            "kind": "side_begin",
+            "index": 2,
+            "seconds": 1,
+            "position": [
+              4,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "at": 4,
+            "kind": "side_drop"
+          },
+          {
+            "at": 6,
+            "kind": "side_open",
+            "group": "source",
+            "type": "work"
+          },
+          {
+            "at": 7,
+            "kind": "side_hover",
+            "index": 100
+          },
+          {
+            "at": 9,
+            "kind": "side_close"
+          }
+        ],
+        "expects": [
+          "work_complete"
+        ],
+        "camera": {
+          "span": 12.5,
+          "position": [
+            0,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "huge_stack_extract",
+        "name": "超多牌展开与抽取",
+        "description": "500份工作＋12名员工＋4张加班。展开以有限彩色卡边和类型标题呈现，避免黑墙；收拢后从侧边切出6名员工合入另一组、切出约半摞工作放到空地。真实数量与原生拖放保留，全程继续生产。",
+        "category": "交互",
+        "duration": 18,
+        "hands": true,
+        "hand_checks": {
+          "drag_at": 7.5,
+          "released_at": 8.7
+        },
+        "groups": [
+          {
+            "name": "source",
+            "owner": 0,
+            "cards": {
+              "work": 500,
+              "employee": 12,
+              "overtime": 4
+            },
+            "position": [
+              -3.4,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "target",
+            "owner": 0,
+            "cards": {
+              "work": 20
+            },
+            "position": [
+              3.4,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy",
+            "owner": 1,
+            "cards": {
+              "work": 30
+            },
+            "position": [
+              0,
+              0.05,
+              -5
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.3,
+            "kind": "camera",
+            "span": 20,
+            "position": [
+              0,
+              20,
+              9.9
+            ],
+            "seconds": 0.6
+          },
+          {
+            "at": 1,
+            "kind": "toggle_stack",
+            "group": "source"
+          },
+          {
+            "at": 4,
+            "kind": "toggle_stack",
+            "group": "source"
+          },
+          {
+            "at": 4.4,
+            "kind": "camera",
+            "span": 14,
+            "position": [
+              0,
+              20,
+              10.5
+            ],
+            "seconds": 0.6
+          },
+          {
+            "at": 5.3,
+            "kind": "side_open",
+            "group": "source",
+            "type": "employee"
+          },
+          {
+            "at": 6.2,
+            "kind": "side_hover",
+            "index": 6
+          },
+          {
+            "at": 7,
+            "kind": "side_begin",
+            "index": 6,
+            "seconds": 1.2,
+            "position": [
+              3.4,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "at": 8.2,
+            "kind": "side_drop"
+          },
+          {
+            "at": 9.4,
+            "kind": "side_open",
+            "group": "source",
+            "type": "work"
+          },
+          {
+            "at": 10.5,
+            "kind": "side_hover",
+            "fraction": 0.5
+          },
+          {
+            "at": 11.5,
+            "kind": "side_begin",
+            "fraction": 0.5,
+            "seconds": 1.2,
+            "position": [
+              0,
+              0.05,
+              5.4
+            ]
+          },
+          {
+            "at": 12.7,
+            "kind": "side_drop",
+            "name": "extracted_work"
+          },
+          {
+            "at": 15.2,
+            "kind": "camera",
+            "span": 20,
+            "position": [
+              0,
+              20,
+              9.9
+            ],
+            "seconds": 0.6
+          },
+          {
+            "at": 16,
+            "kind": "toggle_stack",
+            "group": "source"
+          },
+          {
+            "at": 17.3,
+            "kind": "toggle_stack",
+            "group": "source"
+          }
+        ],
+        "expects": [
+          "work_complete",
+          "group_changed"
+        ],
+        "camera": {
+          "span": 14,
+          "position": [
+            0,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        },
+        "preview_checks": {
+          "initial": 0.2,
+          "expanded": 2.0,
+          "collapsed": 4.3,
+          "personnel_open": 5.8,
+          "personnel_cut": 6.6,
+          "personnel_drag": 7.5,
+          "personnel_dropped": 8.7,
+          "work_open": 10.2,
+          "work_cut": 11.0,
+          "work_drag": 12.0,
+          "work_dropped": 13.2,
+          "expanded_remaining": 16.5,
+          "finished": 18.0
+        }
+      }
+    ]
+  },
+  "ui_demo": {
+    "_说明": "动画放映室的 UI 演示排期与布局。抽屉运动曲线、时长、入口动作和结算面板直接复用正式 UI。",
+    "drawer": {
+      "screen_margin": 70,
+      "size_fraction": 0.86,
+      "start_expanded": false,
+      "open_at": 1.0,
+      "close_at": 3.0,
+      "reopen_at": 4.5,
+      "icon_scale": 1.0,
+      "content_margin": 24,
+      "title_font": 32,
+      "body_font": 22,
+      "title": "下班",
+      "body": "牌桌展开\n\n沿屏幕边缘滑入与收起\n保持内容尺寸，只裁切可见区域"
+    },
+    "mascot": {
+      "render_scale": 2.0,
+      "events": [
+        {
+          "at": 0.0,
+          "state": "opening",
+          "first_hint": true
+        },
+        {
+          "at": 2.0,
+          "state": "hover"
+        },
+        {
+          "at": 4.0,
+          "state": "pressed"
+        },
+        {
+          "at": 4.6,
+          "state": "dragging"
+        },
+        {
+          "at": 5.5,
+          "state": "idle"
+        },
+        {
+          "at": 6.5,
+          "state": "danger"
+        },
+        {
+          "at": 8.0,
+          "state": "success"
+        },
+        {
+          "at": 10.0,
+          "state": "defeat"
+        }
+      ]
+    }
+  }
+}

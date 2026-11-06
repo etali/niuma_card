@@ -23,15 +23,15 @@ class RuntimePathsTest(unittest.TestCase):
         self.root, self.runtime = base / '原 项目', base / '隔离'
         self.root.mkdir(); self.runtime.mkdir()
         (self.root / 'data').mkdir()
-        (self.root / 'data/cards.json').write_text('{"fixture":true}')
+        (self.root / 'data/on_work_cards.json').write_text('{"fixture":true}')
         (self.root / 'reports').mkdir()
 
     def remap(self, args):
         return preserve_project_paths(args, self.root, self.runtime)
 
     def test_eval_request_copy_keeps_original_relative_and_text_unchanged(self):
-        request = dict(cards_path='data/cards.json', output_path='reports/结果.json',
-                       progress_path='reports/进度.json', text='data/cards.json')
+        request = dict(cards_path='data/on_work_cards.json', output_path='reports/结果.json',
+                       progress_path='reports/进度.json', text='data/on_work_cards.json')
         source = self.root / 'request.json'
         source.write_text(json.dumps(request))
         before = source.read_bytes()
@@ -52,16 +52,16 @@ class RuntimePathsTest(unittest.TestCase):
     def test_metadata_request_and_resource_paths_remain_valid(self):
         source = self.root / 'request.json'
         source.write_text(json.dumps(dict(action='metadata', output_path='reports/profile.json',
-                                         cards_path='res://data/cards.json', progress_path='user://progress.json')))
+                                         cards_path='res://data/on_work_cards.json', progress_path='user://progress.json')))
         args = self.remap(['-s', 'tools/eval_report.gd', '--', 'request.json'])
         request = json.loads(Path(args[-1]).read_text())
         self.assertEqual(request['output_path'], str(self.root / 'reports/profile.json'))
-        self.assertEqual(request['cards_path'], 'res://data/cards.json')
+        self.assertEqual(request['cards_path'], 'res://data/on_work_cards.json')
         self.assertEqual(request['progress_path'], 'user://progress.json')
 
     def test_play_card_argument_and_benchmark_input_output_resolve_at_original_root(self):
-        play = self.remap(['--path', '.', '--', '--cards-config=data/cards.json'])
-        self.assertEqual(play[-1], '--cards-config=' + str(self.root / 'data/cards.json'))
+        play = self.remap(['--path', '.', '--', '--cards-config=data/on_work_cards.json'])
+        self.assertEqual(play[-1], '--cards-config=' + str(self.root / 'data/on_work_cards.json'))
         (self.root / 'input-without-extension').write_text('{}')
         args = self.remap(['-s', '../external/bot_decision_probe.gd', '--', 'fixed',
                            'input-without-extension', 'reports/new.json', '40', '1.0', 'bot:1'])

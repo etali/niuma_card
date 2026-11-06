@@ -36,6 +36,8 @@
 class_name MsgLog
 extends CanvasLayer
 
+var group_unit := "回合"
+
 ## 记录条数上限。满了从最旧那头丢。
 ##
 ## 要有上限：一局长的话提示能攒到几百条，而 RichTextLabel 是全量重排的 ——
@@ -139,8 +141,8 @@ func append(text: String, color: Color, round_num: int) -> void:
 	# **先转义再拼 bbcode**：卡名和 reason 都是外部文本，里头真出现一个
 	# `[` 的话后面整段会被当标签吃掉（症状是记录里凭空少几行）
 	var safe := text.replace("[", "[lb]")
-	_body.append_text("[color=#%s]【第 %d 回合】%s[/color]\n"
-		% [color.darkened(0.55).to_html(false), round_num, safe])
+	_body.append_text("[color=#%s]【第 %d %s】%s[/color]\n"
+		% [color.darkened(0.55).to_html(false), round_num, group_unit, safe])
 	_trim()
 	_sync_head()
 

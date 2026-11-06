@@ -1,0 +1,11 @@
+{
+  "tool": "built-in image_gen",
+  "source": "/Users/Yitan/.codex/generated_images/01a17423-1246-72b2-a616-d5f175b61fba/exec-b8ab7911-8293-4ba5-97e9-4ae97d0b6b24.png",
+  "references": [
+    "assets/art/icon/work_employee.png",
+    "assets/art/icon/work_grinder.png"
+  ],
+  "type": "single_master",
+  "postprocessing": "whole-master uniform resize with transparent padding; no redraw or generated intermediate poses",
+  "source_sha256": "5c6993da75da16b3981aad61508930b598dde1f5283c40e088bb1945e02ccf3e"
+}

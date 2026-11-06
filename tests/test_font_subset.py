@@ -35,17 +35,14 @@ class FontSubsetTest(unittest.TestCase):
         for name in SCRIPTS:
             shutil.copy2(ROOT / name, self.root / name)
         shutil.copy2(ROOT / "tools/font_subset.sh", self.root / "tools/font_subset.sh")
-        for tool in ("build_art.py", "ensure_app_icon.py", "build_android_icons.py", "godot_build.sh", "project_paths.py", "release_bundle.py", "install_web_templates.py",
+        for tool in ("build_art.py", "ensure_app_icon.py", "build_android_icons.py", "godot_build.sh", "project_paths.py", "release_bundle.py",
                      "build_deps.py", "install_build_env.py", "install_android_dependencies.py"):
             shutil.copy2(ROOT / "tools" / tool, self.root / "tools" / tool)
         (self.root / "tools/check_art_assets.py").write_text("pass\n")
         from PIL import Image
         Image.new("RGBA", (20, 24), (60, 30, 20, 255)).save(self.root / "assets/art/app_icon.png")
-        for name in ("web_release.zip", "web_debug.zip", "web_nothreads_release.zip", "web_nothreads_debug.zip"):
-            with zipfile.ZipFile(self.root / "templates" / name, "w") as archive:
-                for required in ("godot.html", "godot.js", "godot.wasm"):
-                    archive.writestr(required, b"fixture")
-        (self.root / "data/cards.json").write_text('{"name": "牛马牌"}')
+        for deck in ("on_work_cards.json", "off_work_cards.json"):
+            (self.root / "data" / deck).write_text('{"name": "牛马牌"}')
         (self.root / FONT).write_bytes(b"full-variable-font-wght-100-900")
         (self.root / (str(FONT) + ".import")).write_text(IMPORT_TEXT)
         (self.root / FONTDATA).write_bytes(b"full-cache")
@@ -122,10 +119,7 @@ else:
         binary.chmod(0o755)
         (output / "Contents/Resources/game.pck").write_bytes(b"pck")
     else:
-        output.write_text("web")
-        output.with_suffix(".pck").write_bytes(b"pck")
-        output.with_suffix(".js").write_text("fixture js")
-        output.with_suffix(".wasm").write_bytes(b"wasm")
+        raise ValueError("unexpected export: " + str(output))
 ''')
         self.env = os.environ.copy()
         self.env.update({
@@ -168,7 +162,7 @@ else:
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assert_restored()
         exports = [event for event in self.events() if event["kind"] == "export"]
-        self.assertEqual(len(exports), 3)
+        self.assertEqual(len(exports), 2)
         self.assertTrue(all(not event["full"] for event in exports))
 
     def test_subset_collects_runtime_text_but_not_development_text(self):
@@ -201,10 +195,10 @@ else:
         self.assertEqual([event["kind"] for event in self.events()], ["import"])
 
     def test_export_failure_restores_config_and_discards_export_cache(self):
-        result = self.run_script(SCRIPTS[1], EXPORT_FAIL="2")
+        result = self.run_script(SCRIPTS[1], EXPORT_FAIL="1")
         self.assertEqual(result.returncode, 47, result.stdout + result.stderr)
         self.assert_restored()
-        self.assertEqual(len([event for event in self.events() if event["kind"] == "export"]), 2)
+        self.assertEqual(len([event for event in self.events() if event["kind"] == "export"]), 1)
 
     def test_both_entrypoints_reject_zero_exit_export_errors_and_keep_previous_app(self):
         for name in SCRIPTS:
@@ -223,27 +217,23 @@ else:
                 self.assert_restored()
 
     def test_release_rejects_missing_artifact_even_without_engine_error(self):
-        result = self.run_script(SCRIPTS[1], EXPORT_MISSING="2")
+        result = self.run_script(SCRIPTS[1], EXPORT_MISSING="1")
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("发布包就绪", result.stdout)
         self.assertFalse(list((self.root / "build").glob("牛马牌*zip")))
         self.assert_restored()
 
     def test_release_replaces_complete_outputs_without_stale_files(self):
-        stale = self.root / "build/web/obsolete-debug.txt"
-        stale.parent.mkdir(parents=True)
-        stale.write_text("previous build debug data")
         old_app = self.root / "build/牛马牌.app/obsolete"
-        old_app.parent.mkdir()
+        old_app.parent.mkdir(parents=True)
         old_app.write_text("old app resource")
         result = self.run_script(SCRIPTS[1])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse(stale.exists())
         self.assertFalse(old_app.exists())
-        with zipfile.ZipFile(self.root / "build/牛马牌_web.zip") as archive:
-            self.assertIn("index.html", archive.namelist())
-            self.assertIn("index.wasm", archive.namelist())
-            self.assertNotIn("obsolete-debug.txt", archive.namelist())
+        with zipfile.ZipFile(self.root / "build/牛马牌_mac.zip") as archive:
+            self.assertIn("牛马牌.app/Contents/Resources/game.pck", archive.namelist())
+            self.assertNotIn("牛马牌.app/obsolete", archive.namelist())
+        self.assertFalse((self.root / "build/牛马牌_web.zip").exists())
         self.assertFalse(list((self.root / "build").glob(".export-stage.*")))
         self.assert_restored()
 

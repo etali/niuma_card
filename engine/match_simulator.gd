@@ -27,7 +27,7 @@ extends RefCounted
 ## 场景层逐组过 IntentApply（produce 一组、演一组，最后 finalize），
 ## 好在每步中间插补间。所以别把 Settle.run 当成两边的公共入口 —— 它只在这边
 
-## 回合上限取 data/bot.json 的 `simulation.max_rounds`（CardDB.sim_rules()）：
+## 回合上限取 data/on_work_bot.json 的 `simulation.max_rounds`（CardDB.sim_rules()）：
 ## 跑到那个回合还没分出胜负就判超时，tools/balance_report.gd 会报告未分胜负的局数和比例。
 ## 它只是模拟器的安全阀，不是游戏规则 —— 真人局（scenes/main.gd）不封顶，
 ## 所以在配置里单开 `_sim` 段，不混进 `_game`。

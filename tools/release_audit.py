@@ -47,8 +47,10 @@ def audit(app, *, require_clean=True):
         raise ValueError('App 中未找到唯一的游戏可执行文件与PCK')
     entries = pck_files(packs[0])
     unwanted = [e['path'] for e in entries if e['path'].startswith(DEVELOPMENT_PREFIXES)]
-    required = {'project.binary', 'scenes/main.tscn.remap', 'data/cards.json', 'data/ui.json',
-                'data/bot.json', 'shaders/card_face.gdshader',
+    required = {'project.binary', 'scenes/main.tscn.remap', 'data/on_work_cards.json', 'data/ui.json',
+                'data/on_work_bot.json', 'shaders/card_face.gdshader', 'scenes/shift_host.tscn.remap',
+                'scenes/work_main.tscn.remap', 'data/off_work_cards.json',
+                'data/off_work_bot.json', 'data/animation_preview.json',
                 'scenes/debug_shot.gdc', 'assets/fonts/NotoSansSC.ttf.import'}
     names = {entry['path'] for entry in entries}
     missing = sorted(required - names)

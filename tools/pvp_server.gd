@@ -7,7 +7,7 @@ extends SceneTree
 ## 本地专用服务器的入口；启动命令见 README.md §「4.4 联机专服」。
 ##
 ##   /Applications/Godot.app/Contents/MacOS/Godot --headless -s tools/pvp_server.gd --port=8910
-##   参数：--port=8910  --seed=12345（固定牌序，调试用）  --verbose-net
+##   参数：--port=8910  --seed=12345（固定牌序，调试用）  --verbose-net  --off-work（实时下班牌桌）
 ##
 ## 这个文件只做两件事：读命令行、每帧 poll。
 ## 服务器逻辑全在 net/server.gd —— 拆出去的理由写在那个文件头：
@@ -25,6 +25,7 @@ var _host: EmbeddedHost
 ## 认得的参数前缀。**两条命令行都扫**，见 _args 的说明
 const FLAG_PORT := "--port="
 const FLAG_SEED := "--seed="
+const FLAG_OFF_WORK := "--off-work"
 const FLAG_VERBOSE := "--verbose-net"
 
 ## 本脚本的参数，**不管有没有写 `--` 分隔符都能读到**。
@@ -41,7 +42,7 @@ func _args() -> PackedStringArray:
 		return user
 	var picked := PackedStringArray()
 	for a in OS.get_cmdline_args():
-		if a.begins_with(FLAG_PORT) or a.begins_with(FLAG_SEED) or a == FLAG_VERBOSE:
+		if a.begins_with(FLAG_PORT) or a.begins_with(FLAG_SEED) or a in [FLAG_VERBOSE, FLAG_OFF_WORK]:
 			picked.append(a)
 	return picked
 
@@ -58,6 +59,12 @@ func _initialize() -> void:
 			verbose = true
 
 	_host = EmbeddedHost.new(fixed_seed, verbose)
+	if _args().has(FLAG_OFF_WORK):
+		_host.work_config = WorkConfig.new()
+		if not _host.work_config.errors.is_empty():
+			printerr("\n".join(_host.work_config.errors))
+			quit(1)
+			return
 	# tries = 1：**不顺延**。写了 --port= 的人要把那个端口告诉对面，
 	# 悄悄换一个的话对面照着填连不上，而服务器日志显示一切正常
 	var r: Dictionary = _host.start(port, 1)
@@ -65,7 +72,8 @@ func _initialize() -> void:
 		printerr("%s（换 --port=<别的端口> 试试）" % r["reason"])
 		quit(1)
 		return
-	print("牛马牌 专服已启动 —— 端口 %d，协议 v%d，卡表 %s" % [
+	print("牛马牌 %s专服已启动 —— 端口 %d，协议 v%d，卡表 %s" % [
+		"下班" if _host.work_config != null else "上班",
 		port, Protocol.VERSION, _host.server.table_hash().substr(0, 8)])
 	_print_urls(port)
 	print("客户端填房间码就能进；房间不存在就现开一个")
@@ -82,9 +90,6 @@ func _print_urls(port: int) -> void:
 	print("  本机双开填：ws://127.0.0.1:%d" % port)
 	for u in EmbeddedHost.lan_urls(port):
 		print("  同局域网另一台机器填：%s" % u)
-	# 网页版直接把地址塞进链接里就能进（README.md §「4.4 联机专服」）——
-	# 打出来省得玩家自己拼参数
-	print("  网页版可以直接开：index.html?server=ws://127.0.0.1:%d&room=<房间码>" % port)
 
 ## SceneTree 的每帧回调。返回 true 会退出主循环
 func _process(_dt: float) -> bool:

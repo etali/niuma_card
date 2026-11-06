@@ -5,6 +5,8 @@
 class_name ResourceHUD
 extends PanelContainer
 
+var card_catalog: Script = CardDB
+
 ## 双方共用的结构化资源卡；summary 是抽屉首行与旧调用方共用的完整摘要。
 ## 数值与风险独立布局，长预警不再挤进资金读数，也不改变牌桌鼠标事件路由。
 var summary: Label
@@ -45,10 +47,10 @@ func setup(company: String, identity: String, compact: bool) -> void:
 	metrics.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	metrics.add_theme_constant_override("separation", 10)
 	_content.add_child(metrics)
-	var cash := _metric(metrics, CardDB.res_label(CardDB.RES_CASH))
+	var cash := _metric(metrics, card_catalog.res_label(card_catalog.RES_CASH))
 	_cash_caption = cash[0]
 	cash_value = cash[1]
-	var users := _metric(metrics, CardDB.res_label(CardDB.RES_USER))
+	var users := _metric(metrics, card_catalog.res_label(card_catalog.RES_USER))
 	_user_caption = users[0]
 	user_value = users[1]
 	var footer := HBoxContainer.new()

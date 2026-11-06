@@ -4,6 +4,26 @@
 
 extends RefCounted
 
+const ON_WORK_CARDS := "res://data/on_work_cards.json"
+const OFF_WORK_CARDS := "res://data/off_work_cards.json"
+const ON_WORK_BOT := "res://data/on_work_bot.json"
+const OFF_WORK_BOT := "res://data/off_work_bot.json"
+
+## 仅迁移本项目旧的内置文件名，外部路径仍使用玩家自己的文件。
+const MOVED_CONFIGS := {
+	"res://data/cards.json": ON_WORK_CARDS,
+	"res://off_work/data/cards.json": OFF_WORK_CARDS,
+	"res://data/bot.json": ON_WORK_BOT,
+	"res://data/off_work_ai.json": OFF_WORK_BOT,
+	"res://off_work/data/ai.json": OFF_WORK_BOT,
+}
+
+static func bundled_path(path: String) -> String:
+	if path.is_empty() or FileAccess.file_exists(path):
+		return path
+	var local := ProjectSettings.localize_path(path) if path.is_absolute_path() else "res://".path_join(path)
+	return MOVED_CONFIGS.get(local.simplify_path(), path)
+
 ## 配置只共享读取和合并机制；来源优先级、缓存、字段校验仍由各模块负责。
 static func read_dictionary(path: String, warn_missing := false, label := "配置") -> Dictionary:
 	if not FileAccess.file_exists(path):

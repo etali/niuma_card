@@ -70,7 +70,7 @@ var head_pools: Dictionary = {}
 ##   hash    这条落地**之后**的 state_hash，重放时逐步比它
 var steps: Array = []
 
-## 卡表指纹（StateCodec.table_hash）。改过 data/cards.json 再重放老录像，
+## 卡表指纹（StateCodec.table_hash）。改过 data/on_work_cards.json 再重放老录像，
 ## 分叉是必然的而且和引擎无关 —— 提前报出来，别让人去查引擎
 var table: String = ""
 
@@ -308,7 +308,7 @@ static func replay(t: Tape, upto := -1, on_step := Callable()) -> Dictionary:
 	ap.pools_restore(t.head_pools)
 	var notes: Array = []
 	if t.table != "" and t.table != StateCodec.table_hash():
-		notes.append("卡表和录这份录像时不一样（data/cards.json 改过）——"
+		notes.append("卡表和录这份录像时不一样（data/on_work_cards.json 改过）——"
 			+ "分叉多半来自卡表，不是引擎")
 	var n: int = t.steps.size() if upto < 0 else mini(upto, t.steps.size())
 	for i in n:

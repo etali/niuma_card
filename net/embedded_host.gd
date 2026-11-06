@@ -35,6 +35,7 @@ const DEFAULT_PORT := 8910
 const PORT_TRIES := 12
 
 var server: NetServer = null
+var work_config: WorkConfig
 var port := 0
 
 var _seed := 0
@@ -53,6 +54,7 @@ func start(listen_port := DEFAULT_PORT, tries := PORT_TRIES) -> Dictionary:
 	var last: Dictionary = {}
 	for i in maxi(tries, 1):
 		var s := NetServer.new(_seed, _verbose)
+		s.work_config = work_config
 		var r: Dictionary = s.start(listen_port + i)
 		if r["ok"]:
 			server = s

@@ -10,7 +10,7 @@ const NetServerClass = preload("res://net/server.gd")
 func _initialize() -> void:
 	var had_pref := FileAccess.file_exists(CardConfigClass.pref_path())
 	var previous_pref := FileAccess.get_file_as_string(CardConfigClass.pref_path()) if had_pref else ""
-	var base_path := "res://data/cards.json"
+	var base_path := "res://data/on_work_cards.json"
 	var base := JSON.parse_string(FileAccess.get_file_as_string(base_path)) as Dictionary
 	var temp_path := "user://test-custom-cards.json"
 	var custom := base.duplicate(true)
@@ -18,6 +18,18 @@ func _initialize() -> void:
 	var f := FileAccess.open(temp_path, FileAccess.WRITE)
 	f.store_string(JSON.stringify(custom))
 	f.close()
+	var legacy := "res://data/cards.json"
+	_write_cards(CardConfigClass.pref_path(), {"path": ProjectSettings.globalize_path(legacy)})
+	CardConfigClass._loaded = false
+	check(CardConfigClass.selected_path() == base_path and CardConfigClass.apply_solo().ok,
+		"旧绝对路径偏好恢复为当前上班卡表")
+	check(JSON.parse_string(FileAccess.get_file_as_string(CardConfigClass.pref_path())).path == base_path,
+		"已迁移的卡表偏好原子写回")
+	check(CardDB.ConfigData.bundled_path("res://off_work/data/cards.json") == WorkConfig.FILES.cards
+		and CardDB.ConfigData.bundled_path("off_work/data/cards.json") == WorkConfig.FILES.cards,
+		"下班内置卡表支持旧资源路径和项目相对路径")
+	check(CardDB.ConfigData.bundled_path("user://archive/data/cards.json") == "user://archive/data/cards.json",
+		"不同目录中同名的文件不被重定向")
 	var valid := CardConfigClass.validate_file(temp_path)
 	check(bool(valid.get("ok", false)), "完整自定义卡表通过校验")
 	var selected := CardConfigClass.select(temp_path)

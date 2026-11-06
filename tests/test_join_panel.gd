@@ -201,7 +201,7 @@ func _t3_apply_launch() -> void:
 	if not need(bool(r["ok"]), "起一个对照服务器"):
 		return
 	var cfg: Dictionary = LaunchConfig.parse(
-		LaunchConfig.parse_query("?server=%s&room=link1" % host.url()))
+		LaunchConfig.parse_flags(["--server=" + host.url(), "--room=link1"]))
 	check(str(cfg["mode"]) == LaunchConfig.MODE_JOIN, "这份参数是「加入」模式")
 
 	var panel: JoinPanel = _main._open_join_panel()
@@ -238,9 +238,6 @@ func _t3_apply_launch() -> void:
 	check(_main._net == null and _main.state == solo_state and _main.pipe == solo_pipe,
 		"取消加入后继续原 BOT 对局，不重建局面和管道")
 	check(host.running(), "取消加入只关闭自己的连接，不关闭对方服务器")
-	# 网页版开不了房，界面据此少画一个按钮。这一条钉的是「那个判断存在」——
-	# 无头桌面环境下它必须为真，否则连桌面版都点不到「开房间」
-	check(LaunchConfig.can_host(), "桌面版 can_host 为真")
 	_main._reset_session_flags()
 	host.stop()
 	await process_frame

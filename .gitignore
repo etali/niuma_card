@@ -7,7 +7,7 @@
 # 素材及其 .import 导入设置随 Git 管理；生成的导入缓存只保存在 .godot/。
 
 # ===== 打包产物 =====
-# 由 打包发布.command 生成：牛马牌.app、web/、zip、外置 cards.json 副本
+# 两种玩法共用 build/，包含 App、DMG、ZIP、APK、AAB 和测试日志。
 # 保留Godot导入隔离标记；其余构建产物、源码和编译缓存全部忽略。
 /build/*
 !/build/.gdignore
@@ -31,10 +31,10 @@ __pycache__/
 /sounds
 /test_image
 *.swp
-# 临时目录不参与 Godot 导入，保留隔离标记供新检出使用。
 /.claude
-/tmp
+**/.claude/.cc-writes/
+# 保留 Godot 导入隔离标记，忽略临时文件和两个调参平台的本地配置快照、实验历史。
+/tmp/*
 !/tmp/.gdignore
-# Godot 资源扫描排除；保留 .gdignore，搜索结果本体仍是临时文件。
-/reports
+/reports/*
 !/reports/.gdignore

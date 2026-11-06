@@ -1,0 +1,87 @@
+{
+  "card": "rework",
+  "tool": "image_gen.imagegen (built-in)",
+  "source": "/Users/Yitan/.codex/generated_images/01a188c8-cb19-73d1-bb6f-45ead7f842bc/exec-89685228-f2b9-4cd4-b0b6-e9f4eb778a71.png",
+  "reference_images": [
+    "/Users/Yitan/repos/niuma_card/assets/art/icon/icon_user.png",
+    "/Users/Yitan/repos/niuma_card/assets/art/icon/icon_cash.png"
+  ],
+  "layout": {
+    "columns": 3,
+    "rows": 3,
+    "generated_keyframes": 9
+  },
+  "prompt": "Use case: stylized-concept. Generate a production animated icon sprite sheet for REWORK / 返工 in a humorous office game. The original user and cash images supplied are STYLE REFERENCES: copy their plain warm-cream fill, very thick dark-brown rounded imperfect outlines, extremely simple face marks, and flat comic charm. No gradients, realistic lighting, watercolor, fuzzy texture, complicated equipment, 3D or glossy surfaces.\nOutput exactly NINE consecutive cels of ONE icon in a perfect THREE-COLUMN THREE-ROW equal square-cell grid. Square canvas 1536x1536 requested; genuine transparent alpha background. No grid drawn, no panel borders, no captions, words or labels.\nSubject is ONE chunky rubber rejection stamp with a big cream rounded handle, narrow neck, broad rectangular stamping base, and muted terracotta-red ink pad under it. Two little angry dot eyes with tiny angled eyebrows and a pout on the handle make the stamp comically grumpy. The broad front of the stamp base bears ONE large simple dark X mark, unmistakable rejection. The stamp is the complete subject. No hands, no people, no desk, no paper stack, no separate tools.\nNine-frame row-major animation: 1 ready neutral stamp; 2 handle rises a little in anticipation; 3 slightly more lift; 4 quick firm downward squash with neck compressing; 5 deepest comic squash and pinched eyes; 6 handle rebounds halfway; 7 small upward recoil; 8 settles; 9 returns to frame 1. Base pad stays at the same horizontal baseline and same size throughout, handle remains connected to the neck, no floating disconnected pieces. At impact allow only TWO tiny ink-colored force dashes beside base, then gone. Keep every whole pose within central 72% of its equal cell. Fixed scale/camera/palette/line thickness, no scene changes. Nine actual phases of one concise gesture, never nine designs.",
+  "inspection": "Nine full grumpy rejection-stamp poses. One subject with large X motif, connected plunger/base; anticipation, squash, recoil visible. Minimal two impact marks in peak frame. No extra scene. Original alpha retained.",
+  "actual_size": [
+    1254,
+    1254
+  ],
+  "mode": "RGBA",
+  "alpha_extrema": [
+    0,
+    255
+  ],
+  "sheet_sha256": "33f2d44dac05e1ee56b888d31fc82b3c0932b286b6d4366fc5ec6eae6ed5d20d",
+  "cell_size": [
+    418,
+    418
+  ],
+  "visible_bounds_alpha_over_32": [
+    [
+      71,
+      87,
+      369,
+      401
+    ],
+    [
+      64,
+      61,
+      359,
+      403
+    ],
+    [
+      69,
+      51,
+      361,
+      403
+    ],
+    [
+      72,
+      86,
+      369,
+      377
+    ],
+    [
+      51,
+      107,
+      369,
+      377
+    ],
+    [
+      69,
+      42,
+      360,
+      378
+    ],
+    [
+      71,
+      25,
+      367,
+      370
+    ],
+    [
+      63,
+      53,
+      357,
+      369
+    ],
+    [
+      64,
+      56,
+      361,
+      368
+    ]
+  ],
+  "cell_edge_touching_frames": []
+}

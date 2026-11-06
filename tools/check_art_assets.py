@@ -33,7 +33,7 @@ except ImportError as exc:
 
 ROOT = Path(__file__).resolve().parent.parent
 ART = ROOT / "assets" / "art"
-CARDS_JSON = ROOT / "data" / "cards.json"
+CARDS_JSON = ROOT / "data" / "on_work_cards.json"
 UI_JSON = ROOT / "data" / "ui.json"
 
 # 固定整卡与覆盖素材的验收尺寸；卡牌图标由当前 cards.json 动态枚举。
@@ -229,10 +229,11 @@ def check_delta_animation(name: str, entry: dict, manifest: dict,
     return 1
 
 
-def check_manifest(errors: list[str], warnings: list[str]) -> None:
+def check_manifest(card_ids: list[str], errors: list[str], warnings: list[str]) -> None:
     path = UI_JSON
     try:
-        manifest = load_object(path).get("art")
+        ui = load_object(path)
+        manifest = ui.get("art")
     except ValueError as exc:
         errors.append(str(exc))
         return
@@ -241,6 +242,23 @@ def check_manifest(errors: list[str], warnings: list[str]) -> None:
         errors.append("ui.art 必须是对象")
         return
 
+    registered_ids = set(card_ids)
+    if "card_display" in ui:
+        # Continuous cards may register their own illustration or reuse one from the turn deck.
+        try:
+            work_cards = load_object(CARDS_JSON.with_name("off_work_cards.json")).get("cards")
+        except ValueError as exc:
+            errors.append(str(exc))
+            return
+        if not isinstance(work_cards, dict) or not isinstance(ui["card_display"], dict):
+            errors.append("下班卡表与 card_display 必须是对象")
+            return
+        for card_id in work_cards:
+            display = ui["card_display"].get(card_id, {})
+            if not isinstance(display, dict) or not isinstance(display.get("source_art_id", card_id), str):
+                errors.append(f"card_display.{card_id} 的插画编号无效")
+                continue
+            registered_ids.add(display.get("source_art_id", card_id))
     count = 0
     for section_name in ("icons", "misc", "illustrations"):
         if section_name == "illustrations" and section_name not in manifest:
@@ -277,7 +295,7 @@ def check_manifest(errors: list[str], warnings: list[str]) -> None:
                 else:
                     errors.append(message)
             elif section_name == "illustrations":
-                if name not in load_card_ids():
+                if name not in registered_ids:
                     errors.append(f"{label} 不是当前卡表中的卡牌")
                 if check_one(target, None, errors, label="情景插画"):
                     with Image.open(target) as illustration:
@@ -375,6 +393,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"检查素材目录：{rel(ART)}")
     check_app_icon(errors, warnings)
+    card_ids = []
     try:
         card_ids = load_card_ids()
     except ValueError as exc:
@@ -385,7 +404,7 @@ def main(argv: list[str] | None = None) -> int:
     print("必需的整卡/覆盖素材：")
     for filename, size in REQUIRED_RASTER.items():
         check_one(ART / filename, size, errors)
-    check_manifest(errors, warnings)
+    check_manifest(card_ids, errors, warnings)
 
     print("可替换外观（默认程序化实现已完成）：")
     for alternatives in OPTIONAL_RASTER:

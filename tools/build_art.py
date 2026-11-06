@@ -119,7 +119,7 @@ def dominant(im, box, step=2):
 
 def load_name_to_id():
     """cards.json 的 name → def_id。图标文件名用的是中文卡名。"""
-    with open(os.path.join(ROOT, "data", "cards.json"), encoding="utf-8") as f:
+    with open(os.path.join(ROOT, "data", "on_work_cards.json"), encoding="utf-8") as f:
         data = json.load(f)
     return {v["name"]: k for k, v in data.items()
             if not k.startswith("_") and isinstance(v, dict) and "name" in v}

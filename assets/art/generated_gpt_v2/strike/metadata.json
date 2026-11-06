@@ -1,0 +1,11 @@
+{
+  "tool": "built-in image_gen",
+  "source": "/Users/Yitan/.codex/generated_images/01a192e2-126b-76e2-afb9-27a172e1f0e4/exec-a96fa697-52b9-4c58-8d02-b62cc79a1393.png",
+  "references": [
+    "assets/art/icon/work_employee.png"
+  ],
+  "type": "single_master",
+  "concept": "A smiling round-headed employee on strike, holding one sign reading 罢工 and kicking one leg carefree",
+  "postprocessing": "none; whole-master uniform resize and transparent padding for production icon",
+  "source_sha256": "7cb8a847b03f830ca0be3fe5c0715833f487e201f342428990d394db3f1cfb34"
+}

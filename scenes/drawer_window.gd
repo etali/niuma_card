@@ -91,6 +91,22 @@ func _init(config_path: String = "") -> void:
 	_icon_scale = defaults["icon_scale"]
 
 ## 测试可用 setup(false, usable_rect)，驱动相同状态机而不更改系统窗口。
+## 两种玩法使用同一窗口取景档位和 DPI，切换时保持牌桌的物理尺寸。
+func setup_table_window(fixed_view: bool, fixed_scale := 1.0) -> float:
+	var requested := OS.get_environment("CARD_DRAWER_SIZE").split("x")
+	if requested.size() == 2 and int(requested[0]) >= 900 and int(requested[1]) >= 600:
+		set_expanded_size(Vector2i(int(requested[0]), int(requested[1])))
+	if fixed_view:
+		get_window().content_scale_size = Vector2i.ZERO
+		get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+		setup(false, Rect2i(Vector2i.ZERO, get_window().size))
+		set_display_scale(fixed_scale)
+		return fixed_scale
+	setup()
+	var dpi := clampf(DisplayServer.screen_get_scale(get_window().current_screen), 1.0, 2.0)
+	set_display_scale(dpi)
+	return dpi
+
 func setup(use_os_window := true, usable_rect := Rect2i()) -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_use_os_window = use_os_window and DisplayServer.get_name() != "headless"
@@ -123,7 +139,14 @@ func setup(use_os_window := true, usable_rect := Rect2i()) -> void:
 		_screen_rect = Rect2i(Vector2i.ZERO, expanded_size)
 	set_display_scale(_display_scale)
 	_expanded = true
-	_apply_geometry(_rect_for(true))
+	var ancestor := get_parent()
+	while ancestor != null and not ancestor.has_meta("previous_drawer"):
+		ancestor = ancestor.get_parent()
+	if ancestor != null:
+		take_window_layout(ancestor.get_meta("previous_drawer"))
+		ancestor.remove_meta("previous_drawer")
+	else:
+		_apply_geometry(_rect_for(true))
 	# main 先按完整窗口建立牌桌，再调用 start_collapsed() 展示启动入口。
 	# 不在 setup 中暂停半建成的场景，也不会先把整张牌桌闪到办公窗口上。
 	_collapse_at = -1
@@ -408,6 +431,26 @@ func _tick_at(now: int) -> void:
 			_start_transition(false)
 		# 操作未完成时保留到期请求；操作结束的下一帧继续收起。
 
+## Only the visible table owns native window geometry and hover deadlines.
+func take_window_layout(previous: DrawerWindow) -> void:
+	anchor_edge = previous.anchor_edge
+	handle_vertical_ratio = previous.handle_vertical_ratio
+	handle_horizontal_ratio = previous.handle_horizontal_ratio
+	expanded_size = previous.expanded_size
+	_size_fraction = previous._size_fraction
+	set_icon_scale(previous.get_icon_scale())
+	set_pinned(previous.is_pinned())
+	_apply_geometry(_rect_for(_expanded))
+
+func set_shift_active(active: bool) -> void:
+	_enabled = active
+	_collapse_at = -1
+	if active and _use_os_window and _window:
+		_apply_geometry(_geometry)
+		_set_3d_disabled(_original_disable_3d if _expanded else true)
+		_window.unfocusable = not _expanded
+		_mouse_inside = _geometry.has_point(DisplayServer.mouse_get_position())
+
 func _on_mouse_entered() -> void:
 	if not _enabled or _transitioning:
 		return
@@ -532,6 +575,12 @@ func _refresh_screen_rect() -> bool:
 	_screen_rect = rect
 	return changed
 
+func _set_3d_disabled(disabled: bool) -> void:
+	_window.disable_3d = disabled
+	# The desktop surface shows this table as a texture. Collapsing only the
+	# native window's 3D would leave the table behind the transparent mascot.
+	if get_viewport() is SubViewport: get_viewport().disable_3d = disabled
+
 func _apply_geometry(rect: Rect2i) -> void:
 	_geometry = rect
 	if _use_os_window and _window:
@@ -571,7 +620,7 @@ func _start_transition(expanded: bool) -> void:
 	if expanded:
 		_expanded = true
 		if _use_os_window:
-			_window.disable_3d = true if _snapshot else _original_disable_3d
+			_set_3d_disabled(true if _snapshot else _original_disable_3d)
 		if not previous:
 			expanded_changed.emit(true)
 	if not _use_os_window or not animations_enabled:
@@ -618,7 +667,7 @@ func _finish_transition(expanded: bool) -> void:
 	_collapse_at = -1
 	_apply_geometry(_rect_for(expanded))
 	if _use_os_window:
-		_window.disable_3d = _original_disable_3d if expanded else true
+		_set_3d_disabled(_original_disable_3d if expanded else true)
 		if not expanded:
 			_window.unfocusable = true
 	if changed:

@@ -329,7 +329,7 @@ class Xufei(NativePainter):
         if t>=4.22:return self.original.copy()
         c=self.background.copy()
         ao=2*math.pi*ease((t-.25)/3.8)
-        ai=2*math.pi*ease((t-.72)/3.33)
+        inner_angle=2*math.pi*ease((t-.72)/3.33)
         # Native loops themselves are the only objects transformed: their
         # centers remain fixed. Independent motion marks remain original.
         c.alpha_composite(affine_pose(self.outer,self.center,angle=ao))
@@ -338,7 +338,7 @@ class Xufei(NativePainter):
         c.alpha_composite(affine_pose(self.wallet_pose(fear),(576,645),dx=58*trial,dy=-46*trial))
         # Inner loop is in front of the trying wallet, making the obstruction
         # legible instead of letting its edge cut through the arrow.
-        c.alpha_composite(affine_pose(self.inner,self.center,angle=ai))
+        c.alpha_composite(affine_pose(self.inner,self.center,angle=inner_angle))
         return c
 
 

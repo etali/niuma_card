@@ -40,9 +40,17 @@ def save(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
 
 
+def cards_file(project):
+    current = project / "data/on_work_cards.json"
+    return current if current.is_file() else project / "data/cards.json"
+
+
 def fingerprint(project):
     files = sorted((project / "engine").glob("*.gd"))
-    files += [project / "data/cards.json", project / "data/bot.json",
+    bot_file = project / "data/on_work_bot.json"
+    if not bot_file.is_file():
+        bot_file = project / "data/bot.json"  # Pre-merge baseline checkout.
+    files += [cards_file(project), bot_file,
               project / "tools/eval_report.gd", project / "tools/balance/scoring.gd"]
     return {str(p.relative_to(project)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
 
@@ -128,7 +136,9 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     args.output = args.output.resolve()
     source_before = {label: fingerprint(project) for label, project in projects.items()}
-    if source_before["baseline"]["data/cards.json"] != source_before["optimized"]["data/cards.json"]:
+    deck_hashes = {source_before[label][str(cards_file(project).relative_to(project))]
+                   for label, project in projects.items()}
+    if len(deck_hashes) != 1:
         raise RuntimeError("卡表不同，不能作为等价性能对照")
     for project in projects.values():
         target = project / "tools/bot_equivalence_probe.gd"
@@ -190,7 +200,7 @@ def main():
                 output = args.output / (tag + ".json")
                 request = args.output / (tag + "-request.json")
                 save(request, {"schema": "manual-balance-request-v1",
-                               "cards_path": relative_path(projects["baseline"] / "data/cards.json", project),
+                               "cards_path": relative_path(cards_file(projects["baseline"]), project),
                                "output_path": relative_path(output, project),
                                "progress_path": relative_path(args.output / (tag + "-progress.json"), project),
                                "options": {"pairs": 1, "max_rounds": 4, "seed_start": 1001,

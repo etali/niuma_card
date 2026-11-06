@@ -11,7 +11,7 @@ func _initialize() -> void:
 		quit(2)
 		return
 	CardDB.ensure_loaded()
-	BOTConfig._source = "res://data/bot.json"
+	BOTConfig._source = BOTConfig.PATH
 	var loaded := Tape.load_from(args[0])
 	if not loaded.get("ok",false):
 		printerr(loaded)

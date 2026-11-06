@@ -15,7 +15,6 @@ static func replace(previous: Node, session: RefCounted) -> void:
 	next.replay_session = session
 	next.force_drawer_layout = previous.force_drawer_layout
 	next.force_mobile_layout = previous.force_mobile_layout
-	next.force_web_layout = previous.force_web_layout
 	next.drawer_ui_scale = previous.drawer_ui_scale
 	var muted: bool = previous.sfx.user_muted if is_instance_valid(previous.sfx) else false
 	var was_current := tree.current_scene == previous

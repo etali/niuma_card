@@ -102,7 +102,7 @@ func poll() -> void:
 			if not _sent_join:
 				_sent_join = true
 				_seen_at = Time.get_ticks_msec()   # 判活的起点是**握手那一刻**
-				_send(Protocol.join(room, StateCodec.table_hash(), resume_token))
+				_send(join_message())
 			while socket.get_available_packet_count() > 0:
 				_on_packet(socket.get_packet())
 			_beat()
@@ -110,6 +110,9 @@ func poll() -> void:
 			if not _closed:
 				_closed = true
 				_emit_closed()
+
+func join_message() -> Dictionary:
+	return Protocol.join(room, StateCodec.table_hash(), resume_token)
 
 var _sent_join := false
 

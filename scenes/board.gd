@@ -5,6 +5,9 @@
 class_name Board
 extends Node3D
 
+var card_catalog: Script = CardDB
+var combo_rules: Script = ComboRules
+
 ## 自由桌面：管理卡牌拖拽、堆叠成组、配方进度显示
 ## 规则：拖任意卡到另一组上 = 并入该组；拖组顶卡离开 = 整组移动；
 ##       拖组中间的卡 = 单独拆出该卡
@@ -201,6 +204,8 @@ var hover_blocked := Callable()
 ## 「凑满」，否则桌上提示和结算结果各说各话。读的是 Callable 而不是存一份字典：
 ## 重开、联网入座、录像、教程都会换掉控制器的 state，存下来的那份会过期
 var combo_mods := Callable()
+## 连续时间牌组在归位前统一层序；移动中的工作、收入等仍由自己的动作驱动。
+var align_stack_layers: Callable
 
 func _interaction_is_blocked() -> bool:
 	return interaction_blocked.is_valid() and bool(interaction_blocked.call())
@@ -1065,29 +1070,29 @@ func _hide_desc() -> void:
 ## mods：这张牌主人的角色修正（Roles.mods）。本方的牌传本方的，配方和产出按角色改过的数说；
 ## 购牌区和对手的牌不传，念卡面原值
 func describe_def(def_id: String, mods: Dictionary = {}) -> String:
-	var def: Dictionary = CardDB.get_def(def_id)
+	var def: Dictionary = card_catalog.get_def(def_id)
 	# 配方和攻击目标数的是牌（现金×4），每回合产出说的是资源总量（资金+7）。
 	# 两种名字都得按这条分，否则同一个配方在悬停里叫「资金×4」、在配方不足的报错里叫「现金×4」
 	match str(def.get("kind", "")):
 		CardDB.KIND_PRODUCT:
 			# 普通升级仍须同名；传说路线则可搭配同档的其他生产卡。
 			return "配齐%s×%d\n→ 每回合%s+%d\n%s%s" % [
-				CardDB.card_label(def["recipe_res"]), ComboRules.recipe_need(def, mods),
-				CardDB.res_label(def["output_res"]),
-				ComboRules.scaled_output(int(def["output_n"]), str(def["output_res"]), mods),
-				"资金结算时花掉" if def["recipe_res"] == CardDB.RES_CASH else "用户保留，持续生产",
+				card_catalog.card_label(def["recipe_res"]), combo_rules.recipe_need(def, mods),
+				card_catalog.res_label(def["output_res"]),
+				combo_rules.scaled_output(int(def["output_n"]), str(def["output_res"]), mods),
+				"资金结算时花掉" if def["recipe_res"] == card_catalog.RES_CASH else "用户保留，持续生产",
 				_upgrade_line(def_id)]
 		CardDB.KIND_ATTACK:
 			return "配齐%s×%d\n→ 移除对方%s×%d\n%s" % [
-				CardDB.card_label(def["recipe_res"]), ComboRules.recipe_need(def, mods),
-				CardDB.card_label(def["attack_res"]), int(def["attack_n"]),
-				"资金装弹时花掉" if def["recipe_res"] == CardDB.RES_CASH else "用户保留，参与攻击"]
+				card_catalog.card_label(def["recipe_res"]), combo_rules.recipe_need(def, mods),
+				card_catalog.card_label(def["attack_res"]), int(def["attack_n"]),
+				"资金装弹时花掉" if def["recipe_res"] == card_catalog.RES_CASH else "用户保留，参与攻击"]
 		CardDB.KIND_LEGEND:
 			var routes: PackedStringArray = []
 			for tier in [1, 2]:
 				var counts: PackedStringArray = []
-				for n in range(2, CardDB.max_upgrade_n() + 1):
-					if ComboRules.legend_upgrade_target(tier, n) == def_id:
+				for n in range(2, card_catalog.max_upgrade_n() + 1):
+					if combo_rules.legend_upgrade_target(tier, n) == def_id:
 						counts.append(str(n))
 				if not counts.is_empty():
 					routes.append("%s×%s" % [_production_stage_name(tier), "/".join(counts)])
@@ -1100,25 +1105,25 @@ func describe_def(def_id: String, mods: Dictionary = {}) -> String:
 				# 主语必须是**配方**而不是用户：写「用户视为满」会读成「用户变多了」，
 				# 而这张卡一张卡都不增（产出照旧按配方量算，席位也只占实放的那几张）。
 				# 「至少1张」是硬门槛，得写出来 —— 一张都不放时裂变救不了，
-				# 这是玩家最容易踩的那一脚（ComboRules._fission_fills 第三条）
+				# 这是玩家最容易踩的那一脚（combo_rules._fission_fills 第三条）
 				#
 				# 断成三行不是排版洁癖：写成两行时「组里至少1张即视为配方已满」
 				# 单行 2.66 > DESC_WIDTH 2.60，会在汉字之间断词（test_hover_desc 报红）。
 				# 宁可多一行也不删「至少」/「配方」——那两个词各挡一个误读
-				"user_fill": return "核心卡吃%s时：\n组里至少1张\n即视为配方已满" % CardDB.card_label(CardDB.RES_USER)
+				"user_fill": return "核心卡吃%s时：\n组里至少1张\n即视为配方已满" % card_catalog.card_label(card_catalog.RES_USER)
 				"output_x2": return "组内产出 ×2"
 				"attack_x2": return "组内攻击 ×2"
 				# 保护挡的是「被移除」，移除的单位是牌 → 卡名。
-				# buff_type 是 protect_<res> 拼出来的（CardDB.protect_key），这里反解回 res：
+				# buff_type 是 protect_<res> 拼出来的（card_catalog.protect_key），这里反解回 res：
 				# 两种资源共用一句模板，各写一遍时改措辞只会改到一半
 				"protect_user", "protect_cash":
-					return "入组立即保护\n组内%s不可被移除\n仅限配方所需张数" % CardDB.card_label(bt.trim_prefix("protect_"))
+					return "入组立即保护\n组内%s不可被移除\n仅限配方所需张数" % card_catalog.card_label(bt.trim_prefix("protect_"))
 		CardDB.KIND_UNIT:
 			# 单位卡本身没有效果，说明它是配方材料，否则悬停时这类卡完全没有反馈
-			return "配方材料：%s" % CardDB.card_label(str(def.get("res", "")))
+			return "配方材料：%s" % card_catalog.card_label(str(def.get("res", "")))
 		CardDB.KIND_SPECIAL:
 			# 行宽同样受 DESC_WIDTH 约束，按意群手动断行（见本函数开头那段）
-			match CardDB.special_type(def_id):
+			match card_catalog.special_type(def_id):
 				CardDB.SPECIAL_GRAB:
 					return "拖到购牌区任一张牌上\n→ 直接拿走，不花现金\n用完即消失\n不能典当"
 				CardDB.SPECIAL_IDEA:
@@ -1131,16 +1136,16 @@ func _production_stage_name(tier: int) -> String:
 
 ## 普通升级与传说合成分开说明；张数和折算率均由真实规则派生。
 func _upgrade_line(def_id: String) -> String:
-	var def: Dictionary = CardDB.get_def(def_id)
+	var def: Dictionary = card_catalog.get_def(def_id)
 	var near := ""
 	var legend_ns: PackedStringArray = []
 	var tier := int(def.get("tier", 0))
-	for n in range(2, CardDB.max_upgrade_n() + 1):
-		var target := ComboRules.upgrade_target(def_id, n)
-		if def.get("kind", "") == CardDB.KIND_PRODUCT and ComboRules.legend_upgrade_target(tier, n) != "":
+	for n in range(2, card_catalog.max_upgrade_n() + 1):
+		var target: String = combo_rules.upgrade_target(def_id, n)
+		if def.get("kind", "") == CardDB.KIND_PRODUCT and combo_rules.legend_upgrade_target(tier, n) != "":
 			legend_ns.append(str(n))
-		if target != "" and CardDB.get_def(target).get("kind", "") != CardDB.KIND_LEGEND and near == "":
-			near = "\n同名×%d → %s" % [n, CardDB.card_name(target)]
+		if target != "" and card_catalog.get_def(target).get("kind", "") != CardDB.KIND_LEGEND and near == "":
+			near = "\n同名×%d → %s" % [n, card_catalog.card_name(target)]
 	if not legend_ns.is_empty():
 		near += "\n%s\n×%s → 传说卡\n同名异名均可\n张数须精确\n不能夹杂其他牌" % [_production_stage_name(tier), "/".join(legend_ns)]
 	return near
@@ -1151,7 +1156,7 @@ func _upgrade_line(def_id: String) -> String:
 ## 现金卡不可典当（pawn_value 0），不写这一行免得白板上多一句「+0」
 func hover_desc_text(def_id: String, mods: Dictionary = {}) -> String:
 	var t := describe_def(def_id, mods)
-	var pawn := CardDB.pawn_value(def_id)
+	var pawn: int = card_catalog.pawn_value(def_id)
 	if pawn <= 0:
 		return t
 	return ("典当 +%d" % pawn) if t == "" else "%s\n典当 +%d" % [t, pawn]
@@ -1446,7 +1451,7 @@ func _market_payment_group(market: CardEntity, pos: Vector3) -> Variant:
 	var group: Variant = _nearest_group(pos, [market])
 	if not _is_cash_group(group) or not _market_drop_is_own(pos):
 		return null
-	var price := int(CardDB.get_def(market.def_id).get("price", 0))
+	var price := int(card_catalog.get_def(market.def_id).get("price", 0))
 	var members: Array = group["cards"]
 	if members.size() < price:
 		return null
@@ -1454,7 +1459,7 @@ func _market_payment_group(market: CardEntity, pos: Vector3) -> Variant:
 
 func _is_cash_group(group: Variant) -> bool:
 	return group != null and not group["cards"].is_empty() and group["cards"].all(func(card):
-		return is_instance_valid(card) and card.draggable and not card.is_market and card.def_id == CardDB.RES_CASH)
+		return is_instance_valid(card) and card.draggable and not card.is_market and card.def_id == card_catalog.RES_CASH)
 
 func _market_drop_is_own(pos: Vector3) -> bool:
 	if pawn_pos != Vector3.INF and Vector2(pos.x - pawn_pos.x, pos.z - pawn_pos.z).length() < PAWN_RADIUS:
@@ -1574,19 +1579,19 @@ func _update_group_progress(g, eval: Dictionary) -> void:
 ##
 ## 倍数**不看 eval**：eval 对没凑满的组给 output_n=0，而玩家把 996 拖进来的
 ## 那一刻配方通常还没满，正是最需要看到「×2」的时刻。所以走
-## ComboRules.effect_multipliers（只问「组里有没有那张 Buff」），
+## combo_rules.effect_multipliers（只问「组里有没有那张 Buff」），
 ## 和 _group_progress 的 0/N 一起读才是完整的一句话：「凑满后产 2」
 func _push_effect_mult(g) -> void:
 	var data: Array = []
 	for c in g["cards"]:
 		data.append({ "uid": c.uid, "def_id": c.def_id })
-	var mult: Dictionary = ComboRules.effect_multipliers(data)
+	var mult: Dictionary = combo_rules.effect_multipliers(data)
 	for c in g["cards"]:
 		if not c.has_effect_badge():
 			continue
 		# 产出卡吃 output_x2、攻击卡吃 attack_x2，各认自己那一路：
 		# 一个组里同时放 996 和热搜时，两张核心不该互相串台
-		var k: String = CardDB.get_def(c.def_id).get("kind", "")
+		var k: String = card_catalog.get_def(c.def_id).get("kind", "")
 		if k == CardDB.KIND_PRODUCT:
 			c.set_effect_mult(int(mult["output"]))
 		elif k == CardDB.KIND_ATTACK:
@@ -1642,6 +1647,7 @@ const SIDE_MAX_ROWS := 6
 ## 于是第二张既看不见、清单也不提 —— 屏幕上和「只合出一张」一模一样。
 ## 按张判则出一行「独角兽 ×2」，跟资源摞的 ×N 同一个口径
 static func side_spec(cards: Array) -> Array:
+	var catalog: Script = CardDB
 	var n_user := 0
 	var n_cash := 0
 	var buffs: Array = []      # [def_id]，保持出现顺序
@@ -1651,10 +1657,11 @@ static func side_spec(cards: Array) -> Array:
 	for c in cards:
 		if not is_instance_valid(c):
 			continue
-		var def: Dictionary = CardDB.get_def(c.def_id)
+		catalog = c.card_catalog
+		var def: Dictionary = catalog.get_def(c.def_id)
 		match str(def.get("kind", "")):
 			CardDB.KIND_UNIT:
-				if def.get("res") == CardDB.RES_CASH:
+				if def.get("res") == catalog.RES_CASH:
 					n_cash += 1
 				else:
 					n_user += 1
@@ -1670,19 +1677,19 @@ static func side_spec(cards: Array) -> Array:
 				core_n[c.def_id] += 1
 	var out: Array = []
 	if n_user > 0:
-		out.append({ "tex": CardArt.res_icon_texture(CardDB.RES_USER), "text": "×%d" % n_user })
+		out.append({ "tex": CardArt.res_icon_texture(catalog.RES_USER, catalog), "text": "×%d" % n_user })
 	if n_cash > 0:
-		out.append({ "tex": CardArt.res_icon_texture(CardDB.RES_CASH), "text": "×%d" % n_cash })
+		out.append({ "tex": CardArt.res_icon_texture(catalog.RES_CASH, catalog), "text": "×%d" % n_cash })
 	# buff 卡按卡种分行：用它自己的图标（996 引擎和推送弹窗是两回事，
 	# 合成一个「buff ×2」等于没说）
 	for def_id in buffs:
-		out.append({ "tex": CardArt.icon_texture(def_id), "text": "×%d" % buff_n[def_id] })
+		out.append({ "tex": CardArt.icon_texture(def_id, catalog), "text": "×%d" % buff_n[def_id] })
 	var core_total := 0
 	for def_id in cores:
 		core_total += int(core_n[def_id])
 	if core_total >= 2:
 		for def_id in cores:
-			out.append({ "tex": CardArt.icon_texture(def_id),
+			out.append({ "tex": CardArt.icon_texture(def_id, catalog),
 				"text": "×%d" % core_n[def_id] })
 	# 封顶：留前 SIDE_MAX_ROWS-1 行，其余折成一行「还有几种」。
 	# 折行只说数目、不借谁的图标 —— 借了就是拿一张卡的脸指代另外几张卡
@@ -1721,8 +1728,41 @@ static func _stack_offset_of(g, i: int) -> Vector3:
 		return compact_offset(g["cards"].size(), i)
 	return Vector3(STACK_GAP.x * i, ladder_y(i), float(g.get("z_gap", STACK_GAP.z)) * i)
 
-## 重建 / 摆放某组的侧边清单。收拢态才画，其余情况一律清掉
+var _shift_gather := 0.0
+
+## 清单和实体牌分开排版。只有换班时让图标和数量跟着移动中的摞顶收进去。
+func set_shift_gather(amount: float) -> void:
+	if _shift_gather == 0.0 and amount == 0.0: return
+	_shift_gather = amount
+	if amount > 0.0: _hide_desc()
+	for g in groups: _pose_side(g)
+	for g in _ext_side.values(): _pose_side(g)
+
+func _pose_side(g: Dictionary) -> void:
+	var layer: Node3D = g.get("side_layer")
+	if not is_instance_valid(layer): return
+	var shrink := 1.0 - smoothstep(0.0, 0.48, _shift_gather)
+	layer.visible = shrink > 0.001
+	if not layer.visible: return
+	if _shift_gather == 0.0:
+		layer.transform = Transform3D.IDENTITY
+		return
+	var top: CardEntity = g.cards[_top_index(g)]
+	if not is_instance_valid(top) or not is_instance_valid(top._visual):
+		layer.hide()
+		return
+	var anchor := to_local(top.global_position)
+	var moving := to_local(top._visual.global_position)
+	layer.transform = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * shrink), moving - anchor * shrink)
+
+## 重建 / 摆放某组的侧边清单。联机同步中即使重建清单，也先按静止桌面排好再套用当前动画。
 func _sync_side(g, at: Vector3, pin_y := false) -> void:
+	var layer: Node3D = g.get("side_layer")
+	if is_instance_valid(layer) and _shift_gather > 0.0: layer.transform = Transform3D.IDENTITY
+	_layout_side(g, at, pin_y)
+	if _shift_gather > 0.0: _pose_side(g)
+
+func _layout_side(g, at: Vector3, pin_y := false) -> void:
 	if not g.get("compact", false) or g["cards"].size() < 2 or at == Vector3.INF:
 		_clear_side(g)
 		return
@@ -1738,7 +1778,7 @@ func _sync_side(g, at: Vector3, pin_y := false) -> void:
 	if g.get("side_sig", "") != sig:
 		var before: Dictionary = g.get("side_counts", {})
 		_clear_side(g)
-		g["side"] = _build_side(self, spec)
+		g["side"] = _build_side(g, spec)
 		g["side_sig"] = sig
 		g["side_counts"] = _side_counts(spec)
 		# 资源到账：哪一行的「×N」变大了，那一行就弹一下，读得出钱刚落进这一摞。
@@ -1783,7 +1823,11 @@ func _pop_side_row(nodes: Array, row: int) -> void:
 ## 不铺衬底：这一列贴着摞的右沿、落在空桌面上，衬底是块纯白硬边矩形，
 ## 桌面上就多出一块跟任何卡都不搭的白板。图标和数字自己带浅色描边就够托出来了
 ## （悬停说明那块衬底留着——它压在货架卡的线条上，不垫会两层黑线糊成一团）
-static func _build_side(parent: Node3D, spec: Array) -> Array:
+func _build_side(group: Dictionary, spec: Array) -> Array:
+	var layer := Node3D.new()
+	layer.name = "StackSide"
+	add_child(layer)
+	group["side_layer"] = layer
 	var out: Array = []
 	for row in spec:
 		# 图标可能缺素材（icon_ 那张没生成）：那一行只剩数字，不留空位
@@ -1797,7 +1841,7 @@ static func _build_side(parent: Node3D, spec: Array) -> Array:
 			ic.rotation_degrees = Vector3(-90, 0, 0)
 			ic.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 			ic.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
-			parent.add_child(ic)
+			layer.add_child(ic)
 		out.append(ic)
 		var lb := Label3D.new()
 		lb.text = str(row["text"])
@@ -1814,7 +1858,7 @@ static func _build_side(parent: Node3D, spec: Array) -> Array:
 		lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		lb.autowrap_mode = TextServer.AUTOWRAP_OFF
 		lb.rotation_degrees = Vector3(-90, 0, 0)
-		parent.add_child(lb)
+		layer.add_child(lb)
 		out.append(lb)
 	return out
 
@@ -1862,9 +1906,11 @@ func _place_side(nodes: Array, rows: int, at: Vector3, pin_y := false) -> void:
 		lb.global_position = Vector3(text_x, y, z)
 
 func _clear_side(g) -> void:
-	for n in g.get("side", []):
-		if n != null and is_instance_valid(n):
-			n.queue_free()
+	var layer: Node3D = g.get("side_layer")
+	if is_instance_valid(layer):
+		layer.hide()
+		layer.queue_free()
+	g.erase("side_layer")
 	g["side"] = []
 	g["side_sig"] = ""
 
@@ -1920,21 +1966,21 @@ static func reset_recipe_progress(c: CardEntity) -> void:
 ## 组内配方进度：返回 {have, need}；无配方核心返回 need=0
 func _group_progress(g) -> Dictionary:
 	for c in g["cards"]:
-		var def: Dictionary = CardDB.get_def(c.def_id)
+		var def: Dictionary = card_catalog.get_def(c.def_id)
 		if def.get("kind") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
-			var need: int = ComboRules.recipe_need(def, card_mods(c))
+			var need: int = combo_rules.recipe_need(def, card_mods(c))
 			var res: String = def.get("recipe_res", "")
 			if need == 0:
 				continue
 			var have := 0
 			var fill := false   # 裂变鬼才：有一张就算配方满（只对用户配方）
 			for c2 in g["cards"]:
-				var d2: Dictionary = CardDB.get_def(c2.def_id)
+				var d2: Dictionary = card_catalog.get_def(c2.def_id)
 				if d2.get("kind") == CardDB.KIND_UNIT and d2.get("res") == res:
 					have += 1
-				elif d2.get("buff_type", "") == "user_fill" and res == CardDB.RES_USER:
+				elif d2.get("buff_type", "") == "user_fill" and res == card_catalog.RES_USER:
 					fill = true
-			# 墨点进度必须和 ComboRules._fission_fills 同判据，
+			# 墨点进度必须和 combo_rules._fission_fills 同判据，
 			# 否则会出现「墨点 1/7、引擎认为已满」
 			if fill and have >= 1:
 				have = need
@@ -1971,10 +2017,11 @@ func _layout_group(g, origin := Vector3.INF) -> bool:  # 返回: 这次重排是
 	for i in n:
 		offsets.append(_stack_offset(g, i))
 	base = clamp_player_position(base, offsets)
+	if align_stack_layers.is_valid(): align_stack_layers.call(g["cards"], offsets)
 	for i in n:
 		var c: CardEntity = g["cards"][i]
 		c.freeze = true
-		_move_to(c, base + _stack_offset(g, i))
+		_move_to(c, base + (offsets[i] as Vector3))
 	# 进度条按「重排后最上面那张的位置」定位：此刻 tween 还没跑完，
 	# 读实时坐标会把进度条留在鼠标松手的地方
 	return refresh_group(g, base + _stack_offset(g, _top_index(g)))
@@ -2001,6 +2048,10 @@ func _move_to(c: CardEntity, to: Vector3) -> void:
 	# 保持原有理牌速度与回弹节奏；穿模由浮层高度和深度测试处理。
 	var tw := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.tween_property(c, "global_position", to, 0.18)
+	if align_stack_layers.is_valid() and c.global_position.y > to.y:
+		# A held stack can land from DRAG_HEIGHT. Keep the horizontal spring
+		# while its shared height settles without rebounding below the felt.
+		tw.parallel().tween_property(c, "global_position:y", to.y, 0.18).set_trans(Tween.TRANS_QUAD)
 	_move_tw[c] = { "tw": tw, "to": to }
 
 ## 掐掉某张卡在飞的归位补间。snap = 顺手把它按到补间的终点：
@@ -2183,8 +2234,8 @@ func refresh_group(g, top_pos := Vector3.INF) -> bool:  # 返回: 这次更新�
 	# 无核心卡（纯资源摞/整理摞）：没有配方可言，不写进度
 	var has_core := false
 	for c in g["cards"]:
-		var k: String = CardDB.get_def(c.def_id).get("kind", "")
-		if k in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK, CardDB.KIND_LEGEND] or ComboRules.is_wild(c.def_id):
+		var k: String = card_catalog.get_def(c.def_id).get("kind", "")
+		if k in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK, CardDB.KIND_LEGEND] or combo_rules.is_wild(c.def_id):
 			has_core = true
 			break
 	if not has_core:
@@ -2197,7 +2248,7 @@ func refresh_group(g, top_pos := Vector3.INF) -> bool:  # 返回: 这次更新�
 	var data: Array = []
 	for c in g["cards"]:
 		data.append({ "uid": c.uid, "def_id": c.def_id })
-	var eval := ComboRules.evaluate(data, group_mods(g["cards"]))
+	var eval: Dictionary = combo_rules.evaluate(data, group_mods(g["cards"]))
 
 	# 配方凑满：整条牌列金色高亮；首次凑满时发信号（音效提示）
 	var is_valid: bool = eval["valid"]
@@ -2245,7 +2296,7 @@ func _cards_valid(group_cards: Array) -> bool:
 		if not is_instance_valid(c):
 			return false
 		data.append({ "uid": c.uid, "def_id": c.def_id })
-	return bool(ComboRules.evaluate(data, group_mods(group_cards))["valid"])
+	return bool(combo_rules.evaluate(data, group_mods(group_cards))["valid"])
 
 ## g 是不是这次拎牌留在桌上的那半截（比对对象身份：
 ## Dictionary 的 == 是逐键深比较，两个内容一样的组会被判成同一个）
@@ -2301,7 +2352,7 @@ func make_group(group_cards: Array, compact := false, was_valid: Variant = null,
 		var data: Array = []
 		for c in g["cards"]:
 			data.append({"uid": c.uid, "def_id": c.def_id})
-		g["upgrade_target"] = _upgrade_target(ComboRules.evaluate(data, group_mods(g["cards"]))) if g["was_valid"] else ""
+		g["upgrade_target"] = _upgrade_target(combo_rules.evaluate(data, group_mods(g["cards"]))) if g["was_valid"] else ""
 	return g
 
 # ---------- 双击收拢/摊开 ----------
@@ -2342,7 +2393,7 @@ static func core_first_order(cards: Array) -> Array:
 	for c in cards:
 		if not is_instance_valid(c):
 			continue
-		match str(CardDB.get_def(c.def_id).get("kind", "")):
+		match str(c.card_catalog.get_def(c.def_id).get("kind", "")):
 			CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK, CardDB.KIND_LEGEND:
 				core.append(c)
 			CardDB.KIND_BUFF:

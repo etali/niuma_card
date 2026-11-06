@@ -20,7 +20,7 @@ import tempfile
 import check_balance_numbers as checker
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-INPUTS = ("data/cards.json", "data/bot.json", "engine/bot_turn_strategy.gd",
+INPUTS = ("data/on_work_cards.json", "data/on_work_bot.json", "engine/bot_turn_strategy.gd",
           "balance.md", "README.md", "bot.md")
 
 
@@ -102,8 +102,8 @@ def schema_argument(key, index, value):
 
 def probes(snapshot):
     """(变异说明, 只操作传入临时目录的函数, 必须出现的诊断片段)。"""
-    card = lambda path, value: json_edit("data/cards.json", path, value)
-    bot = lambda path, value: json_edit("data/bot.json", path, value)
+    card = lambda path, value: json_edit("data/on_work_cards.json", path, value)
+    bot = lambda path, value: json_edit("data/on_work_bot.json", path, value)
     checks = [
         ("模拟上限展示漂移", bot(("simulation", "max_rounds"), 60), "simulation.max_rounds应是 60"),
         ("独角兽回收价展示漂移", card(("dujiaoshou", "pawn"), 25), "独角兽的回收价应是 独角兽 25"),
@@ -124,7 +124,7 @@ def probes(snapshot):
         ("未注册的配置键", bot(("search", "bot", "unknown_knob"), 1), "包含未注册参数：unknown_knob"),
     ]
     schema = checker.read_parameter_schema(snapshot["engine/bot_turn_strategy.gd"])
-    settings = json.loads(snapshot["data/bot.json"])["search"]["bot"]
+    settings = json.loads(snapshot["data/on_work_bot.json"])["search"]["bot"]
     for key, spec in schema.items():
         raw = settings.get(key, spec["strength_points"])
         expected = checker.document_values(raw, spec)
@@ -191,7 +191,7 @@ def sequence(*edits):
 
 def json_delete(key):
     def edit(root):
-        target = root / "data/bot.json"
+        target = root / "data/on_work_bot.json"
         data = json.loads(target.read_text())
         data["search"]["bot"].pop(key, None)
         target.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
@@ -200,9 +200,9 @@ def json_delete(key):
 
 def positive_probes(snapshot):
     """合法覆盖与 fallback 必须通过，避免检查器错误禁止调参。"""
-    bot = lambda key, value: json_edit("data/bot.json", ("search", "bot", key), value)
-    card = lambda path, value: json_edit("data/cards.json", path, value)
-    cards = json.loads(snapshot["data/cards.json"])
+    bot = lambda key, value: json_edit("data/on_work_bot.json", ("search", "bot", key), value)
+    card = lambda path, value: json_edit("data/on_work_cards.json", path, value)
+    cards = json.loads(snapshot["data/on_work_cards.json"])
     return [
         ("改生产价格不改文档", card(("yunketang", "price"), cards["yunketang"]["price"] + 1)),
         ("改生产配方不改文档", card(("yunketang", "recipe_n"), cards["yunketang"]["recipe_n"] + 1)),
@@ -268,8 +268,8 @@ def main():
             if isinstance(value, list):
                 return [shift_numbers(child) for child in value]
             return value + 1 if isinstance(value, (int, float)) and not isinstance(value, bool) else value
-        varied = shift_numbers(json.loads(snapshot["data/cards.json"]))
-        (root / "data/cards.json").write_text(json.dumps(varied, ensure_ascii=False))
+        varied = shift_numbers(json.loads(snapshot["data/on_work_cards.json"]))
+        (root / "data/on_work_cards.json").write_text(json.dumps(varied, ensure_ascii=False))
         errors, _, _ = checker.check_card_table.validate(root)
         if errors:
             failures.append("全卡表数字扰动后符号引用不应失效：" + "；".join(errors))

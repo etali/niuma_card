@@ -77,6 +77,9 @@ func _t1_every_type_survives_a_roundtrip() -> void:
 	var snap := _fake_snapshot()
 	# 用构造函数造，不是手写字典：这样「构造函数少写一个字段」也在判据里
 	var samples := {
+		Protocol.WORK_ACTION: Protocol.work_action({"op": "resign"}),
+		Protocol.WORK_FRAME: Protocol.work_frame("b64"),
+		Protocol.WORK_SEAT: Protocol.work_seat(SEAT_B, "token", "b64"),
 		Protocol.JOIN: Protocol.join("ab12", "deadbeef", "tok-1"),
 		Protocol.INTENT: Protocol.intent(Intent.buy(SEAT_A, 2)),
 		Protocol.DRAG: Protocol.drag(9, Protocol.DRAG_MOVE, [60, 61], 0.25, 0.75),

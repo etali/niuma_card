@@ -167,30 +167,33 @@ func bind(main: Node) -> void:
 	if _main.save_notice:
 		_register_external_panel(_main.save_notice)
 	if _main.drawer_window != null:
-		_handle = Mascot.new()
-		_handle.delegate_pointer = true
-		_handle.setup(_main.drawer_window.get_handle_texture())
-		_handle.set_render_scale(_main.drawer_window.get_handle_scale())
-		_handle.activated.connect(_main.drawer_window.activate_handle)
-		_handle.pointer_pressed.connect(_main.drawer_window.handle_press)
-		_handle.pointer_moved.connect(func(_p: Vector2): _main.drawer_window.handle_move())
-		_handle.pointer_released.connect(_main.drawer_window.handle_release)
-		_handle.hide()
-		add_child(_handle)
+		_bind_window_handle()
 		_handle.set_first_run_hint(not TutorialProgress.handle_opened())
-		_main.drawer_window.handle_hovered.connect(_handle.set_hovered)
-		_main.drawer_window.handle_size_changed.connect(_on_handle_size_changed)
-		_main.drawer_window.attention_requested.connect(_handle.greet)
-		_main.drawer_window.pinned_changed.connect(func(_pinned: bool): _refresh_pin_button())
 	relayout()
 	get_viewport().size_changed.connect(_on_size_changed)
 	_main.child_entered_tree.connect(_on_main_child_entered)
 	call_deferred("relayout")
 
+func _bind_window_handle() -> void:
+	_handle = Mascot.new()
+	_handle.delegate_pointer = true
+	_handle.setup(_main.drawer_window.get_handle_texture())
+	_handle.set_render_scale(_main.drawer_window.get_handle_scale())
+	_handle.activated.connect(_main.drawer_window.activate_handle)
+	_handle.pointer_pressed.connect(_main.drawer_window.handle_press)
+	_handle.pointer_moved.connect(func(_p: Vector2): _main.drawer_window.handle_move())
+	_handle.pointer_released.connect(_main.drawer_window.handle_release)
+	_handle.hide()
+	add_child(_handle)
+	_main.drawer_window.handle_hovered.connect(_handle.set_hovered)
+	_main.drawer_window.handle_size_changed.connect(_on_handle_size_changed)
+	_main.drawer_window.attention_requested.connect(_handle.greet)
+	_main.drawer_window.pinned_changed.connect(func(_pinned: bool): _refresh_pin_button())
+
 ## 所有 Control 保持单位变换。DPI 与窗口档位只影响实际字号和布局像素，
 ## 不再放大小字号字形纹理。设置页、联网、记录和录像通知共用这一套。
 func _responsive_factor() -> float:
-	if _main != null and (_main.mobile_mode or _main.web_mode):
+	if _main != null and _main.mobile_mode:
 		return maxf(0.55, minf(_last_size.y / 540.0, _last_size.x / 960.0))
 	var logical := _last_size / maxf(_ui_scale, 1.0)
 	var ratio := minf(logical.x / 1280.0, logical.y / 800.0) if logical.x > 0 else 1.0
@@ -473,26 +476,14 @@ func _adopt(control: Control, parent: Node) -> void:
 
 func _build_header() -> void:
 	var old_panel: Control = _main.lbl_round.get_parent().get_parent()
-	_header = PanelContainer.new()
-	_header.name = "DrawerHeader"
-	_header.set_meta("drawer_margin_base", 6)
+	var chrome := preload("res://scenes/table_chrome.tscn").instantiate()
+	add_child(chrome)
+	_header = chrome.get_node("DrawerHeader")
+	_footer = chrome.get_node("DrawerFooter")
 	_header.add_theme_stylebox_override("panel", _style(Palette.get_color("world", "table_frame"), 6))
-	add_child(_header)
-	_header_rows = VBoxContainer.new()
-	_header_rows.add_theme_constant_override("separation", 4)
-	_header.add_child(_header_rows)
-	var title_row := HBoxContainer.new()
-	_title_row = title_row
-	title_row.add_theme_constant_override("separation", 4)
-	_header_rows.add_child(title_row)
-	var brand := TextureRect.new()
-	brand.name = "BrandMascot"
-	brand.texture = load("res://assets/app_icon.png")
-	brand.custom_minimum_size = Vector2(32, 32)
-	brand.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	brand.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	brand.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title_row.add_child(brand)
+	_header_rows = _header.get_node("Rows")
+	_title_row = _header_rows.get_node("TitleRow")
+	var title_row := _title_row
 	title_row.add_child(_label("牛马牌", 24))
 	_adopt(_main.lbl_round, title_row)
 	_main.lbl_round.set_meta("drawer_font_base", UI_FONT_BODY)
@@ -505,7 +496,7 @@ func _build_header() -> void:
 	_icon_group = HBoxContainer.new()
 	_icon_group.name = "HeaderIconGroup"
 	_icon_group.add_theme_constant_override("separation", 4)
-	_icon_group.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_icon_group.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_row.add_child(_icon_group)
 	_menu = MenuButton.new()
 	_menu.text = ""
@@ -783,13 +774,8 @@ func _layout_tutorial(available: Rect2) -> void:
 	tutorial.place_in(available)
 
 func _build_footer() -> void:
-	_footer = PanelContainer.new()
-	_footer.name = "DrawerFooter"
 	_footer.add_theme_stylebox_override("panel", _style(Palette.get_color("world", "table_frame"), 10))
-	add_child(_footer)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	_footer.add_child(row)
+	var row: HBoxContainer = _footer.get_node("Actions")
 	# 存录像从底栏移到“选项”，给牌桌留下完整高度。按钮对象仍保留，
 	# 这样 F5 和既有自动化测试继续复用 main._save_replay。
 	_main.btn_save.hide()
@@ -814,6 +800,12 @@ func _build_footer() -> void:
 	_main.lbl_msg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_main.lbl_msg.custom_minimum_size = Vector2.ZERO
 	_main.lbl_msg.tooltip_text = ""
+	_build_mode_actions(row)
+	_main.msg_log.hide()
+	_main.msg_log.scale = Vector2.ONE
+	_main.msg_log._frame.minimum_size_changed.connect(_position_log)
+
+func _build_mode_actions(row: HBoxContainer) -> void:
 	_build_role_button(row)
 	_rulebook_button = _button(TutorialCatalog.ui("hub.title"))
 	_rulebook_button.name = "RulebookButton"
@@ -825,14 +817,14 @@ func _build_footer() -> void:
 	row.add_child(_end_tutorial_button)
 	_end_tutorial_button.hide()
 	_adopt(_main.btn_pass, row)
-	_main.btn_pass.size_flags_horizontal = Control.SIZE_SHRINK_END
-	_main.btn_pass.custom_minimum_size = Vector2(210, 44)
-	_main.btn_pass.set_meta("drawer_primary", true)
-	_main.btn_pass.set_meta("drawer_font_base", UI_FONT_BODY)
-	_main.btn_pass.add_theme_font_size_override("font_size", 23)
-	_main.msg_log.hide()
-	_main.msg_log.scale = Vector2.ONE
-	_main.msg_log._frame.minimum_size_changed.connect(_position_log)
+	_style_primary_table_action(_main.btn_pass)
+
+func _style_primary_table_action(button: Button) -> void:
+	button.size_flags_horizontal = Control.SIZE_SHRINK_END
+	button.set_meta("drawer_min_base", Vector2(210, 44))
+	button.set_meta("drawer_primary", true)
+	button.set_meta("drawer_font_base", UI_FONT_BODY)
+	_apply_button_theme(button)
 
 func _build_role_button(row: HBoxContainer) -> void:
 	_role_button = _button(Roles.tag(Roles.DEFAULT))
@@ -1165,7 +1157,7 @@ func _open_utility(id: int) -> void:
 		return
 	if id == 5:
 		_utility_title.text = "存录像"
-		var save := _button("下载当前录像" if _main.web_mode else "保存当前对局", 18)
+		var save := _button("保存当前对局", 18)
 		save.pressed.connect(_main._save_replay)
 		_utility_body.add_child(save)
 		_utility.show()
@@ -1351,20 +1343,6 @@ func show_record_result(path: String, steps: int, failed := false) -> void:
 	if not _utility.has_meta("source"):
 		notice.set_embedded(true)
 		_mount_frame(notice)
-	_apply_tree_theme(_utility)
-	_relayout_utility()
-
-func show_record_download(ok: bool) -> void:
-	if _active_utility_id != 5 or not _utility.visible:
-		_open_utility(5)
-	var status := _utility_body.get_node_or_null("DownloadStatus") as Label
-	if status == null:
-		status = _label("", UI_FONT_BODY)
-		status.name = "DownloadStatus"
-		status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		_utility_body.add_child(status)
-	status.text = "已发起录像下载，请在浏览器下载列表查看。" if ok else "浏览器下载不可用，请允许此页面下载文件后重试。"
-	status.set_meta("drawer_ink", Palette.semantic("success" if ok else "danger"))
 	_apply_tree_theme(_utility)
 	_relayout_utility()
 
@@ -1716,10 +1694,11 @@ func _theme_external_panel(panel: CanvasLayer) -> void:
 
 func _build_card_config_page() -> void:
 	_utility_title.text = "卡牌配置"
-	var intro := _label("单机和 BOT 对局可使用自定义 cards.json；联网时强制使用默认配置。选择后从下一局生效。", UI_FONT_BODY)
+	var info: Dictionary = _main.card_config_info()
+	var filename := str(info.get("filename", CardConfig.DEFAULT_PATH.get_file()))
+	var intro := _label(str(info.get("description", "单机和 BOT 对局可使用自定义上班卡表。联网使用默认配置。新选择从下一局生效。")), UI_FONT_BODY)
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_utility_body.add_child(intro)
-	var info: Dictionary = _main.card_config_info()
 	_card_config_status = _label("", UI_FONT_SMALL)
 	_card_config_status.name = "CardConfigStatus"
 	_card_config_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1734,7 +1713,7 @@ func _build_card_config_page() -> void:
 	_card_config_drop.name = "CardConfigDropZone"
 	_card_config_drop.custom_minimum_size = Vector2(0, 92)
 	_card_config_drop.mouse_filter = Control.MOUSE_FILTER_PASS
-	_card_config_drop.tooltip_text = "把 cards.json 拖到这里"
+	_card_config_drop.tooltip_text = "把 JSON 卡表拖到这里"
 	var drop_style := StyleBoxFlat.new()
 	drop_style.bg_color = Color(Palette.get_color("world", "background"), 0.72)
 	drop_style.border_color = Palette.get_color("card", "frame")
@@ -1742,9 +1721,7 @@ func _build_card_config_page() -> void:
 	drop_style.set_corner_radius_all(10)
 	drop_style.set_content_margin_all(12)
 	_card_config_drop.add_theme_stylebox_override("panel", drop_style)
-	var drop_label := _label("把 cards.json 拖到这里\n也可以点击下面的按钮选择文件", UI_FONT_BODY)
-	if _main.web_mode:
-		drop_label.text = "点击下面的按钮，从设备导入 cards.json。\n浏览器会保存所选配置，下次打开仍可使用。"
+	var drop_label := _label("把 JSON 卡表拖到这里\n也可以点击下面的按钮选择文件", UI_FONT_BODY)
 	drop_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	drop_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	drop_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1753,13 +1730,14 @@ func _build_card_config_page() -> void:
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 8)
 	_utility_body.add_child(buttons)
-	var choose := _button("选择 cards.json")
+	var choose := _button("选择卡表")
 	var restore := _button("使用默认")
 	var apply := _button("应用并重开")
 	buttons.add_child(choose)
 	buttons.add_child(restore)
 	buttons.add_child(apply)
-	var locked := bool(info["network_locked"])
+	var practice_locked := bool(info.get("practice_locked", false))
+	var locked := bool(info["network_locked"]) or practice_locked
 	var launch_locked := bool(info.get("launch_locked", false))
 	var replay_locked := bool(info.get("replay_locked", false))
 	choose.disabled = locked or launch_locked or replay_locked
@@ -1768,8 +1746,10 @@ func _build_card_config_page() -> void:
 	_card_config_drop.mouse_filter = Control.MOUSE_FILTER_IGNORE if locked or launch_locked or replay_locked else Control.MOUSE_FILTER_PASS
 	if replay_locked:
 		_card_config_status.text = "正在播放录像；请先点击“退出录像”，再修改卡牌配置。"
+	elif practice_locked:
+		_card_config_status.text = "请先结束练习，再修改正式对局的卡表。"
 	elif locked:
-		_card_config_status.text = "联网期间已锁定为默认 cards.json"
+		_card_config_status.text = "联网期间已锁定卡表"
 	elif launch_locked:
 		_card_config_status.text = "本次启动使用指定卡表（重开继续生效，不改变已保存的选择）：%s" % str(info["active"])
 	elif bool(info["pending"]):
@@ -1780,7 +1760,7 @@ func _build_card_config_page() -> void:
 	restore.pressed.connect(func():
 		var result: Dictionary = _main.clear_card_config()
 		_card_config_status.text = str(result["reason"])
-		_card_config_path.text = "默认 cards.json"
+		_card_config_path.text = "默认 " + filename
 	)
 	apply.pressed.connect(func():
 		var result: Dictionary = _main.apply_selected_card_config()
@@ -1805,7 +1785,7 @@ func handle_card_config_files(files: PackedStringArray) -> bool:
 		if str(path).get_extension().to_lower() == "json" and selected.is_empty():
 			selected = str(path)
 	if selected.is_empty():
-		_card_config_status.text = "请拖入 .json 文件，建议文件名为 cards.json"
+		_card_config_status.text = "请拖入 JSON 卡表文件"
 		return true
 	var result: Dictionary = _main.choose_card_config(selected)
 	_card_config_status.text = str(result["reason"])
@@ -1814,24 +1794,12 @@ func handle_card_config_files(files: PackedStringArray) -> bool:
 	return true
 
 func _open_card_config_file_dialog(status: Label, path: LineEdit) -> void:
-	if _main.web_mode:
-		_main.web_files.request_json(func(imported: Dictionary):
-			if not is_instance_valid(status) or not is_instance_valid(path) or imported.get("cancelled", false):
-				return
-			if not imported.get("ok", false):
-				status.text = str(imported.get("reason", "读取文件失败"))
-				return
-			var selected: Dictionary = _main.choose_card_config(imported["path"])
-			status.text = str(selected["reason"])
-			if selected.get("ok", false):
-				path.text = str(imported["name"]))
-		return
 	var dialog := FileDialog.new()
 	dialog.name = "CardConfigFileDialog"
 	dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	dialog.access = FileDialog.ACCESS_FILESYSTEM
-	dialog.add_filter("*.json", "cards.json")
-	dialog.title = "选择 cards.json"
+	dialog.add_filter("*.json", "JSON 卡表")
+	dialog.title = "选择卡表"
 	dialog.file_selected.connect(func(selected: String):
 		var result: Dictionary = _main.choose_card_config(selected)
 		status.text = str(result["reason"])
@@ -1844,9 +1812,9 @@ func _open_card_config_file_dialog(status: Label, path: LineEdit) -> void:
 	dialog.popup_centered_ratio(0.72)
 
 func _card_config_display_path(path: String) -> String:
-	if path.is_empty() or (_main.web_mode and path == CardConfig.DEFAULT_PATH):
-		return "默认 cards.json"
-	return path.get_file() if _main.web_mode else path
+	if path.is_empty():
+		return "默认 " + str(_main.card_config_info().get("filename", CardConfig.DEFAULT_PATH.get_file()))
+	return path
 
 func _build_details() -> void:
 	_detail = PanelContainer.new()
@@ -2212,7 +2180,11 @@ func _fit_header_width(available: float) -> void:
 		cell.size.x = width
 	_resources.custom_minimum_size.x = width * 2 + resources_gap
 	_header.custom_minimum_size = Vector2.ZERO
-	_header.size = Vector2(fixed_width + width * 2 + resources_gap, _header.get_combined_minimum_size().y)
+	# Keep the sign and utility buttons in the same place across both sets of
+	# readings. On narrow windows the common rail uses the available width.
+	var rail_width := minf(available, _px(880))
+	_header.size = Vector2(maxf(rail_width, fixed_width + width * 2 + resources_gap),
+		_header.get_combined_minimum_size().y)
 
 ## 主场景先生成完整读数；首行只显示余额，细目仍在对应标签的悬停提示内。
 ## 不把长括号折成第二行，待付归零的警告也保留在紧凑读数上。
