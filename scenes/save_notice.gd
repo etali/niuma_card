@@ -5,7 +5,7 @@
 class_name SaveNotice
 extends CanvasLayer
 
-## 存完录像之后报路径的那一小块面板（scenes/main.gd 的 HUD 与面板实现）。
+## 存完录像之后报路径的那一小块面板（scenes/on_work_main.gd 的 HUD 与面板实现）。
 ##
 ## 为什么不用 _show_message：那条路是**一行画在 3D 画面上的字**。
 ## 对「购入某卡」那类提示是对的（读一眼就完事），对一条绝对路径不行 ——
@@ -119,7 +119,7 @@ func _button(text: String, cb: Callable) -> Button:
 	return b
 
 ## 存成功了：报**绝对路径**。录像存在 `~/.niumapai_record` 底下
-## （engine/tape.gd），而 `~` 在各平台展开成什么不一样 ——
+## （engine/on_work_tape.gd），而 `~` 在各平台展开成什么不一样 ——
 ## 只念一句「存在 ~/.niumapai_record 里」的话玩家还得自己拼一遍
 func show_saved(abs_path: String, steps: int) -> void:
 	_title.text = "录像已存（%d 步）" % steps

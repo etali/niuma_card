@@ -4,7 +4,7 @@
 
 extends "res://tests/harness.gd"
 
-## 断线之后那道「回去的路」（scenes/main.gd 的 _offer_reconnect）。
+## 断线之后那道「回去的路」（scenes/on_work_main.gd 的 _offer_reconnect）。
 ##
 ## 被测的是**入口的可达性**，不是网络：打到一半网断了的人，屏幕上还有没有
 ## 一个能点的东西。这件事没有测的时候坏过一次 —— btn_net 是 begin_net_game
@@ -266,7 +266,7 @@ func _t6_guard_is_actually_wired() -> void:
 ## 抽屉入口藏在“选项”里，文字必须给完整路径；真实延迟到期后说明可查。
 func _t7_drawer_reconnect_guidance() -> void:
 	print("\n-- T7 抽屉给完整查看路径，延迟重连说明写进记录 --")
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	root.add_child(main)
 	_booted = main
@@ -317,7 +317,7 @@ func _t8_notice_projection_bounds() -> void:
 		root.size = Vector2i(1920, 1200)
 		root.content_scale_size = Vector2i.ZERO
 		root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-		var main: Node = load("res://scenes/main.tscn").instantiate()
+		var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 		main.force_drawer_layout = drawer
 		root.add_child(main)
 		_booted = main

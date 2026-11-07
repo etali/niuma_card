@@ -35,7 +35,7 @@ func _run() -> void:
 
 	var core := _card(world, board, 99000, "shuabuting", Vector3(0, 0.05, 1))
 	var members: Array = [core]
-	var recipe_n := int(CardDB.get_def(core.def_id)["recipe_n"])
+	var recipe_n := int(OnWorkCardDB.get_def(core.def_id)["recipe_n"])
 	for i in recipe_n:
 		members.append(_card(world, board, 99001 + i, "user", Vector3(0, 0.05, 1)))
 	var group := board.make_group(members, true)

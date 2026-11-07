@@ -14,16 +14,16 @@ func _initialize() -> void:
 func _run() -> void:
 	print("=== 收起抽屉时的对手状态回归 ===")
 	# 只改当前进程的搜索偏好；不保存、不碰玩家的偏好文件。
-	BOTSearch.set_pref_strength(0.0)
+	OnWorkBOTSearch.set_pref_strength(0.0)
 	await _opening_purchase_switches()
 	await _bot_first_hands_over()
 	await _bot_second_crosses_round()
 	await _attack_hands_over()
 	await _pawn_win_finishes_collapsed()
-	await _net_opening_purchase_switches(GameState.PLAYER)
-	await _net_opening_purchase_switches(GameState.BOT)
-	await _net_hands_over(GameState.PLAYER)
-	await _net_hands_over(GameState.BOT)
+	await _net_opening_purchase_switches(OnWorkState.PLAYER)
+	await _net_opening_purchase_switches(OnWorkState.BOT)
+	await _net_hands_over(OnWorkState.PLAYER)
+	await _net_hands_over(OnWorkState.BOT)
 	net_stop()
 	finish()
 
@@ -37,9 +37,9 @@ func _opening_purchase_switches() -> void:
 	_check_opening_hover(main, "仅展开收起不算开始行动")
 	main.drawer_window.pin()
 	var choice := -1
-	var cash: int = main.state.resource_count(main.my_seat, CardDB.RES_CASH)
+	var cash: int = main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH)
 	for i in main.state.market.size():
-		if int(CardDB.get_def(main.state.market[i]).get("price", 0)) < cash:
+		if int(OnWorkCardDB.get_def(main.state.market[i]).get("price", 0)) < cash:
 			choice = i
 			break
 	if not need(choice >= 0, "首回合市场中有玩家买得起的卡"):
@@ -47,7 +47,7 @@ func _opening_purchase_switches() -> void:
 		return
 	var wrong_pay: Array = []
 	for card in main.state.players[main.my_seat]["cards"]:
-		if str(card["def_id"]) == CardDB.unit_id(CardDB.RES_USER):
+		if str(card["def_id"]) == OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER):
 			wrong_pay.append(card["uid"])
 			break
 	var rejected: Dictionary = await main._try_buy(choice, wrong_pay)
@@ -129,18 +129,18 @@ func _attack_hands_over() -> void:
 	var main := await _boot_drawer()
 	var core := ""
 	var cheapest := 2147483647
-	for id in CardDB.all_cards():
-		var candidate: Dictionary = CardDB.get_def(id)
-		if (candidate.get("kind") == CardDB.KIND_ATTACK
-				and candidate.get("recipe_res") == CardDB.RES_USER
-				and candidate.get("attack_res") == CardDB.RES_CASH
+	for id in OnWorkCardDB.all_cards():
+		var candidate: Dictionary = OnWorkCardDB.get_def(id)
+		if (candidate.get("kind") == OnWorkCardDB.KIND_ATTACK
+				and candidate.get("recipe_res") == OnWorkCardDB.RES_USER
+				and candidate.get("attack_res") == OnWorkCardDB.RES_CASH
 				and int(candidate.get("recipe_n", 0)) < cheapest):
 			core = str(id)
 			cheapest = int(candidate["recipe_n"])
 	if not need(core != "", "攻击夹具有用户配方、攻击现金的核心卡"):
 		await _dispose(main)
 		return
-	var definition: Dictionary = CardDB.get_def(core)
+	var definition: Dictionary = OnWorkCardDB.get_def(core)
 	var attack_n := int(definition["attack_n"])
 	main.state.market.clear()
 	main.state.combos.clear()
@@ -161,7 +161,7 @@ func _attack_hands_over() -> void:
 	_check_status(main, "foe_attacking", "对手攻击中…", "BOT攻击")
 	var player_ready := await _until(func(): return main.board.attack_mode and paused)
 	check(player_ready, "BOT实际攻击完毕后交给玩家攻击，并在收起状态暂停")
-	check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == 2,
+	check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == 2,
 		"收起期间BOT攻击确实扣除了配置指定的现金数量")
 	_check_status(main, "your_attack", "轮到你攻击", "玩家攻击")
 	main.drawer_window.pin()
@@ -184,21 +184,21 @@ func _pawn_win_finishes_collapsed() -> void:
 	_small_local_fixture(main)
 	var legend_id := ""
 	var pawn_value := 0
-	for id in CardDB.all_cards():
-		if (CardDB.get_def(id).get("kind") == CardDB.KIND_LEGEND
-				and CardDB.pawn_value(id) > pawn_value):
+	for id in OnWorkCardDB.all_cards():
+		if (OnWorkCardDB.get_def(id).get("kind") == OnWorkCardDB.KIND_LEGEND
+				and OnWorkCardDB.pawn_value(id) > pawn_value):
 			legend_id = str(id)
-			pawn_value = CardDB.pawn_value(id)
+			pawn_value = OnWorkCardDB.pawn_value(id)
 	if not need(legend_id != "", "典当终局夹具包含可兑现的传说卡"):
 		await _dispose(main)
 		return
-	var win_cash := int(CardDB.game_rules()["win_cash"])
+	var win_cash := int(OnWorkCardDB.game_rules()["win_cash"])
 	var initial_cash := maxi(1, win_cash - pawn_value)
-	for i in initial_cash - main.state.resource_count(main.my_seat, CardDB.RES_CASH):
+	for i in initial_cash - main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH):
 		main.state.add_card(main.my_seat, "cash")
 	var legend: Dictionary = main.state.add_card(main.my_seat, legend_id)
 	main._respawn_all()
-	check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) < win_cash,
+	check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) < win_cash,
 		"典当前现金尚未达到配置胜利线")
 	var entity: CardEntity = main.entities[legend["uid"]]
 	main._on_dropped_on_pawn([entity])
@@ -224,7 +224,7 @@ func _net_opening_purchase_switches(mine: String) -> void:
 		await _dispose(main)
 		return
 	var local: NetTransport = pair[0] if pair[0].my_seat == mine else pair[1]
-	var room: NetRoom = _srv.rooms[room_code]
+	var room: OnWorkRoom = _srv.rooms[room_code]
 	room.state.draw_first = mine
 	room.phase.reset_for_round()
 	for peer in room.peers():
@@ -264,7 +264,7 @@ func _net_hands_over(mine: String) -> void:
 		return
 	var local: NetTransport = pair[0] if pair[0].my_seat == mine else pair[1]
 	var remote: NetTransport = pair[1] if pair[0].my_seat == mine else pair[0]
-	var room: NetRoom = _srv.rooms[room_code]
+	var room: OnWorkRoom = _srv.rooms[room_code]
 	# 固定双方轮换视角的起点，快照和阶段都经真实socket送达客户端。
 	room.state.draw_first = remote.my_seat
 	room.phase.reset_for_round()
@@ -284,7 +284,7 @@ func _net_hands_over(mine: String) -> void:
 	_check_status(main, "foe_acting", "等待对手行动", "%s视角远端行动" % mine)
 	_pump_done = false
 	net_pump_until(pair, func(): return _pump_done)
-	var result: Dictionary = await remote.submit(Intent.action_done(remote.my_seat))
+	var result: Dictionary = await remote.submit(OnWorkIntent.action_done(remote.my_seat))
 	_pump_done = true
 	check(result.get("ok", false), "%s视角：远端真实socket提交完成行动成功" % mine)
 	var handed_over := await net_until(pair, func():
@@ -382,7 +382,7 @@ func _boot_drawer() -> Node:
 	root.size = Vector2i(1280, 900)
 	root.content_scale_size = Vector2i.ZERO
 	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	root.add_child(main)
 	_booted = main

@@ -11,16 +11,16 @@ func _initialize() -> void:
 	print("=== 购买支付组内现金 测试 ===")
 	var main: Node = await boot_main()
 
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	var board: Board = main.board
-	var price: int = CardDB.get_def(state.market[0]).get("price", 1)
-	print("       公共区[0] = %s，标价 %d" % [CardDB.card_name(state.market[0]), price])
+	var price: int = OnWorkCardDB.get_def(state.market[0]).get("price", 1)
+	print("       公共区[0] = %s，标价 %d" % [OnWorkCardDB.card_name(state.market[0]), price])
 
 	# 把现金卡堆成一个牌组（比标价多 2 张，购买后组应剩余 2 张）
 	var target_n := mini(price + 2, 15)
 	var group_cards: Array = []
-	for c in state.players[GameState.PLAYER]["cards"]:
-		if c["def_id"] == CardDB.unit_id(CardDB.RES_CASH) and group_cards.size() < target_n:
+	for c in state.players[OnWorkState.PLAYER]["cards"]:
+		if c["def_id"] == OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH) and group_cards.size() < target_n:
 			group_cards.append(main.entities[c["uid"]])
 	check(group_cards.size() == target_n, "堆好 %d 张现金的牌组" % target_n)
 	# 这些现金已被回合开始的理牌分进纯资源摞，先摘出来再建购买组

@@ -5,13 +5,13 @@
 class_name EmbeddedHost
 extends RefCounted
 
-## 游戏进程内的专服；独立启动方式见 README.md §「4.4 联机专服」。
+## 游戏进程内的专服；独立启动方式见 README.md §「联机专服」。
 ##
 ## 为什么它能存在：NetServer 是 RefCounted（见那个文件头），
 ## 「开端口 + 每帧 poll」而已 —— 谁来 poll 都行。
 ## 于是桌面版可以在自己进程里起一个服务器，再用一条 ws://127.0.0.1 连回来。
 ## 这一层**没有第二套逻辑**：主机侧和客户端侧走的是同一条 NetTransport → net/server.gd
-## → net/room.gd → engine/ 的路，权威照旧在服务器手里。
+## → net/on_work_room.gd → engine/ 的路，权威照旧在服务器手里。
 ##
 ## 它替掉的是「先开一个无头专服进程，再开游戏，再填地址」这三步 ——
 ## 那三步以前由一个 shell 脚本代劳（本地双人对战.command），
@@ -35,7 +35,7 @@ const DEFAULT_PORT := 8910
 const PORT_TRIES := 12
 
 var server: NetServer = null
-var work_config: WorkConfig
+var off_work_config: OffWorkConfig
 var port := 0
 
 var _seed := 0
@@ -54,7 +54,7 @@ func start(listen_port := DEFAULT_PORT, tries := PORT_TRIES) -> Dictionary:
 	var last: Dictionary = {}
 	for i in maxi(tries, 1):
 		var s := NetServer.new(_seed, _verbose)
-		s.work_config = work_config
+		s.off_work_config = off_work_config
 		var r: Dictionary = s.start(listen_port + i)
 		if r["ok"]:
 			server = s
@@ -116,7 +116,7 @@ func running() -> bool:
 	return server != null
 
 ## 每帧调一次 —— WebSocketMultiplayerPeer 是轮询式的（见 NetServer.poll）。
-## 桌面版由 scenes/main.gd 的 _process 调，无头专服由 SceneTree 调
+## 桌面版由 scenes/on_work_main.gd 的 _process 调，无头专服由 SceneTree 调
 func poll() -> void:
 	if server != null:
 		server.poll()

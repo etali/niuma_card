@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 extends "res://tests/harness.gd"
 
-const Env = preload("res://engine/bot_environment.gd")
-const Cap = preload("res://engine/bot_capabilities.gd")
-const Plan = preload("res://engine/bot_turn_plan.gd")
+const Env = preload("res://engine/on_work_bot_environment.gd")
+const Cap = preload("res://engine/on_work_bot_capabilities.gd")
+const Plan = preload("res://engine/on_work_bot_turn_plan.gd")
 var fixture: Dictionary
 
 func _initialize() -> void:
@@ -13,28 +13,28 @@ func _initialize() -> void:
 	var file := FileAccess.open(path,FileAccess.WRITE)
 	file.store_string(JSON.stringify(fixture.cards))
 	file.close()
-	CardDB.load_from(path)
+	OnWorkCardDB.load_from(path)
 	_test_payment_and_cache()
 	_test_holding_protection()
 	_test_independent_switch()
 	finish()
 
-func _state(row: Dictionary) -> GameState:
-	var state := GameState.new()
-	StateCodec.restore(state,row.state)
+func _state(row: Dictionary) -> OnWorkState:
+	var state := OnWorkState.new()
+	OnWorkStateCodec.restore(state,row.state)
 	return state
 
 func _profile() -> Dictionary:
 	var p := Plan._fast_profile(fixture.parameters)
-	p["_context"] = BOTActions.Context.new()
+	p["_context"] = OnWorkBOTActions.Context.new()
 	return p
 
-func _node(state: GameState, intents: Array, rank := 0.0) -> Dictionary:
+func _node(state: OnWorkState, intents: Array, rank := 0.0) -> Dictionary:
 	return {"state":state,"intents":intents,"rank":rank}
 
 func _test_payment_and_cache() -> void:
 	var state := _state(fixture.actual)
-	var before := StateCodec.state_hash(state)
+	var before := OnWorkStateCodec.state_hash(state)
 	var p := _profile()
 	var original := _node(state,[])
 	check(int(Cap._holding_tactics(original,"bot",p).attack_user) == 0,
@@ -43,23 +43,23 @@ func _test_payment_and_cache() -> void:
 	var sale: Array = [fixture.actual.attack[0]]
 	check(Env.replay(financed,sale),"真实典当提供攻击所需的现金融资")
 	var node := _node(financed,sale)
-	var financed_before := StateCodec.state_hash(financed)
+	var financed_before := OnWorkStateCodec.state_hash(financed)
 	var tactics := Cap._holding_tactics(node,"bot",p)
 	check(int(tactics.attack_user) == 4,"融资后的共享常规配方与真实装弹识别四用户攻击")
-	check(Cap._holding_tactics(node,"bot",p) == tactics and StateCodec.state_hash(financed) == financed_before,
+	check(Cap._holding_tactics(node,"bot",p) == tactics and OnWorkStateCodec.state_hash(financed) == financed_before,
 		"重复摘要读取缓存，原持牌节点不被建组或扣费修改")
 	var completed := Env.copy(state)
 	check(Env.replay(completed,fixture.actual.attack),"攻击完整动作经过真实规则裁决")
 	var complete_node := _node(completed,fixture.actual.attack)
-	var completed_before := StateCodec.state_hash(completed)
-	check(BOTActions.attack_pools(complete_node,"bot").user == 4 and StateCodec.state_hash(completed) == completed_before,
+	var completed_before := OnWorkStateCodec.state_hash(completed)
+	check(OnWorkBOTActions.attack_pools(complete_node,"bot").user == 4 and OnWorkStateCodec.state_hash(completed) == completed_before,
 		"完整攻击代表在副本装弹，原节点现金及已开火标记保持不变")
 	var switched := p.duplicate()
 	switched.tactical_extension = 0
 	switched.formation_mode = 0
 	check(Cap._holding_tactics(node,"bot",switched).values().all(func(v):return v == 0),
 		"关闭能力后不复用先前开启时的战术摘要")
-	check(StateCodec.state_hash(state) == before,"原始录像状态在所有摘要计算后保持一致")
+	check(OnWorkStateCodec.state_hash(state) == before,"原始录像状态在所有摘要计算后保持一致")
 
 func _test_holding_protection() -> void:
 	var p := _profile()
@@ -95,9 +95,9 @@ func _test_independent_switch() -> void:
 	for key in ["financing_mode","resale_mode","allocation_mode","formation_mode","candidate_dedup","tactical_extension"]:
 		p[key] = 0
 	p["generation_budget"] = 2048
-	var basic := BOTActions.generate_with_status(state,"bot",p)
+	var basic := OnWorkBOTActions.generate_with_status(state,"bot",p)
 	p.tactical_extension = 1
-	var result := BOTActions.generate_with_status(state,"bot",p)
+	var result := OnWorkBOTActions.generate_with_status(state,"bot",p)
 	check(result.baseline.map(func(n):return Cap.signature(n.state)) == basic.nodes.map(func(n):return Cap.signature(n.state)),
 		"仅开启战术覆盖也保持基础层原有方案和顺序")
 	check(result.generation_stages.size() == 1 and result.generation_stages[0].financing_mode == 0,
@@ -108,5 +108,5 @@ func _test_independent_switch() -> void:
 		"战术扩展只标所属生成阶段，基础深化保护不被污染")
 	check(result.nodes.size() <= result.baseline.size()+int(p.plans)+2,
 		"单个战术阶段最多追加普通plans与现金用户各一个攻击代表")
-	check(result.nodes.any(func(n):return int(BOTActions.attack_pools(n,"bot").user) > 0),
+	check(result.nodes.any(func(n):return int(OnWorkBOTActions.attack_pools(n,"bot").user) > 0),
 		"仅开启战术参数亦能保留真实可支付用户攻击")

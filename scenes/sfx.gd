@@ -47,14 +47,14 @@ func _ready() -> void:
 
 ## 音效名 → wav 路径（配置 ui.json.sfx.sounds）
 static func sounds() -> Dictionary:
-	return CardDB.sfx_rules().get("sounds", {})
+	return OnWorkCardDB.sfx_rules().get("sounds", {})
 
 ## 游戏动作 → { sound, db, pitch }（配置 ui.json.sfx.actions）。
 ## 认不出的动作名报错而不是静默沉默：少响一声在 headless 下测不出来
 ## （play 找不到流就 return），在真机上也只是「这儿好像没声音」，
 ## 谁都不会怀疑到动作名拼错了
 static func action(name: String) -> Dictionary:
-	var actions: Dictionary = CardDB.sfx_rules().get("actions", {})
+	var actions: Dictionary = OnWorkCardDB.sfx_rules().get("actions", {})
 	var spec: Variant = actions.get(name)
 	if typeof(spec) != TYPE_DICTIONARY:
 		push_error(("Sfx: 配置 ui.json.sfx.actions 里没有动作「%s」。" % name)

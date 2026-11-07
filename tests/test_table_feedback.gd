@@ -6,14 +6,14 @@ extends "res://tests/harness.gd"
 
 const Feedback = preload("res://scenes/table_feedback.gd")
 const Motion = preload("res://scenes/ui_motion.gd")
-const Arena = preload("res://scenes/rulebook_arena.gd")
-const DemoData = preload("res://scenes/rulebook_demo_data.gd")
+const Arena = preload("res://scenes/on_work_rulebook_arena.gd")
+const DemoData = preload("res://scenes/on_work_rulebook_demo_data.gd")
 
 func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	await _material_lifecycle()
 	await _shared_group_signal()
 	await _transfers_and_upgrade()
@@ -86,12 +86,12 @@ func _shared_group_signal() -> void:
 	var main: Node = await boot_main()
 	var core: Dictionary = main.state.add_card(main.my_seat, "yunketang")
 	var cards: Array = [main._spawn_entity(core, Vector3(0, 0.05, 3.5), true)]
-	for i in int(CardDB.get_def("yunketang")["recipe_n"]):
-		var data: Dictionary = main.state.add_card(main.my_seat, CardDB.unit_id(CardDB.RES_USER))
+	for i in int(OnWorkCardDB.get_def("yunketang")["recipe_n"]):
+		var data: Dictionary = main.state.add_card(main.my_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER))
 		cards.append(main._spawn_entity(data, Vector3(0, 0.05, 3.5), true))
 	var group: Dictionary = main.board.make_group(cards, true, false)
 	main.board.groups.append(group)
-	var hash := StateCodec.state_hash(main.state)
+	var hash := OnWorkStateCodec.state_hash(main.state)
 	main.board.refresh_group(group)
 	check(cards[0].feedback_event == "ready" and cards[0]._feedback_tween != null, "真实Board首次成组信号连接到共享反馈")
 	var first: Tween = cards[0]._feedback_tween
@@ -99,7 +99,7 @@ func _shared_group_signal() -> void:
 	check(effects.size() == 1, "组合成立一摞只生成一个外围笔触，不刷屏")
 	main.board.refresh_group(group)
 	check(cards[0]._feedback_tween == first, "刷新有效组、重新理牌不重复触发成立演出")
-	check(StateCodec.state_hash(main.state) == hash, "组合视觉反馈完全不改规则状态")
+	check(OnWorkStateCodec.state_hash(main.state) == hash, "组合视觉反馈完全不改规则状态")
 	var arena := _arena("combos", "production")
 	check(arena._table_actions.get_script() == main._table_actions.get_script(), "规则书与正式对局的反馈使用同一TableActions")
 	arena.assemble()
@@ -130,7 +130,7 @@ func _transfers_and_upgrade() -> void:
 	arena.queue_free()
 	await process_frame
 	arena = _arena("combos", "production")
-	var record: Dictionary = arena.state.add_card(arena.my_seat, CardDB.unit_id(CardDB.RES_CASH))
+	var record: Dictionary = arena.state.add_card(arena.my_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
 	var origin := Vector3(0, 0.2, 3)
 	var target := Vector3(-4, 0.05, 4)
 	var arriving: CardEntity = arena._spawn_entity(record, target, true, origin)
@@ -183,11 +183,11 @@ func _attack_and_shield() -> void:
 	await create_timer(0.5).timeout
 	arena.assemble()
 	arena.resolve()
-	var network_state := GameState.new()
-	StateCodec.restore(network_state, JSON.parse_string(JSON.stringify(StateCodec.snapshot(arena.state))))
+	var network_state := OnWorkState.new()
+	OnWorkStateCodec.restore(network_state, JSON.parse_string(JSON.stringify(OnWorkStateCodec.snapshot(arena.state))))
 	arena.state = network_state
 	var target: CardEntity = arena._attack_targets[0]
-	var before := StateCodec.state_hash(arena.state)
+	var before := OnWorkStateCodec.state_hash(arena.state)
 	var at: Vector3 = target.position
 	arena._table_actions.attack_feedback(at, arena.my_seat, str(arena.demo["effect"]["attack_res"]))
 	check(arena.get_node_or_null("Outline_impact") == null and arena.find_children("Receipt_attack*", "", false, false).is_empty(),
@@ -196,7 +196,7 @@ func _attack_and_shield() -> void:
 	var weapon: CardEntity = arena._input_cards[0]
 	check(weapon.feedback_event == "attack",
 		"过网络JSON快照后实际已装弹武器仍响应")
-	check(StateCodec.state_hash(arena.state) == before, "命中笔触本身不扣血、不消耗额外点数")
+	check(OnWorkStateCodec.state_hash(arena.state) == before, "命中笔触本身不扣血、不消耗额外点数")
 	arena.queue_free()
 	await process_frame
 	arena = _arena("buffs", "protect")
@@ -204,11 +204,11 @@ func _attack_and_shield() -> void:
 	arena.assemble()
 	var protected: Array = arena._input_cards.filter(func(card): return card._shield_on)
 	check(not protected.is_empty(), "保护夹具使用真实生效的防御Buff")
-	before = StateCodec.state_hash(arena.state)
+	before = OnWorkStateCodec.state_hash(arena.state)
 	arena._table_actions.shield_feedback(arena._input_cards)
 	var outline: MeshInstance3D = arena.get_node_or_null("Outline_shield")
 	check(outline != null and outline.position.y > protected[0].position.y, "护盾轮廓在整摞顶部可见，不被核心卡遮挡")
-	check(StateCodec.state_hash(arena.state) == before and protected.all(func(card): return not card._visual_retired), "护盾只做拒挡反馈，不演出虚假的成功攻击")
+	check(OnWorkStateCodec.state_hash(arena.state) == before and protected.all(func(card): return not card._visual_retired), "护盾只做拒挡反馈，不演出虚假的成功攻击")
 	await create_timer(Motion.ACT + Motion.SETTLE + 0.1).timeout
 	root.disable_3d = true
 	var count: int = arena.get_child_count()

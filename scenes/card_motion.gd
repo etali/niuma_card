@@ -142,7 +142,7 @@ func _fly_from(e: CardEntity, from_pos: Vector3, to_pos: Vector3,
 	# 现金再叠一声硬币叮，用户没有这一声 —— 听得出到账的是钱还是人。
 	var pitch := 1.0 + ARRIVAL_PITCH_STEP * float(mini(idx, ARRIVAL_PITCH_STEPS))
 	var coin: bool = e.card_catalog.get_def(e.def_id).get("res", "") == e.card_catalog.RES_CASH \
-		and e.card_catalog.get_def(e.def_id).get("kind", "") == CardDB.KIND_UNIT
+		and e.card_catalog.get_def(e.def_id).get("kind", "") == OnWorkCardDB.KIND_UNIT
 	tw.parallel().tween_callback(func() -> void:
 		sfx.play("produce_land", pitch)
 		if coin:

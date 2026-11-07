@@ -28,7 +28,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	print("=== 牌桌特效 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	_config_rules()
 	await _effect_lifecycle()
 	await _camera_shake()
@@ -61,9 +61,9 @@ func _effect_lifecycle() -> void:
 	print("--- 特效自行释放 ---")
 	var stage := Node3D.new()
 	root.add_child(stage)
-	var pop := ComicFx.badge_pop(stage, Vector3(1, 0.05, 2), "+4", CardDB.RES_CASH, Color.YELLOW)
+	var pop := ComicFx.badge_pop(stage, Vector3(1, 0.05, 2), "+4", OnWorkCardDB.RES_CASH, Color.YELLOW)
 	check(pop.find_child("BadgeText", true, false).text == "+4"
-		and pop.find_child("BadgeIcon", true, false).texture == CardArt.res_icon_texture(CardDB.RES_CASH),
+		and pop.find_child("BadgeIcon", true, false).texture == CardArt.res_icon_texture(OnWorkCardDB.RES_CASH),
 		"结算墨团副本写「[金币] +4」，和卡面效果墨团同一种写法")
 	var stamp := ComicFx.stamp(stage, Vector3.ZERO, "到账", 0.2)
 	var kept := ComicFx.stamp(stage, Vector3(-3, 0, 0), "上市", 0.0, null, true)
@@ -76,7 +76,7 @@ func _effect_lifecycle() -> void:
 	seed(4242)
 	var expected := randf()
 	seed(4242)
-	ComicFx.badge_pop(stage, Vector3.ZERO, "+3", CardDB.RES_CASH, Color.YELLOW)
+	ComicFx.badge_pop(stage, Vector3.ZERO, "+3", OnWorkCardDB.RES_CASH, Color.YELLOW)
 	ComicFx.stamp(stage, Vector3.ZERO, "到账")
 	ComicFx.runaway(stage, Vector3.ZERO, 3)
 	ComicFx.seal(stage, Vector3.ZERO, "查封", "查封", Color.RED)
@@ -85,7 +85,7 @@ func _effect_lifecycle() -> void:
 	stage.add_child(layer)
 	var readout := Label.new()
 	layer.add_child(readout)
-	HudFx.collect(layer, Vector2.ZERO, readout, Vector2(100, 10), CardArt.res_icon_texture(CardDB.RES_CASH), -3, 16)
+	HudFx.collect(layer, Vector2.ZERO, readout, Vector2(100, 10), CardArt.res_icon_texture(OnWorkCardDB.RES_CASH), -3, 16)
 	check(is_equal_approx(randf(), expected), "特效只用自己的随机数，不打乱全局随机序列")
 	check(stage.find_children("*", "CollisionObject3D", true, false).is_empty(), "牌桌特效没有碰撞，不挡拖牌")
 	var scraps := UIMotion.play(stage, "attack", Vector3.ZERO, Color.RED) as CPUParticles3D
@@ -93,9 +93,9 @@ func _effect_lifecycle() -> void:
 	check(scraps.mesh.material == Materials.particles("scrap") and users.mesh.material == Materials.particles("user")
 		and Materials.particles("coin") != Materials.particles("user"),
 		"攻击撒纸屑、产出用户撒小人，同形状共用一份材质")
-	check(Materials.particles("user").get_shader_parameter("figure") == CardArt.res_icon_texture(CardDB.RES_USER)
-		and Materials.particles("runner_r").get_shader_parameter("figure") == CardArt.res_icon_texture(CardDB.RES_USER)
-		and Materials.particles("coin").get_shader_parameter("figure") == CardArt.res_icon_texture(CardDB.RES_CASH),
+	check(Materials.particles("user").get_shader_parameter("figure") == CardArt.res_icon_texture(OnWorkCardDB.RES_USER)
+		and Materials.particles("runner_r").get_shader_parameter("figure") == CardArt.res_icon_texture(OnWorkCardDB.RES_USER)
+		and Materials.particles("coin").get_shader_parameter("figure") == CardArt.res_icon_texture(OnWorkCardDB.RES_CASH),
 		"小人与金币粒子直接贴用户牌、现金牌的原图，不另画角色")
 	await create_timer(1.8).timeout
 	check(not is_instance_valid(pop) and not is_instance_valid(stamp)
@@ -163,7 +163,7 @@ func _hitstop_beat() -> void:
 func _foe_users(main: Node, count: int) -> Array:
 	var cards: Array = []
 	for i in count:
-		var record: Dictionary = main.state.add_card(main.foe_seat, CardDB.unit_id(CardDB.RES_USER), true)
+		var record: Dictionary = main.state.add_card(main.foe_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER), true)
 		cards.append(main._spawn_entity(record, Vector3(-1.5 + i * 1.5, 0.05, -3.5), false))
 	return cards
 
@@ -211,7 +211,7 @@ func _table_moments() -> void:
 	watch.call(first)
 	var scraps_before := _scrap_bursts(main)
 	await actions.present_attack(first.map(func(card): return card.uid), first[0].global_position, main.my_seat,
-		CardDB.RES_USER, null, main._drawer_timer, current, [], track)
+		OnWorkCardDB.RES_USER, null, main._drawer_timer, current, [], track)
 	check(damaged.size() == 2, "命中那一拍，被抓住的牌起折痕、撕口先裂开（%d / 2 张）" % damaged.size())
 	check(torn_crumpled.size() == 2 and torn_crumpled.values().all(func(v): return v),
 		"撕开后两片撕片接着带着折痕")
@@ -219,7 +219,7 @@ func _table_moments() -> void:
 		"不再画冲击星、放射线和拟声字")
 	check(added.has("runaway"), "被打掉的用户跑出牌桌")
 	var scraps := _scrap_bursts(main).slice(scraps_before.size())
-	check(not scraps.is_empty() and scraps.all(func(p): return p.color.is_equal_approx(CardArt.face_color(CardDB.unit_id(CardDB.RES_USER)))),
+	check(not scraps.is_empty() and scraps.all(func(p): return p.color.is_equal_approx(CardArt.face_color(OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER)))),
 		"纸屑用被撕那张牌的底色，不再是红色")
 	check(max_offset[0] > 0.0 and camera.h_offset == 0.0 and camera.v_offset == 0.0, "命中时镜头震一下并回正")
 	check(durations.size() == 1 and is_equal_approx(durations[0], CardMotion.BATCH_DURATION), "普通命中不拖慢原撕牌节拍")
@@ -230,7 +230,7 @@ func _table_moments() -> void:
 	watching[0] = true
 	watch.call(second)
 	await actions.present_attack(second.map(func(card): return card.uid), second[0].global_position, main.my_seat,
-		CardDB.RES_CASH, null, main._drawer_timer, current, [], track)
+		OnWorkCardDB.RES_CASH, null, main._drawer_timer, current, [], track)
 	await process_frame
 	var hits: Array = []
 	for i in sound.events.size():
@@ -242,13 +242,13 @@ func _table_moments() -> void:
 	var last := _foe_users(main, 1)
 	main.state.winner = main.my_seat
 	await actions.present_attack(last.map(func(card): return card.uid), last[0].global_position, main.my_seat,
-		CardDB.RES_USER, null, main._drawer_timer, current, [], track)
+		OnWorkCardDB.RES_USER, null, main._drawer_timer, current, [], track)
 	await process_frame
 	check(is_equal_approx(durations.back(), CardMotion.BATCH_DURATION + ComicFx.hitstop("final") - UIMotion.HITSTOP),
 		"分出胜负的那一击定格更久（%.2f s）" % durations.back())
 	var again := _foe_users(main, 1)
 	await actions.present_attack(again.map(func(card): return card.uid), again[0].global_position, main.my_seat,
-		CardDB.RES_USER, null, main._drawer_timer, current, [], track)
+		OnWorkCardDB.RES_USER, null, main._drawer_timer, current, [], track)
 	check(is_equal_approx(durations.back(), CardMotion.BATCH_DURATION), "同一局终结演出只播一次")
 	main.state.winner = ""
 	watching[0] = false
@@ -259,8 +259,8 @@ func _table_moments() -> void:
 	var core_record: Dictionary = main.state.add_card(main.my_seat, "yunketang")
 	var core: CardEntity = main._spawn_entity(core_record, Vector3(2.0, 0.05, 3.0), true)
 	var at: Vector3 = core.global_position + Vector3(0, 0.6, 0)
-	var output := int(CardDB.get_def("yunketang")["output_n"])
-	actions.combo_feedback({"type": "production", "output_res": CardDB.RES_CASH, "output_n": output, "leader": "yunketang"},
+	var output := int(OnWorkCardDB.get_def("yunketang")["output_n"])
+	actions.combo_feedback({"type": "production", "output_res": OnWorkCardDB.RES_CASH, "output_n": output, "leader": "yunketang"},
 		at, {"owner": main.my_seat, "uids": [core.uid]})
 	check(_receipts(main).is_empty() and not added.has("receipt"), "不再弹出小票")
 	var pops := main.get_children().filter(func(node): return node.get_meta("motion_event", "") == "badge_pop")
@@ -298,14 +298,14 @@ func _table_moments() -> void:
 	# 落袋：资金摞侧边清单的「×N」变大时那一行弹一下；第一次挂清单不弹。
 	var pile: Array = []
 	for i in 3:
-		pile.append(main._spawn_entity(main.state.add_card(main.my_seat, CardDB.unit_id(CardDB.RES_CASH)),
+		pile.append(main._spawn_entity(main.state.add_card(main.my_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH)),
 			Vector3(-3.0, 0.05, 4.0), true))
 	var group: Dictionary = main.board.make_group(pile, true, false)
 	main.board.groups.append(group)
 	main.board.refresh_group(group)
 	var row_label: Label3D = group["side"][1]
 	check(row_label.text == "×3" and row_label.scale.is_equal_approx(Vector3.ONE), "第一次挂上「×3」不弹")
-	var extra: CardEntity = main._spawn_entity(main.state.add_card(main.my_seat, CardDB.unit_id(CardDB.RES_CASH)),
+	var extra: CardEntity = main._spawn_entity(main.state.add_card(main.my_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH)),
 		Vector3(-3.0, 0.05, 4.0), true)
 	group["cards"].append(extra)
 	main.board.refresh_group(group)
@@ -315,13 +315,13 @@ func _table_moments() -> void:
 	check(core.stamp_showing() and core.stamp_text() == "作废" and core._void_stamp == stamp_mesh,
 		"同一张牌失败时盖回「作废」：与「到账」是同一枚章（同一张面片，只换字）")
 	core.set_void_stamp(false)
-	actions.combo_feedback({"type": "production", "output_res": CardDB.RES_USER, "output_n": 3, "leader": "yunketang"},
+	actions.combo_feedback({"type": "production", "output_res": OnWorkCardDB.RES_USER, "output_n": 3, "leader": "yunketang"},
 		at, {"owner": main.my_seat, "uids": [core.uid]})
 	check(core.stamp_text() == ComicFx.stamp_text("user"), "产出用户盖「%s」章" % ComicFx.stamp_text("user"))
 	check(_particle_materials(main).has(Materials.particles("user")), "产出用户撒的是小人")
 	var legend := ""
-	for id in CardDB.all_cards():
-		if CardDB.get_def(str(id)).get("kind", "") == CardDB.KIND_LEGEND:
+	for id in OnWorkCardDB.all_cards():
+		if OnWorkCardDB.get_def(str(id)).get("kind", "") == OnWorkCardDB.KIND_LEGEND:
 			legend = str(id)
 			break
 	added.clear()
@@ -349,17 +349,17 @@ func _table_moments() -> void:
 		var card_screen := camera.unproject_position(arrived.global_position)
 		check(on_screen.distance_to(card_screen) < 3.0, "聚光圈在屏幕上正好套住新牌（差 %.1f px）" % on_screen.distance_to(card_screen))
 	check(arrived.stamp_showing() and arrived.stamp_text() == ComicFx.stamp_text("legend"), "传说牌落定后在它身上盖「传奇」章")
-	var lifted := ComicFx.badge_pop(main, landing, "+1", CardDB.RES_CASH, Color.YELLOW)
+	var lifted := ComicFx.badge_pop(main, landing, "+1", OnWorkCardDB.RES_CASH, Color.YELLOW)
 	var lifted_screen := camera.unproject_position(lifted.global_position)
 	var ground_screen := camera.unproject_position(Vector3(landing.x, ComicFx.GROUND_Y, landing.z))
 	check(lifted.global_position.y > 0.5 and lifted_screen.distance_to(ground_screen) < 2.0,
 		"抬高的特效沿视线挪上去，屏幕上仍压在目标上（差 %.1f px）" % lifted_screen.distance_to(ground_screen))
 	var stats: Dictionary = actions.match_stats()
-	check(int(stats.get(main.my_seat, {}).get(CardDB.RES_CASH, 0)) == output
-		and int(stats.get(main.my_seat, {}).get(CardDB.RES_USER, 0)) == 3
+	check(int(stats.get(main.my_seat, {}).get(OnWorkCardDB.RES_CASH, 0)) == output
+		and int(stats.get(main.my_seat, {}).get(OnWorkCardDB.RES_USER, 0)) == 3
 		and int(stats.get(main.my_seat, {}).get("torn", 0)) == 5,
 		"本局战绩记下自己的产出与撕掉的牌（%s）" % [stats])
-	var later := GameState.new()
+	var later := OnWorkState.new()
 	later.new_game()
 	later.round_num = 5
 	main.state = later
@@ -376,8 +376,8 @@ func _seal_layout() -> void:
 	var camera: Camera3D = main.board.camera
 	var stage := Node3D.new()
 	main.add_child(stage)
-	var spots: Array[Vector3] = [main.layout._unit_anchor(main.foe_seat, CardDB.unit_id(CardDB.RES_CASH)),
-		main.layout._unit_anchor(main.my_seat, CardDB.unit_id(CardDB.RES_CASH))]
+	var spots: Array[Vector3] = [main.layout._unit_anchor(main.foe_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH)),
+		main.layout._unit_anchor(main.my_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))]
 	for at in spots:
 		ComicFx.seal(stage, at, "破产清算", ComicFx.stamp_text("bankrupt"), Palette.semantic("danger"))
 	await create_timer(1.2).timeout
@@ -549,7 +549,7 @@ func _particle_materials(main: Node) -> Array:
 
 func _boot_drawer() -> Node:
 	root.size = Vector2i(1280, 800)
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	root.add_child(main)
 	_booted = main
@@ -570,19 +570,19 @@ func _drawer_hud_and_finale() -> void:
 	var sound := RecordedSound.new()
 	main.add_child(sound)
 	main.sfx = sound
-	var win_cash := int(CardDB.game_rules()["win_cash"])
+	var win_cash := int(OnWorkCardDB.game_rules()["win_cash"])
 	main._update_hud()
 	check(main.lbl_player_res.get_parent().get_node_or_null("CashMeter") == null, "顶栏不再挂资金进度条")
 	await _check_no_pile_badge(main)
 	var before: int = _chips(main).size()
 	for i in 3:
-		main.state.add_card(main.my_seat, CardDB.unit_id(CardDB.RES_CASH))
+		main.state.add_card(main.my_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
 	main._update_hud()
 	var pieces: Array = main._hud_fx_layer.get_children().filter(func(node): return node.get_meta("hud_fx", "") == "piece" \
 		and not node.is_queued_for_deletion())
-	check(pieces.size() == 3 and pieces.all(func(piece): return piece.texture == CardArt.res_icon_texture(CardDB.RES_CASH)),
+	check(pieces.size() == 3 and pieces.all(func(piece): return piece.texture == CardArt.res_icon_texture(OnWorkCardDB.RES_CASH)),
 		"资金到账：三枚现金牌上的金币飞向顶栏读数")
-	var cash_pile: CardEntity = main._resource_pile_top(main.my_seat, CardDB.RES_CASH)
+	var cash_pile: CardEntity = main._resource_pile_top(main.my_seat, OnWorkCardDB.RES_CASH)
 	check(cash_pile != null, "找得到我方资金主摞")
 	await create_timer(main.HUD_COLLECT_DELAY + 0.05).timeout
 	if cash_pile != null and not pieces.is_empty() and is_instance_valid(pieces[0]):
@@ -593,19 +593,19 @@ func _drawer_hud_and_finale() -> void:
 	var chips := _chips(main)
 	var chip_texts: Array = chips.map(func(chip): return chip.find_child("ChipAmount", true, false).text)
 	check(chips.size() == before + 1 and chip_texts.has("+3")
-		and chips.back().get_child(0).texture == CardArt.res_icon_texture(CardDB.RES_CASH),
+		and chips.back().get_child(0).texture == CardArt.res_icon_texture(OnWorkCardDB.RES_CASH),
 		"读数下贴「[金币] +3」，不写「资金」二字（%s）" % [chip_texts])
-	check(main.lbl_player_res.text.contains(str(main.state.resource_count(main.my_seat, CardDB.RES_CASH))),
+	check(main.lbl_player_res.text.contains(str(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH))),
 		"读数文字仍是规则状态的实数，飞入的图标不改读数")
 	var foe_users: Array = main.state.players[main.foe_seat]["cards"].filter(
-		func(card): return card["def_id"] == CardDB.unit_id(CardDB.RES_USER))
+		func(card): return card["def_id"] == OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER))
 	main.state.players[main.foe_seat]["cards"] = main.state.players[main.foe_seat]["cards"].filter(
 		func(card): return not foe_users.slice(0, 2).has(card))
 	main._update_hud()
 	await process_frame
 	chip_texts = _chips(main).map(func(chip): return chip.find_child("ChipAmount", true, false).text)
 	check(chip_texts.has("−2"), "对手掉用户：小人从对手读数里掉出来，贴「[小人] −2」")
-	var replaced := GameState.new()
+	var replaced := OnWorkState.new()
 	replaced.new_game()
 	var count: int = _chips(main).size()
 	main.state = replaced
@@ -621,7 +621,7 @@ func _drawer_hud_and_finale() -> void:
 		var won: bool = entry[1]
 		main._teardown_for_new_game(true)
 		main._reset_session_flags()
-		main.state = GameState.new()
+		main.state = OnWorkState.new()
 		main.state.new_game()
 		main._rebuild_pipe()
 		main._sync_round()
@@ -629,12 +629,12 @@ func _drawer_hud_and_finale() -> void:
 		var me: String = main.my_seat
 		var foe: String = main.foe_seat
 		match kind:
-			"listing": _set_count(main.state, me, CardDB.RES_CASH, win_cash)
-			"bankrupt": _set_count(main.state, foe, CardDB.RES_CASH, 0)
-			"exodus": _set_count(main.state, foe, CardDB.RES_USER, 0)
+			"listing": _set_count(main.state, me, OnWorkCardDB.RES_CASH, win_cash)
+			"bankrupt": _set_count(main.state, foe, OnWorkCardDB.RES_CASH, 0)
+			"exodus": _set_count(main.state, foe, OnWorkCardDB.RES_USER, 0)
 			_:
-				_set_count(main.state, me, CardDB.RES_CASH, win_cash - 2)
-				_set_count(main.state, foe, CardDB.RES_CASH, win_cash)
+				_set_count(main.state, me, OnWorkCardDB.RES_CASH, win_cash - 2)
+				_set_count(main.state, foe, OnWorkCardDB.RES_CASH, win_cash)
 		main.state.check_victory()
 		check(ResultPresentation.victory_kind(main.state) == ("listing" if kind == "defeat" else kind),
 			"%s：胜因按终局读数判出" % kind)
@@ -647,7 +647,7 @@ func _drawer_hud_and_finale() -> void:
 		var finale_stamp := ComicFx.stamp_text(("win_" + kind) if won else "lose")
 		check(stamp != null and stamp.text == finale_stamp, "%s：标题旁盖「%s」章" % [kind, finale_stamp])
 		check(mascot != null and mascot.pose == ("cheer" if won else "slump")
-			and mascot.figure == CardArt.res_icon_texture(CardDB.RES_USER),
+			and mascot.figure == CardArt.res_icon_texture(OnWorkCardDB.RES_USER),
 			"%s：吉祥物就是用户牌的小人，%s" % [kind, "蹦着欢呼" if won else "缩着淋雨"])
 		var stats := panel.find_child("ResultStats", true, false) as Label
 		check(stats != null and stats.text.contains("回合"), "%s：列出本局终局读数" % kind)
@@ -667,7 +667,7 @@ func _drawer_hud_and_finale() -> void:
 			check(finale.get_node_or_null("Runaway") != null, "对手跑光：用户堆里的人跑出牌桌")
 		if not won:
 			var hint := panel.find_child("ResultHint", true, false) as Label
-			check(hint != null and hint.text == "差 2 %s就上市了。" % CardDB.res_label(CardDB.RES_CASH),
+			check(hint != null and hint.text == "差 2 %s就上市了。" % OnWorkCardDB.res_label(OnWorkCardDB.RES_CASH),
 				"失败面板提示离赢只差多少（%s）" % (hint.text if hint else "无"))
 			await create_timer(ResultPresentation.TROMBONE_AT + 0.2).timeout
 			check(sound.events.has("defeat_trombone") and not sound.events.has("lose"), "失败用泄气的长号，不叠原失败音")
@@ -679,14 +679,14 @@ func _drawer_hud_and_finale() -> void:
 		"整屏的终局背景只是画面，不让抽屉把整张牌桌当成面板")
 	check(main.drawer_presentation.pointer_over_panels(main.game_over_panel.get_global_rect().get_center()),
 		"结果面板本身仍算面板（%s）" % center)
-	# 联网 rematch 把新局快照还原进同一个 GameState：走真实的跨局清理后，
+	# 联网 rematch 把新局快照还原进同一个 OnWorkState：走真实的跨局清理后，
 	# 战绩、终结记录与读数基线都要从头来。
-	var same: GameState = main.state
-	main._table_actions._record(main.my_seat, CardDB.RES_CASH, 99)
+	var same: OnWorkState = main.state
+	main._table_actions._record(main.my_seat, OnWorkCardDB.RES_CASH, 99)
 	main._table_actions._final_state_id = same.get_instance_id()
 	main._reset_session_flags(true)
 	check(main._table_actions.match_stats().is_empty() and main._table_actions._final_state_id == 0 and main._hud_seen.is_empty(),
-		"同一 GameState 开新局（rematch）时清空战绩、终结记录与读数基线")
+		"同一 OnWorkState 开新局（rematch）时清空战绩、终结记录与读数基线")
 	main._on_restart()
 	await process_frame
 	await process_frame
@@ -704,12 +704,12 @@ func _chips(main: Node) -> Array:
 ## 现金摞成一摞时，牌面只有现金牌自己的图：不在左下角另挂墨团或数字。
 func _check_no_pile_badge(main: Node) -> void:
 	for i in 4:
-		main.state.add_card(main.my_seat, CardDB.unit_id(CardDB.RES_CASH))
+		main.state.add_card(main.my_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
 	main._sync_entities()
 	for i in 3:
 		await process_frame
 	var cash: Array = main.entities.values().filter(func(card): return is_instance_valid(card) \
-		and card.def_id == CardDB.unit_id(CardDB.RES_CASH))
+		and card.def_id == OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
 	var extra := cash.filter(func(card): return card.face_overlays().any(func(node): return node is Label3D \
 		and node != card.label and node.text.contains("/")))
 	check(cash.size() >= 4 and extra.is_empty() and not cash.any(func(card): return card.has_recipe_badge()),
@@ -718,8 +718,8 @@ func _check_no_pile_badge(main: Node) -> void:
 	main._hud_seen.clear()
 	main._update_hud()
 
-func _set_count(state: GameState, seat: String, res: String, count: int) -> void:
-	var unit := CardDB.unit_id(res)
+func _set_count(state: OnWorkState, seat: String, res: String, count: int) -> void:
+	var unit := OnWorkCardDB.unit_id(res)
 	state.players[seat]["cards"] = state.players[seat]["cards"].filter(func(card): return card["def_id"] != unit)
 	for i in count:
 		state.add_card(seat, unit)
@@ -736,10 +736,10 @@ func _preview_page() -> void:
 	preview.play_fx("cash")
 	check(core != null and core.stamp_showing() and core.stamp_text() == ComicFx.stamp_text("cash"),
 		"「产出资金」在台面那张生产牌上盖「到账」")
-	var targets: Array = preview._fx_cards(CardDB.unit_id(CardDB.RES_USER))
+	var targets: Array = preview._fx_cards(OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER))
 	preview.play_fx("hit")
 	await create_timer(CardMotion.BATCH_DURATION + 0.6).timeout
-	var restocked: Array = preview._fx_cards(CardDB.unit_id(CardDB.RES_USER))
+	var restocked: Array = preview._fx_cards(OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER))
 	check(targets.all(func(card): return not is_instance_valid(card) or card._visual_retired)
 		and not restocked.is_empty() and not restocked.any(func(card): return targets.has(card)),
 		"「撕掉用户」真的撕掉台面那叠用户牌，撕完再补一张")

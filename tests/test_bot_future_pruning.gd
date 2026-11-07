@@ -1,9 +1,9 @@
 extends "res://tests/harness.gd"
-const Plan=preload("res://engine/bot_turn_plan.gd")
-const Env=preload("res://engine/bot_environment.gd")
+const Plan=preload("res://engine/on_work_bot_turn_plan.gd")
+const Env=preload("res://engine/on_work_bot_environment.gd")
 
 func _initialize()->void:
-	CardDB.load_default()
+	OnWorkCardDB.load_default()
 	_test_bounds_and_order()
 	_test_tie_semantics()
 	_test_cache_continuation()
@@ -13,14 +13,14 @@ func _initialize()->void:
 	_test_sample_bounds()
 	finish()
 
-func _small()->GameState:
-	var s:=GameState.new();s.players={"bot":{"cards":[]},"player":{"cards":[]}}
+func _small()->OnWorkState:
+	var s:=OnWorkState.new();s.players={"bot":{"cards":[]},"player":{"cards":[]}}
 	s.draw_first="bot";s.set_seed(2468)
 	for who in s.players:
 		s.add_card(who,"cash");s.add_card(who,"user")
 	return s
 
-func _candidate(s:GameState,score:float=0.0)->Dictionary:
+func _candidate(s:OnWorkState,score:float=0.0)->Dictionary:
 	return {"node":{"state":s,"intents":[]},"state":s,"responses":[s],"score":score}
 
 func _profile()->Dictionary:
@@ -68,12 +68,12 @@ func _test_bounds_and_order()->void:
 	check(invalid.evaluation_order==[0,1,2] and invalid.winner==ordinary.winner,"无效优先序号沿用原遍历，不漏候选")
 
 func _formed(users:int,core_index:int=0)->Dictionary:
-	var s:=GameState.new();s.players={"bot":{"cards":[]},"player":{"cards":[]}}
+	var s:=OnWorkState.new();s.players={"bot":{"cards":[]},"player":{"cards":[]}}
 	s.add_card("bot","cash")
 	var ids:=[]
 	for _i in 8:ids.append(s.add_card("bot","user")["uid"])
 	var cores:=[s.add_card("bot","baoyue")["uid"],s.add_card("bot","baoyue")["uid"]]
-	var intents:=[Intent.create_combo("bot",[cores[core_index]]+ids.slice(0,users))]
+	var intents:=[OnWorkIntent.create_combo("bot",[cores[core_index]]+ids.slice(0,users))]
 	var applied:=Env.replay(s,intents)
 	assert(applied)
 	var out:=_candidate(s);out.node.intents=intents
@@ -91,18 +91,18 @@ func _test_tie_semantics()->void:
 	var heavy:=_formed(8);var lean:=_formed(4)
 	check(_matrix([heavy,lean],same.slice(0,2),0,p).winner==1,"未来及当前同分仍用真实编组简洁度破平局")
 	var later_core:=_formed(4,1);var first_core:=_formed(4,0)
-	var lexical_first := 0 if StateCodec.canon(later_core.node.intents) < StateCodec.canon(first_core.node.intents) else 1
+	var lexical_first := 0 if OnWorkStateCodec.canon(later_core.node.intents) < OnWorkStateCodec.canon(first_core.node.intents) else 1
 	check(_matrix([later_core,first_core],same.slice(0,2),1-lexical_first,p).winner==lexical_first,"简洁度也相同时沿用原动作key顺序，不受preferred影响")
 
 func _test_cache_continuation()->void:
-	var s:=_small();var before:=StateCodec.canon([Env.key(s),s.rng_snapshot()]);var seed_base:=1007922
+	var s:=_small();var before:=OnWorkStateCodec.canon([Env.key(s),s.rng_snapshot()]);var seed_base:=1007922
 	var pending:={};var full:=Plan._future_continuation(s,0,2,1,2,seed_base,{},pending,_profile())
 	var reference:=Env.copy(s);reference.set_seed(seed_base+104729)
 	var reference_done:=Plan._rollout(reference,2,_profile())
 	check(full.complete and full.evaluations==2 and full.state.round_num==s.round_num+2,"缓存缺depth1时真正补推两回合，不误报深度")
 	check(reference_done.complete and Env.key(reference)==Env.key(full.state) and reference.rng_snapshot()==full.state.rng_snapshot(),"缓存缺层补推与同种子直接完整推进逐状态一致")
 	check(pending[str([0,2,1,1])].round_num==s.round_num+1 and pending[str([0,2,1,2])].round_num==s.round_num+2,"较深续推不原地污染较浅缓存")
-	check(StateCodec.canon([Env.key(s),s.rng_snapshot()])==before,"补推不修改原回应或其随机状态")
+	check(OnWorkStateCodec.canon([Env.key(s),s.rng_snapshot()])==before,"补推不修改原回应或其随机状态")
 	var cache:=pending.duplicate();var deeper:={}
 	var reused:=Plan._future_continuation(s,0,2,1,3,seed_base,cache,deeper,_profile())
 	check(reused.complete and reused.evaluations==1 and reused.state.round_num==s.round_num+3 and cache[str([0,2,1,2])].round_num==s.round_num+2,"命中最近深度只补缺失一回合，旧缓存保持不变")

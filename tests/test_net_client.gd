@@ -11,22 +11,22 @@ extends "res://tests/harness.gd"
 ##   - test_net_parity  ：无端口，钉「两条驱动路径同态」
 ##   - test_net_replay  ：无端口，钉「状态 = f(种子, 意图)」
 ##   - test_net_socket  ：真端口，钉 net_transport.gd 这一个文件的收发
-##   - **这一条**       ：真端口 + 真场景，钉 scenes/main.gd 上联网那几条路
+##   - **这一条**       ：真端口 + 真场景，钉 scenes/on_work_main.gd 上联网那几条路
 ##
 ## 为什么必须单独有这一条：在它之前，`net/` 那一层测试全绿，
-## 而**没有任何一处生产代码把它接上场景层** —— scenes/main.gd 的拖拽广播与租约处理
+## 而**没有任何一处生产代码把它接上场景层** —— scenes/on_work_main.gd 的拖拽广播与租约处理
 ## 当时已经标了 ✅，可那两行的判据全部走 FakeNet（一条没连上的 socket
-## 加一份空 GameState），场景层从来没有对着真服务器跑过一次。
+## 加一份空 OnWorkState），场景层从来没有对着真服务器跑过一次。
 ## 也就是说「联网能玩」这件事在这条判据之前一次都没被验证过。
 ##
 ## 变异提示：**四条都实跑确认过红**，并登记进 tools/mutate_check.py：
 ##   1. intent_apply.pools_restore 开头去掉 `_pools.clear()`
 ##      → T1「next_round 之后客户端也没装弹」红（服务器清空的那份在客户端留着，
 ##        下一回合客户端以为自己装过弹了）
-##   2. net/room.gd 的 snapshot() 里去掉 `snap["pools"] = ...`
+##   2. net/on_work_room.gd 的 snapshot() 里去掉 `snap["pools"] = ...`
 ##      → T1「装弹后客户端的池子跟服务器一样」红（状态全对、池子空，
 ##        pool_empty 当场为真，攻击回合被整段跳过而不报错）
-##   3. net_transport._drain 里 `if not Intent.is_client_op(op): return`
+##   3. net_transport._drain 里 `if not OnWorkIntent.is_client_op(op): return`
 ##      改成 `continue`（不停在服务器操作上）
 ##      → T2「一段结算全到齐也不会把状态推过第 0 组」红
 ##   4. main._respawn_all 里去掉 `_restore_my_combo_groups()`
@@ -49,12 +49,12 @@ extends "res://tests/harness.gd"
 ## 之后补发的 seated 会被当成重复的挡掉，桌子再没人摆
 
 const PORT_BASE := 47200
-const A := GameState.PLAYER
-const B := GameState.BOT
+const A := OnWorkState.PLAYER
+const B := OnWorkState.BOT
 
 func _initialize() -> void:
 	print("=== 联网局客户端测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	await _t1_pools_in_snapshot()
 	await _t2_inbox_paces_state()
 	await _t3_combo_groups_survive_respawn()
@@ -70,7 +70,7 @@ func _seated_pair(seed_value := 0, room := "TEST") -> Array:
 
 # ---------- T1 点数池要跟着快照过网 ----------
 
-## 池子是**裁决器的成员**不是 GameState 的字段，StateCodec 看不见它。
+## 池子是**裁决器的成员**不是 OnWorkState 的字段，OnWorkStateCodec 看不见它。
 ## 少了这一段，症状是「状态全对、画面全对，攻击回合整段被跳过」——
 ## 而那条路径上没有任何一处会报错（客户端的 _await_foe_attack
 ## 就是循环判 pool_empty）
@@ -84,14 +84,14 @@ func _t1_pools_in_snapshot() -> void:
 	check(true, "双方都入座了")
 
 	# 先纯粹地钉往返：snapshot → restore 不丢东西，且是**整份替换**
-	var applier := IntentApply.new(GameState.new())
+	var applier := OnWorkIntentApply.new(OnWorkState.new())
 	applier.seed_pool_for_test(A, 7, 3)
 	var snap: Dictionary = applier.pools_snapshot()
-	var other := IntentApply.new(GameState.new())
+	var other := OnWorkIntentApply.new(OnWorkState.new())
 	other.seed_pool_for_test(B, 99, 99)      # 先脏一份，看 restore 会不会清
 	other.pools_restore(snap)
-	check(int(other.pools(A)[CardDB.RES_CASH]) == 7
-		and int(other.pools(A)[CardDB.RES_USER]) == 3, "池子的数值过了一趟往返")
+	check(int(other.pools(A)[OnWorkCardDB.RES_CASH]) == 7
+		and int(other.pools(A)[OnWorkCardDB.RES_USER]) == 3, "池子的数值过了一趟往返")
 	check(not other.armed(B), "restore 是整份替换（原来那个座位的条目没留下）")
 
 	# 再走真服务器。**先给两边各编一个攻击组合**：装出来是空池的话
@@ -119,16 +119,16 @@ func _t1_pools_in_snapshot() -> void:
 		% str(got.get("reason", "")))
 	var sp: Dictionary = _server_applier().pools(first.my_seat)
 	var cp: Dictionary = first.applier().pools(first.my_seat)
-	check(int(cp[CardDB.RES_CASH]) == int(sp[CardDB.RES_CASH])
-		and int(cp[CardDB.RES_USER]) == int(sp[CardDB.RES_USER]),
+	check(int(cp[OnWorkCardDB.RES_CASH]) == int(sp[OnWorkCardDB.RES_CASH])
+		and int(cp[OnWorkCardDB.RES_USER]) == int(sp[OnWorkCardDB.RES_USER]),
 		"装弹后客户端的池子跟服务器一样（%s vs %s）" % [cp, sp])
-	check(int(cp[CardDB.RES_CASH]) + int(cp[CardDB.RES_USER]) > 0,
+	check(int(cp[OnWorkCardDB.RES_CASH]) + int(cp[OnWorkCardDB.RES_USER]) > 0,
 		"而且那不是个空池（%s）—— 空池两边也「一样」，这条判据要它非空才算数" % cp)
 	check(first.applier().armed(first.my_seat), "客户端这边 armed 也为真")
 
 	# next_round 的快照必须把池子**清掉**：留着的话下一回合客户端以为装过弹了
 	room.applier.pools_restore({})
-	var r2: Dictionary = room._applied({ "ok": true, "op": Intent.OP_NEXT_ROUND })
+	var r2: Dictionary = room._applied({ "ok": true, "op": OnWorkIntent.OP_NEXT_ROUND })
 	_deliver(first, r2)
 	# 送进去还不算处理 —— next_round 是服务器专属操作，压在队头等场景层来取
 	# （这正是 T2 那条判据说的节拍）。所以这里也得替场景层取一次
@@ -151,7 +151,7 @@ func _both_action_done(a: NetTransport, b: NetTransport) -> bool:
 		# submit 是协程且自己泵帧，但它只泵自己 —— 服务器得有人摇。
 		# 起一个并行的泵：submit 挂在 await 上时这个循环还在跑
 		net_pump_until([a, b], func(): return done)
-		var r: Dictionary = await t.submit(Intent.action_done(t.my_seat))
+		var r: Dictionary = await t.submit(OnWorkIntent.action_done(t.my_seat))
 		done = true
 		if not r.get("ok", false) and str(r.get("code", "")) != "not_your_turn":
 			check(false, "过行动阶段（%s）：%s" % [t.my_seat, r.get("reason", "")])
@@ -165,12 +165,12 @@ func _both_action_done(a: NetTransport, b: NetTransport) -> bool:
 ## 在服务器那份状态上给某座位编一个攻击组合（配方最小的那张攻击卡 + 弹药）。
 ## 直接改服务器的 state 而不是让客户端出牌：这条判据钉的是「池子过不过网」，
 ## 不是「怎么编出攻击组合」（那由 test_ammo_arming 盯着）
-func _give_attack_combo(room: NetRoom, seat: String) -> void:
+func _give_attack_combo(room: OnWorkRoom, seat: String) -> void:
 	var def_id := ""
 	var best := 999
-	for id in CardDB.all_cards():
-		var d: Dictionary = CardDB.get_def(id)
-		if d.get("kind") != CardDB.KIND_ATTACK:
+	for id in OnWorkCardDB.all_cards():
+		var d: Dictionary = OnWorkCardDB.get_def(id)
+		if d.get("kind") != OnWorkCardDB.KIND_ATTACK:
 			continue
 		var n := int(d.get("recipe_n", 0))
 		if n >= 1 and n < best:
@@ -178,9 +178,9 @@ func _give_attack_combo(room: NetRoom, seat: String) -> void:
 			def_id = str(id)
 	if def_id == "":
 		return
-	var d: Dictionary = CardDB.get_def(def_id)
+	var d: Dictionary = OnWorkCardDB.get_def(def_id)
 	var uids: Array = [room.state.add_card(seat, def_id)["uid"]]
-	var unit := "cash" if str(d.get("recipe_res")) == CardDB.RES_CASH else "user"
+	var unit := "cash" if str(d.get("recipe_res")) == OnWorkCardDB.RES_CASH else "user"
 	for i in int(d.get("recipe_n", 0)):
 		uids.append(room.state.add_card(seat, unit)["uid"])
 	# 弹药付款是**真扣**的（arm_attacks charge=true），配方之外还得有余量，
@@ -189,12 +189,12 @@ func _give_attack_combo(room: NetRoom, seat: String) -> void:
 		room.state.add_card(seat, unit)
 	room.state.create_combo(seat, uids)
 
-func _server_room() -> NetRoom:
+func _server_room() -> OnWorkRoom:
 	for code in _srv.rooms:
 		return _srv.rooms[code]
 	return null
 
-func _server_applier() -> IntentApply:
+func _server_applier() -> OnWorkIntentApply:
 	var room := _server_room()
 	return room.applier if room != null else null
 
@@ -203,7 +203,7 @@ func _server_applier() -> IntentApply:
 ## 真要走 socket 的话得先把局面推到那一步，而那不是这条判据要钉的东西。
 ##
 ## 取的是 `out["msg"]`：房间里那些 _all / _to 拼出来的是 **{to, msg}**
-## 一条（net/room.gd 的 _all）。这里原先按 out["all"] 取，取到空数组 ——
+## 一条（net/on_work_room.gd 的 _all）。这里原先按 out["all"] 取，取到空数组 ——
 ## **一条都没送出去而判据是绿的**：紧跟着那句「送到了还没生效」
 ## 在「压在队头」和「根本没到」这两种情况下都成立。
 ## 这种绿是最贵的一种（memory: green-mutation-means-no-observer 的同一形状），
@@ -228,7 +228,7 @@ func _t2_inbox_paces_state() -> void:
 	c.my_seat = A
 	c.foe_seat = B
 	# 造三条服务器专属操作，模拟「一整段同时到达」
-	var room := NetRoom.new("T2", 20260826)
+	var room := OnWorkRoom.new("T2", 20260826)
 	# 三条快照都取**推进之后**那一份，好让「客户端合上了就跳过节拍」这件事
 	# 在回合数上看得见：服务器这边先把回合推掉，再拼这一串
 	var seg: Array = []
@@ -236,14 +236,14 @@ func _t2_inbox_paces_state() -> void:
 	var core := room.state.add_card(A, "yunketang")
 	var uids: Array = [core["uid"]]
 	for card in room.state.players[A]["cards"]:
-		if card["def_id"] == "user" and uids.size() <= int(CardDB.get_def("yunketang")["recipe_n"]):
+		if card["def_id"] == "user" and uids.size() <= int(OnWorkCardDB.get_def("yunketang")["recipe_n"]):
 			uids.append(card["uid"])
 	room.state.create_combo(A, uids)
-	seg.append(Protocol.applied(room.applier.apply(Intent.produce(0)), 1, room.snapshot()))
-	seg.append(Protocol.applied({ "ok": true, "op": Intent.OP_FINALIZE, "seat": A },
+	seg.append(Protocol.applied(room.applier.apply(OnWorkIntent.produce(0)), 1, room.snapshot()))
+	seg.append(Protocol.applied({ "ok": true, "op": OnWorkIntent.OP_FINALIZE, "seat": A },
 		2, room.snapshot()))
 	room.state.round_num += 1        # next_round 在服务器那边已经发生了
-	seg.append(Protocol.applied({ "ok": true, "op": Intent.OP_NEXT_ROUND, "seat": A },
+	seg.append(Protocol.applied({ "ok": true, "op": OnWorkIntent.OP_NEXT_ROUND, "seat": A },
 		3, room.snapshot()))
 	var round_before: int = c.state().round_num
 	for m in seg:
@@ -256,7 +256,7 @@ func _t2_inbox_paces_state() -> void:
 	check(bool(r1.get("ok", false)) and c._inbox.size() == 2,
 		"取一条就只推进一条（队里还剩 %d）" % c._inbox.size())
 	# 客户端操作不占节拍：它们没有演出要对齐，压在队头就是 submit 卡死
-	var foe := Protocol.applied({ "ok": true, "op": Intent.OP_BUY, "seat": B,
+	var foe := Protocol.applied({ "ok": true, "op": OnWorkIntent.OP_BUY, "seat": B,
 		"new_uid": -1 }, 99, room.snapshot())
 	c._inbox.append(foe)
 	c._drain()
@@ -267,7 +267,7 @@ func _t2_inbox_paces_state() -> void:
 	check(c._inbox.size() == 3,
 		"队头压着服务器操作时，后面的客户端操作不许被 drain 提前吃掉（%d）"
 			% c._inbox.size())
-	check(str((c._inbox[0]["result"] as Dictionary)["op"]) == Intent.OP_FINALIZE,
+	check(str((c._inbox[0]["result"] as Dictionary)["op"]) == OnWorkIntent.OP_FINALIZE,
 		"队头还是那条 finalize")
 	c.close()
 
@@ -346,16 +346,16 @@ func _group_center(g: Dictionary) -> Vector3:
 ## 给玩家这一侧现造两个生产组合：直接 add_card 凑齐配方再 create_combo。
 ## 不去翻手里现有的牌 —— 那样成不成得看发牌，判据不能靠随机数碰上才成立
 func _make_two_player_combos(main: Node) -> int:
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# 前面几节可能已经把胜利线顶过去了；winner 一旦定下来 create_combo 之后的
 	# 结算护栏会挡掉一切（见 test_arrivals T6 那段说明）。这里只是造前提
 	state.winner = ""
 	state.win_reason = ""
 	var made := 0
 	for def_id in _two_producers():
-		var d: Dictionary = CardDB.get_def(def_id)
+		var d: Dictionary = OnWorkCardDB.get_def(def_id)
 		var uids: Array = [state.add_card(main.my_seat, def_id)["uid"]]
-		var unit := "cash" if str(d.get("recipe_res")) == CardDB.RES_CASH else "user"
+		var unit := "cash" if str(d.get("recipe_res")) == OnWorkCardDB.RES_CASH else "user"
 		for i in int(d.get("recipe_n", 0)):
 			uids.append(state.add_card(main.my_seat, unit)["uid"])
 		main._sync_entities()
@@ -372,9 +372,9 @@ func _make_two_player_combos(main: Node) -> int:
 ## 那句 `cs.size() < 2`），于是第二组根本建不起来，判据变成只测一组
 func _two_producers() -> Array:
 	var by_n: Array = []
-	for def_id in CardDB.all_cards():
-		var d: Dictionary = CardDB.get_def(def_id)
-		if d.get("kind") != CardDB.KIND_PRODUCT:
+	for def_id in OnWorkCardDB.all_cards():
+		var d: Dictionary = OnWorkCardDB.get_def(def_id)
+		if d.get("kind") != OnWorkCardDB.KIND_PRODUCT:
 			continue
 		var n := int(d.get("recipe_n", 0))
 		if n >= 1:
@@ -425,10 +425,10 @@ func _t4_scene_hosts_net() -> void:
 
 	# 阶段：只认第一条 action，往后一律不认（服务器比客户端的演出快一整段）
 	main._net_phase_seen = false
-	main._on_net_phase(PhaseMachine.ACTION, a.my_seat)
+	main._on_net_phase(OnWorkPhaseMachine.ACTION, a.my_seat)
 	check(main._net_phase_seen, "第一条 action 开了行动阶段")
 	var locked_before: bool = main.board.input_locked
-	main._on_net_phase(PhaseMachine.ACTION, a.my_seat)
+	main._on_net_phase(OnWorkPhaseMachine.ACTION, a.my_seat)
 	check(main.board.input_locked == locked_before, "第二条 action 不再开一次")
 
 	# 断线要把理由说出来，并且把界面锁掉
@@ -438,7 +438,7 @@ func _t4_scene_hosts_net() -> void:
 
 	# 「再战一局」要把座位改回单机那一对，不然桌子左右不镜像
 	main._reset_session_flags()
-	check(main.my_seat == GameState.PLAYER and main.foe_seat == GameState.BOT,
+	check(main.my_seat == OnWorkState.PLAYER and main.foe_seat == OnWorkState.BOT,
 		"重开之后座位回到单机那一对（%s/%s）" % [main.my_seat, main.foe_seat])
 	check(not main._net_phase_seen, "重开之后 phase 标记清了")
 
@@ -449,7 +449,7 @@ func _t4_scene_hosts_net() -> void:
 
 # ---------- T5 一个人先进房：seated 带的是空局 ----------
 
-## 先进房那位的**第一份 seated 里 players 是空字典** —— 房间是 NetRoom._init 建的，
+## 先进房那位的**第一份 seated 里 players 是空字典** —— 房间是 OnWorkRoom._init 建的，
 ## 而 new_game() 在 start_if_ready() 里，要等满座才跑。
 ##
 ## 这一条和 T4 的差别只有一个字：T4 是 `_seated_pair`（**两个人都坐下之后**
@@ -517,8 +517,8 @@ func _t5_lone_joiner_waits() -> void:
 		return
 	check(true, "第二个人进来之后桌子补摆上了（%d 张）" % main.entities.size())
 
-	var room: NetRoom = _srv.rooms["TDDD"]
-	check(StateCodec.state_hash(main.state) == StateCodec.state_hash(room.state),
+	var room: OnWorkRoom = _srv.rooms["TDDD"]
+	check(OnWorkStateCodec.state_hash(main.state) == OnWorkStateCodec.state_hash(room.state),
 		"补摆用的是服务器那份局面")
 	check(main.entities.size() == main.state.players[main.my_seat]["cards"].size()
 		+ main.state.players[main.foe_seat]["cards"].size(),

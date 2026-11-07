@@ -7,9 +7,9 @@ extends "res://tests/harness.gd"
 ## 玩家数据统一在 ~/.niumapai_record：录像在根目录，设置与学习进度在 settings/。
 ## 只在测试沙箱里验证搬迁和目录选择；产品默认值只做无副作用的路径推算。
 const Progress = preload("res://engine/tutorial_progress.gd")
-const CardConfigScript = preload("res://engine/card_config.gd")
+const CardConfigScript = preload("res://engine/on_work_card_config.gd")
 const PickerScript = preload("res://scenes/replay_picker.gd")
-const RolePrefScript = preload("res://engine/role_pref.gd")
+const RolePrefScript = preload("res://engine/on_work_role_pref.gd")
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -68,25 +68,25 @@ func _check_migration() -> void:
 
 func _check_data_dir_env() -> void:
 	var saved_env := OS.get_environment(SavePaths.DATA_DIR_ENV)
-	var saved_tape := Tape.directory_override
+	var saved_tape := SavePaths.recordings_override
 	var custom := ProjectSettings.globalize_path("user://env-data")
 	OS.set_environment(SavePaths.DATA_DIR_ENV, custom)
-	Tape.directory_override = ""
+	SavePaths.recordings_override = ""
 	SavePaths.settings_override = ""
-	check(SavePaths.root() == custom and Tape.path_dir() == custom, "CARD_DATA_DIR 指定录像根目录")
+	check(SavePaths.root() == custom and OnWorkTape.path_dir() == custom, "CARD_DATA_DIR 指定录像根目录")
 	check(SavePaths.settings_dir() == custom.path_join("settings"), "设置跟着同一个根目录放进 settings/")
 	OS.set_environment(SavePaths.DATA_DIR_ENV, "relative/dir")
 	check(not SavePaths.root().begins_with("relative"), "相对路径的 CARD_DATA_DIR 不采用，避免存进工作目录")
 	OS.set_environment(SavePaths.DATA_DIR_ENV, saved_env)
-	Tape.directory_override = saved_tape
+	SavePaths.recordings_override = saved_tape
 	SavePaths.settings_override = "user://"
 
 func _check_picker_hides_settings() -> void:
 	var saved_env := OS.get_environment(SavePaths.DATA_DIR_ENV)
-	var saved_tape := Tape.directory_override
+	var saved_tape := SavePaths.recordings_override
 	var data := ProjectSettings.globalize_path("user://picker-data")
 	OS.set_environment(SavePaths.DATA_DIR_ENV, data)
-	Tape.directory_override = ""
+	SavePaths.recordings_override = ""
 	SavePaths.settings_override = ""
 	SavePaths.settings_dir()
 	DirAccess.make_dir_recursive_absolute(data.path_join("2026-赛季"))
@@ -110,7 +110,7 @@ func _check_picker_hides_settings() -> void:
 	host.queue_free()
 	await process_frame
 	OS.set_environment(SavePaths.DATA_DIR_ENV, saved_env)
-	Tape.directory_override = saved_tape
+	SavePaths.recordings_override = saved_tape
 
 func _write(path: String, text: String) -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path).get_base_dir())

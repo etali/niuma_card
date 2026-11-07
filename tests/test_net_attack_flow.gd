@@ -14,8 +14,8 @@ extends "res://tests/harness.gd"
 ##   - **这一条**       ：真端口 + 真场景，钉「一个攻击回合走完之后局面还往下走」
 ##
 ## 为什么必须单独有这一条：攻击阶段的推进在联网局里是**服务器**做的
-## （net/room.gd 的 _advance 只认 OP_ATTACK_DONE），而结束一个攻击回合的
-## 判断在**场景层**（scenes/main.gd 的 _settle_attack）。两处对不上时：
+## （net/on_work_room.gd 的 _advance 只认 OP_ATTACK_DONE），而结束一个攻击回合的
+## 判断在**场景层**（scenes/on_work_main.gd 的 _settle_attack）。两处对不上时：
 ## 服务器一直等一条永远不来的 attack_done，两个客户端一起卡在
 ## `await pipe.arm(...)` 上直到 8 秒超时 —— 整局停在「攻击阶段…」的灰按钮上。
 ## 单机局看不出来，因为那边推进阶段的正是场景层自己。
@@ -24,8 +24,8 @@ extends "res://tests/harness.gd"
 ## 就收工（它钉的是池子过网），往后那一步换手从来没有人问过。
 
 const PORT_BASE := 47320
-const A := GameState.PLAYER
-const B := GameState.BOT
+const A := OnWorkState.PLAYER
+const B := OnWorkState.BOT
 
 ## 协程完成标志。**必须是成员变量，不能是局部量** —— GDScript 的 lambda
 ## 按**值**捕获外层局部量，`var done := false` + `func(): done = true` 里那次
@@ -40,19 +40,19 @@ var _flag2 := false
 
 func _initialize() -> void:
 	print("=== 联网局攻击阶段测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	await _t1_attack_turn_advances()
 	await _t2_foe_sees_my_combos()
 	net_stop()
 	finish()
 
 # ---------- 服务器 / 客户端（与 test_net_client 同法，端口段错开） ----------
-func _server_room() -> NetRoom:
+func _server_room() -> OnWorkRoom:
 	for code in _srv.rooms:
 		return _srv.rooms[code]
 	return null
 
-func _server_applier() -> IntentApply:
+func _server_applier() -> OnWorkIntentApply:
 	var room := _server_room()
 	return room.applier if room != null else null
 ## 一份真场景 + 一条真连接，坐 A 座（第一个连上的占 SEATS[0]，见 room.free_seat）。
@@ -63,12 +63,12 @@ func _seated_scene(seed_value: int, room_code: String) -> Array:
 ## 在服务器那份状态上给某座位编一个攻击组合（配方最小的那张攻击卡 + 弹药）。
 ## 和 test_net_client._give_attack_combo 同法 —— 那边钉的是池子过网，
 ## 这边钉的是换手，两条都要「先手有非空的池子」这个前提
-func _give_attack_combo(room: NetRoom, seat: String) -> void:
+func _give_attack_combo(room: OnWorkRoom, seat: String) -> void:
 	var def_id := ""
 	var best := 999
-	for id in CardDB.all_cards():
-		var d: Dictionary = CardDB.get_def(id)
-		if d.get("kind") != CardDB.KIND_ATTACK:
+	for id in OnWorkCardDB.all_cards():
+		var d: Dictionary = OnWorkCardDB.get_def(id)
+		if d.get("kind") != OnWorkCardDB.KIND_ATTACK:
 			continue
 		var n := int(d.get("recipe_n", 0))
 		if n >= 1 and n < best:
@@ -76,9 +76,9 @@ func _give_attack_combo(room: NetRoom, seat: String) -> void:
 			def_id = str(id)
 	if def_id == "":
 		return
-	var d: Dictionary = CardDB.get_def(def_id)
+	var d: Dictionary = OnWorkCardDB.get_def(def_id)
 	var uids: Array = [room.state.add_card(seat, def_id)["uid"]]
-	var unit := "cash" if str(d.get("recipe_res")) == CardDB.RES_CASH else "user"
+	var unit := "cash" if str(d.get("recipe_res")) == OnWorkCardDB.RES_CASH else "user"
 	for i in int(d.get("recipe_n", 0)):
 		uids.append(room.state.add_card(seat, unit)["uid"])
 	# 弹药付款是**真扣**的（arm_attacks charge=true），配方之外还得有余量
@@ -95,7 +95,7 @@ func _both_action_done(main: Node, a: NetTransport, b: NetTransport) -> bool:
 		var t: NetTransport = a if str(seat) == a.my_seat else b
 		_flag = false
 		net_pump_until([a, b], func(): return _flag)
-		var r: Dictionary = await t.submit(Intent.action_done(t.my_seat))
+		var r: Dictionary = await t.submit(OnWorkIntent.action_done(t.my_seat))
 		_flag = true
 		if not r.get("ok", false):
 			check(false, "过行动阶段（%s）：%s" % [t.my_seat, r.get("reason", "")])
@@ -176,7 +176,7 @@ func _t1_attack_turn_advances() -> void:
 	# 之后 is_done(A) 反而又是 false 了 —— 拿它当判据会把修好的实现判成失败。
 	# 起点是确定的：上面刚等到 armed(A)，此刻服务器必然停在 ATTACK/A 上，
 	# 所以这个谓词一开始为假，不会侥幸通过
-	var advanced := func(): return (room.phase.phase != PhaseMachine.ATTACK
+	var advanced := func(): return (room.phase.phase != OnWorkPhaseMachine.ATTACK
 		or room.phase.actor != A)
 	if not need(await net_until([a, b], advanced),
 			"服务器不再停在 A 的攻击回合上（phase=%s actor=%s done_A=%s）"
@@ -243,11 +243,11 @@ func _t2_foe_sees_my_combos() -> void:
 	var uids := _seed_producer(room, B)
 	if not need(uids.size() >= 2, "给对手凑了一组生产料（%d 张）" % uids.size()):
 		return
-	# 行动阶段的 actor 得是 B 才发得出（PhaseMachine.check）
+	# 行动阶段的 actor 得是 B 才发得出（OnWorkPhaseMachine.check）
 	if room.state.action_order()[0] != B:
 		_flag = false
 		net_pump_until([a, b], func(): return _flag)
-		var ra: Dictionary = await a.submit(Intent.action_done(A))
+		var ra: Dictionary = await a.submit(OnWorkIntent.action_done(A))
 		_flag = true
 		if not need(bool(ra.get("ok", false)), "A 先过了行动阶段：%s"
 				% ra.get("reason", "")):
@@ -257,7 +257,7 @@ func _t2_foe_sees_my_combos() -> void:
 	var before := _foe_combo_piles(main)
 	_flag = false
 	net_pump_until([a, b], func(): return _flag)
-	var r: Dictionary = await b.submit(Intent.create_combo(B, uids))
+	var r: Dictionary = await b.submit(OnWorkIntent.create_combo(B, uids))
 	_flag = true
 	if not need(bool(r.get("ok", false)), "对手编成了一组（%s）" % r.get("reason", "")):
 		return
@@ -308,12 +308,12 @@ func _pile_for(main: Node, uids: Array) -> bool:
 ## 给某座位在服务器状态上凑一组生产料（配方最小的那张生产卡 + 单位卡），
 ## 返回该发 create_combo 的 uid 列表。**不在这里 create_combo** ——
 ## 那一步要走真的意图管道
-func _seed_producer(room: NetRoom, seat: String) -> Array:
+func _seed_producer(room: OnWorkRoom, seat: String) -> Array:
 	var def_id := ""
 	var best := 999
-	for id in CardDB.all_cards():
-		var d: Dictionary = CardDB.get_def(id)
-		if d.get("kind") != CardDB.KIND_PRODUCT:
+	for id in OnWorkCardDB.all_cards():
+		var d: Dictionary = OnWorkCardDB.get_def(id)
+		if d.get("kind") != OnWorkCardDB.KIND_PRODUCT:
 			continue
 		var n := int(d.get("recipe_n", 0))
 		if n >= 1 and n < best:
@@ -321,9 +321,9 @@ func _seed_producer(room: NetRoom, seat: String) -> Array:
 			def_id = str(id)
 	if def_id == "":
 		return []
-	var d: Dictionary = CardDB.get_def(def_id)
+	var d: Dictionary = OnWorkCardDB.get_def(def_id)
 	var uids: Array = [room.state.add_card(seat, def_id)["uid"]]
-	var unit := "cash" if str(d.get("recipe_res")) == CardDB.RES_CASH else "user"
+	var unit := "cash" if str(d.get("recipe_res")) == OnWorkCardDB.RES_CASH else "user"
 	for i in int(d.get("recipe_n", 0)):
 		uids.append(room.state.add_card(seat, unit)["uid"])
 	return uids

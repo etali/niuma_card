@@ -7,15 +7,15 @@ extends RefCounted
 
 ## 网络消息的信封：消息类型、构造函数和 REQUIRED 字段表均在本文件定义。
 ##
-## 和 engine/intent.gd 是**两层**，别合并：
-##   Intent    = 「谁想做什么」，是玩法。单机局也走它，不联网也存在
+## 和 engine/on_work_intent.gd 是**两层**，别合并：
+##   OnWorkIntent    = 「谁想做什么」，是玩法。单机局也走它，不联网也存在
 ##   Protocol  = 「这条消息怎么在线上走」，是传输。只有联网才有
 ## 合成一层的话，单机局会开始依赖只有联网才有的字段（room/table_hash/seq），
 ## 而那些字段在单机局里必然是空的 —— 于是「本地也走同一条管道」这条就废了。
 ##
-## 这个文件只管**形状**：构造、编解码、字段校验。不碰 GameState，
+## 这个文件只管**形状**：构造、编解码、字段校验。不碰 OnWorkState，
 ## 不判断谁能发什么（那是服务器的事，见 tools/pvp_server.gd）。
-## 和 Intent 分工一致：形状错说明发包的代码有 bug 或是伪造包，要拒包；
+## 和 OnWorkIntent 分工一致：形状错说明发包的代码有 bug 或是伪造包，要拒包；
 ## 玩法错说明这一步走不了，要给玩家看原因
 
 # ---------- 协议版本 ----------
@@ -68,7 +68,7 @@ extends RefCounted
 ## v9：同类数值 Buff 按张数叠乘，避免与只应用一次倍率的旧客户端混用。
 ## v10：对手座位标识统一为 bot，拒绝与旧座位编码的客户端混用。
 const VERSION := 10
-## 仅录像里的权威快照恢复标记，不是玩家可提交的 Intent。
+## 仅录像里的权威快照恢复标记，不是玩家可提交的 OnWorkIntent。
 const RECOVERY_STEP := "recovery"
 
 # ---------- 消息类型 ----------
@@ -99,7 +99,7 @@ const DRAG := "drag"                 ## { seq, phase, uids, u, v }
 const PILES := "piles"               ## { piles: [{uids: [uid...], compact: bool, u: float, v: float}, ...] }
 ## 「再来一局」。**不带任何载荷**：谁发的由连接认（占哪个座位），
 ## 想不想再来一局是个布尔量。撤销投票没有对应消息 ——
-## 点了就等于愿意，改主意的路是退出房间（scenes/main.gd 的 _offer_reconnect / _on_net_down：这游戏重连很便宜，退了再进也便宜）
+## 点了就等于愿意，改主意的路是退出房间（scenes/on_work_main.gd 的 _offer_reconnect / _on_net_down：这游戏重连很便宜，退了再进也便宜）
 const REMATCH := "rematch"           ## { }
 
 # S→C
@@ -133,7 +133,7 @@ const FOE_LEFT := "foe_left"         ## { }
 ## 对手回来了（重连回原座位，或者空座位又被人坐上）。
 ##
 ## 收方分不出这两种情况，也**不需要**分：房间是同一个、快照是同一份、
-## 座位上的令牌也没换（net/room.gd 的 drop_peer 只把座位置 0）。
+## 座位上的令牌也没换（net/on_work_room.gd 的 drop_peer 只把座位置 0）。
 ## 对留下的那一位来说，「对面又有人了」就是全部信息
 ##
 ## 没有载荷的理由同 FOE_LEFT：谁走了 / 谁回来了都只能是对手 —— 两个座位，
@@ -152,7 +152,7 @@ const REMATCH_STATE := "rematch_state"   ## { votes: [seat...] }
 ##   - seated 是「你入座了」，客户端拿它建整条管道、连信号、藏联网按钮。
 ##     rematch 时那些都已经连好了，再走一遍会重复连接、还会把
 ##     _net_phase_seen 那种一次性量的语义搞坏
-##   - 而座位**会变**（先手在局间轮换，见 net/room.gd 的 reset_for_rematch），
+##   - 而座位**会变**（先手在局间轮换，见 net/on_work_room.gd 的 reset_for_rematch），
 ##     所以又不能只发一个「重开了」了事：收方要按新座位重摆桌子
 ## resume_token 不带：令牌是跟座位走的，rematch 不换座位归属（换的是先手）
 const REMATCH_START := "rematch_start"   ## { my_seat, foe_seat, snapshot }
@@ -177,17 +177,18 @@ const REMATCH_START := "rematch_start"   ## { my_seat, foe_seat, snapshot }
 const PING := "ping"                 ## { at: int 毫秒 }
 const PONG := "pong"                 ## { at: int 毫秒（原样回） }
 
-const WORK_ACTION := "work_action"
-const WORK_FRAME := "work_frame"
-const WORK_SEAT := "work_seat"
+## Wire values remain stable for saved frames and existing LAN peers.
+const OFF_WORK_ACTION := "work_action"
+const OFF_WORK_FRAME := "work_frame"
+const OFF_WORK_SEAT := "work_seat"
 ## 客户端**能发**的消息类型。白名单而不是黑名单：
 ## 以后加新消息忘了登记，只会「发不出去」，不会「客户端能伪造 seated」
-const CLIENT_MSGS := [WORK_ACTION, JOIN, INTENT, DRAG, PILES, REMATCH, PING]
+const CLIENT_MSGS := [OFF_WORK_ACTION, JOIN, INTENT, DRAG, PILES, REMATCH, PING]
 
 const REQUIRED := {
-	WORK_ACTION: ["action"],
-	WORK_FRAME: ["frame"],
-	WORK_SEAT: ["my_seat", "frame"],
+	OFF_WORK_ACTION: ["action"],
+	OFF_WORK_FRAME: ["frame"],
+	OFF_WORK_SEAT: ["my_seat", "frame"],
 	JOIN: ["room"],
 	INTENT: ["intent"],
 	DRAG: ["seq", "phase"],
@@ -326,7 +327,7 @@ static func room_rule_text() -> String:
 
 # ---------- 构造 ----------
 
-## 加入房间。table_hash 由 StateCodec.table_hash() 给 ——
+## 加入房间。table_hash 由 OnWorkStateCodec.table_hash() 给 ——
 ## 客户端不该自己算一套口径（两套口径就会出现「哈希不等但两份表其实一样」）
 static func join(room: String, table_hash := "", resume_token := "") -> Dictionary:
 	var m := { "t": JOIN, "version": VERSION,
@@ -342,7 +343,7 @@ static func seated(my_seat: String, foe_seat: String, snapshot: Dictionary,
 		"snapshot": snapshot, "resume_token": str(resume_token) }
 
 ## 客户端发意图。座位不在信封里 —— 服务器按**连接**认身份
-## （IntentApply 的 from_seat）。放在信封里就等于让客户端自称是谁
+## （OnWorkIntentApply 的 from_seat）。放在信封里就等于让客户端自称是谁
 static func intent(it: Dictionary) -> Dictionary:
 	return { "t": INTENT, "intent": it }
 
@@ -366,14 +367,14 @@ static func applied(result: Dictionary, seq: int, snapshot: Dictionary = {}) -> 
 static func rejected(code: String, reason: String) -> Dictionary:
 	return { "t": REJECTED, "code": str(code), "reason": str(reason) }
 
-## 拖拽广播；接收与租约处理见 scenes/main.gd 的 on_foe_drag。
+## 拖拽广播；接收与租约处理见 scenes/on_work_main.gd 的 on_foe_drag。
 ##
 ## 坐标是**归一化的 (u,v)**，不是世界坐标：两端窗口大小和布局都不同，
 ## 传世界坐标等于假设对面和我同一套布局。uids 让接收端知道拖的是哪几张，
 ## 但**不含光标**：接收端只显示移动中的牌，不复刻对手的鼠标。
 static func drag(seq: int, phase: String, uids: Array, u := 0.0, v := 0.0) -> Dictionary:
 	return { "t": DRAG, "seq": int(seq), "phase": str(phase),
-		"uids": Intent.ints(uids), "u": float(u), "v": float(v) }
+		"uids": OnWorkIntent.ints(uids), "u": float(u), "v": float(v) }
 
 ## 转发给对手时只换类型，其余原样 —— 服务器不重算坐标（它没有布局）
 static func foe_drag(d: Dictionary) -> Dictionary:
@@ -398,7 +399,7 @@ static func foe_piles(d: Dictionary) -> Dictionary:
 	return out
 
 ## 回放某一侧自己声明过的摞（见 MY_PILES）。参数是**分组数组**而不是一条消息 ——
-## 服务器手里存的就是数组（NetRoom.piles_of），不是它当初收到的那条包
+## 服务器手里存的就是数组（OnWorkRoom.piles_of），不是它当初收到的那条包
 static func my_piles(groups: Array) -> Dictionary:
 	return { "t": MY_PILES, "piles": pile_lists(groups) }
 
@@ -437,10 +438,10 @@ static func pile_lists(groups: Array) -> Array:
 		var compact := false
 		var uv: Variant = null
 		if g is Array:
-			uids = Intent.ints(g)
+			uids = OnWorkIntent.ints(g)
 		elif g is Dictionary:
 			var d := g as Dictionary
-			uids = Intent.ints(d.get("uids", []))
+			uids = OnWorkIntent.ints(d.get("uids", []))
 			compact = bool(d.get("compact", false))
 			if d.has("u") and d.has("v"):
 				# 钳在 [0,1]：伪造包能送任意浮点，而收方拿它直接 lerp 到桌面上 ——
@@ -484,7 +485,7 @@ static func rematch_state(votes: Array) -> Dictionary:
 		out.append(str(s))
 	return { "t": REMATCH_STATE, "votes": out }
 
-## 新局开始，按收方的新座位发。快照是全量的那一份（net/room.gd 的 snapshot）
+## 新局开始，按收方的新座位发。快照是全量的那一份（net/on_work_room.gd 的 snapshot）
 static func rematch_start(my_seat: String, foe_seat: String,
 		snapshot: Dictionary) -> Dictionary:
 	return { "t": REMATCH_START, "version": VERSION,
@@ -497,9 +498,9 @@ static func encode(msg: Dictionary) -> String:
 
 ## 解码 + 形状校验。返回 { ok: true, msg: {...} } 或 { ok: false, code, reason }。
 ##
-## 和 Intent.decode 一样是**重建**而不是原样放行：手写包 / 老版本包
+## 和 OnWorkIntent.decode 一样是**重建**而不是原样放行：手写包 / 老版本包
 ## 少个字段时要在这里拦住，而不是等到某个 `int(msg["seq"])` 上崩。
-## intent 内层交给 Intent.from_dict 统一检查并归一化，错误码保持意图层的语义。
+## intent 内层交给 OnWorkIntent.from_dict 统一检查并归一化，错误码保持意图层的语义。
 ## 这样日志摘要和房间分流也只接触已经通过类型检查的数据。
 ## 用 JSON.new().parse() 而不是 JSON.parse_string()：**后者解不开时
 ## 会自己打一条引擎 ERROR 加一屏 GDScript 回溯**。而「收到读不懂的包」
@@ -522,7 +523,7 @@ static func decode(text: String) -> Dictionary:
 ## 值相等（60 == 60.0 为真）所以 find_card 照样找得到 —— 这条能潜很久。
 ## 它炸在拿 uid 当**字典键**和 Array.has 的地方，那两处 int 和 float 不是一回事：
 ##   实测 { 60: x }.has(60.0) = false，[60].has(60.0) = false，hash 也不等
-## 而 scenes/main.gd 正好这么用：_commit_buy 里 `entities.has(u)` 查付掉的卡，
+## 而 scenes/on_work_main.gd 正好这么用：_commit_buy 里 `entities.has(u)` 查付掉的卡，
 ## 拖拽买里 `paid.has(c.uid)` 算多付的差集。float 键一律查不中的后果是
 ## 付掉的现金卡不被吸走、还被当成「多付的」原样退回 —— **联网局白拿一张牌**，
 ## 单机局一切正常。正是 「一条执行路径修好、另一条漏掉」的分叉。
@@ -531,7 +532,7 @@ static func decode(text: String) -> Dictionary:
 ## 本该是 float 的字段变成 int，之后 `x / 2` 就成了整数除法 —— 换一个更难找的 bug。
 ## 新增 uid 类字段忘了登记的话，由 test_net_socket 的 T8 报出来（它扫整个结果）。
 ##
-## `removed` 名字里**没有 uid** 却装着一串 uid（`GameState.apply_attack` 的回执），
+## `removed` 名字里**没有 uid** 却装着一串 uid（`OnWorkState.apply_attack` 的回执），
 ## 所以它既漏过了这张白名单，也漏过了 T8 那个「按字段名找 uid」的扫描器 ——
 ## 两道网都是按名字织的，同一个字眼漏两次。症状是攻击对手的卡时
 ## `_animate_removed` 里 `entities.has(u)` 一张都查不中（int 键查不到 float），
@@ -547,7 +548,7 @@ static func restore_uids(r: Dictionary) -> Dictionary:
 			out[f] = int(out[f])
 	for f in UID_LIST_FIELDS:
 		if out.has(f):
-			out[f] = Intent.ints(out[f])
+			out[f] = OnWorkIntent.ints(out[f])
 	# 攻击目标与结算实付结果都是嵌套对象，UID 要在同一条解码路径恢复。
 	for field in ["target", "resolution", "combo"]:
 		if out.get(field, null) is Dictionary:
@@ -559,50 +560,50 @@ static func result_issue(value: Variant, depth := 0) -> String:
 	if depth > 16 or not value is Dictionary: return "裁决结果嵌套或格式错误"
 	var d: Dictionary = value
 	if depth == 0:
-		if not d.get("ok") is bool or not d["ok"] or not d.get("op") is String or (not Intent.REQUIRED_FIELDS.has(d["op"]) and d["op"] != RECOVERY_STEP):
+		if not d.get("ok") is bool or not d["ok"] or not d.get("op") is String or (not OnWorkIntent.REQUIRED_FIELDS.has(d["op"]) and d["op"] != RECOVERY_STEP):
 			return "裁决结果缺少成功标记或有效操作码"
 		if d["op"] == RECOVERY_STEP:
-			if d.get("phase") not in [PhaseMachine.ACTION, PhaseMachine.ATTACK, PhaseMachine.OVER]: return "恢复阶段无效"
-			if d.get("actor") not in ["", GameState.PLAYER, GameState.BOT]: return "恢复行动方无效"
-			if d["phase"] != PhaseMachine.OVER and d["actor"] == "": return "恢复行动方缺失"
-			if not Intent.valid_integer(d.get("seq"), 0): return "恢复序号无效"
+			if d.get("phase") not in [OnWorkPhaseMachine.ACTION, OnWorkPhaseMachine.ATTACK, OnWorkPhaseMachine.OVER]: return "恢复阶段无效"
+			if d.get("actor") not in ["", OnWorkState.PLAYER, OnWorkState.BOT]: return "恢复行动方无效"
+			if d["phase"] != OnWorkPhaseMachine.OVER and d["actor"] == "": return "恢复行动方缺失"
+			if not OnWorkIntent.valid_integer(d.get("seq"), 0): return "恢复序号无效"
 		var required := {
-			Intent.OP_BUY: ["new_uid", "market_idx", "removed_uids"],
-			Intent.OP_PAWN: ["uids", "total"],
-			Intent.OP_COMBO: ["uids", "eval"],
-			Intent.OP_ATTACK: ["removed", "target"],
-			Intent.OP_PRODUCE: ["combo_idx", "combo", "resolution"],
-			Intent.OP_ARM: ["pools", "empty"],
+			OnWorkIntent.OP_BUY: ["new_uid", "market_idx", "removed_uids"],
+			OnWorkIntent.OP_PAWN: ["uids", "total"],
+			OnWorkIntent.OP_COMBO: ["uids", "eval"],
+			OnWorkIntent.OP_ATTACK: ["removed", "target"],
+			OnWorkIntent.OP_PRODUCE: ["combo_idx", "combo", "resolution"],
+			OnWorkIntent.OP_ARM: ["pools", "empty"],
 		}
 		for key in required.get(d["op"], []):
 			if not d.has(key): return "裁决结果缺少 %s" % key
-	var issue := Intent.field_types(d,
+	var issue := OnWorkIntent.field_types(d,
 		["op", "seat", "owner", "code", "reason", "why", "def_id", "kind", "res", "leader", "batch", "winner", "draw_first"],
 		UID_FIELDS + ["market_idx", "combo_idx", "cost", "total", "round", "seq"], UID_LIST_FIELDS,
 		["ok", "empty", "forfeited", "voided", "intact", "resolved"])
 	if issue != "": return issue
-	if d.has("seat") and d["seat"] not in ["", GameState.PLAYER, GameState.BOT]: return "裁决座位无效"
+	if d.has("seat") and d["seat"] not in ["", OnWorkState.PLAYER, OnWorkState.BOT]: return "裁决座位无效"
 	for key in UID_FIELDS + ["cost", "total", "round", "seq"]:
-		if d.has(key) and not Intent.valid_integer(d[key], 0): return "%s 必须是非负整数" % key
+		if d.has(key) and not OnWorkIntent.valid_integer(d[key], 0): return "%s 必须是非负整数" % key
 	for key in ["target", "resolution", "combo"]:
 		if d.has(key):
 			issue = result_issue(d[key], depth + 1)
 			if issue != "": return issue
 	if d.has("target"):
 		var target: Dictionary = d["target"]
-		if target.get("kind") not in ["combo", "spare", "card"] or target.get("res") not in [CardDB.RES_CASH, CardDB.RES_USER] \
+		if target.get("kind") not in ["combo", "spare", "card"] or target.get("res") not in [OnWorkCardDB.RES_CASH, OnWorkCardDB.RES_USER] \
 			or not target.get("uids") is Array or target["uids"].is_empty(): return "攻击目标不完整"
 	if d.has("combo"):
-		issue = StateCodec.combo_issue(d["combo"])
+		issue = OnWorkStateCodec.combo_issue(d["combo"])
 		if issue != "": return issue
 	if d.has("resolution"):
 		if not d["resolution"].get("resolved") is bool or not d["resolution"].has("paid_uids"):
 			return "结算回执不完整"
 	if d.has("eval"):
-		issue = StateCodec.eval_issue(d["eval"])
+		issue = OnWorkStateCodec.eval_issue(d["eval"])
 		if issue != "": return issue
 	if d.has("pools"):
-		issue = StateCodec.pools_issue({GameState.PLAYER: d["pools"]})
+		issue = OnWorkStateCodec.pools_issue({OnWorkState.PLAYER: d["pools"]})
 		if issue != "": return issue
 	return ""
 
@@ -610,12 +611,12 @@ static func _piles_issue(value: Variant) -> String:
 	if not value is Array: return "piles 不是一个数组"
 	for pile in value:
 		if pile is Array:
-			if not Intent.valid_uids(pile): return "摞卡牌编号格式错误"
+			if not OnWorkIntent.valid_uids(pile): return "摞卡牌编号格式错误"
 		elif pile is Dictionary:
-			var issue := Intent.field_types(pile, [], [], ["uids"], ["compact"])
+			var issue := OnWorkIntent.field_types(pile, [], [], ["uids"], ["compact"])
 			if issue != "": return issue
 			for key in ["u", "v"]:
-				if pile.has(key) and not Intent.valid_number(pile[key]): return "摞坐标必须是有限数字"
+				if pile.has(key) and not OnWorkIntent.valid_number(pile[key]): return "摞坐标必须是有限数字"
 		else:
 			return "摞必须是对象或编号数组"
 	return ""
@@ -624,19 +625,19 @@ static func _shape_issue(d: Dictionary, t: String) -> Dictionary:
 	if d.has("recovery"):
 		var recovery_error := recovery_issue(d["recovery"])
 		if recovery_error != "": return err("bad_recovery", recovery_error)
-	var issue := Intent.field_types(d,
+	var issue := OnWorkIntent.field_types(d,
 		["t", "room", "game", "table_hash", "resume_token", "my_seat", "foe_seat", "code", "reason", "phase", "actor"],
 		["version", "seq", "at"], ["uids"])
 	if issue != "": return err("bad_field", issue)
 	for key in ["version", "seq", "at"]:
-		if d.has(key) and not Intent.valid_integer(d[key], 0): return err("bad_field", "%s 必须是非负整数" % key)
+		if d.has(key) and not OnWorkIntent.valid_integer(d[key], 0): return err("bad_field", "%s 必须是非负整数" % key)
 	for key in ["u", "v"]:
-		if d.has(key) and not Intent.valid_number(d[key]): return err("bad_field", "%s 必须是有限数字" % key)
+		if d.has(key) and not OnWorkIntent.valid_number(d[key]): return err("bad_field", "%s 必须是有限数字" % key)
 	if t in [SEATED, REMATCH_START] or (t == APPLIED and d.has("snapshot")):
-		issue = StateCodec.snapshot_issue(d.get("snapshot"))
+		issue = OnWorkStateCodec.snapshot_issue(d.get("snapshot"))
 		if issue != "": return err("bad_snapshot", issue)
 	if t in [SEATED, REMATCH_START]:
-		if d["my_seat"] not in [GameState.PLAYER, GameState.BOT] or d["foe_seat"] != GameState.opponent(d["my_seat"]):
+		if d["my_seat"] not in [OnWorkState.PLAYER, OnWorkState.BOT] or d["foe_seat"] != OnWorkState.opponent(d["my_seat"]):
 			return err("bad_seat", "双方座位无效")
 	if t == APPLIED:
 		issue = result_issue(d.get("result"))
@@ -648,12 +649,12 @@ static func _shape_issue(d: Dictionary, t: String) -> Dictionary:
 		if not d["votes"] is Array: return err("bad_votes", "投票名单必须是数组")
 		var seen := {}
 		for seat in d["votes"]:
-			if seat not in [GameState.PLAYER, GameState.BOT] or seen.has(seat): return err("bad_votes", "投票座位无效或重复")
+			if seat not in [OnWorkState.PLAYER, OnWorkState.BOT] or seen.has(seat): return err("bad_votes", "投票座位无效或重复")
 			seen[seat] = true
 	if t == PHASE:
-		if d["phase"] not in [PhaseMachine.ACTION, PhaseMachine.ATTACK, PhaseMachine.SETTLING, PhaseMachine.OVER]:
+		if d["phase"] not in [OnWorkPhaseMachine.ACTION, OnWorkPhaseMachine.ATTACK, OnWorkPhaseMachine.SETTLING, OnWorkPhaseMachine.OVER]:
 			return err("bad_phase", "未知对局阶段")
-		if d.get("actor", "") not in ["", GameState.PLAYER, GameState.BOT]: return err("bad_seat", "行动座位无效")
+		if d.get("actor", "") not in ["", OnWorkState.PLAYER, OnWorkState.BOT]: return err("bad_seat", "行动座位无效")
 	return {}
 
 ## 只在一次服务器同步推进完成后的可交互/终局边界生成检查点。
@@ -662,24 +663,24 @@ static func recovery_issue(value: Variant) -> String:
 	if not value is Dictionary: return "恢复检查点必须是对象"
 	for key in ["snapshot", "phase", "actor", "seq"]:
 		if not value.has(key): return "恢复检查点缺少 %s" % key
-	if value["phase"] not in [PhaseMachine.ACTION, PhaseMachine.ATTACK, PhaseMachine.OVER]:
+	if value["phase"] not in [OnWorkPhaseMachine.ACTION, OnWorkPhaseMachine.ATTACK, OnWorkPhaseMachine.OVER]:
 		return "恢复检查点阶段无效"
-	if value["actor"] not in ["", GameState.PLAYER, GameState.BOT]: return "恢复行动方无效"
-	if value["phase"] != PhaseMachine.OVER and value["actor"] == "": return "恢复检查点缺少行动方"
-	if not Intent.valid_integer(value["seq"], 0): return "恢复序号无效"
-	var issue := StateCodec.snapshot_issue(value["snapshot"])
+	if value["actor"] not in ["", OnWorkState.PLAYER, OnWorkState.BOT]: return "恢复行动方无效"
+	if value["phase"] != OnWorkPhaseMachine.OVER and value["actor"] == "": return "恢复检查点缺少行动方"
+	if not OnWorkIntent.valid_integer(value["seq"], 0): return "恢复序号无效"
+	var issue := OnWorkStateCodec.snapshot_issue(value["snapshot"])
 	if issue != "": return issue
 	if not value["snapshot"].has("pools"): return "恢复检查点缺少攻击点数池"
 	return ""
 
-static func work_action(action: Dictionary) -> Dictionary:
-	return {"t": WORK_ACTION, "action": action}
+static func off_work_action(action: Dictionary) -> Dictionary:
+	return {"t": OFF_WORK_ACTION, "action": action}
 
-static func work_frame(frame: String) -> Dictionary:
-	return {"t": WORK_FRAME, "frame": frame}
+static func off_work_frame(frame: String) -> Dictionary:
+	return {"t": OFF_WORK_FRAME, "frame": frame}
 
-static func work_seat(seat: String, token: String, frame: String) -> Dictionary:
-	return {"t": WORK_SEAT, "my_seat": seat, "resume_token": token, "frame": frame}
+static func off_work_seat(seat: String, token: String, frame: String) -> Dictionary:
+	return {"t": OFF_WORK_SEAT, "my_seat": seat, "resume_token": token, "frame": frame}
 
 static func from_dict(d: Dictionary) -> Dictionary:
 	if d.has("t") and not d["t"] is String:
@@ -694,14 +695,14 @@ static func from_dict(d: Dictionary) -> Dictionary:
 	if not shape.is_empty(): return shape
 	var out := { "t": t }
 	match t:
-		WORK_ACTION:
+		OFF_WORK_ACTION:
 			if not d.action is Dictionary: return err("bad_action", "动作应为对象")
 			out.action = d.action
-		WORK_FRAME, WORK_SEAT:
+		OFF_WORK_FRAME, OFF_WORK_SEAT:
 			if not d.frame is String: return err("bad_frame", "实时快照格式无效")
 			out.frame = d.frame
-			if t == WORK_SEAT:
-				if d.my_seat not in [GameState.PLAYER, GameState.BOT]: return err("bad_seat", "座位无效")
+			if t == OFF_WORK_SEAT:
+				if d.my_seat not in [OnWorkState.PLAYER, OnWorkState.BOT]: return err("bad_seat", "座位无效")
 				out.my_seat = d.my_seat
 				out.resume_token = str(d.get("resume_token", ""))
 		JOIN:
@@ -721,14 +722,14 @@ static func from_dict(d: Dictionary) -> Dictionary:
 		INTENT:
 			if not (d["intent"] is Dictionary):
 				return err("bad_intent", "intent 不是一个对象")
-			var decoded := Intent.from_dict(d["intent"])
+			var decoded := OnWorkIntent.from_dict(d["intent"])
 			if not decoded["ok"]: return decoded
 			out["intent"] = decoded["intent"]
 		APPLIED:
 			out["result"] = restore_uids(d["result"])
 			out["seq"] = int(d.get("seq", 0))
 			# 快照可以没有（老服务器 / 手搓的包），但**有就必须是对象** ——
-			# 不校验的话一个 "snapshot": 3 会一路传到 StateCodec.restore，
+			# 不校验的话一个 "snapshot": 3 会一路传到 OnWorkStateCodec.restore，
 			# 在 d.get("players", {}) 上把整局清空
 			if d.has("snapshot"):
 				out["snapshot"] = d["snapshot"]
@@ -741,7 +742,7 @@ static func from_dict(d: Dictionary) -> Dictionary:
 				return err("bad_phase", "未知拖拽阶段：%s" % ph)
 			out["seq"] = int(d["seq"])
 			out["phase"] = ph
-			out["uids"] = Intent.ints(d.get("uids", []))
+			out["uids"] = OnWorkIntent.ints(d.get("uids", []))
 			# 坐标钳到 [0,1]：归一化坐标越界只能是发送端算错了，
 			# 但不值得为此拒包 —— 拒了整条拖拽就断了，钳住只是画在边上
 			out["u"] = clampf(float(d.get("u", 0.0)), 0.0, 1.0)
@@ -769,7 +770,7 @@ static func from_dict(d: Dictionary) -> Dictionary:
 			out["version"] = int(d.get("version", 0))
 			out["my_seat"] = str(d["my_seat"])
 			out["foe_seat"] = str(d["foe_seat"])
-			# 和 SEATED 同样的校验：快照不是对象的话一路传到 StateCodec.restore，
+			# 和 SEATED 同样的校验：快照不是对象的话一路传到 OnWorkStateCodec.restore，
 			# 在 d.get("players", {}) 上把整局清空
 			out["snapshot"] = d["snapshot"]
 		PING, PONG:
@@ -797,7 +798,7 @@ static func brief(msg: Dictionary) -> String:
 	var t := str(msg.get("t", "?"))
 	match t:
 		INTENT:
-			return "intent " + Intent.brief(msg.get("intent", {}))
+			return "intent " + OnWorkIntent.brief(msg.get("intent", {}))
 		APPLIED:
 			var r: Dictionary = msg.get("result", {})
 			return "applied #%d %s/%s %s" % [int(msg.get("seq", 0)),

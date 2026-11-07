@@ -35,7 +35,7 @@ const PORT_BASE := 47300
 
 func _initialize() -> void:
 	print("=== 判活（心跳）测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	await _t1_ping_pong()
 	await _t2_pong_before_join()
 	await _t3_silent_server_declared_dead()
@@ -168,7 +168,7 @@ func _t3_silent_server_declared_dead() -> void:
 		var code: String = down[0][0]
 		# 白名单从 main 那边取，不在这儿抄一份常量 ——
 		# 抄的话两边各改一处就再也对不上，而这条判据照样绿
-		var takeover: Array = load("res://scenes/main.gd").TAKEOVER_CODES
+		var takeover: Array = load("res://scenes/on_work_main.gd").TAKEOVER_CODES
 		check(code in takeover,
 			"判死用的码在接管白名单里（%s ∈ %s）—— 不在的话 _can_take_over_host "
 				% [code, str(takeover)]
@@ -182,10 +182,10 @@ func _t3_silent_server_declared_dead() -> void:
 
 ## 反方向：**客户端**不说话了（他的网断了），服务器要发现。
 ##
-## 为什么服务器也得判 —— 座位是服务器在记的（NetRoom.occupants）。
+## 为什么服务器也得判 —— 座位是服务器在记的（OnWorkRoom.occupants）。
 ## 那条 socket 停在 STATE_OPEN，服务器不知道人已经没了，于是
 ## 留下的那一位收不到 foe_left：屏幕上「对手忽然不动了」，
-## 而那和「他在想」「他在翻牌」分不开（scenes/main.gd 的 _offer_reconnect / _on_net_down 的断线提示没有触发）
+## 而那和「他在想」「他在翻牌」分不开（scenes/on_work_main.gd 的 _offer_reconnect / _on_net_down 的断线提示没有触发）
 func _t4_server_sweeps_silent_peer() -> void:
 	print("\n-- T4 客户端没声音 → 服务器按掉线处理 --")
 	var pair := await _seated_pair()
@@ -223,7 +223,7 @@ func _t4_server_sweeps_silent_peer() -> void:
 ##
 ## 场景：他的网断了 → 进程重启（或者干脆换了台机器）→ 手里那串
 ## 重连令牌没了（令牌只在内存里）。他再连回来走的是 free_seat 那条路
-## （NetRoom._on_join 里「没令牌 → 找空座」），而**座位从来没腾空过**：
+## （OnWorkRoom._on_join 里「没令牌 → 找空座」），而**座位从来没腾空过**：
 ## 服务器手里那条死 socket 一直算他在座。于是他拿到的是 room_full ——
 ## 一间他自己的房间，把他自己挡在门外。
 ##
@@ -244,7 +244,7 @@ func _t5_sweep_frees_seat() -> void:
 	await net_pump_for([a], 900)
 
 	# 换一个**没有令牌**的新客户端去坐 —— 这就是「进程重启过」的样子。
-	# 有令牌那条路走的是 NetRoom.resume，跟座位空不空无关，测不到这个坑
+	# 有令牌那条路走的是 OnWorkRoom.resume，跟座位空不空无关，测不到这个坑
 	var c := _live_client("SEAT")
 	# 等的是「坐上了」**或者**「被拒了」。不能拿 online() 当「被拒」的信号 ——
 	# 它在握手期间（STATE_CONNECTING）也是 false，那样这个条件一进来就成立，

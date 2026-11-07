@@ -25,7 +25,7 @@ func _run() -> void:
 	main = await boot_drawer(Vector2i(1280, 800), 1.0, true)
 	if not need(main != null, "正式牌桌启动"): return
 	main.drawer_presentation._learning_invitation.hide()
-	original = StateCodec.snapshot(main.state)
+	original = OnWorkStateCodec.snapshot(main.state)
 	original_cards = main.board.cards.duplicate()
 	sound = RecordedSound.new()
 	main.add_child(sound)
@@ -37,7 +37,7 @@ func _run() -> void:
 	await _bot_attack(true)
 	await _cancel_attack(false)
 	await _cancel_attack(true)
-	check(StateCodec.snapshot(main.state) == original and main.board.cards == original_cards,
+	check(OnWorkStateCodec.snapshot(main.state) == original and main.board.cards == original_cards,
 		"全部攻击演出与取消结束后原局和原卡实体完整恢复")
 	await dispose_drawer(main)
 	finish()
@@ -67,7 +67,7 @@ func _prepare(course: String, target: String, arm := true) -> bool:
 	return true
 
 func _target(resource: String, leader := "") -> Dictionary:
-	for target: Dictionary in arena.session.applier.affordable_targets(GameState.PLAYER):
+	for target: Dictionary in arena.session.applier.affordable_targets(OnWorkState.PLAYER):
 		if target.get("res") == resource and (leader == "" or target.get("leader") == leader): return target
 	return {}
 
@@ -87,12 +87,12 @@ func _player_batch() -> void:
 	var batch_count: int = main.table_hands.batch_count
 	var event_count: int = arena.session.events.size()
 	var cards := _trigger(target)
-	check(cards.size() == int(CardDB.get_def("pinshaoshao")["recipe_n"]) and cards.size() > 1,
+	check(cards.size() == int(OnWorkCardDB.get_def("pinshaoshao")["recipe_n"]) and cards.size() > 1,
 		"一次点击真实组合摞连续扣除全部可负担配方，不再只扣一张")
 	check(arena.state.winner == "" and arena.operation_pending and completed.is_empty()
 		and arena.session.current_step().get("id") == "attack.hit" and not player._awaiting_result,
 		"非最后一击也等待正式撕牌，动作中不推进本步")
-	var hits: Array = arena.session.events.slice(event_count).filter(func(event): return event.get("op") == Intent.OP_ATTACK)
+	var hits: Array = arena.session.events.slice(event_count).filter(func(event): return event.get("op") == OnWorkIntent.OP_ATTACK)
 	check(hits.size() == cards.size() and main.table_hands.batch_count == batch_count + 1
 		and sound.events.count("attack") == 1 and cards.all(func(card): return is_instance_valid(card) and not card._visual_retired),
 		"多次真实裁决合成一次命中、一双原牌桌手和同一抓握阶段")
@@ -118,11 +118,11 @@ func _player_batch() -> void:
 
 func _loose_pile() -> void:
 	if not await _prepare("buffs", "buff.attack"): return
-	var cash_pool: int = arena.session.applier.pools(GameState.PLAYER)[CardDB.RES_CASH]
-	var user_pool: int = arena.session.applier.pools(GameState.PLAYER)[CardDB.RES_USER]
+	var cash_pool: int = arena.session.applier.pools(OnWorkState.PLAYER)[OnWorkCardDB.RES_CASH]
+	var user_pool: int = arena.session.applier.pools(OnWorkState.PLAYER)[OnWorkCardDB.RES_USER]
 	var cash_cards := _trigger(_target("cash"))
 	check(cash_pool == 6 and cash_cards.size() > 1 and cash_cards.size() <= cash_pool
-		and arena.session.applier.pools(GameState.PLAYER)[CardDB.RES_USER] == user_pool,
+		and arena.session.applier.pools(OnWorkState.PLAYER)[OnWorkCardDB.RES_USER] == user_pool,
 		"闲置现金整摞沿用正式点数上限，不消耗用户攻击池")
 	await _wait_completed()
 	check(completed.size() == 1 and completed[0].result.get("expected", false) and arena.session.step_complete,
@@ -143,16 +143,16 @@ func _bot_attack(wrong: bool, cash_count := 2) -> void:
 	var known: Dictionary = arena.entities.duplicate()
 	var count: int = main.table_hands.batch_count
 	var event_start: int = arena.session.events.size()
-	var preview: GameState = arena.session._preview_state()
+	var preview: OnWorkState = arena.session._preview_state()
 	var protected := {}
 	var exposed: Array = []
 	var spare: Array = []
 	var weapon: CardEntity
 	for combo in preview.combos:
-		if combo["owner"] == GameState.PLAYER and combo["eval"].get("leader") == "ditui":
-			protected = preview.protected_uids(GameState.PLAYER, combo, CardDB.RES_CASH)
-	for target in preview.attack_targets(GameState.PLAYER):
-		if target.get("res") != CardDB.RES_CASH: continue
+		if combo["owner"] == OnWorkState.PLAYER and combo["eval"].get("leader") == "ditui":
+			protected = preview.protected_uids(OnWorkState.PLAYER, combo, OnWorkCardDB.RES_CASH)
+	for target in preview.attack_targets(OnWorkState.PLAYER):
+		if target.get("res") != OnWorkCardDB.RES_CASH: continue
 		exposed.append_array(target["uids"])
 		if target.get("kind") == "spare": spare.append_array(target["uids"])
 	for card in known.values():
@@ -170,20 +170,20 @@ func _bot_attack(wrong: bool, cash_count := 2) -> void:
 	for uid in known:
 		if not arena.entities.has(uid): removed.append(known[uid])
 	if not need(not removed.is_empty(), "对手实际攻击玩家实体" + ("（错误结束）" if wrong else "")): return
-	var attack_n := int(CardDB.get_def("zuokong")["attack_n"])
+	var attack_n := int(OnWorkCardDB.get_def("zuokong")["attack_n"])
 	check(removed.all(func(card): return card.draggable) and main.table_hands.batch_count > count
 		and arena.operation_pending and completed.is_empty(), "对手攻击也经过同一双手，先撕真实玩家牌再结算")
 	if not wrong:
-		var hits: Array = arena.session.events.slice(event_start).filter(func(event): return event.get("op") == Intent.OP_ATTACK)
+		var hits: Array = arena.session.events.slice(event_start).filter(func(event): return event.get("op") == OnWorkIntent.OP_ATTACK)
 		var hit_ids: Array = []
 		for hit in hits: hit_ids.append_array(hit["removed"])
-		check(hits.size() == attack_n and hits.all(func(hit): return hit["seat"] == GameState.BOT and hit["target"]["res"] == CardDB.RES_CASH)
+		check(hits.size() == attack_n and hits.all(func(hit): return hit["seat"] == OnWorkState.BOT and hit["target"]["res"] == OnWorkCardDB.RES_CASH)
 			and hit_ids.all(func(uid): return exposed.has(uid) and not protected.has(uid)) and spare.all(func(uid): return hit_ids.has(uid)),
 			"放%d现金：%d次真实攻击都来自BOT，先打组内富余，只移除未保护的现金UID" % [cash_count, attack_n])
 		# 现金配方结算时照常付款；受保护的2张应躲过攻击，再作为配方付款离场。
 		var paid: Array = []
 		for event in arena.session.events.slice(event_start):
-			if event.get("op") == Intent.OP_PRODUCE and event.get("seat") == GameState.PLAYER:
+			if event.get("op") == OnWorkIntent.OP_PRODUCE and event.get("seat") == OnWorkState.PLAYER:
 				paid.append_array(event.get("resolution", {}).get("paid_uids", []))
 		paid.sort()
 		var shielded: Array = protected.keys()
@@ -215,8 +215,8 @@ func _bot_attack(wrong: bool, cash_count := 2) -> void:
 		and bool(completed[0].result.get("expected", false)) != wrong,
 		"对手演出结束后才按教学目标接受或回滚")
 	if not wrong:
-		check(arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 8 - attack_n - 2
-			and arena.state.resource_count(GameState.PLAYER, CardDB.RES_USER) == 8 + int(CardDB.get_def("ditui")["output_n"])
+		check(arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == 8 - attack_n - 2
+			and arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_USER) == 8 + int(OnWorkCardDB.get_def("ditui")["output_n"])
 			and arena.state.winner == "",
 			"只损失未受保护的现金，受保护地推扫码付2现金正常产用户且未判负")
 		await _confirm_result(player._mascot if cash_count == 2 else player._goal, cash_count == 2)
@@ -230,7 +230,7 @@ func _bot_attack(wrong: bool, cash_count := 2) -> void:
 func _confirm_result(control: Control, reference: bool) -> void:
 	var course: String = arena.session.course_id
 	var step: int = arena.session.step_index
-	var state := StateCodec.snapshot(arena.state)
+	var state := OnWorkStateCodec.snapshot(arena.state)
 	var cards: Dictionary = arena.entities.duplicate()
 	var events: Array = arena.session.events.duplicate(true)
 	var accepted := completed.size()
@@ -242,7 +242,7 @@ func _confirm_result(control: Control, reference: bool) -> void:
 	# 跨过旧自动推进的0.45秒；对白不再处理idle，也不能留下SceneTreeTimer偷偷推进。
 	await create_timer(1.0).timeout
 	check(player._awaiting_result and arena.session.course_id == course and arena.session.step_index == step
-		and StateCodec.snapshot(arena.state) == state and arena.entities.size() == cards.size()
+		and OnWorkStateCodec.snapshot(arena.state) == state and arena.entities.size() == cards.size()
 		and cards.keys().all(func(uid): return arena.entities.get(uid) == cards[uid])
 		and arena.session.events == events and completed.size() == accepted,
 		"结果空闲后仍是同一步、同批实体与资源，没有计时处理、额外事件或自动换场")
@@ -252,7 +252,7 @@ func _confirm_result(control: Control, reference: bool) -> void:
 		await create_timer(1.0).timeout
 		main.drawer_presentation.close_panels()
 		check(player._awaiting_result and player._can_tap() and arena.session.step_index == step
-			and arena.board.input_locked and main.btn_pass.disabled and StateCodec.snapshot(arena.state) == state,
+			and arena.board.input_locked and main.btn_pass.disabled and OnWorkStateCodec.snapshot(arena.state) == state,
 			"查阅真实图鉴再返回仍等待观察确认，不解锁操作或自动继续")
 		var position_before: Vector2 = player.position
 		await _drag_mascot()
@@ -262,9 +262,9 @@ func _confirm_result(control: Control, reference: bool) -> void:
 	await _click_control(control)
 	check(arena.session.course_id == course and arena.session.step_index == step + 1 and not player._awaiting_result,
 		("小人" if control == player._mascot else "气泡") + "真实点击只确认一次并进入下一步")
-	var next_state := StateCodec.snapshot(arena.state)
+	var next_state := OnWorkStateCodec.snapshot(arena.state)
 	await _click_control(control)
-	check(arena.session.step_index == step + 1 and StateCodec.snapshot(arena.state) == next_state,
+	check(arena.session.step_index == step + 1 and OnWorkStateCodec.snapshot(arena.state) == next_state,
 		"重复点击不会跳过下一项尚未完成的操作")
 
 func _click_control(control: Control) -> void:
@@ -311,12 +311,12 @@ func _cancel_attack(switching: bool) -> void:
 		main.drawer_presentation.start_tutorial("income")
 	else:
 		main.drawer_presentation.finish_tutorial(false)
-	var expected := StateCodec.snapshot(main.state)
+	var expected := OnWorkStateCodec.snapshot(main.state)
 	await create_timer(1.3).timeout
 	check(refs.all(func(ref): return ref.get_ref() == null) and completed.is_empty()
 		and main.table_hands._batches.is_empty() and main.table_hands.process_mode == Node.PROCESS_MODE_ALWAYS,
 		"抓握期间" + ("切课" if switching else "退出") + "清理纸片、双手与旧回调")
-	check(StateCodec.snapshot(main.state) == expected and sound.events.size() == sound_count,
+	check(OnWorkStateCodec.snapshot(main.state) == expected and sound.events.size() == sound_count,
 		"取消后无晚到撕牌声，也不会污染新课程或恢复后的原局")
 	if switching: main.drawer_presentation.finish_tutorial(false)
 	await process_frame

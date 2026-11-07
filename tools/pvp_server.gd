@@ -4,7 +4,7 @@
 
 extends SceneTree
 
-## 本地专用服务器的入口；启动命令见 README.md §「4.4 联机专服」。
+## 本地专用服务器的入口；启动命令见 README.md §「联机专服」。
 ##
 ##   /Applications/Godot.app/Contents/MacOS/Godot --headless -s tools/pvp_server.gd --port=8910
 ##   参数：--port=8910  --seed=12345（固定牌序，调试用）  --verbose-net  --off-work（实时下班牌桌）
@@ -60,9 +60,9 @@ func _initialize() -> void:
 
 	_host = EmbeddedHost.new(fixed_seed, verbose)
 	if _args().has(FLAG_OFF_WORK):
-		_host.work_config = WorkConfig.new()
-		if not _host.work_config.errors.is_empty():
-			printerr("\n".join(_host.work_config.errors))
+		_host.off_work_config = OffWorkConfig.new()
+		if not _host.off_work_config.errors.is_empty():
+			printerr("\n".join(_host.off_work_config.errors))
 			quit(1)
 			return
 	# tries = 1：**不顺延**。写了 --port= 的人要把那个端口告诉对面，
@@ -73,7 +73,7 @@ func _initialize() -> void:
 		quit(1)
 		return
 	print("牛马牌 %s专服已启动 —— 端口 %d，协议 v%d，卡表 %s" % [
-		"下班" if _host.work_config != null else "上班",
+		"下班" if _host.off_work_config != null else "上班",
 		port, Protocol.VERSION, _host.server.table_hash().substr(0, 8)])
 	_print_urls(port)
 	print("客户端填房间码就能进；房间不存在就现开一个")

@@ -51,7 +51,7 @@ func _reset(main: Node) -> void:
 	main.state.winner = ""
 	main.state.draw_first = main.my_seat
 	main.phase = main.PHASE_SETTLING
-	main.pipe = LocalTransport.new(IntentApply.new(main.state))
+	main.pipe = OnWorkLocalTransport.new(OnWorkIntentApply.new(main.state))
 	main.layout.end_arrivals()
 	main.layout.begin_arrivals()
 
@@ -67,7 +67,7 @@ func _pile(main: Node, core_id: String, extra := 0) -> Array:
 	var core := _card(main, core_id)
 	var cards: Array = [core]
 	var uids: Array = [core.uid]
-	var def := CardDB.get_def(core_id)
+	var def := OnWorkCardDB.get_def(core_id)
 	for i in int(def["recipe_n"]) + extra:
 		var card := _card(main, str(def["recipe_res"]))
 		cards.append(card)
@@ -115,7 +115,7 @@ func _assert_stamp_lifecycle(main: Node, cards: Array, reason: String) -> void:
 				count += 1
 		check(count == 1, "整组仅核心有一个作废章")
 		check(core.stamp_text() == "作废", "章上写着「作废」")
-		check(core.label.text == CardDB.card_name(core.def_id), "作废状态保留核心卡名")
+		check(core.label.text == OnWorkCardDB.card_name(core.def_id), "作废状态保留核心卡名")
 		await create_timer(0.25).timeout
 		check(core._void_stamp.visible, "盖章保持足够时间阅读，不在同帧清除")
 		check(main.lbl_msg.text.contains(reason), "结果提示使用实际作废原因")
@@ -129,15 +129,15 @@ func _test_broken_group(main: Node) -> void:
 	var last: CardEntity = cards.pop_back()
 	await _remove(main, last)
 	await _assert_stamp_lifecycle(main, cards, "已被拆散")
-	check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == 0, "被拆散组合不产出")
+	check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == 0, "被拆散组合不产出")
 
 func _test_payment_refused(main: Node) -> void:
 	await _reset(main)
 	var cards := _pile(main, "chunwan")
-	var cash_before: int = main.state.resource_count(main.my_seat, CardDB.RES_CASH)
+	var cash_before: int = main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH)
 	await _assert_stamp_lifecycle(main, cards, "会让资金归零")
-	check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == cash_before, "拒付不扣现金")
-	check(main.state.resource_count(main.my_seat, CardDB.RES_USER) == 0, "拒付不产用户")
+	check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == cash_before, "拒付不扣现金")
+	check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_USER) == 0, "拒付不产用户")
 	for card in cards:
 		check(is_instance_valid(card) and main.entities.has(card.uid), "拒付原有卡实体完整保留")
 	var particles := 0
@@ -153,7 +153,7 @@ func _test_spare_loss(main: Node) -> void:
 	await _remove(main, spare)
 	check(main.state.combo_intact(main.my_seat, main.state.combos[0]), "丢富余牌后配方仍成立")
 	await main._resolve_combo_visual(0)
-	check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == int(CardDB.get_def("yunketang")["output_n"]), "丢富余牌仍正常产出")
+	check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == int(OnWorkCardDB.get_def("yunketang")["output_n"]), "丢富余牌仍正常产出")
 	# 到账与作废共用一枚章：节点可能因「到账」已经建好，判据是作废状态没被打开。
 	check(not cards[0]._void_on and cards[0].stamp_text() != "作废", "丢富余牌不误盖作废章")
 	check(not main.lbl_msg.text.contains("作废"), "丢富余牌不误报作废消息")
@@ -163,14 +163,14 @@ func _test_network_result(main: Node, succeeds: bool) -> void:
 	await _reset(main)
 	var cards := _pile(main, "chunwan")
 	var spare := _card(main, "cash")
-	var server := GameState.new()
-	StateCodec.restore(server, StateCodec.snapshot(main.state))
+	var server := OnWorkState.new()
+	OnWorkStateCodec.restore(server, OnWorkStateCodec.snapshot(main.state))
 	if not succeeds:
 		# 客户端此刻仍以为多一块能付，服务器已知那块消失：必须服从回执。
 		server.remove_card(main.my_seat, spare.uid)
-	var applied := IntentApply.new(server).apply(Intent.produce(0))
+	var applied := OnWorkIntentApply.new(server).apply(OnWorkIntent.produce(0))
 	check(applied.get("resolution", {}).get("resolved", false) == succeeds, "实际裁决返回成功/拒付状态")
-	var decoded := Protocol.decode(Protocol.encode(Protocol.applied(applied, 1, StateCodec.snapshot(server))))
+	var decoded := Protocol.decode(Protocol.encode(Protocol.applied(applied, 1, OnWorkStateCodec.snapshot(server))))
 	check(decoded["ok"], "结算回执经过真实协议编解码")
 	var received: Dictionary = decoded["msg"]["result"]["resolution"]
 	if succeeds:
@@ -179,7 +179,7 @@ func _test_network_result(main: Node, succeeds: bool) -> void:
 			check(typeof(uid) == TYPE_INT, "网络实付UID恢复为int，能查到原实体")
 	var net := NetTransport.new()
 	net._state = main.state
-	net._applier = IntentApply.new(main.state)
+	net._applier = OnWorkIntentApply.new(main.state)
 	net._inbox.append(decoded["msg"])
 	net.applied.connect(main._on_intent_applied)
 	var at_receipt := [0]
@@ -204,15 +204,15 @@ func _test_network_result(main: Node, succeeds: bool) -> void:
 				users_on_table += 1
 		check(users_on_table == 0 and not done[0], "付款动画未完时不提前生成用户产出")
 		await _finish_play(done)
-		check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == 1, "服务器实付后仅余一块现金")
+		check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == 1, "服务器实付后仅余一块现金")
 		for uid in received["paid_uids"]:
 			check(not main.entities.has(uid), "实付的旧现金实体按服务器名单移除")
-		check(main.state.resource_count(main.my_seat, CardDB.RES_USER) > 0, "网络成功结算产出到账")
+		check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_USER) > 0, "网络成功结算产出到账")
 	else:
 		await _assert_stamp_lifecycle(main, cards, "会让资金归零")
 		for card in cards:
 			check(is_instance_valid(card) and main.entities.has(card.uid), "服务器拒付没有按本地预测吸走配方")
-	main.pipe = LocalTransport.new(IntentApply.new(main.state))
+	main.pipe = OnWorkLocalTransport.new(OnWorkIntentApply.new(main.state))
 	await create_timer(0.2).timeout
 
 func _test_buff_activity(main: Node) -> void:
@@ -225,7 +225,7 @@ func _test_buff_activity(main: Node) -> void:
 	main._refresh_shields()
 	check(not buff._glow_on, "配方未满时没有生效光环")
 	check(core.effect_mult() > 1, "配方未满仍保留卡面预期倍率")
-	for i in int(CardDB.get_def("yunketang")["recipe_n"]):
+	for i in int(OnWorkCardDB.get_def("yunketang")["recipe_n"]):
 		group["cards"].append(_card(main, "user"))
 	main.board.refresh_group(group)
 	main._refresh_shields()
@@ -244,7 +244,7 @@ func _test_buff_activity(main: Node) -> void:
 		var c := _card(main, id, main.foe_seat)
 		foe_cards.append(c)
 		foe_uids.append(c.uid)
-	for i in int(CardDB.get_def("yunketang")["recipe_n"]):
+	for i in int(OnWorkCardDB.get_def("yunketang")["recipe_n"]):
 		foe_uids.append(_card(main, "user", main.foe_seat).uid)
 	check(main.state.create_combo(main.foe_seat, foe_uids)["ok"], "对手有效组合成立")
 	main._refresh_shields()
@@ -255,7 +255,7 @@ func _test_defense_and_fission(main: Node) -> void:
 	var core := _card(main, "yunketang")
 	var shield := _card(main, "tuisong")
 	var uids: Array = [core.uid, shield.uid]
-	for i in int(CardDB.get_def("yunketang")["recipe_n"]):
+	for i in int(OnWorkCardDB.get_def("yunketang")["recipe_n"]):
 		uids.append(_card(main, "user").uid)
 	check(main.state.create_combo(main.my_seat, uids)["ok"], "防御组合成立")
 	main._refresh_shields()
@@ -274,7 +274,7 @@ func _test_defense_and_fission(main: Node) -> void:
 	check(fission._glow_on, "裂变实际补足缺少配方时发光")
 	check(shield._glow_on and user._shield_on, "防御入组即保护裂变补满组的用户")
 	main.state.combos.clear()
-	for i in int(CardDB.get_def("yunketang")["recipe_n"]) - 1:
+	for i in int(OnWorkCardDB.get_def("yunketang")["recipe_n"]) - 1:
 		uids.append(_card(main, "user").uid)
 	check(main.state.create_combo(main.my_seat, uids)["ok"], "补足真实用户后重新建组")
 	main._refresh_shields()
@@ -293,7 +293,7 @@ func _test_legacy_protocol() -> void:
 	if not need(opened, "旧协议裸socket连接建立"):
 		net_stop()
 		return
-	var old_join := Protocol.join("LEGACY", StateCodec.table_hash())
+	var old_join := Protocol.join("LEGACY", OnWorkStateCodec.table_hash())
 	old_join["version"] = 6
 	raw.send_text(Protocol.encode(old_join))
 	var closed := await net_until([], func():
@@ -310,8 +310,8 @@ func _test_legacy_protocol() -> void:
 func _test_local_defense_shields(main: Node) -> void:
 	for swapped in [false, true]:
 		await _reset(main)
-		main.set_seats(GameState.BOT if swapped else GameState.PLAYER,
-			GameState.PLAYER if swapped else GameState.BOT)
+		main.set_seats(OnWorkState.BOT if swapped else OnWorkState.PLAYER,
+			OnWorkState.PLAYER if swapped else OnWorkState.BOT)
 		main.state.round_num = 4
 		var cards: Array = []
 		var uids: Array = []
@@ -349,7 +349,7 @@ func _test_local_defense_shields(main: Node) -> void:
 			"配方被拆散后，存活牌与待消失实体都不误亮盾牌")
 
 	await _reset(main)
-	main.set_seats(GameState.PLAYER, GameState.BOT)
+	main.set_seats(OnWorkState.PLAYER, OnWorkState.BOT)
 	main.state.round_num = 4
 	var cards: Array = []
 	var uids: Array = []
@@ -381,21 +381,21 @@ func _test_local_defense_shields(main: Node) -> void:
 func _test_defense_reports() -> void:
 	for fission in [false, true]:
 		for next_round in [false, true]:
-			var s := GameState.new()
-			s.players = {GameState.PLAYER: {"cards": []}, GameState.BOT: {"cards": []}}
+			var s := OnWorkState.new()
+			s.players = {OnWorkState.PLAYER: {"cards": []}, OnWorkState.BOT: {"cards": []}}
 			var ids: Array = ["shuabuting", "tuisong", "liebian", "user"] if fission else \
 				["yunketang", "tuisong", "user", "user", "user"]
 			var uids: Array = []
 			for id in ids:
-				uids.append(s.add_card(GameState.PLAYER, id)["uid"])
-			check(s.create_combo(GameState.PLAYER, uids)["ok"], "防御战报测试组合成立")
+				uids.append(s.add_card(OnWorkState.PLAYER, id)["uid"])
+			check(s.create_combo(OnWorkState.PLAYER, uids)["ok"], "防御战报测试组合成立")
 			if next_round:
 				s.round_num += 1
 			s.log.clear()
-			Settle._resolve_combo(s, s.combos[0])
+			OnWorkSettle._resolve_combo(s, s.combos[0])
 			var reported := false
 			for entry in s.log:
-				if GameState.entry_text(entry).contains("受防御 Buff"):
+				if OnWorkState.entry_text(entry).contains("受防御 Buff"):
 					reported = true
 			check(reported,
 				"入组当回合及之后均报告实际生效的保护（跨回合=%s，裂变=%s）" % [next_round, fission])

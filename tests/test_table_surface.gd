@@ -9,7 +9,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var main := await boot_main()
-	var slot_count: int = CardDB.game_rules()["market_size"]
+	var slot_count: int = OnWorkCardDB.game_rules()["market_size"]
 	var before: Array = main.find_children("MarketSlot_*", "MeshInstance3D", true, false)
 	check(before.size() == slot_count, "没有卡槽位图时公共市场仍保留全部槽位")
 	if not need(not before.is_empty(), "存在可检查的市场槽位"):
@@ -50,8 +50,8 @@ func _run() -> void:
 func _check_paper_interaction(main: Node) -> void:
 	var card: CardEntity = main.market_cards[0]
 	var tag: Node3D = main.market_price_labels[0]
-	check(tag.text == str(int(CardDB.get_def(card.def_id)["price"]))
-			and tag._coin.texture == CardArt.res_icon_texture(CardDB.RES_CASH),
+	check(tag.text == str(int(OnWorkCardDB.get_def(card.def_id)["price"]))
+			and tag._coin.texture == CardArt.res_icon_texture(OnWorkCardDB.RES_CASH),
 		"纸价签使用真实价格数字和现金牌同一贴图")
 	var rope: MeshInstance3D = tag._presentation.get_node("TagString")
 	var front: PackedVector3Array = rope.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
@@ -98,9 +98,9 @@ func _check_paper_interaction(main: Node) -> void:
 	var cash: Array[CardEntity] = []
 	var user: CardEntity
 	for entity in main.board.cards:
-		if entity.draggable and entity.def_id == CardDB.RES_CASH:
+		if entity.draggable and entity.def_id == OnWorkCardDB.RES_CASH:
 			cash.append(entity)
-		if entity.draggable and entity.def_id == CardDB.RES_USER:
+		if entity.draggable and entity.def_id == OnWorkCardDB.RES_USER:
 			user = entity
 	if not need(not cash.is_empty() and user != null, "存在可测试购买反馈的资源实体"):
 		return

@@ -69,6 +69,16 @@ func _run() -> void:
 	await create_timer(1.15).timeout
 	check(host.active == 1 and off.state == off_state and paused,"再入下班保留同一游戏实例和手动暂停")
 	off.hud.set_manual_paused(false)
+	off.begin_practice("upgrade")
+	var practice: OffWorkState = off.state
+	await click_control(host.sign)
+	await create_timer(1.15).timeout
+	check(host.active == 0 and on.state == on_state, "练习面板不挡换班招牌")
+	await click_control(host.sign)
+	await create_timer(1.15).timeout
+	check(host.active == 1 and off.state == practice and off.lesson.lesson.id == "upgrade", "回到下班继续原来那课")
+	off.finish_practice()
+	check(off.state == off_state, "从跨班次练习回到原正式桌")
 	await create_timer(0.2).timeout
 	check(off.state.time > off_time,"两种模式可分别继续游戏")
 	await click_control(host.sign)

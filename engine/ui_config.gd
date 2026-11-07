@@ -9,7 +9,7 @@ const ConfigData = preload("res://engine/config_data.gd")
 const SavePaths = preload("res://engine/save_paths.gd")
 
 ## 展示配置统一入口：启动默认值、配色、素材呈现、资源名称与音效。
-## 独立于 CardDB / Palette，避免加载环；玩家偏好仍由各自的设置模块覆盖。
+## 独立于 OnWorkCardDB / Palette，避免加载环；玩家偏好仍由各自的设置模块覆盖。
 const PATH := "res://data/ui.json"
 const EXTERNAL_FILE := "ui.json"
 

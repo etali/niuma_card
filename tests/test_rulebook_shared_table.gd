@@ -4,11 +4,11 @@
 
 extends "res://tests/harness.gd"
 
-const Arena = preload("res://scenes/rulebook_arena.gd")
-const DemoData = preload("res://scenes/rulebook_demo_data.gd")
-const Content = preload("res://scenes/rulebook_content.gd")
+const Arena = preload("res://scenes/on_work_rulebook_arena.gd")
+const DemoData = preload("res://scenes/on_work_rulebook_demo_data.gd")
+const Content = preload("res://scenes/on_work_rulebook_content.gd")
 const Regions = preload("res://scenes/table_regions.gd")
-const Actions = preload("res://scenes/table_actions.gd")
+const Actions = preload("res://scenes/on_work_table_actions.gd")
 
 class RecordedSound extends Sfx:
 	var actions: Array[String] = []
@@ -23,7 +23,7 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	_sound = RecordedSound.new()
 	root.add_child(_sound)
 	_check_demo_catalog()
@@ -44,7 +44,7 @@ func _run() -> void:
 		_check_geometry(arena)
 		await _finish_fixture_layout(arena)
 		_sound.actions.clear()
-		var before_cash := arena.state.resource_count(arena.my_seat, CardDB.RES_CASH)
+		var before_cash := arena.state.resource_count(arena.my_seat, OnWorkCardDB.RES_CASH)
 		var before_cards: int = arena.state.players[arena.my_seat]["cards"].size()
 		var prices_before: Array = arena.market_cards.map(func(card): return card.position)
 		var facility_at: Vector3 = arena.get_node("MarketFacility").position
@@ -62,10 +62,10 @@ func _run() -> void:
 			var pawn_card: CardEntity = arena._input_cards[0]
 			check(pawn_card.has_meta("dest_pos") and pawn_card.get_meta("dest_pos") == facility_at + Vector3(0, 0.8, 0), "典当使用正式吸入柜台目标，不是飞出桌外")
 			check(not pawn_card._face_down, "吸入典当不改成独立翻面动画")
-			check(arena.state.resource_count(arena.my_seat, CardDB.RES_CASH) == before_cash + int(example["output"]["count"]), "典当金额与CardDB.pawn_value一致")
+			check(arena.state.resource_count(arena.my_seat, OnWorkCardDB.RES_CASH) == before_cash + int(example["output"]["count"]), "典当金额与OnWorkCardDB.pawn_value一致")
 			check(_sound.actions.count("pawn") == 1, "典当播放与游玩同名pawn动作")
 		elif mode == "purchase":
-			check(arena.state.resource_count(arena.my_seat, CardDB.RES_CASH) == before_cash - int(example["price"]), "购买由真实裁决器扣除当前配置价格")
+			check(arena.state.resource_count(arena.my_seat, OnWorkCardDB.RES_CASH) == before_cash - int(example["price"]), "购买由真实裁决器扣除当前配置价格")
 			check(arena.state.players[arena.my_seat]["cards"].size() == before_cards - int(example["price"]) + 1, "购买实体替换没有凭空加牌")
 			check(_sound.actions.count("buy") == 1 and not arena.entities[arena.last_result["new_uid"]].is_market, "购买播放正式buy并把商品变为玩家牌")
 			prices_before.remove_at(arena._purchase_index)
@@ -109,7 +109,7 @@ func _run() -> void:
 	finish()
 
 func _check_geometry(arena: Node) -> void:
-	var count := int(CardDB.game_rules()["market_size"])
+	var count := int(OnWorkCardDB.game_rules()["market_size"])
 	check(arena.market_cards.size() == count and arena.market_price_labels.size() == count, "商品和价格标签数量来自配置")
 	var market: MeshInstance3D = arena.get_node("TableSurface_market")
 	check(market.mesh.size == Regions.market_rect(count, true).size, "教学购牌栏和正式牌桌使用同一Rect")
@@ -117,7 +117,7 @@ func _check_geometry(arena: Node) -> void:
 	check(arena.get_node("MarketFacility").position == Regions.facility_position(count, true), "典当设施位置完全对齐正式牌桌")
 	check(arena.get_node("MarketFacility/PawnshopFacilityCard").material_override.shader == load(CardEntity.PLATE_SHADER), "典当设施复用正式卡面材质")
 	for i in count:
-		check(arena.market_price_labels[i].text == str(int(CardDB.get_def(arena.market_cards[i].def_id)["price"])), "价签只读当前卡牌价格")
+		check(arena.market_price_labels[i].text == str(int(OnWorkCardDB.get_def(arena.market_cards[i].def_id)["price"])), "价签只读当前卡牌价格")
 
 func _check_demo_catalog() -> void:
 	check(not DemoData.examples("purchase").is_empty(), "规则书有购买章节和示例")
@@ -137,31 +137,31 @@ func _check_demo_catalog() -> void:
 			for input in variant["inputs"]:
 				for n in int(input["count"]):
 					ids.append(input["id"])
-			check(ids.size() == variant["count"] and ComboRules.upgrade_target_for_ids(ids) == variant["target_id"],
+			check(ids.size() == variant["count"] and OnWorkComboRules.upgrade_target_for_ids(ids) == variant["target_id"],
 				"演示实际材料与真实规则给出同一目标，且张数精确")
-			if CardDB.get_def(variant["target_id"]).get("kind") == CardDB.KIND_LEGEND:
+			if OnWorkCardDB.get_def(variant["target_id"]).get("kind") == OnWorkCardDB.KIND_LEGEND:
 				check(variant["inputs"].size() >= 2 and variant["inputs"][0]["id"] != variant["inputs"][1]["id"],
 					"传说演示实际使用至少两种异名生产卡")
-				mixed_tiers[int(CardDB.get_def(id)["tier"])] = true
+				mixed_tiers[int(OnWorkCardDB.get_def(id)["tier"])] = true
 			else:
 				ordinary = true
 				check(variant["inputs"].size() == 1 and variant["inputs"][0]["id"] == id, "普通T1→T2演示保留同名材料")
 	check(mixed_tiers.has(1) and mixed_tiers.has(2) and ordinary, "同时演示T1异名传说、T2异名传说和普通同名升级")
 
 func _check_config_following() -> void:
-	var old_cards := CardDB.CARDS
-	var old_game := CardDB.GAME
-	var old_upgrade := CardDB.UPGRADE
-	CardDB.CARDS = old_cards.duplicate(true)
-	CardDB.GAME = old_game.duplicate(true)
-	CardDB.UPGRADE = old_upgrade.duplicate(true)
-	CardDB.CARDS["yunketang"]["price"] = 13
-	CardDB.CARDS["dujiaoshou"]["upgrade_dup_n"] = 5
-	CardDB.CARDS["dujiaoshou"]["pawn"] = 147
-	CardDB.GAME["market_size"] = 6
-	CardDB.GAME["pawn_rate"] = 3.0
-	for route in CardDB.UPGRADE["routes"]:
-		if route.get("kind") == CardDB.KIND_PRODUCT and route.get("tier") == 1 and route.get("key") == "dup_key":
+	var old_cards := OnWorkCardDB.CARDS
+	var old_game := OnWorkCardDB.GAME
+	var old_upgrade := OnWorkCardDB.UPGRADE
+	OnWorkCardDB.CARDS = old_cards.duplicate(true)
+	OnWorkCardDB.GAME = old_game.duplicate(true)
+	OnWorkCardDB.UPGRADE = old_upgrade.duplicate(true)
+	OnWorkCardDB.CARDS["yunketang"]["price"] = 13
+	OnWorkCardDB.CARDS["dujiaoshou"]["upgrade_dup_n"] = 5
+	OnWorkCardDB.CARDS["dujiaoshou"]["pawn"] = 147
+	OnWorkCardDB.GAME["market_size"] = 6
+	OnWorkCardDB.GAME["pawn_rate"] = 3.0
+	for route in OnWorkCardDB.UPGRADE["routes"]:
+		if route.get("kind") == OnWorkCardDB.KIND_PRODUCT and route.get("tier") == 1 and route.get("key") == "dup_key":
 			route["per"] = 3
 	var bought := false
 	for example in DemoData.examples("purchase"):
@@ -180,13 +180,13 @@ func _check_config_following() -> void:
 	arena.configure(DemoData.examples("purchase")[0], _sound)
 	_check_geometry(arena)
 	arena.free()
-	CardDB.CARDS = old_cards
-	CardDB.GAME = old_game
-	CardDB.UPGRADE = old_upgrade
+	OnWorkCardDB.CARDS = old_cards
+	OnWorkCardDB.GAME = old_game
+	OnWorkCardDB.UPGRADE = old_upgrade
 
 func _example(section: String, mode: String, tier := -1) -> Dictionary:
 	for example in DemoData.examples(section):
-		if example["mode"] == mode and (tier < 0 or int(CardDB.get_def(example.get("source_id", "")).get("tier", 0)) == tier):
+		if example["mode"] == mode and (tier < 0 or int(OnWorkCardDB.get_def(example.get("source_id", "")).get("tier", 0)) == tier):
 			return example
 	return {}
 

@@ -2,17 +2,17 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 extends "res://tests/harness.gd"
 
-const Env = preload("res://engine/bot_environment.gd")
+const Env = preload("res://engine/on_work_bot_environment.gd")
 
-class ProbeMain extends "res://scenes/main.gd":
+class ProbeMain extends "res://scenes/on_work_main.gd":
 	var searches := 0
 	func _think_off_thread(job: Callable) -> Variant:
 		searches += 1
 		return job.call()
 
 func _initialize() -> void:
-	CardDB.ensure_loaded()
-	var original := GameState.new()
+	OnWorkCardDB.ensure_loaded()
+	var original := OnWorkState.new()
 	original.players = {"player":{"cards":[]}, "bot":{"cards":[]}}
 	for seat in original.players:
 		for i in 10: original.add_card(seat,"cash")
@@ -23,21 +23,21 @@ func _initialize() -> void:
 	var visible := Env.copy(original)
 	var simulated_targets: Array = []
 	var visible_targets: Array = []
-	Settle.attack_phase(simulated,"player",_picker(simulated_targets))
-	var pipe := LocalTransport.new(IntentApply.new(visible))
+	OnWorkSettle.attack_phase(simulated,"player",_picker(simulated_targets))
+	var pipe := OnWorkLocalTransport.new(OnWorkIntentApply.new(visible))
 	var batches: Array = []
 	var ends: Array = []
 	var body := func(seat: String, _pools: Dictionary) -> Dictionary:
 		return await pipe.round_flow().run_automatic_attack(seat,_picker(visible_targets),
 			func(t): batches.append(t.kind),func(t): ends.append(t.kind))
 	var result: Dictionary = await pipe.round_flow().run_attack_turn("player",body)
-	check(result.get("ok",false),"实际Intent驱动完成合法攻击")
+	check(result.get("ok",false),"实际OnWorkIntent驱动完成合法攻击")
 	check(simulated_targets == ["card","combo","combo"],"真实规则允许先点散卡，再用余点拆组合")
 	check(visible_targets == simulated_targets,"App攻击驱动不为散卡附加模拟中不存在的同摞锁")
 	check(batches == ["card","combo"] and ends == batches,"散卡可立即转攻组合，换摞才重新瞄准和收尾")
 	check(Env.key(simulated) == Env.key(visible),"相同选靶策略在模拟与App驱动产生相同实际状态")
-	Settle.produce(simulated)
-	Settle.produce(visible)
+	OnWorkSettle.produce(simulated)
+	OnWorkSettle.produce(visible)
 	check(simulated.resource_count("bot","cash") == 10 and visible.resource_count("bot","cash") == 10,
 		"两条路径均真正拆掉云课堂，不能因错误连批放任其生产")
 	await _test_locked_combo_speed()
@@ -46,7 +46,7 @@ func _initialize() -> void:
 	finish()
 
 func _test_loose_pacing(forfeit: bool) -> void:
-	var original := GameState.new()
+	var original := OnWorkState.new()
 	original.players = {"player":{"cards":[]}, "bot":{"cards":[]}}
 	for who in original.players:
 		for i in 10: original.add_card(who,"cash")
@@ -54,17 +54,17 @@ func _test_loose_pacing(forfeit: bool) -> void:
 	_add_combo(original,"player","chaping")
 	var expected := Env.copy(original)
 	var simulated_calls := [0]
-	var policy := func(_s: GameState, _who: String, targets: Array, _pools: Dictionary) -> Dictionary:
+	var policy := func(_s: OnWorkState, _who: String, targets: Array, _pools: Dictionary) -> Dictionary:
 		simulated_calls[0] += 1
 		return {} if forfeit and simulated_calls[0] > 1 else targets[0]
-	Settle.attack_phase(expected,"player",policy)
+	OnWorkSettle.attack_phase(expected,"player",policy)
 	var actual := Env.copy(original)
-	var pipe := LocalTransport.new(IntentApply.new(actual))
+	var pipe := OnWorkLocalTransport.new(OnWorkIntentApply.new(actual))
 	await pipe.arm("player")
 	var starts: Array = []
 	var ends: Array = []
 	var calls := [0]
-	var choose := func(_s: GameState, _who: String, targets: Array, _pools: Dictionary) -> Dictionary:
+	var choose := func(_s: OnWorkState, _who: String, targets: Array, _pools: Dictionary) -> Dictionary:
 		calls[0] += 1
 		return {} if forfeit and calls[0] > 1 else targets[0]
 	var result: Dictionary = await pipe.round_flow().run_automatic_attack("player",choose,
@@ -74,9 +74,9 @@ func _test_loose_pacing(forfeit: bool) -> void:
 	check(calls[0] == simulated_calls[0] and calls[0] > 1,"每击仍重新选靶，停止选择不会被重复调用")
 
 func _test_locked_combo_speed() -> void:
-	BOTSearch.set_pref_model("bot")
-	BOTSearch.set_pref_strength(1.0)
-	var actual := GameState.new()
+	OnWorkBOTSearch.set_pref_model("bot")
+	OnWorkBOTSearch.set_pref_strength(1.0)
+	var actual := OnWorkState.new()
 	actual.players = {"player":{"cards":[]}, "bot":{"cards":[]}}
 	for who in actual.players:
 		for i in 10: actual.add_card(who,"cash")
@@ -85,11 +85,11 @@ func _test_locked_combo_speed() -> void:
 	var targets := actual.attack_targets("bot").filter(func(t): return t.kind == "combo")
 	var hits := targets.size()
 	check(hits > 1, "大组合提供多个需要连续拆除的真实配方靶")
-	var pools := {CardDB.RES_CASH:0, CardDB.RES_USER:hits * int(CardDB.game_rules()["attack_cost_per_card"])}
-	pools[GameState.ATTACK_LOCK] = GameState.target_batch(targets[0])
+	var pools := {OnWorkCardDB.RES_CASH:0, OnWorkCardDB.RES_USER:hits * int(OnWorkCardDB.game_rules()["attack_cost_per_card"])}
+	pools[OnWorkState.ATTACK_LOCK] = OnWorkState.target_batch(targets[0])
 	var reference := Env.copy(actual)
 	var reference_pools := pools.duplicate(true)
-	var reference_picker := BOTPlan.target_picker(BOTSearch.prefs(),reference,"player")
+	var reference_picker := OnWorkBOTPlan.target_picker(OnWorkBOTSearch.prefs(),reference,"player")
 	var main := ProbeMain.new()
 	var choose := main._live_bot_target_picker()
 	for i in hits:
@@ -102,20 +102,20 @@ func _test_locked_combo_speed() -> void:
 		reference.check_victory()
 	check(main.searches == 0, "同组合确定续击不反复启动思考线程")
 	check(Env.key(actual) == Env.key(reference) and pools == reference_pools, "快速续击与原路径最终状态及点数完全一致")
-	pools = {CardDB.RES_CASH:2, CardDB.RES_USER:2}
+	pools = {OnWorkCardDB.RES_CASH:2, OnWorkCardDB.RES_USER:2}
 	await choose.call(actual,"player",actual.affordable_targets("bot",pools),pools)
 	check(main.searches == 1, "组合打完后出现不同目标仍通过工作线程比较")
 	main.free()
-	BOTSearch.restore_defaults()
+	OnWorkBOTSearch.restore_defaults()
 
-func _add_combo(state: GameState, who: String, id: String) -> void:
-	var d := CardDB.get_def(id)
+func _add_combo(state: OnWorkState, who: String, id: String) -> void:
+	var d := OnWorkCardDB.get_def(id)
 	var ids: Array = [state.add_card(who,id).uid]
-	for i in int(d.recipe_n): ids.append(state.add_card(who,CardDB.unit_id(d.recipe_res)).uid)
+	for i in int(d.recipe_n): ids.append(state.add_card(who,OnWorkCardDB.unit_id(d.recipe_res)).uid)
 	check(state.create_combo(who,ids).get("ok",false),"实际规则建立测试组合 %s" % id)
 
 func _picker(trace: Array) -> Callable:
-	return func(_state: GameState, _who: String, targets: Array, _pools: Dictionary) -> Dictionary:
+	return func(_state: OnWorkState, _who: String, targets: Array, _pools: Dictionary) -> Dictionary:
 		var kind := "card" if trace.is_empty() else "combo"
 		for target in targets:
 			if target.kind == kind:

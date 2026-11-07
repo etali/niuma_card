@@ -27,7 +27,7 @@ class OffWorkVirtualClock(unittest.TestCase):
             request = {"cards": self.cards, "a": a, "b": b, "pairs": 1, "seed": 42, "max_seconds": limit}
             (folder / "request.json").write_text(json.dumps(request))
             proc = subprocess.run([
-                GODOT, "--headless", "--path", str(ROOT), "--script", "res://tools/balance/realtime_run.gd",
+                GODOT, "--headless", "--path", str(ROOT), "--script", "res://tools/balance/off_work_run.gd",
                 "--", f"--request={folder / 'request.json'}", f"--output={folder / 'result.json'}",
             ], timeout=20, capture_output=True, text=True)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)

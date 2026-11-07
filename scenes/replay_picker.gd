@@ -47,7 +47,7 @@ func _ready() -> void:
 	var location := HBoxContainer.new()
 	body.add_child(location)
 	location.add_child(_button("上一级", func(): _browse(_directory.get_base_dir())))
-	location.add_child(_button("录像目录", func(): _browse(Tape.path_dir())))
+	location.add_child(_button("录像目录", func(): _browse(SavePaths.recordings_dir())))
 	_path_edit = LineEdit.new()
 	_path_edit.name = "ReplayPath"
 	_path_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -74,8 +74,8 @@ func _ready() -> void:
 	var load_button := _button("读入", _open_selected)
 	load_button.name = "ReplayLoad"
 	actions.add_child(load_button)
-	DirAccess.make_dir_recursive_absolute(Tape.path_dir())
-	_browse(Tape.path_dir())
+	DirAccess.make_dir_recursive_absolute(SavePaths.recordings_dir())
+	_browse(SavePaths.recordings_dir())
 	if _main.drawer_presentation:
 		_main.drawer_presentation.register_result_panel(self)
 

@@ -5,7 +5,7 @@ func _initialize() -> void:
 	_run.call_deferred()
 
 func _run() -> void:
-	var game: Node = load("res://scenes/work_main.tscn").instantiate()
+	var game: Node = load("res://scenes/off_work_main.tscn").instantiate()
 	game.set_meta("shift_enter_expanded", true)
 	root.add_child(game)
 	if game.lan == null:
@@ -18,7 +18,7 @@ func _run() -> void:
 	panel._on_host()
 	var port: int = game.lan.local_host_port()
 	check(port > 0, "同一联机面板可开房")
-	var visitor := game.lan.make_transport("ws://127.0.0.1:%d" % port, "WORK") as WorkTransport
+	var visitor := game.lan.make_transport("ws://127.0.0.1:%d" % port, "WORK") as OffWorkTransport
 	check(await net_until([], func(): return panel._net != null and panel._net.my_seat != ""), "房主就座等候")
 	check(game.state == solo and not game.lan.live(), "等候期间保留单人牌局")
 	var url := "ws://127.0.0.1:%d" % port
@@ -27,7 +27,7 @@ func _run() -> void:
 	wrong_mode.disconnected.connect(func(code, why): refusal.append([code, why]))
 	wrong_mode.connect_to_server()
 	check(await net_until([wrong_mode], func(): return not refusal.is_empty()) and "玩法不同" in str(refusal), "拒绝误入下班房间的上班客户端")
-	var wrong_cards := WorkTransport.new(url, "WORK")
+	var wrong_cards := OffWorkTransport.new(url, "WORK")
 	wrong_cards.balance_hash = "other"
 	refusal.clear()
 	wrong_cards.disconnected.connect(func(code, why): refusal.append([code, why]))
@@ -70,9 +70,13 @@ func _run() -> void:
 	check(await net_until([visitor], func(): return game.state.time > t), "返回下班继续原局")
 	visitor.send_action({"op": "resign"})
 	check(await net_until([visitor], func(): return game.state.winner == 0 and visitor.latest.world.winner == 1), "认输由服务器裁决、双方胜负互补")
+	game._show_result()
+	var line: Label = game.result_layer.find_child("ResultMessage", true, false)
+	check(is_instance_valid(line) and game.hud.hud_config.result.win_taunts.has(line.text), "对方联网认输显示本地胜方调侃")
 	visitor.request_rematch()
 	game.lan.rematch()
 	check(await net_until([visitor], func(): return visitor.latest.round == 2 and game.state.winner < 0), "双方同意后重新发牌")
+	check(game.replay.result_taunt.is_empty(), "联机重开清除上一局的结算句")
 	var token: String = visitor.resume_token
 	var seat: String = visitor.my_seat
 	visitor.close()
@@ -92,31 +96,31 @@ func _run() -> void:
 
 func _takeover(game: Node) -> void:
 	var remote := EmbeddedHost.new(12345)
-	remote.work_config = game.state.config
+	remote.off_work_config = game.state.config
 	check(remote.start_random().ok, "外部房主开房")
 	_srv = remote
-	var former := game.lan.make_transport(remote.url(), "WORK") as WorkTransport
+	var former := game.lan.make_transport(remote.url(), "WORK") as OffWorkTransport
 	former.connect_to_server()
 	check(await net_until([former], func(): return former.my_seat != ""), "外部房主占近席")
 	var panel: JoinPanel = game.lan.open_panel()
 	panel._room_edit.text = "WORK"
 	panel._url_edit.text = remote.url()
 	panel._on_connect()
-	check(await net_until([former], func(): return game.lan.live() and game.lan.net.my_seat == GameState.BOT), "本机通过面板以远席加入")
+	check(await net_until([former], func(): return game.lan.live() and game.lan.net.my_seat == OnWorkState.BOT), "本机通过面板以远席加入")
 	if not game.lan.live():
 		net_stop()
 		return
 	var initial: Dictionary = game.state.cards.duplicate(true)
 	var original_rng: int = game.lan.net.checkpoint.rng
 	net_stop()
-	check(await net_until([], func(): return game.lan.live() and game.lan._host != null and game.lan.net.my_seat == GameState.BOT), "原房主下线后自动接管并保留远席")
+	check(await net_until([], func(): return game.lan.live() and game.lan._host != null and game.lan.net.my_seat == OnWorkState.BOT), "原房主下线后自动接管并保留远席")
 	if game.lan._host == null: return
 	check(game.state.cards == initial and game.lan._host.server.rooms.WORK.world._rng.state == original_rng, "接管保留卡牌方位与随机数状态")
-	var back := game.lan.make_transport(game.lan._host.url(), "WORK") as WorkTransport
+	var back := game.lan.make_transport(game.lan._host.url(), "WORK") as OffWorkTransport
 	back.resume_token = former.resume_token
 	back.connect_to_server()
 	check(await net_until([back], func(): return back.has_dealt_state()), "原主机能重回相同房号")
-	check(back.my_seat == GameState.PLAYER and back.latest.round == 1, "原主机恢复正确的另一席")
+	check(back.my_seat == OnWorkState.PLAYER and back.latest.round == 1, "原主机恢复正确的另一席")
 	back.close()
 	game.lan._leave()
 

@@ -23,7 +23,7 @@ extends "res://tests/harness.gd"
 
 func _initialize() -> void:
 	print("=== 可复制信息测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	await _t1_res_panel()
 	await _t2_save_path_is_copyable()
 	await _t3_share_addr_in_lan_panel()
@@ -69,7 +69,7 @@ func _t1_res_panel() -> void:
 		var a: float = (sb as StyleBoxFlat).bg_color.a
 		# 两头都钉：太透就等于没有背景（白字压白牌照旧读不出来），
 		# 太实就把底下对手的明牌挡死 —— 而看得见对手阵型是玩法的一部分
-		# 背景样式来自 scenes/main.gd 的 _setup_res_panel。
+		# 背景样式来自 scenes/on_work_main.gd 的 _setup_res_panel。
 		check(a >= 0.90,
 			"固定顶部信息区有稳定可读的底色（alpha=%.2f）" % a)
 
@@ -130,7 +130,7 @@ func _t2_save_path_is_copyable() -> void:
 		"框里是**绝对**路径（实为「%s」）—— `~` 在各平台展开成什么不一样，"
 			% shown
 		+ "只念一句「存在 ~/.niumapai_record 里」玩家还得自己拼一遍")
-	check(shown.ends_with(".json") and shown.begins_with(Tape.path_dir() + "/"),
+	check(shown.ends_with(".json") and shown.begins_with(OnWorkTape.path_dir() + "/"),
 		"看着像那份录像的路径（实为「%s」）" % shown)
 	# 那份文件**真在那儿**。光有一行字不算 —— 路径拼错了它照样显示得好看
 	check(FileAccess.file_exists(shown),
@@ -256,7 +256,7 @@ func _t3_share_addr_in_lan_panel() -> void:
 ##   - bind 里只读态也锁桌面（去掉那句 return）      → 「桌面没被锁」红
 func _t4_readonly_panel_cannot_start_second_link() -> void:
 	print("\n-- T4 局中打开面板是只读的 --")
-	var main: Node = await boot_main_seated(GameState.PLAYER, GameState.BOT)
+	var main: Node = await boot_main_seated(OnWorkState.PLAYER, OnWorkState.BOT)
 	if not need(main != null, "带座位的场景起得来"):
 		return
 	# 造一条**活着**的连接。net_live() 认的是 online()，

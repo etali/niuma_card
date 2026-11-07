@@ -37,7 +37,7 @@ func _initialize() -> void:
 	finish()
 
 
-## 造裸卡实例：evaluate 只读 def_id，不需要真 GameState
+## 造裸卡实例：evaluate 只读 def_id，不需要真 OnWorkState
 var _n := 0
 func _c(def_id: String) -> Dictionary:
 	_n += 1
@@ -51,11 +51,11 @@ func _cards(ids: Array) -> Array:
 func _user_recipe_card(want: int) -> String:
 	var best := ""
 	var best_n := 0
-	for def_id in CardDB.all_cards():
-		var def: Dictionary = CardDB.get_def(def_id)
-		if def.get("kind") != CardDB.KIND_PRODUCT:
+	for def_id in OnWorkCardDB.all_cards():
+		var def: Dictionary = OnWorkCardDB.get_def(def_id)
+		if def.get("kind") != OnWorkCardDB.KIND_PRODUCT:
 			continue
-		if def.get("recipe_res", "") != CardDB.RES_USER:
+		if def.get("recipe_res", "") != OnWorkCardDB.RES_USER:
 			continue
 		var n := int(def.get("recipe_n", 0))
 		if n >= want and n > best_n:
@@ -66,11 +66,11 @@ func _user_recipe_card(want: int) -> String:
 func _cash_recipe_card(want: int) -> String:
 	var best := ""
 	var best_n := 0
-	for def_id in CardDB.all_cards():
-		var def: Dictionary = CardDB.get_def(def_id)
-		if def.get("kind") != CardDB.KIND_PRODUCT:
+	for def_id in OnWorkCardDB.all_cards():
+		var def: Dictionary = OnWorkCardDB.get_def(def_id)
+		if def.get("kind") != OnWorkCardDB.KIND_PRODUCT:
 			continue
-		if def.get("recipe_res", "") != CardDB.RES_CASH:
+		if def.get("recipe_res", "") != OnWorkCardDB.RES_CASH:
 			continue
 		var n := int(def.get("recipe_n", 0))
 		if n >= want and n > best_n:
@@ -87,15 +87,15 @@ func test_one_user_fills_big_recipe() -> void:
 	check(core != "", "卡表里有吃 用户×4+ 的生产卡（实得 %s）" % core)
 	if core == "":
 		return
-	var need := int(CardDB.get_def(core)["recipe_n"])
+	var need := int(OnWorkCardDB.get_def(core)["recipe_n"])
 
 	# 不带裂变：1 张用户远远不够
-	var bare := ComboRules.evaluate(_cards([core, "user"]))
+	var bare := OnWorkComboRules.evaluate(_cards([core, "user"]))
 	check(not bare["valid"],
 		"不带裂变时 1 张用户凑不出 用户×%d 的配方" % need)
 
 	# 带裂变：同样 1 张用户就该成立
-	var ev := ComboRules.evaluate(_cards([core, "user", "liebian"]))
+	var ev := OnWorkComboRules.evaluate(_cards([core, "user", "liebian"]))
 	check(ev["valid"], "带裂变时 1 张用户就补满 用户×%d（reason=%s）" % [
 		need, ev.get("reason", "")])
 	check(ev["type"] == "production", "补满后是生产组合（实得 %s）" % ev["type"])
@@ -114,14 +114,14 @@ func test_zero_user_never_fills() -> void:
 	if core == "":
 		check(false, "卡表里找不到吃用户的生产卡")
 		return
-	var ev := ComboRules.evaluate(_cards([core, "liebian"]))
+	var ev := OnWorkComboRules.evaluate(_cards([core, "liebian"]))
 	check(not ev["valid"], "只有核心卡 + 裂变、没有用户卡 → 不成立")
 	check(not ev["filled_by_fission"], "不成立的组不许标补满")
 	check(str(ev["reason"]).contains("至少要放一张"),
 		"拒绝理由点明门槛是「至少一张」：%s" % ev["reason"])
 
 	# 混一张现金也不算：补满认的是用户卡，不是「随便一张单位卡」
-	var ev2 := ComboRules.evaluate(_cards([core, "liebian", "cash"]))
+	var ev2 := OnWorkComboRules.evaluate(_cards([core, "liebian", "cash"]))
 	check(not ev2["valid"], "拿现金卡冒充用户卡 → 仍不成立")
 
 
@@ -133,25 +133,25 @@ func test_cash_recipe_untouched() -> void:
 	check(core != "", "卡表里有吃 现金×3+ 的生产卡（实得 %s）" % core)
 	if core == "":
 		return
-	var need := int(CardDB.get_def(core)["recipe_n"])
+	var need := int(OnWorkCardDB.get_def(core)["recipe_n"])
 
-	var ev := ComboRules.evaluate(_cards([core, "cash", "liebian"]))
+	var ev := OnWorkComboRules.evaluate(_cards([core, "cash", "liebian"]))
 	check(not ev["valid"],
 		"裂变不补现金配方：1 张现金凑不出 现金×%d（reason=%s）" % [
 			need, ev.get("reason", "")])
 	check(not ev["filled_by_fission"], "现金配方组不许标补满")
 
 	# 混一张用户卡也不行：用户卡不能当现金用，裂变也不搭桥
-	var ev2 := ComboRules.evaluate(_cards([core, "cash", "user", "liebian"]))
+	var ev2 := OnWorkComboRules.evaluate(_cards([core, "cash", "user", "liebian"]))
 	check(not ev2["valid"], "现金配方里混用户卡 + 裂变 → 仍不成立")
 
 	# 现金真凑够了才成立，且要报出这一组该付多少现金
 	var ids: Array = [core]
 	for i in need:
 		ids.append("cash")
-	var ev3 := ComboRules.evaluate(_cards(ids))
+	var ev3 := OnWorkComboRules.evaluate(_cards(ids))
 	check(ev3["valid"], "现金凑够 %d 张 → 成立" % need)
-	check(ev3["recipe_res"] == CardDB.RES_CASH,
+	check(ev3["recipe_res"] == OnWorkCardDB.RES_CASH,
 		"现金配方组报出 recipe_res=cash（实得 %s）" % ev3["recipe_res"])
 	check(int(ev3["recipe_pay_n"]) == need,
 		"现金配方组要付 %d（实得 %d）" % [need, int(ev3["recipe_pay_n"])])
@@ -165,11 +165,11 @@ func test_exact_recipe_not_marked_filled() -> void:
 	if core == "":
 		check(false, "卡表里找不到吃用户的生产卡")
 		return
-	var need := int(CardDB.get_def(core)["recipe_n"])
+	var need := int(OnWorkCardDB.get_def(core)["recipe_n"])
 	var ids: Array = [core, "liebian"]
 	for i in need:
 		ids.append("user")
-	var ev := ComboRules.evaluate(_cards(ids))
+	var ev := OnWorkComboRules.evaluate(_cards(ids))
 	check(ev["valid"], "凑够 %d 张用户 + 裂变 → 成立" % need)
 	check(not ev["filled_by_fission"],
 		"用户本来就够（%d 张）时不算补满，保留正常配方保护额度" % need)
@@ -177,7 +177,7 @@ func test_exact_recipe_not_marked_filled() -> void:
 	# 用户配方永久驻场：这一组不该产生任何现金扣款
 	check(int(ev["recipe_pay_n"]) == 0,
 		"用户配方组不付现金（实得 %d）" % int(ev["recipe_pay_n"]))
-	check(ev["recipe_res"] == CardDB.RES_USER,
+	check(ev["recipe_res"] == OnWorkCardDB.RES_USER,
 		"用户配方组报出 recipe_res=user（实得 %s）" % ev["recipe_res"])
 
 
@@ -189,14 +189,14 @@ func test_fill_does_not_inflate_output() -> void:
 	if core == "":
 		check(false, "卡表里找不到大用户配方的生产卡")
 		return
-	var base := int(CardDB.get_def(core)["output_n"])
-	var ev := ComboRules.evaluate(_cards([core, "user", "liebian"]))
+	var base := int(OnWorkCardDB.get_def(core)["output_n"])
+	var ev := OnWorkComboRules.evaluate(_cards([core, "user", "liebian"]))
 	check(ev["valid"], "补满成立")
 	check(int(ev["output_n"]) == base,
 		"补满后产出仍是卡面值 %d（实得 %d）" % [base, int(ev["output_n"])])
 
 	# 叠两张裂变也不该有额外收益（补满不叠加）
-	var ev2 := ComboRules.evaluate(_cards([core, "user", "liebian", "liebian"]))
+	var ev2 := OnWorkComboRules.evaluate(_cards([core, "user", "liebian", "liebian"]))
 	check(ev2["valid"], "两张裂变仍成立")
 	check(int(ev2["output_n"]) == base,
 		"两张裂变产出不变（实得 %d）" % int(ev2["output_n"]))
@@ -208,11 +208,11 @@ func test_attack_core_also_fills() -> void:
 	print("\n【6】攻击卡配方同样补满")
 	var core := ""
 	var need := 0
-	for def_id in CardDB.all_cards():
-		var def: Dictionary = CardDB.get_def(def_id)
-		if def.get("kind") != CardDB.KIND_ATTACK:
+	for def_id in OnWorkCardDB.all_cards():
+		var def: Dictionary = OnWorkCardDB.get_def(def_id)
+		if def.get("kind") != OnWorkCardDB.KIND_ATTACK:
 			continue
-		if def.get("recipe_res", "") != CardDB.RES_USER:
+		if def.get("recipe_res", "") != OnWorkCardDB.RES_USER:
 			continue
 		if int(def.get("recipe_n", 0)) > need:
 			core = def_id
@@ -220,7 +220,7 @@ func test_attack_core_also_fills() -> void:
 	if core == "":
 		print("  [skip] 卡表里没有吃用户配方的攻击卡")
 		return
-	var ev := ComboRules.evaluate(_cards([core, "user", "liebian"]))
+	var ev := OnWorkComboRules.evaluate(_cards([core, "user", "liebian"]))
 	check(ev["valid"], "攻击卡 用户×%d 被补满（reason=%s）" % [
 		need, ev.get("reason", "")])
 	check(ev["type"] == "attack", "仍是攻击组合（实得 %s）" % ev["type"])
@@ -242,9 +242,9 @@ func test_buff_type_wired_everywhere() -> void:
 	var board: Variant = load("res://scenes/board.gd").new()
 	var no_effect: Array = []
 	var no_desc: Array = []
-	for def_id in CardDB.all_cards():
-		var def: Dictionary = CardDB.get_def(def_id)
-		if def.get("kind", "") != CardDB.KIND_BUFF:
+	for def_id in OnWorkCardDB.all_cards():
+		var def: Dictionary = OnWorkCardDB.get_def(def_id)
+		if def.get("kind", "") != OnWorkCardDB.KIND_BUFF:
 			continue
 		# (a) 悬停说明不能空 —— 这条是纯行为判据，也是三条症状里最好查的那个：
 		# describe_def 的内层 match 没有兜底分支，不认识的 buff_type 会一路掉到
@@ -252,10 +252,10 @@ func test_buff_type_wired_everywhere() -> void:
 		# 任何「数据写了、代码没接住」的 buff_type 都会在这里露出来
 		if board.describe_def(def_id).strip_edges() == "":
 			no_desc.append("%s(%s)" % [def_id, str(def.get("buff_type", ""))])
-		# (b) 再和 CardDB 的清单对一遍。这条确实读了被测常量，作用是**交叉**：
+		# (b) 再和 OnWorkCardDB 的清单对一遍。这条确实读了被测常量，作用是**交叉**：
 		# 单靠 (a) 抓不到「说明写了分支、引擎没写分支」那半边
 		# （反过来单靠清单也抓不到清单自己漏登记），两条一起才闭合
-		if not CardDB.KNOWN_BUFF_TYPES.has(str(def.get("buff_type", ""))):
+		if not OnWorkCardDB.KNOWN_BUFF_TYPES.has(str(def.get("buff_type", ""))):
 			no_effect.append(def_id)
 	board.free()
 	check(no_effect.is_empty(),
@@ -264,13 +264,13 @@ func test_buff_type_wired_everywhere() -> void:
 		"每张 Buff 卡都有效果说明，不会只剩典当行（空的：%s）" % str(no_desc))
 
 	# (c) 校验本身要真的会响：喂一张 buff_type 认不出来的表进去，
-	# CardDB 必须点名警告。这条防的是「校验函数写了但没接进 load_from」
+	# OnWorkCardDB 必须点名警告。这条防的是「校验函数写了但没接进 load_from」
 	var bogus := {
-		"_game": CardDB.GAME.duplicate(true),
-		"cash": CardDB.get_def("cash").duplicate(true),
-		"user": CardDB.get_def("user").duplicate(true),
+		"_game": OnWorkCardDB.GAME.duplicate(true),
+		"cash": OnWorkCardDB.get_def("cash").duplicate(true),
+		"user": OnWorkCardDB.get_def("user").duplicate(true),
 		"_probe_buff": {
-			"name": "假 Buff", "kind": CardDB.KIND_BUFF,
+			"name": "假 Buff", "kind": OnWorkCardDB.KIND_BUFF,
 			"tier": 1, "price": 6, "weight": 1, "buff_type": "user_x2",
 		},
 	}
@@ -280,20 +280,20 @@ func test_buff_type_wired_everywhere() -> void:
 	if f != null:
 		f.store_string(JSON.stringify(bogus))
 		f.close()
-		var keep: String = CardDB.loaded_from
+		var keep: String = OnWorkCardDB.loaded_from
 		# push_warning 在测试里截不住，所以这条不验「响没响」，验的是
 		# 「认不出的 buff_type 会造成什么」—— 也就是用户看到的那个空说明
-		var ok: bool = CardDB.load_from(ProjectSettings.globalize_path(tmp)) \
-			or CardDB.load_from(tmp)
+		var ok: bool = OnWorkCardDB.load_from(ProjectSettings.globalize_path(tmp)) \
+			or OnWorkCardDB.load_from(tmp)
 		check(ok, "临时配置能加载")
-		var probe: Dictionary = CardDB.get_def("_probe_buff")
-		check(not CardDB.KNOWN_BUFF_TYPES.has(str(probe.get("buff_type", ""))),
+		var probe: Dictionary = OnWorkCardDB.get_def("_probe_buff")
+		check(not OnWorkCardDB.KNOWN_BUFF_TYPES.has(str(probe.get("buff_type", ""))),
 			"user_x2 确实不在认得的清单里（V1.0 的旧值）")
 		check(board_desc_empty_for("_probe_buff"),
 			"认不出的 buff_type 说明为空 —— 这正是「只剩典当+3」的成因")
 		# 还原真表，后面的用例还要用
-		CardDB.load_from(keep)
-		check(CardDB.get_def("liebian").get("buff_type", "") == "user_fill",
+		OnWorkCardDB.load_from(keep)
+		check(OnWorkCardDB.get_def("liebian").get("buff_type", "") == "user_fill",
 			"真卡表已还原（liebian=user_fill）")
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp))
 

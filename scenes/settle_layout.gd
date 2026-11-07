@@ -6,8 +6,8 @@ extends Node
 
 ## 牌该摆哪儿：BOT 区摆放、玩家闲置区整理、结算到货摞牌、摞的落位与高度。
 ##
-## 从 main.gd 切出来的一段。切的是「摆放」这一层：
-## main.gd 管回合流程（谁该行动、买了什么、什么时候进攻），这里只管
+## 从 on_work_main.gd 切出来的一段。切的是「摆放」这一层：
+## on_work_main.gd 管回合流程（谁该行动、买了什么、什么时候进攻），这里只管
 ## 「这些牌该出现在桌面的哪个位置」。两边的分界就是这句话 —— 流程决定
 ## 有哪些牌要摆，这里决定摆哪儿。
 ##
@@ -18,7 +18,7 @@ extends Node
 ## 补间得挂在场景树上的节点上。作为 main 的子节点挂着，main 释放时一起走。
 ##
 ## board / entities 进场时绑一次就不变（main._ready 里各自只赋值一次）。
-## state 不绑：重开一局会 state = GameState.new()（见 main.gd 的 _restart），
+## state 不绑：重开一局会 state = OnWorkState.new()（见 on_work_main.gd 的 _restart），
 ## 绑过的引用会指着上一局的状态，所以一律走 _main.state 现读
 
 ## CardEntity / Board / CardArt 都是 class_name，全局可见，不用 preload
@@ -517,7 +517,7 @@ const BOT_FAR_Z_MAX := -1.8
 ## 两侧规矩不一致的后果有两个，都在联机局：
 ##   1. 摊开的摞在两个视角里次序不一样 —— 而 uids 里带着的**就是**他屏幕上的次序
 ##      （摞走 my_pile_lists 的 g["cards"]，组合走 _register_player_combos
-##      发出去的 create_combo，GameState.create_combo 原样 duplicate 存下）
+##      发出去的 create_combo，OnWorkState.create_combo 原样 duplicate 存下）
 ##   2. 队首会跟着变：调用方那圈过滤会剔掉租出去的 uid（is_drag_leased），
 ##      无条件重排是在**剩下这个子集**上算的 —— 他从摞里拎起几张，
 ##      我这边首张牌当场换人。照他的次序摆就没有这个洞：
@@ -620,7 +620,7 @@ func _collect_idle_units(who: String, extra_grouped: Dictionary = {}) -> Array:
 	for c in _main.state.players[who]["cards"]:
 		if grouped.has(c["uid"]) or not entities.has(c["uid"]):
 			continue
-		# 正被远端拖着的牌不参与摆放（scenes/main.gd 的拖拽广播与租约处理的租约）。
+		# 正被远端拖着的牌不参与摆放（scenes/on_work_main.gd 的拖拽广播与租约处理的租约）。
 		# 不挡的话每一步之后的 _layout_bot_idle 都会抢着把牌摆回摞里，
 		# 而网络那头每 50ms 写一次新位置 —— 两边打架的样子是牌在抽搐
 		if _main.is_drag_leased(int(c["uid"])):
@@ -628,11 +628,11 @@ func _collect_idle_units(who: String, extra_grouped: Dictionary = {}) -> Array:
 		var e: CardEntity = entities[c["uid"]]
 		if not is_instance_valid(e):
 			continue
-		var def: Dictionary = CardDB.get_def(c["def_id"])
-		if def.get("kind") != CardDB.KIND_UNIT:
+		var def: Dictionary = OnWorkCardDB.get_def(c["def_id"])
+		if def.get("kind") != OnWorkCardDB.KIND_UNIT:
 			idle_other.append(e)
 			continue
-		if def.get("res") == CardDB.RES_CASH:
+		if def.get("res") == OnWorkCardDB.RES_CASH:
 			idle_cash.append(e)
 		else:
 			idle_user.append(e)
@@ -748,7 +748,7 @@ func _drawer_bounds_enabled() -> bool:
 ## （见 _rest_pos），第二次搜索里那儿已经不空。两条修法缺一条都还会重合
 func _free_spot(anchor: Vector3, who: String, claimed: Array = [],
 		ignore: Dictionary = {}) -> Vector3:
-	## 近侧 / 远侧，不是「人 / 电脑」：联网时远端客户端的 my_seat 是 GameState.BOT，
+	## 近侧 / 远侧，不是「人 / 电脑」：联网时远端客户端的 my_seat 是 OnWorkState.BOT，
 	## 它的牌照样摆在屏幕下半边（近侧）
 	var is_near: bool = who == _main.my_seat
 	var z_dir := 1.0 if is_near else -1.0
@@ -790,13 +790,13 @@ func _free_spot(anchor: Vector3, who: String, claimed: Array = [],
 
 ## 按资源给新卡选落位锚点：现金锚左、用户锚右，非单位卡落区域中部
 func _unit_anchor(who: String, def_id: String) -> Vector3:
-	var def: Dictionary = CardDB.get_def(def_id)
+	var def: Dictionary = OnWorkCardDB.get_def(def_id)
 	if who == _main.foe_seat:
-		if def.get("kind") == CardDB.KIND_UNIT:
+		if def.get("kind") == OnWorkCardDB.KIND_UNIT:
 			return _bot_resource_anchor(str(def.get("res")))
 		return Vector3(0, 0.05, _main.BOT_ZONE_Z - 1.5)
-	if def.get("kind") == CardDB.KIND_UNIT:
-		return PLAYER_PILE_CASH_ANCHOR if def.get("res") == CardDB.RES_CASH else PLAYER_PILE_USER_ANCHOR
+	if def.get("kind") == OnWorkCardDB.KIND_UNIT:
+		return PLAYER_PILE_CASH_ANCHOR if def.get("res") == OnWorkCardDB.RES_CASH else PLAYER_PILE_USER_ANCHOR
 	return Vector3(0, 0.05, _main.PLAYER_ZONE_Z + 1.6)
 
 ## BOT 每步（典当/买卡/编组/结算/回合开始）结束后都调这一个入口：
@@ -843,7 +843,7 @@ func _bot_piles() -> Array:
 				(combo["uids"] as Array).is_empty() else null
 			# 次序照 combo["uids"] 来 —— 那**就是**他屏幕上的次序
 			# （_register_player_combos 按 g["cards"] 的次序发 create_combo，
-			# GameState.create_combo 原样 duplicate 存下）。同 _declared_piles
+			# OnWorkState.create_combo 原样 duplicate 存下）。同 _declared_piles
 			# 那条：只在收拢态提核心卡，摊开态照原样摆
 			var rec := { "cards": _order_as_declared(cs, declared),
 				"key": "bot_combo_%d" % i, "compact": declared }
@@ -987,9 +987,9 @@ func _layout_bot_zone() -> void:
 		var key: String = p["key"]
 		var x: float = BOT_PILE_BENCH_X
 		if key.begins_with("bot_cash"):
-			x = _bot_resource_anchor(CardDB.RES_CASH).x
+			x = _bot_resource_anchor(OnWorkCardDB.RES_CASH).x
 		elif key.begins_with("bot_user"):
-			x = _bot_resource_anchor(CardDB.RES_USER).x
+			x = _bot_resource_anchor(OnWorkCardDB.RES_USER).x
 		elif bench_x.has(key):
 			x = float(bench_x[key])
 		# 摊开这一片时资源牌照玩家侧的列摆，其余（备牌摞）照旧收拢
@@ -1020,14 +1020,14 @@ func _layout_bot_zone() -> void:
 ## 这一刻理到哪一步了，BOT 的形态会跟着玩家的操作抖。规则表那两个数
 ## （start_cash / start_user）是常量
 func spread_max_cols(res: String) -> int:
-	var rules: Dictionary = CardDB.game_rules()
-	var n0: int = int(rules["start_cash" if res == CardDB.RES_CASH else "start_user"])
+	var rules: Dictionary = OnWorkCardDB.game_rules()
+	var n0: int = int(rules["start_cash" if res == OnWorkCardDB.RES_CASH else "start_user"])
 	return maxi(1, ceili(float(n0) / float(PLAYER_PILE_PER_COL)))
 
 ## 收拢席位与当前卡表的开局资源片中线对齐。切换卡表时重新计算，
 ## 不缓存旧配置的中线，也不跟随玩家回合中的资源增减来回移动。
 func _bot_resource_anchor(res: String) -> Vector3:
-	var anchor := PLAYER_PILE_CASH_ANCHOR if res == CardDB.RES_CASH else PLAYER_PILE_USER_ANCHOR
+	var anchor := PLAYER_PILE_CASH_ANCHOR if res == OnWorkCardDB.RES_CASH else PLAYER_PILE_USER_ANCHOR
 	anchor.x += float(spread_max_cols(res) - 1) * PLAYER_PILE_COL_PITCH / 2.0
 	anchor.z = BOT_ROW_Z[-1]
 	return anchor
@@ -1044,10 +1044,10 @@ func _spread_bot_res(idles: Array, no_combos: bool) -> bool:
 	for p in idles:
 		var key: String = p["key"]
 		var x0: float = PLAYER_PILE_CASH_ANCHOR.x
-		var res: String = CardDB.RES_CASH
+		var res: String = OnWorkCardDB.RES_CASH
 		if key.begins_with("bot_user"):
 			x0 = PLAYER_PILE_USER_ANCHOR.x
-			res = CardDB.RES_USER
+			res = OnWorkCardDB.RES_USER
 		elif not key.begins_with("bot_cash"):
 			continue      # 备牌摞不摊开：杂项卡在玩家侧本来就没有对照的一片
 		var cols: int = ceili(float(p["cards"].size()) / float(PLAYER_PILE_PER_COL))
@@ -1109,8 +1109,8 @@ func _merge_bench_overflow(idles: Array, spread: bool) -> Array:
 ## 一处定义：席位表和 bench_seat_cap 都得按同一个窗口算，各写一遍的话
 ## 「算得下」和「摆得下」会对不上（memory: number-lives-in-five-places）
 func bench_window(idles: Array, spread: bool) -> Vector2:
-	var left: float = _bot_resource_anchor(CardDB.RES_CASH).x
-	var right: float = _bot_resource_anchor(CardDB.RES_USER).x
+	var left: float = _bot_resource_anchor(OnWorkCardDB.RES_CASH).x
+	var right: float = _bot_resource_anchor(OnWorkCardDB.RES_USER).x
 	if spread:
 		for p in idles:
 			var k2: String = str(p["key"])
@@ -1201,7 +1201,7 @@ func _bot_spread_step(n: int) -> float:
 
 ## 对手侧那几张牌正在跑的归位补间，uid → Tween。
 ##
-## 为什么要记：租约（scenes/main.gd 的拖拽广播与租约处理）只挡住「之后」的摆放 —— _collect_idle_units
+## 为什么要记：租约（scenes/on_work_main.gd 的拖拽广播与租约处理）只挡住「之后」的摆放 —— _collect_idle_units
 ## 和 _bot_piles 里那两条 is_drag_leased 让被拖的牌不再进入摆放清单。但**已经在跑**
 ## 的补间挡不住，它会在接下来的 0.3 秒里逐帧把 position 写回摞里，
 ## 而网络那头每 50ms 写一次新位置。两边打架的样子是牌抽搐着往摞里缩回去。
@@ -1537,7 +1537,7 @@ func _refresh_bot_pile_progress(pile: Dictionary) -> void:
 	var data: Array = []
 	for c: CardEntity in cards:
 		data.append({ "uid": c.uid, "def_id": c.def_id })
-	board._update_group_progress(pile, ComboRules.evaluate(data, _main.state.combo_mods(_main.foe_seat)))
+	board._update_group_progress(pile, OnWorkComboRules.evaluate(data, _main.state.combo_mods(_main.foe_seat)))
 
 ## uid → 所在 BOT 摞的 key；摞里全部 uid（攻击阶段点摞顶时用来找摞内的合法靶）
 var _bot_pile_of_uid := {}
@@ -1581,7 +1581,7 @@ func _tidy_player_idle() -> void:
 	for g in board.groups.duplicate():
 		var pure := true
 		for c in g["cards"]:
-			if CardDB.get_def(c.def_id).get("kind") != CardDB.KIND_UNIT:
+			if OnWorkCardDB.get_def(c.def_id).get("kind") != OnWorkCardDB.KIND_UNIT:
 				pure = false
 				break
 		if pure:
@@ -1627,7 +1627,7 @@ func begin_arrivals() -> void:
 	# 左侧带里已有的零头本轮会被 _stack_settled 捞进同一个池子重排，
 	# 所以它们现在占的位置不算障碍 —— 否则新摞会绕开它们落到别处，
 	# 等统一那趟把两边并起来时再整摞挪一次，就又跳了
-	for res in [CardDB.RES_CASH, CardDB.RES_USER]:
+	for res in [OnWorkCardDB.RES_CASH, OnWorkCardDB.RES_USER]:
 		for e in _mergeable_left(res):
 			_arr_mine[e.uid] = true
 			_arr_count[res] = int(_arr_count.get(res, 0)) + 1
@@ -1647,15 +1647,15 @@ func end_arrivals() -> void:
 ## 因而付款动画也必须指向同一条现金带；不能再回到普通玩家区的现金锚点，
 ## 否则「现金被吸走」和「用户产出落地」会像两套互不相干的动画。
 func payment_spot(who: String, res: String) -> Vector3:
-	if _arr_open and who == _main.my_seat and res == CardDB.RES_CASH:
+	if _arr_open and who == _main.my_seat and res == OnWorkCardDB.RES_CASH:
 		return SETTLE_CASH_ANCHOR
-	return _unit_anchor(who, CardDB.unit_id(res))
+	return _unit_anchor(who, OnWorkCardDB.unit_id(res))
 
 ## 预览资源带的下一张实际落点，不推进到货台账。
 ## 结算演出先用它给付款动画定位，随后 arrival_spot() 会按同一状态提交该落点。
 func preview_band_arrival_spot(res: String) -> Vector3:
 	if not _arr_open:
-		return _unit_anchor(_main.my_seat, CardDB.unit_id(res))
+		return _unit_anchor(_main.my_seat, OnWorkCardDB.unit_id(res))
 	var k: int = int(_arr_count.get(res, 0))
 	var part: int = k / PILE_CHUNK
 	var seat: int = k % PILE_CHUNK
@@ -1664,8 +1664,8 @@ func preview_band_arrival_spot(res: String) -> Vector3:
 	if _arr_base.has(ck):
 		base = _arr_base[ck]
 	else:
-		var anchor: Vector3 = SETTLE_CASH_ANCHOR if res == CardDB.RES_CASH else SETTLE_USER_ANCHOR
-		var cols: Array = SETTLE_CASH_COLS if res == CardDB.RES_CASH else SETTLE_USER_COLS
+		var anchor: Vector3 = SETTLE_CASH_ANCHOR if res == OnWorkCardDB.RES_CASH else SETTLE_USER_ANCHOR
+		var cols: Array = SETTLE_CASH_COLS if res == OnWorkCardDB.RES_CASH else SETTLE_USER_COLS
 		base = _pile_slot(anchor, _arr_taken, _arr_mine, cols)
 	return base + Board.compact_offset(PILE_CHUNK, seat)
 
@@ -1675,8 +1675,8 @@ func preview_arrival_spot(who: String, card: Dictionary) -> Vector3:
 	var anchor := _unit_anchor(who, def_id)
 	if not _arr_open:
 		return _free_spot(anchor, who)
-	var def: Dictionary = CardDB.get_def(def_id)
-	if who == _main.my_seat and def.get("kind") == CardDB.KIND_UNIT:
+	var def: Dictionary = OnWorkCardDB.get_def(def_id)
+	if who == _main.my_seat and def.get("kind") == OnWorkCardDB.KIND_UNIT:
 		return preview_band_arrival_spot(def.get("res", ""))
 	return _free_spot(anchor, who, _arr_claimed)
 
@@ -1685,9 +1685,9 @@ func arrival_spot(who: String, card: Dictionary) -> Vector3:
 	var anchor := _unit_anchor(who, def_id)
 	if not _arr_open:
 		return _free_spot(anchor, who)
-	var def: Dictionary = CardDB.get_def(def_id)
+	var def: Dictionary = OnWorkCardDB.get_def(def_id)
 	# 玩家的资源卡直接进左侧资源带，按每 PILE_CHUNK 张一组
-	if who == _main.my_seat and def.get("kind") == CardDB.KIND_UNIT:
+	if who == _main.my_seat and def.get("kind") == OnWorkCardDB.KIND_UNIT:
 		# 落地后它也是「本轮要重排的牌」之一：后面几组挑位置时不该把它当障碍绕开，
 		# 否则和结算末尾那趟（mine 含整池）挑出的位置不一致，整摞会再跳一次
 		_arr_mine[card["uid"]] = true
@@ -1706,8 +1706,8 @@ func _band_arrival_spot(res: String) -> Vector3:
 	var seat: int = k % PILE_CHUNK
 	var ck := "%s:%d" % [res, part]
 	if not _arr_base.has(ck):
-		var anchor: Vector3 = SETTLE_CASH_ANCHOR if res == CardDB.RES_CASH else SETTLE_USER_ANCHOR
-		var cols: Array = SETTLE_CASH_COLS if res == CardDB.RES_CASH else SETTLE_USER_COLS
+		var anchor: Vector3 = SETTLE_CASH_ANCHOR if res == OnWorkCardDB.RES_CASH else SETTLE_USER_ANCHOR
+		var cols: Array = SETTLE_CASH_COLS if res == OnWorkCardDB.RES_CASH else SETTLE_USER_COLS
 		var base := _pile_slot(anchor, _arr_taken, _arr_mine, cols)
 		_arr_base[ck] = base
 		_arr_taken.append(base)
@@ -1734,16 +1734,16 @@ func _stack_settled(known: Dictionary) -> void:
 		var e: CardEntity = entities[c["uid"]]
 		if not is_instance_valid(e):
 			continue
-		var def: Dictionary = CardDB.get_def(c["def_id"])
-		if def.get("kind") != CardDB.KIND_UNIT:
+		var def: Dictionary = OnWorkCardDB.get_def(c["def_id"])
+		if def.get("kind") != OnWorkCardDB.KIND_UNIT:
 			continue   # 产出的核心卡（升级产物）留在原地，玩家要自己编进阵型
-		if def.get("res") == CardDB.RES_CASH:
+		if def.get("res") == OnWorkCardDB.RES_CASH:
 			fresh_cash.append(e)
 		else:
 			fresh_user.append(e)
 	# 并进上几轮留在左侧、还没摞起来的同种资源（去重：新卡也可能已经落在左侧带里）
-	var cash_pool: Array = _merge_loose_left(fresh_cash, CardDB.RES_CASH)
-	var user_pool: Array = _merge_loose_left(fresh_user, CardDB.RES_USER)
+	var cash_pool: Array = _merge_loose_left(fresh_cash, OnWorkCardDB.RES_CASH)
+	var user_pool: Array = _merge_loose_left(fresh_user, OnWorkCardDB.RES_USER)
 	# 现金一列、用户一列，各自纵向排：两种资源混在一列里找不着自己要付的那摞。
 	# taken 两次调用共用一份（Array 按引用传）：现金那批的落位是 0.18s 补间送过去的，
 	# 用户这批挑位置时它们坐标还没到位，只靠 _spot_cost 读实体会当那儿是空的
@@ -1862,8 +1862,8 @@ func _mergeable_left(res: String, seen: Dictionary = {}) -> Array:
 			continue
 		if not _in_settle_zone(e):
 			continue
-		var def: Dictionary = CardDB.get_def(c["def_id"])
-		if def.get("kind") != CardDB.KIND_UNIT or def.get("res") != res:
+		var def: Dictionary = OnWorkCardDB.get_def(c["def_id"])
+		if def.get("kind") != OnWorkCardDB.KIND_UNIT or def.get("res") != res:
 			continue
 		var g: Variant = board.group_of(e)
 		if g != null and not _is_loose_remainder(g):
@@ -2119,11 +2119,11 @@ func _col_strays(key: int, mine: Dictionary) -> Array:
 			continue
 		if board.group_of(e) != null:
 			continue      # 成了组的交给 _col_host
-		var def: Dictionary = CardDB.get_def(c["def_id"])
-		if def.get("kind") != CardDB.KIND_UNIT:
+		var def: Dictionary = OnWorkCardDB.get_def(c["def_id"])
+		if def.get("kind") != OnWorkCardDB.KIND_UNIT:
 			continue
 		var res = def.get("res")
-		if res != CardDB.RES_CASH and res != CardDB.RES_USER:
+		if res != OnWorkCardDB.RES_CASH and res != OnWorkCardDB.RES_USER:
 			continue
 		var at := _rest_pos(e)
 		if _col_key(at.x) != key or not _in_settle_zone(e):
@@ -2213,7 +2213,7 @@ func _settle_pile_heights() -> void:
 ## Δy=0.003，正是用户报的「典当获得的现金有一样的问题」）。
 ##
 ## 只动「自己代收的零头」（_is_loose_remainder），且只改 y：
-## x/z 是逐格避让挑出来的，动了就等于替玩家重排桌面（见 main.gd 的硬约束）。
+## x/z 是逐格避让挑出来的，动了就等于替玩家重排桌面（见 on_work_main.gd 的硬约束）。
 ## 也不碰收拢的摞和玩家自己编的阵型。
 ##
 ## 有界：一列余数最多 PILE_CHUNK-1 张，底下最多压着一摞，
@@ -2434,7 +2434,7 @@ func _place_resource_chunk(chunk: Array, origin: Vector3, compact: bool) -> void
 func _group_pile_in_bounds(pile: Array, anchor: Vector3, safe: Rect2) -> void:
 	if pile.is_empty():
 		return
-	var cash: bool = CardDB.get_def(pile[0].def_id).get("res") == CardDB.RES_CASH
+	var cash: bool = OnWorkCardDB.get_def(pile[0].def_id).get("res") == OnWorkCardDB.RES_CASH
 	var start_x := clampf(anchor.x, safe.position.x, safe.end.x)
 	var end_x := minf(-0.8, safe.end.x) if cash else safe.end.x
 	var pitch := maxf(PLAYER_PILE_COL_PITCH, CardEntity.CARD_SIZE.x + Board.SIDE_W + Board.SIDE_GAP + 0.2)

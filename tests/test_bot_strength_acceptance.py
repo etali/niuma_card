@@ -11,8 +11,8 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/'tools'))
-import check_bot_strength as strength
-from check_bot_strength import acceptance
+import on_work_check_bot_strength as strength
+from on_work_check_bot_strength import acceptance
 
 
 class AcceptanceTest(unittest.TestCase):
@@ -132,10 +132,10 @@ class ResumeIdentityTest(unittest.TestCase):
                         'a_score_rate': 1, 'a_score_pair_bootstrap_95': []}}))
                     return subprocess.CompletedProcess(command, 0)
 
-                argv = ['check_bot_strength.py', '--store', folder, '--pairs', '1',
+                argv = ['on_work_check_bot_strength.py', '--store', folder, '--pairs', '1',
                         '--resume', '--no-gate', '--godot', 'selected-godot']
                 with mock.patch.object(sys, 'argv', argv), \
-                        mock.patch.object(strength, 'Workbench', return_value=workbench), \
+                        mock.patch.object(strength, 'OnWorkWorkbench', return_value=workbench), \
                         mock.patch.object(strength, 'engine_fingerprint', return_value='engine'), \
                         mock.patch.object(strength, 'godot_report_version', return_value=self.version) as runtime, \
                         mock.patch.object(strength.subprocess, 'run', side_effect=merge), \

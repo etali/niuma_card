@@ -38,8 +38,8 @@ extends "res://tests/harness.gd"
 ##   7. 收方无条件 core_first_order → T8 摊开的摞两个视角次序不一样
 
 const PORT_BASE := 47340
-const A := GameState.PLAYER
-const B := GameState.BOT
+const A := OnWorkState.PLAYER
+const B := OnWorkState.BOT
 
 ## 后台协程的完成标志。**必须是成员变量** —— GDScript 的 lambda 按值捕获
 ## 外层局部量，`var done := false` + `func(): done = true` 那次赋值写在副本上，
@@ -48,7 +48,7 @@ var _flag := false
 
 func _initialize() -> void:
 	print("=== 联网局摞分组测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	await _t1_my_pile_reaches_the_foe()
 	await _t2_declared_pile_becomes_a_foe_pile()
 	await _t3_combo_wins_over_declaration()
@@ -61,7 +61,7 @@ func _initialize() -> void:
 	finish()
 
 # ---------- 服务器 / 客户端（与 test_net_client 同法，端口段错开） ----------
-func _server_room() -> NetRoom:
+func _server_room() -> OnWorkRoom:
 	for code in _srv.rooms:
 		return _srv.rooms[code]
 	return null
@@ -77,8 +77,8 @@ func _my_cash(main: Node, n: int) -> Array:
 	for c in main.state.players[main.my_seat]["cards"]:
 		if out.size() >= n:
 			break
-		var d: Dictionary = CardDB.get_def(c["def_id"])
-		if d.get("kind") != CardDB.KIND_UNIT or d.get("res") != CardDB.RES_CASH:
+		var d: Dictionary = OnWorkCardDB.get_def(c["def_id"])
+		if d.get("kind") != OnWorkCardDB.KIND_UNIT or d.get("res") != OnWorkCardDB.RES_CASH:
 			continue
 		if main.entities.has(c["uid"]) and is_instance_valid(main.entities[c["uid"]]):
 			out.append(main.entities[c["uid"]])
@@ -91,8 +91,8 @@ func _foe_cash_uids(main: Node, n: int) -> Array:
 	for c in main.state.players[main.foe_seat]["cards"]:
 		if out.size() >= n:
 			break
-		var d: Dictionary = CardDB.get_def(c["def_id"])
-		if d.get("kind") == CardDB.KIND_UNIT and d.get("res") == CardDB.RES_CASH:
+		var d: Dictionary = OnWorkCardDB.get_def(c["def_id"])
+		if d.get("kind") == OnWorkCardDB.KIND_UNIT and d.get("res") == OnWorkCardDB.RES_CASH:
 			out.append(int(c["uid"]))
 	return out
 
@@ -101,9 +101,9 @@ func _foe_cash_uids(main: Node, n: int) -> Array:
 func _smallest_producer() -> String:
 	var out := ""
 	var best := 999
-	for id in CardDB.all_cards():
-		var d: Dictionary = CardDB.get_def(id)
-		if d.get("kind") != CardDB.KIND_PRODUCT:
+	for id in OnWorkCardDB.all_cards():
+		var d: Dictionary = OnWorkCardDB.get_def(id)
+		if d.get("kind") != OnWorkCardDB.KIND_PRODUCT:
 			continue
 		var n := int(d.get("recipe_n", 0))
 		if n >= 1 and n < best:
@@ -388,8 +388,8 @@ func _t3_combo_wins_over_declaration() -> void:
 	var a: NetTransport = trio[1]
 	var b: NetTransport = trio[2]
 
-	# 一份能过 ComboRules 的料：配方最小的生产卡 + 它要的单位卡。
-	# 光三张现金卡编不成组合（create_combo 走 ComboRules.evaluate，
+	# 一份能过 OnWorkComboRules 的料：配方最小的生产卡 + 它要的单位卡。
+	# 光三张现金卡编不成组合（create_combo 走 OnWorkComboRules.evaluate，
 	# 没核心卡直接 invalid）—— 那样这一条测的就成了「编组失败时怎样」
 	var core_id := _smallest_producer()
 	if not need(core_id != "", "找得到一张生产卡"):
@@ -398,9 +398,9 @@ func _t3_combo_wins_over_declaration() -> void:
 		b.close()
 		await physics_frame
 		return
-	var d: Dictionary = CardDB.get_def(core_id)
+	var d: Dictionary = OnWorkCardDB.get_def(core_id)
 	var uids: Array = [int(main.state.add_card(main.foe_seat, core_id)["uid"])]
-	var unit := "cash" if str(d.get("recipe_res")) == CardDB.RES_CASH else "user"
+	var unit := "cash" if str(d.get("recipe_res")) == OnWorkCardDB.RES_CASH else "user"
 	for i in int(d.get("recipe_n", 0)):
 		uids.append(int(main.state.add_card(main.foe_seat, unit)["uid"]))
 	# 新加的牌要有实体，否则 _bot_piles 会把它们整批跳过（那一条过滤在 T5 里钉着）
@@ -894,8 +894,8 @@ func _t8_order_matches_both_ways() -> void:
 		b.close()
 		await physics_frame
 		return
-	var d: Dictionary = CardDB.get_def(core_id)
-	var unit := "cash" if str(d.get("recipe_res")) == CardDB.RES_CASH else "user"
+	var d: Dictionary = OnWorkCardDB.get_def(core_id)
+	var unit := "cash" if str(d.get("recipe_res")) == OnWorkCardDB.RES_CASH else "user"
 	var units: Array = []
 	for i in 3:
 		units.append(int(main.state.add_card(main.foe_seat, unit)["uid"]))

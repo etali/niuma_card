@@ -27,5 +27,5 @@ static func normalize(value: Variant, reverse := false) -> Variant:
 		return upper.sub(lower.sub(value,OLD_SEAT if reverse else "bot",true),"AI" if reverse else "BOT",true)
 	return value
 
-static func state_hash(state: GameState) -> String:
-	return StateCodec.canon_hash(normalize(StateCodec._hash_payload(state),true))
+static func state_hash(state: OnWorkState) -> String:
+	return OnWorkStateCodec.canon_hash(normalize(OnWorkStateCodec._hash_payload(state),true))

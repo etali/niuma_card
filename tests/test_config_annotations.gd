@@ -4,8 +4,8 @@
 
 extends "res://tests/harness.gd"
 
-const Config = preload("res://engine/card_config.gd")
-const Logic = preload("res://tools/balance/logic.gd")
+const Config = preload("res://engine/on_work_card_config.gd")
+const Logic = preload("res://tools/balance/on_work_logic.gd")
 
 func _initialize() -> void:
 	var base: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(Config.DEFAULT_PATH))

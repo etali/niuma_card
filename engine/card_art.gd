@@ -295,7 +295,7 @@ static func _ensure_loaded() -> void:
 	_art = UIConfig.read_section("art")
 	_untinted_paths.clear()
 	var icons: Dictionary = _art.get("icons", {})
-	var untinted := [CardDB.RES_CASH, CardDB.RES_USER]
+	var untinted := [OnWorkCardDB.RES_CASH, OnWorkCardDB.RES_USER]
 	untinted.append_array(_art.get("illustrations", {}).keys())
 	for id in untinted:
 		var entry: Dictionary = icons.get(id, {})
@@ -303,30 +303,30 @@ static func _ensure_loaded() -> void:
 
 ## def_id → 配色槽位。按 cards.json 的类别、资源、产出和 Buff 类型推导，
 ## 同类卡牌共用配色，无需为每张卡单独维护映射。
-static func plate_slot(def_id: String, catalog: Script = CardDB) -> String:
+static func plate_slot(def_id: String, catalog: Script = OnWorkCardDB) -> String:
 	var def: Dictionary = catalog.get_def(def_id)
 	if def.has("plate_slot"):
 		return str(def.plate_slot)
 	match def.get("kind", ""):
-		CardDB.KIND_UNIT:
+		OnWorkCardDB.KIND_UNIT:
 			return PLATE_CASH if def.get("res") == catalog.RES_CASH else PLATE_USER
-		CardDB.KIND_LEGEND:
+		OnWorkCardDB.KIND_LEGEND:
 			return PLATE_T3
-		CardDB.KIND_ATTACK:
+		OnWorkCardDB.KIND_ATTACK:
 			return PLATE_ATTACK
-		CardDB.KIND_BUFF:
+		OnWorkCardDB.KIND_BUFF:
 			# 防御 Buff（protect_*）走低饱和底板，与增强 Buff 形成素/艳对比
 			return PLATE_BUFF_DEF if str(def.get("buff_type", "")).begins_with("protect_") \
 				else PLATE_BUFF_UP
-		CardDB.KIND_PRODUCT:
+		OnWorkCardDB.KIND_PRODUCT:
 			# 生产牌按实际资源方向分色：用户→现金是变现线，现金→用户是拉新线。
 			# T1/T2 共用功能色；升级、换名或导入新卡表都不应改变同一方向的配色。
 			return PLATE_T1_MONEY if def.get("output_res") == catalog.RES_CASH \
 				else PLATE_T1_GROWTH
-		CardDB.KIND_SPECIAL:
+		OnWorkCardDB.KIND_SPECIAL:
 			# 角色专属卡借现有底板，不另开配色槽：「给我」和传说卡同属「不走市场的大牌」，
 			# Idea 和增强 Buff 一样是给别的牌加成的
-			return PLATE_T3 if catalog.special_type(def_id) == CardDB.SPECIAL_GRAB else PLATE_BUFF_UP
+			return PLATE_T3 if catalog.special_type(def_id) == OnWorkCardDB.SPECIAL_GRAB else PLATE_BUFF_UP
 	return PLATE_T1_MONEY
 
 ## 程序化卡框几何（世界单位）；标题带高度为卡高占比。
@@ -347,31 +347,53 @@ static func configure_frame(material: ShaderMaterial, scale_factor := 1.0) -> vo
 	material.set_shader_parameter("stroke_pressure", FRAME_PRESSURE)
 
 ## 功能图标通常是可着色白色线稿；资源图标自带手绘墨色与纸色，缺失返回 null
-static func icon_texture(def_id: String, catalog: Script = CardDB) -> Texture2D:
-	# 两种资源只维护一份简笔符号，资源牌和所有配方/产出标记共用。
+static func icon_texture(def_id: String, catalog: Script = OnWorkCardDB) -> Texture2D:
+	return _load_tex(_icon_path(def_id, catalog))
+
+static func _icon_path(def_id: String, catalog: Script) -> String:
 	_ensure_loaded()
 	var definition: Dictionary = catalog.get_def(def_id)
 	if definition.has("art_file"):
-		return _load_tex(ART_DIR + str(definition.art_file))
+		return ART_DIR + str(definition.art_file)
 	def_id = str(definition.get("source_art_id", def_id))
 	var entry: Dictionary = _art.get("icons", {}).get(def_id, {})
-	return _load_tex(ART_DIR + str(entry.get("file", "icon/icon_" + def_id + ".png")))
+	return ART_DIR + str(entry.get("file", "icon/icon_" + def_id + ".png"))
 
 ## 情景插画保留原色；仅登记过的卡使用插画，其他卡继续使用功能图标。
-static func illustration_texture(def_id: String, catalog: Script = CardDB) -> Texture2D:
+static func illustration_texture(def_id: String, catalog: Script = OnWorkCardDB) -> Texture2D:
+	var path := _illustration_path(def_id, catalog)
+	return _load_tex(path) if not path.is_empty() else null
+
+static func _illustration_path(def_id: String, catalog: Script) -> String:
 	_ensure_loaded()
 	var definition: Dictionary = catalog.get_def(def_id)
 	if definition.has("art_file"):
-		return _load_tex(ART_DIR + str(definition.art_file))
+		return ART_DIR + str(definition.art_file)
 	def_id = str(definition.get("source_art_id", def_id))
 	var entry: Dictionary = _art.get("illustrations", {}).get(def_id, {})
 	var path := str(entry.get("file", ""))
-	return _load_tex(ART_DIR + path) if path != "" else null
+	return ART_DIR + path if path != "" else ""
+
+## Offscreen preparation uses the same path and cache as the visible card.
+## The normal texture accessors still deliver a complete texture on demand.
+static func request_warm_art(def_id: String) -> String:
+	var path := _illustration_path(def_id, OnWorkCardDB)
+	if path.is_empty() or not ResourceLoader.exists(path):
+		path = _icon_path(def_id, OnWorkCardDB)
+	if _tex_cache.has(path) or not ResourceLoader.exists(path): return ""
+	return path if ResourceLoader.load_threaded_request(path, "Texture2D") == OK else ""
+
+static func collect_warm_art(path: String) -> bool:
+	match ResourceLoader.load_threaded_get_status(path):
+		ResourceLoader.THREAD_LOAD_IN_PROGRESS: return false
+		ResourceLoader.THREAD_LOAD_LOADED:
+			_tex_cache[path] = ResourceLoader.load_threaded_get(path) as Texture2D
+	return true
 
 ## 资源图标（cash / user）：卡面底部用它表示产出、攻击、配方需求的资源种类，
 ## 替掉「产7」「攻3」这类中文，便于多语言化。
 ## 同一资源的卡牌主图、配方和产出直接复用同一份符号贴图。
-static func res_icon_texture(res: String, catalog: Script = CardDB) -> Texture2D:
+static func res_icon_texture(res: String, catalog: Script = OnWorkCardDB) -> Texture2D:
 	if res != catalog.RES_CASH and res != catalog.RES_USER:
 		return null
 	return icon_texture(res, catalog)
@@ -402,19 +424,19 @@ static func overlay_texture(name: String) -> Texture2D:
 ## 卡面填充与轮廓都在 Shader 中绘制，插画不会改变配置色。
 
 ## 墨色：卡名/图标/数字的颜色
-static func ink_color(def_id: String, catalog: Script = CardDB) -> Color:
+static func ink_color(def_id: String, catalog: Script = OnWorkCardDB) -> Color:
 	return Palette.plate_color(plate_slot(def_id, catalog), "ink")
 
 ## 卡面填充色
-static func face_color(def_id: String, catalog: Script = CardDB) -> Color:
+static func face_color(def_id: String, catalog: Script = OnWorkCardDB) -> Color:
 	return Palette.plate_color(plate_slot(def_id, catalog), "face")
 
 ## 标题带填充色
-static func band_color(def_id: String, catalog: Script = CardDB) -> Color:
+static func band_color(def_id: String, catalog: Script = OnWorkCardDB) -> Color:
 	return Palette.plate_color(plate_slot(def_id, catalog), "band")
 
 ## 强调色：用于配方凑满、效果翻倍时的墨团和产出反馈。
-static func accent_color(def_id: String, catalog: Script = CardDB) -> Color:
+static func accent_color(def_id: String, catalog: Script = OnWorkCardDB) -> Color:
 	return Palette.plate_color(plate_slot(def_id, catalog), "accent")
 
 ## 程序边框与标题分隔线共用的墨色

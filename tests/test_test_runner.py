@@ -276,7 +276,7 @@ class RuntimeRequestPathsTest(unittest.TestCase):
             request.write_text(json.dumps({"cards_path":"cards.json", "output_path":"result.json",
                                            "progress_path":"progress.json", "options":{"pairs":1}}))
             original = request.read_bytes()
-            for script in ("eval_report.gd", "bot_duel_report.gd"):
+            for script in ("on_work_eval_report.gd", "on_work_bot_duel_report.gd"):
                 with self.subTest(script=script):
                     args = ["-s", "tools/" + script, "--", "request.json"]
                     adjusted = runtime.preserve_project_paths(args, source, isolated)
@@ -411,11 +411,11 @@ func _initialize() -> void:
     file.store_string("isolated")
     file.close()
     check(FileAccess.get_file_as_string(path) == "isolated", "user文件实际可写可读")
-    if Tape.path_dir() != ProjectSettings.globalize_path("user://replays"):
+    if OnWorkTape.path_dir() != ProjectSettings.globalize_path("user://replays"):
         check(false, "保存前确认录像目录已经隔离")
         finish()
         return
-    var recording := Tape.new().save("_runner_probe.json")
+    var recording := OnWorkTape.new().save("_runner_probe.json")
     check(recording.begins_with(ProjectSettings.globalize_path("user://replays") + "/")
         and FileAccess.file_exists(recording), "录像实际保存到测试沙箱")
     finish()

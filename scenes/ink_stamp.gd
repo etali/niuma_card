@@ -108,6 +108,8 @@ static var _spatial_shader: Shader
 static var _canvas_shader: Shader
 ## 词 → 白字贴图（带 mipmap）。贴图对象一建好就能用，离屏视口画完后原地更新内容。
 static var _text_cache: Dictionary = {}
+static var _queued_words: Array[String] = []
+static var _active_bakers := 0
 
 ## 这枚章的印泥：ui.json 的 fx.stamp_ink（朱红）。所有场合同一盒印泥，靠字区分含义。
 static func seal_ink() -> Color:
@@ -228,8 +230,27 @@ static func slam(owner: Node, parts: Dictionary, landed := Callable(), delay := 
 
 ## 提前把这些词排好（开局预热时调用），第一次盖章时字已经在了。
 static func prewarm(words: Array) -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or DisplayServer.get_name() == "headless": return
 	for word in words:
-		text_texture(str(word))
+		var text := str(word)
+		if not text.is_empty() and not _text_cache.has(text) and not _queued_words.has(text):
+			_queued_words.append(text)
+	if not _queued_words.is_empty() and not tree.process_frame.is_connected(_prewarm_next):
+		tree.process_frame.connect(_prewarm_next)
+
+static func _prewarm_next() -> void:
+	# GPU readback and mip generation run from _process. Finish each warm
+	# word before baking another; a visible stamp can still be requested now.
+	if _active_bakers > 0: return
+	while not _queued_words.is_empty():
+		var word: String = _queued_words.pop_front()
+		if not _text_cache.has(word):
+			text_texture(word)
+			break
+	if _queued_words.is_empty():
+		var tree := Engine.get_main_loop() as SceneTree
+		tree.process_frame.disconnect(_prewarm_next)
 
 ## 词的白字贴图。第一次用到时先给一张空贴图（同尺寸、带 mipmap），离屏视口画完后原地更新。
 static func text_texture(text: String) -> Texture2D:
@@ -239,9 +260,11 @@ static func text_texture(text: String) -> Texture2D:
 	var texture := ImageTexture.create_from_image(blank)
 	_text_cache[text] = texture
 	var tree := Engine.get_main_loop() as SceneTree
-	if tree == null or tree.root == null or text.is_empty():
+	if tree == null or tree.root == null or text.is_empty() or DisplayServer.get_name() == "headless":
 		return texture
 	var baker := TextBaker.new()
+	_active_bakers += 1
+	baker.tree_exited.connect(func(): _active_bakers -= 1, CONNECT_ONE_SHOT)
 	baker.texture = texture
 	var writer := TextWriter.new()
 	writer.text = text
@@ -270,10 +293,6 @@ class TextBaker extends SubViewport:
 		if _frames < 2:
 			return
 		set_process(false)
-		# 无头运行（测试、联网服务器）用的是哑渲染器：视口不会真的画，也读不回来。
-		if DisplayServer.get_name() == "headless":
-			queue_free()
-			return
 		var image := get_texture().get_image()
 		if image != null and not image.is_empty() and image.get_size() == TEXT_SIZE:
 			image.convert(Image.FORMAT_RGBA8)

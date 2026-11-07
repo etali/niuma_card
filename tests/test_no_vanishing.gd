@@ -32,7 +32,7 @@ extends "res://tests/harness.gd"
 
 func _initialize() -> void:
 	print("=== 不消失的提示 / 录像存在 ~/.niumapai_record ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	await _t1_message_does_not_fade()
 	await _t2_message_lives_in_res_panel()
 	await _t3_log_toggles_both_ways()
@@ -271,13 +271,13 @@ func _t6_replays_live_under_home_dir() -> void:
 
 	# 默认产品路径只读验证；任何实际保存都必须恢复测试沙箱。
 	# harness 给子进程设的数据目录环境变量也要暂时拿掉，才读得到玩家机器上的默认值。
-	var saved_override: String = Tape.directory_override
+	var saved_override: String = SavePaths.recordings_override
 	var saved_data_dir := OS.get_environment(SavePaths.DATA_DIR_ENV)
-	Tape.directory_override = ""
+	SavePaths.recordings_override = ""
 	OS.unset_environment(SavePaths.DATA_DIR_ENV)
-	var default_dir: String = Tape.path_dir()
+	var default_dir: String = OnWorkTape.path_dir()
 	var default_settings: String = SavePaths.root().path_join(SavePaths.SETTINGS_DIR)
-	Tape.directory_override = saved_override
+	SavePaths.recordings_override = saved_override
 	OS.set_environment(SavePaths.DATA_DIR_ENV, saved_data_dir)
 	check(default_settings == default_dir.path_join("settings"),
 		"设置和学习进度与录像同在 ~/.niumapai_record，放在 settings/ 底下（实际 %s）" % default_settings)
@@ -293,7 +293,7 @@ func _t6_replays_live_under_home_dir() -> void:
 
 	# 光看常量不算 —— 真存一次，看**面板上念出来的那条**。
 	# 那条才是玩家会拿去 Finder 里找的东西
-	var dir: String = Tape.path_dir()
+	var dir: String = OnWorkTape.path_dir()
 	if not need(dir == ProjectSettings.globalize_path("user://replays"), "实际保存前确认录像目录在测试沙箱"):
 		return
 	main._save_replay()
@@ -314,14 +314,14 @@ func _t6_replays_live_under_home_dir() -> void:
 	#
 	# 切到沙箱内还未创建的目录，验证首次保存会建目录；不改 HOME。
 	var sandbox: String = "user://first-recording-%d" % Time.get_ticks_usec()
-	Tape.directory_override = sandbox
-	var fresh_dir: String = Tape.path_dir()
+	SavePaths.recordings_override = sandbox
+	var fresh_dir: String = OnWorkTape.path_dir()
 	check(fresh_dir == ProjectSettings.globalize_path(sandbox),
 		"首次保存目录位于指定沙箱（实际 %s）" % fresh_dir)
 	check(not DirAccess.dir_exists_absolute(fresh_dir), "那底下这个目录还不存在")
-	var t := Tape.new()
+	var t := OnWorkTape.new()
 	var fresh_path: String = t.save("_first_run.json")
-	Tape.directory_override = saved_override
+	SavePaths.recordings_override = saved_override
 	check(fresh_path != "", "目录不存在也存得下来（自己把目录建出来）")
 	check(FileAccess.file_exists(fresh_path),
 		"而且文件真落在那儿（实际「%s」）" % fresh_path)
@@ -329,7 +329,7 @@ func _t6_replays_live_under_home_dir() -> void:
 	if fresh_path != "":
 		DirAccess.remove_absolute(fresh_path)
 	DirAccess.remove_absolute(fresh_dir)
-	check(Tape.path_dir() == dir and OS.get_environment("HOME") == home,
+	check(OnWorkTape.path_dir() == dir and OS.get_environment("HOME") == home,
 		"录像沙箱恢复，HOME 始终未改（别把后面几节带跑偏）")
 
 

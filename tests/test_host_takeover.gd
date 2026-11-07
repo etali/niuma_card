@@ -4,13 +4,13 @@
 
 extends "res://tests/harness.gd"
 
-## 主机易位（scenes/main.gd 的 _take_over_host）：
+## 主机易位（scenes/on_work_main.gd 的 _take_over_host）：
 ## 开房那一位的进程走了，剩下的这位**自己开服接管**，对局不丢，
 ## 房间码不变，报一个局域网地址和一个随机端口出来等对手连回来。
 ##
 ## 八段，各钉一层：
-##   T1 引擎：PhaseMachine.adopt —— `_done` 是从 (phase, actor) 推出来的
-##   T2 网络：NetRoom.adopt —— 状态 + 池子 + 阶段 + 令牌，四样一起
+##   T1 引擎：OnWorkPhaseMachine.adopt —— `_done` 是从 (phase, actor) 推出来的
+##   T2 网络：OnWorkRoom.adopt —— 状态 + 池子 + 阶段 + 令牌，四样一起
 ##   T3 场景（真 socket）：主机死 → 我这边自己成主机，桌子**不重摆**
 ##   T4 真 socket：对手拿原来那串码连回来，坐回原座，拿到打到一半的局面
 ##   T5 真 socket：接管落在**攻击阶段**（次序最脆的一段，多一层 next_attacker）
@@ -19,7 +19,7 @@ extends "res://tests/harness.gd"
 ##   T8 真 socket：原主机**整个进程重来**（令牌一起没了）也进得来、拿得到局面
 ##
 ## 为什么 T3/T4 一定要过真 socket：这条路上每一个坑都在**跨进程那一侧** ——
-## 快照里没有阶段（阶段是 PhaseMachine 的量）、池子不在 GameState 上、
+## 快照里没有阶段（阶段是 OnWorkPhaseMachine 的量）、池子不在 OnWorkState 上、
 ## 座位错了两个人的牌当场对调。这三样在同进程里直接调 adopt 全都看不出来
 ## （对象都在手边，字段随便读），只有真的走一遍
 ## 「关掉服务器 → 开一个新的 → 让对端重新 join → 解码那份快照」才现形
@@ -51,24 +51,24 @@ func _initialize() -> void:
 ## 而它只在**先手已经收手、后手正在动**的那一小段时间里出现 ——
 ## 接管发生在别的时刻的话怎么试都试不出来
 func _t1_phase_adopt() -> void:
-	print("\n-- T1 引擎：PhaseMachine.adopt --")
-	var s := GameState.new()
+	print("\n-- T1 引擎：OnWorkPhaseMachine.adopt --")
+	var s := OnWorkState.new()
 	var order: Array = s.action_order()
 	var first := str(order[0])
 	var second := str(order[1])
 
 	# actor 停在**先手**：谁都还没收手
-	var p1 := PhaseMachine.new(s)
-	p1.adopt(PhaseMachine.ACTION, first)
-	check(p1.phase == PhaseMachine.ACTION, "阶段搬过来了（%s）" % p1.phase)
+	var p1 := OnWorkPhaseMachine.new(s)
+	p1.adopt(OnWorkPhaseMachine.ACTION, first)
+	check(p1.phase == OnWorkPhaseMachine.ACTION, "阶段搬过来了（%s）" % p1.phase)
 	check(p1.actor == first, "行动方搬过来了（%s）" % p1.actor)
-	check(p1.check(first, Intent.OP_BUY).is_empty(),
+	check(p1.check(first, OnWorkIntent.OP_BUY).is_empty(),
 		"先手还能买（他还没收手）")
 
 	# actor 停在**后手**：先手收过手了，且仅先手
-	var p2 := PhaseMachine.new(s)
-	p2.adopt(PhaseMachine.ACTION, second)
-	check(p2.check(second, Intent.OP_BUY).is_empty(), "后手能买（轮到他）")
+	var p2 := OnWorkPhaseMachine.new(s)
+	p2.adopt(OnWorkPhaseMachine.ACTION, second)
+	check(p2.check(second, OnWorkIntent.OP_BUY).is_empty(), "后手能买（轮到他）")
 	# 这一节的核心两条。判的是 `_done` 而**不是** check(first, ...) ——
 	# 后者拦得住先手靠的是 actor 那道门（actor 是后手，先手怎么都过不去），
 	# 和 `_done` 推没推对一点关系没有：把推导整段删掉那条断言照样绿。
@@ -86,34 +86,34 @@ func _t1_phase_adopt() -> void:
 		"actor 没被拨回先手（实为 %s）" % p2.actor)
 
 	# 攻击阶段同构
-	var p3 := PhaseMachine.new(s)
-	p3.adopt(PhaseMachine.ATTACK, second)
-	check(p3.phase == PhaseMachine.ATTACK, "攻击阶段也搬得动（%s）" % p3.phase)
-	check(p3.check(second, Intent.OP_ATTACK).is_empty(), "轮到他开火")
+	var p3 := OnWorkPhaseMachine.new(s)
+	p3.adopt(OnWorkPhaseMachine.ATTACK, second)
+	check(p3.phase == OnWorkPhaseMachine.ATTACK, "攻击阶段也搬得动（%s）" % p3.phase)
+	check(p3.check(second, OnWorkIntent.OP_ATTACK).is_empty(), "轮到他开火")
 
 	# 没有 actor 的两个阶段：不能因为 actor 是空串就崩，也不该推出任何 _done
-	var p4 := PhaseMachine.new(s)
-	p4.adopt(PhaseMachine.OVER, "")
-	check(p4.phase == PhaseMachine.OVER, "终局阶段搬得动，空 actor 不崩")
+	var p4 := OnWorkPhaseMachine.new(s)
+	p4.adopt(OnWorkPhaseMachine.OVER, "")
+	check(p4.phase == OnWorkPhaseMachine.OVER, "终局阶段搬得动，空 actor 不崩")
 
 	# 反过来的一条：adopt **不能**走 reset_for_round 那条路。
 	# 走了的话不管传什么进来都会回到「行动阶段 + 先手先动」
-	var p5 := PhaseMachine.new(s)
-	p5.adopt(PhaseMachine.ATTACK, second)
-	check(not (p5.phase == PhaseMachine.ACTION and p5.actor == first),
+	var p5 := OnWorkPhaseMachine.new(s)
+	p5.adopt(OnWorkPhaseMachine.ATTACK, second)
+	check(not (p5.phase == OnWorkPhaseMachine.ACTION and p5.actor == first),
 		"接管没把回合退回开头 —— 退回去的话打到一半的攻击回合会从头再来一遍")
 
 # ---------- T2 网络层：房间接管 ----------
 
-## NetRoom.adopt 一次要做四件事（状态 / 池子 / 阶段 / 令牌），这一节四件各一条。
+## OnWorkRoom.adopt 一次要做四件事（状态 / 池子 / 阶段 / 令牌），这一节四件各一条。
 ##
-## 池子那条最值得看：它**不是 GameState 的字段**（在 IntentApply 上），
-## 于是 StateCodec.snapshot 不管它，漏搬不报错 ——
+## 池子那条最值得看：它**不是 OnWorkState 的字段**（在 OnWorkIntentApply 上），
+## 于是 OnWorkStateCodec.snapshot 不管它，漏搬不报错 ——
 ## 症状是攻击回合整段被跳过（池子空 → 没人有点数可打）
 func _t2_room_adopt() -> void:
-	print("\n-- T2 网络层：NetRoom.adopt --")
+	print("\n-- T2 网络层：OnWorkRoom.adopt --")
 	# 先造一份「打到一半」的局：随便动几个能看出来的量
-	var src := NetRoom.new("SRC", 20260829)
+	var src := OnWorkRoom.new("SRC", 20260829)
 	src.state.round_num = 7
 	src.state.log_msg("这一行是上一局留下的")
 	var log_len: int = src.state.log.size()
@@ -125,26 +125,26 @@ func _t2_room_adopt() -> void:
 	# （两边都是 0 条，相等），把 pools_restore 整句删掉照样绿 ——
 	# 而池子漏搬的真实症状正是「池子是空的」，判据和 bug 长得一模一样
 	src.applier.seed_pool_for_test(first, 5, 3)
-	var snap: Dictionary = StateCodec.snapshot(src.state)
+	var snap: Dictionary = OnWorkStateCodec.snapshot(src.state)
 	snap["pools"] = src.applier.pools_snapshot()
 
-	var dst := NetRoom.new("SRC", 20260829)   # 房间码原样：用户说「保持密码不变」
+	var dst := OnWorkRoom.new("SRC", 20260829)   # 房间码原样：用户说「保持密码不变」
 	var seat := first
-	dst.adopt(snap, PhaseMachine.ATTACK, second, seat, "TOKEN-OLD")
+	dst.adopt(snap, OnWorkPhaseMachine.ATTACK, second, seat, "TOKEN-OLD")
 
 	check(dst.state.round_num == 7,
 		"状态搬过来了（第 %d 回合 ← 7）" % dst.state.round_num)
 	check(dst.state.log.size() == log_len,
 		"战报也在（%d 行 ← %d）—— 复盘要靠它" % [dst.state.log.size(), log_len])
 	check(dst.applier.armed(first),
-		"池子搬过来了 —— 它不在 GameState 上（是裁决器的成员），"
+		"池子搬过来了 —— 它不在 OnWorkState 上（是裁决器的成员），"
 		+ "漏搬的话 pool_empty 当场为真，攻击回合整段被跳过而且不报错")
 	var moved: Dictionary = dst.applier.pools(first)
-	check(int(moved.get(CardDB.RES_CASH, -1)) == 5
-		and int(moved.get(CardDB.RES_USER, -1)) == 3,
+	check(int(moved.get(OnWorkCardDB.RES_CASH, -1)) == 5
+		and int(moved.get(OnWorkCardDB.RES_USER, -1)) == 3,
 		"池子里的点数也是原来那些（现金 %s / 用户 %s ← 5 / 3）"
-			% [str(moved.get(CardDB.RES_CASH, "?")), str(moved.get(CardDB.RES_USER, "?"))])
-	check(dst.phase != null and dst.phase.phase == PhaseMachine.ATTACK,
+			% [str(moved.get(OnWorkCardDB.RES_CASH, "?")), str(moved.get(OnWorkCardDB.RES_USER, "?"))])
+	check(dst.phase != null and dst.phase.phase == OnWorkPhaseMachine.ATTACK,
 		"阶段按住在真实那一步上（%s ← attack）" % str(dst.phase.phase))
 	check(str(dst.phase.actor) == second, "行动方也是（%s）" % str(dst.phase.actor))
 	check(str(dst.tokens.get(seat, "")) == "TOKEN-OLD",
@@ -179,7 +179,7 @@ func _t3_socket_i_become_host() -> void:
 	var a: NetTransport = got[1]
 	var b: NetTransport = got[2]
 
-	if not await net_until([a, b], func(): return main.phase == PhaseMachine.ACTION):
+	if not await net_until([a, b], func(): return main.phase == OnWorkPhaseMachine.ACTION):
 		check(false, "开局进了行动阶段（实为 %s）" % str(main.phase))
 		main.queue_free()
 		return
@@ -285,7 +285,7 @@ func _t3_socket_i_become_host() -> void:
 		"旧连接的 disconnected 也摘了 —— 不摘的话它稍后那条关闭通知会打回来，"
 		+ "刚接管成功就被自己锁死")
 
-	# 对手此刻不在：提示要挂上，针对他的行为要拦掉（走 scenes/main.gd 的 _offer_reconnect / _on_net_down 的提示与输入拦截）
+	# 对手此刻不在：提示要挂上，针对他的行为要拦掉（走 scenes/on_work_main.gd 的 _offer_reconnect / _on_net_down 的提示与输入拦截）
 	check(not main._foe_online, "标成了对手不在线")
 	check(main._foe_gone(), "「对手掉线」那道门关着了")
 
@@ -309,7 +309,7 @@ func _t3_socket_i_become_host() -> void:
 ## 这一节钉的三样全都只在跨进程那一侧现形：
 ##   房间码不变    —— 用户原话「保持密码不变」。对手手里那串码不用改
 ##   坐回原座      —— 快照里的牌按座位名存，坐错位等于两个人的牌当场对调
-##   补一条 phase  —— seated 里没有阶段，快照里也没有（阶段是 PhaseMachine
+##   补一条 phase  —— seated 里没有阶段，快照里也没有（阶段是 OnWorkPhaseMachine
 ##                    的量）。不补的话他的 _phase 是空串：连上了、牌摆好了，
 ##                    但场景层那些 `phase != PHASE_ACTION` 的门全关着，
 ##                    一步都走不了而且不报错
@@ -322,7 +322,7 @@ func _t4_socket_foe_reconnects() -> void:
 	var a: NetTransport = got[1]
 	var b: NetTransport = got[2]
 
-	if not await net_until([a, b], func(): return main.phase == PhaseMachine.ACTION):
+	if not await net_until([a, b], func(): return main.phase == OnWorkPhaseMachine.ACTION):
 		check(false, "开局进了行动阶段（实为 %s）" % str(main.phase))
 		main.queue_free()
 		return
@@ -340,12 +340,12 @@ func _t4_socket_foe_reconnects() -> void:
 
 	# 主机死 → 我接管。等的是**接管全程走完**（新连接入座了），同 T3 ——
 	# 不是 `_host != null`。后者在 EmbeddedHost 一 new 出来就成立
-	# （main.gd 的 `start_local_host()`），那一刻房还没 adopt、主机自己那条新连接也还没 join，
+	# （on_work_main.gd 的 `start_local_host()`），那一刻房还没 adopt、主机自己那条新连接也还没 join，
 	# occupants 里一个座位都没占（adopt 只种令牌，不占座）。
 	#
 	# 拿它当条件的话下面那个 `c` 会和主机**抢同一个空位**：free_seat 按 SEATS
-	# 顺序派第一个空的（room.gd 的 `free_seat()`），主机随后凭种进去的令牌走 resumed 支
-	# 把它抢回来 —— 而那一支**不看座位是否被占**（room.gd 的 `seat_peer()`），
+	# 顺序派第一个空的（on_work_room.gd 的 `free_seat()`），主机随后凭种进去的令牌走 resumed 支
+	# 把它抢回来 —— 而那一支**不看座位是否被占**（on_work_room.gd 的 `seat_peer()`），
 	# 于是两个人都落在 player 上。60Hz 下同进程握手总是先赢所以一直没露头，
 	# 把物理频率抬上去（TEST_SPEED=5 → 300Hz）之后物理帧便宜了五倍、
 	# socket 往返还是墙钟，这就成了掷硬币：实测三跑给出 77/8、81/3、82/2
@@ -411,7 +411,7 @@ func _t4_socket_foe_reconnects() -> void:
 ## next_attacker 的换手，两者都得从 (phase, actor) 那两个量重建
 ##
 ## 阶段是**直接改服务器那两个字段**摆出来的，不走真意图。理由是
-## NetRoom._arm_current：装出来是空池就立刻换手（room.gd 的 `_arm_current()`），
+## OnWorkRoom._arm_current：装出来是空池就立刻换手（on_work_room.gd 的 `_arm_current()`），
 ## 而开局谁都没编攻击组合 —— 走真 action_done 的话服务器一口气
 ## 穿过攻击阶段结算完回到下一回合的行动阶段，压根停不在 ATTACK 上。
 ## 用 begin_attack() 而不是 adopt() 摆：拿 adopt 当 adopt 的前提是循环论证
@@ -432,7 +432,7 @@ func _t5_socket_takeover_mid_attack() -> void:
 	if not need(room != null, "服务器开出了房间"):
 		main.queue_free()
 		return
-	if not await net_until([a, b], func(): return main.phase == PhaseMachine.ACTION):
+	if not await net_until([a, b], func(): return main.phase == OnWorkPhaseMachine.ACTION):
 		check(false, "开局进了行动阶段（实为 %s）" % str(main.phase))
 		main.queue_free()
 		return
@@ -441,7 +441,7 @@ func _t5_socket_takeover_mid_attack() -> void:
 	# （old.phase()，net_transport.gd 的 `_on_text()` 存进 `_phase` 的那个），不是服务器这份。
 	# 不广播的话接管带过去的还是 action，这一节要钉的东西整个绕过去了
 	room.phase.begin_attack()
-	room.applier.pools_restore({room.phase.actor: {CardDB.RES_CASH: 0, CardDB.RES_USER: 2, "_lock_batch": ""}})
+	room.applier.pools_restore({room.phase.actor: {OnWorkCardDB.RES_CASH: 0, OnWorkCardDB.RES_USER: 2, "_lock_batch": ""}})
 	await _broadcast_authority([a, b])
 	var attacker_before: String = room.phase.actor
 	var round_before: int = room.state.round_num
@@ -449,8 +449,8 @@ func _t5_socket_takeover_mid_attack() -> void:
 		main.queue_free()
 		return
 	_srv._send_to(room.peers(),
-		Protocol.phase(PhaseMachine.ATTACK, attacker_before))
-	if not await net_until([a, b], func(): return a.phase() == PhaseMachine.ATTACK, 5000):
+		Protocol.phase(OnWorkPhaseMachine.ATTACK, attacker_before))
+	if not await net_until([a, b], func(): return a.phase() == OnWorkPhaseMachine.ATTACK, 5000):
 		check(false, "我这条连接也收到了攻击阶段（实为「%s」）" % a.phase())
 		main.queue_free()
 		return
@@ -468,7 +468,7 @@ func _t5_socket_takeover_mid_attack() -> void:
 	if not need(adopted != null, "接管出来的房在那儿"):
 		main.queue_free()
 		return
-	check(adopted.phase.phase == PhaseMachine.ATTACK,
+	check(adopted.phase.phase == OnWorkPhaseMachine.ATTACK,
 		"接管之后还在攻击阶段（%s ← attack）—— 退回行动阶段的话"
 			% str(adopted.phase.phase)
 		+ "这一轮攻击会从头再打一遍，而弹药已经花掉了")
@@ -479,10 +479,10 @@ func _t5_socket_takeover_mid_attack() -> void:
 		"回合数没动（%d ← %d）" % [adopted.state.round_num, round_before])
 
 	# 这一轮攻击还打得下去：轮到的那位收得了手，另一位插不进来
-	check(adopted.phase.check(attacker_before, Intent.OP_ATTACK_DONE).is_empty(),
+	check(adopted.phase.check(attacker_before, OnWorkIntent.OP_ATTACK_DONE).is_empty(),
 		"轮到的那位还能收手 —— 这一轮攻击是活的")
 	var blocked: Dictionary = adopted.phase.check(
-		adopted.state.opponent(attacker_before), Intent.OP_ATTACK_DONE)
+		adopted.state.opponent(attacker_before), OnWorkIntent.OP_ATTACK_DONE)
 	check(not blocked.is_empty(), "另一位插不进来（次序没丢）")
 	check(str(blocked.get("code", "")) == "not_your_turn",
 		"（拦他的码是 not_your_turn，实为 %s）" % str(blocked.get("code", "")))
@@ -541,7 +541,7 @@ func _t6_socket_takeover_before_action_opened() -> void:
 		"接管之后阶段自己补开了 —— 靠 phase_changed 信号等不来："
 		+ "服务器不会为一个已经入座的人再广播一次，"
 		+ "而 _on_net_seated 那道「桌子摆过就不再摆」把新连接的 seated 也挡了")
-	check(main.phase == PhaseMachine.ACTION,
+	check(main.phase == OnWorkPhaseMachine.ACTION,
 		"进了行动阶段（%s）" % str(main.phase))
 	# 轮到我的话按钮得活过来；不轮到我则该写着「对手行动中」——
 	# 两种都不是「全灰」，而全灰正是这一节要挡的那个症状
@@ -575,7 +575,7 @@ func _t7_socket_rematch_in_adopted_room() -> void:
 	var a: NetTransport = got[1]
 	var b: NetTransport = got[2]
 
-	if not await net_until([a, b], func(): return main.phase == PhaseMachine.ACTION):
+	if not await net_until([a, b], func(): return main.phase == OnWorkPhaseMachine.ACTION):
 		check(false, "开局进了行动阶段（实为 %s）" % str(main.phase))
 		main.queue_free()
 		return
@@ -614,7 +614,7 @@ func _t7_socket_rematch_in_adopted_room() -> void:
 	# 他认输
 	_flag = false
 	net_pump_until([main._net, c], func(): return _flag)
-	var r: Dictionary = await c.submit(Intent.resign(c.my_seat))
+	var r: Dictionary = await c.submit(OnWorkIntent.resign(c.my_seat))
 	_flag = true
 	check(bool(r.get("ok", false)),
 		"接管出来的房里认得了输（%s）" % str(r.get("reason", "")))
@@ -665,7 +665,7 @@ func _t7_socket_rematch_in_adopted_room() -> void:
 ## seat_for_token 落空 → free_seat 那一支。
 ##
 ## 这一节钉的就是那一支在**接管出来的房**里也成立。为什么它可能不成立：
-## adopt() 只往 tokens 里种回接管者自己那一串（room.gd 的 `adopt()`），
+## adopt() 只往 tokens 里种回接管者自己那一串（on_work_room.gd 的 `adopt()`），
 ## 另一个座位的令牌是新房自己生的一串谁也不知道的东西 ——
 ## 空令牌能不能坐进去，全看 free_seat 那时候还剩不剩一个空位。
 ## 剩不剩取决于 adopt 之后 occupants 的状态，而那件事**没有任何判据碰过**：
@@ -683,7 +683,7 @@ func _t8_socket_fresh_process_comes_back() -> void:
 	var a: NetTransport = got[1]
 	var b: NetTransport = got[2]
 
-	if not await net_until([a, b], func(): return main.phase == PhaseMachine.ACTION):
+	if not await net_until([a, b], func(): return main.phase == OnWorkPhaseMachine.ACTION):
 		check(false, "开局进了行动阶段（实为 %s）" % str(main.phase))
 		main.queue_free()
 		return
@@ -750,7 +750,7 @@ func _t8_socket_fresh_process_comes_back() -> void:
 	await physics_frame
 
 # ---------- 真服务器的小工具（同 test_resign，端口段错开） ----------
-func _server_room() -> NetRoom:
+func _server_room() -> OnWorkRoom:
 	if _srv == null:
 		return null
 	for code in _srv.rooms:
@@ -766,7 +766,7 @@ func _broadcast_authority(clients: Array) -> void:
 
 ## 接管之后那间房 —— 它在 **main 自己开的**那个服务器里。
 ## 不能拿 _server_room()：那一个找的是测试起的服务器，而它已经被 _stop 关了
-func _host_room(main: Node) -> NetRoom:
+func _host_room(main: Node) -> OnWorkRoom:
 	if main._host == null or main._host.server == null:
 		return null
 	for code in main._host.server.rooms:

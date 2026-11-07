@@ -2,9 +2,9 @@
 extends SceneTree
 
 const Slots = preload("res://engine/shift_slot.gd")
-const On = preload("res://scenes/main.tscn")
-const Off = preload("res://scenes/work_main.tscn")
-const WorkSession = preload("res://engine/work_session.gd")
+const On = preload("res://scenes/on_work_main.tscn")
+const Off = preload("res://scenes/off_work_main.tscn")
+const WorkSession = preload("res://engine/off_work_session.gd")
 var errors: Array[String] = []
 var checks := 0
 
@@ -23,7 +23,7 @@ func open_game(scene: PackedScene) -> Node:
 
 func _relaunch(args: PackedStringArray) -> void:
 	var on = open_game(On)
-	check(StateCodec.state_hash(on.state) == args[1] and on.tape.size() == int(args[2]), "新进程上班规则和录像")
+	check(OnWorkStateCodec.state_hash(on.state) == args[1] and on.tape.size() == int(args[2]), "新进程上班规则和录像")
 	on.free()
 	var expected := Slots.load_slot(Slots.OFF_WORK)
 	var off = open_game(Off)
@@ -46,13 +46,13 @@ func _run() -> void:
 	on._invalidate_session()
 	on.state.set_seed(619)
 	on.state.new_game(on.my_seat)
-	for i in 12: on.state.add_card(on.my_seat, CardDB.unit_id(CardDB.RES_CASH))
+	for i in 12: on.state.add_card(on.my_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
 	on._rebuild_pipe()
 	on._sync_round()
-	var bought: Dictionary = await on.pipe.submit(Intent.buy(on.my_seat, 0), on.my_seat)
+	var bought: Dictionary = await on.pipe.submit(OnWorkIntent.buy(on.my_seat, 0), on.my_seat)
 	check(bought.ok, "上班购买失败")
 	on._respawn_all()
-	var state_hash := StateCodec.state_hash(on.state)
+	var state_hash := OnWorkStateCodec.state_hash(on.state)
 	var step_count: int = on.tape.size()
 	check(step_count > 0 and on.save_shift_session(), "上班牌局未存盘")
 	var original_on := FileAccess.get_file_as_bytes(Slots.path(Slots.ON_WORK))
@@ -90,7 +90,7 @@ func _run() -> void:
 		"--script", get_script().resource_path, "--", "--verify-relaunch", state_hash, str(step_count)], output, true)
 	check(child_status == 0 and not "SCRIPT ERROR" in str(output), "跨进程恢复：" + str(output))
 	var restored_on = open_game(On)
-	check(StateCodec.state_hash(restored_on.state) == state_hash, "上班快照或随机数变化")
+	check(OnWorkStateCodec.state_hash(restored_on.state) == state_hash, "上班快照或随机数变化")
 	check(restored_on.tape.size() == step_count and restored_on.tape.recording(), "上班录像未接续")
 	check(restored_on._actor == restored_on.my_seat and not restored_on.board.input_locked, "上班未回到玩家行动")
 	check(Slots.load_slot(Slots.OFF_WORK).world == expected_world, "上班读取影响下班槽")

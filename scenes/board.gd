@@ -5,8 +5,8 @@
 class_name Board
 extends Node3D
 
-var card_catalog: Script = CardDB
-var combo_rules: Script = ComboRules
+var card_catalog: Script = OnWorkCardDB
+var combo_rules: Script = OnWorkComboRules
 
 ## 自由桌面：管理卡牌拖拽、堆叠成组、配方进度显示
 ## 规则：拖任意卡到另一组上 = 并入该组；拖组顶卡离开 = 整组移动；
@@ -87,16 +87,16 @@ signal dropped_on_market(drag_cards: Array, market_card: CardEntity)  # [] = 自
 signal dropped_on_pawn(drag_cards: Array)   # 拖卡到典当行 = 回收成现金
 signal attack_clicked(card: CardEntity)     # 攻击模式下点选卡牌（点选攻击目标）
 
-## 手上这摞的状态变了，够一帧广播（scenes/main.gd 的拖拽广播与租约处理）。
+## 手上这摞的状态变了，够一帧广播（scenes/on_work_main.gd 的拖拽广播与租约处理）。
 ## phase 取 Protocol.DRAG_PICKUP / DRAG_MOVE / DRAG_CANCEL，`at` 是**桌面坐标**——
-## 这一层不知道座位也不知道两侧区域的跨度，归一化交给 scenes/main.gd。
+## 这一层不知道座位也不知道两侧区域的跨度，归一化交给 scenes/on_work_main.gd。
 ##
 ## 为什么是一个信号而不是三个：接收端要做的事只有「按 phase 分派」，
-## 三个信号会让 main.gd 那边多两处连接、而每处都得记得同样的节流和租约规矩。
+## 三个信号会让 on_work_main.gd 那边多两处连接、而每处都得记得同样的节流和租约规矩。
 ##
 ## 为什么不发鼠标坐标而发牌的位置：广播的是「牌已经离桌、正往那边去」，
 ## 不是「光标在哪」。悬停犹豫是心理活动不是动作，给了它读盘就退化成读表情
-## （scenes/main.gd 的拖拽广播与租约处理）
+## （scenes/on_work_main.gd 的拖拽广播与租约处理）
 signal drag_broadcast(phase: String, uids: Array, at: Vector3)
 
 ## 手上这摞**停着不动**时的续租间隔（秒）。
@@ -199,7 +199,7 @@ var input_locked := false   # 输入锁：BOT 行动/结算演出期间屏蔽玩
 ## 窗口收起/切换/弹层独立于业务输入锁，控制器返回 true 时暂停桌面交互。
 var interaction_blocked := Callable()
 var hover_blocked := Callable()
-## 本方的角色修正（Roles.mods）从哪儿读，由游戏控制器接上。board.groups 只装本方的牌，
+## 本方的角色修正（OnWorkRoles.mods）从哪儿读，由游戏控制器接上。board.groups 只装本方的牌，
 ## 这里的每一次组合判定都得和引擎结算时用同一份修正 —— HR 的云课堂 2 张用户就该亮
 ## 「凑满」，否则桌上提示和结算结果各说各话。读的是 Callable 而不是存一份字典：
 ## 重开、联网入座、录像、教程都会换掉控制器的 state，存下来的那份会过期
@@ -780,16 +780,16 @@ func _process(delta: float) -> void:
 	# 拖拽途中不弹提示：配方进度已经印在牌面 D 位的墨团和组顶进度条上，
 	# 手上那张的进度看牌面就够，浮动大字只是又抄了一遍
 
-## 每帧看一眼手上这摞，该广播就广播（scenes/main.gd 的拖拽广播与租约处理）。
+## 每帧看一眼手上这摞，该广播就广播（scenes/on_work_main.gd 的拖拽广播与租约处理）。
 ##
 ## 为什么盯**状态**而不是在各处拎起/落手的代码里插 emit：手上这摞的出口有五条
 ## （_end_drag 的典当/购买/并组/散落四条 + cancel_drag + _restore_press），
 ## 而且还会继续加。逐处插 emit 的话漏掉一条的后果是**对手那边的牌永远浮在半空**，
-## 而本地一切正常 —— 正是 README.md §「3. 文件目录结构」要防的那种静默分叉。
+## 而本地一切正常 —— 正是 README.md §「文件目录结构」要防的那种静默分叉。
 ## 盯「上一帧手上有、这一帧没有了」，一处就盖住全部出口，以后新增出口也自动覆盖。
 ##
 ## 代价是松手比落手的信号晚一帧到。这一帧不影响正确性：落点是权威事件，
-## 由 drop 那条意图的结果决定，不由最后一帧 dragging 决定（scenes/main.gd 的拖拽广播与租约处理）
+## 由 drop 那条意图的结果决定，不由最后一帧 dragging 决定（scenes/on_work_main.gd 的拖拽广播与租约处理）
 func _tick_drag_broadcast(delta: float) -> void:
 	if _drag_cards.is_empty() or (is_instance_valid(_drag_cards[0]) and _drag_cards[0].is_market):
 		if not _bcast_uids.is_empty():
@@ -1067,14 +1067,14 @@ func _hide_desc() -> void:
 ## 换行位置是写死的，不靠 autowrap：中文没有词间空格，
 ## AUTOWRAP_WORD_SMART 只能在任意字之间断，会切出「每回合资 / 金+12」这种断词。
 ## 手动在箭头处断行，「配方 → 效果」正好一行一段
-## mods：这张牌主人的角色修正（Roles.mods）。本方的牌传本方的，配方和产出按角色改过的数说；
+## mods：这张牌主人的角色修正（OnWorkRoles.mods）。本方的牌传本方的，配方和产出按角色改过的数说；
 ## 购牌区和对手的牌不传，念卡面原值
 func describe_def(def_id: String, mods: Dictionary = {}) -> String:
 	var def: Dictionary = card_catalog.get_def(def_id)
 	# 配方和攻击目标数的是牌（现金×4），每回合产出说的是资源总量（资金+7）。
 	# 两种名字都得按这条分，否则同一个配方在悬停里叫「资金×4」、在配方不足的报错里叫「现金×4」
 	match str(def.get("kind", "")):
-		CardDB.KIND_PRODUCT:
+		OnWorkCardDB.KIND_PRODUCT:
 			# 普通升级仍须同名；传说路线则可搭配同档的其他生产卡。
 			return "配齐%s×%d\n→ 每回合%s+%d\n%s%s" % [
 				card_catalog.card_label(def["recipe_res"]), combo_rules.recipe_need(def, mods),
@@ -1082,12 +1082,12 @@ func describe_def(def_id: String, mods: Dictionary = {}) -> String:
 				combo_rules.scaled_output(int(def["output_n"]), str(def["output_res"]), mods),
 				"资金结算时花掉" if def["recipe_res"] == card_catalog.RES_CASH else "用户保留，持续生产",
 				_upgrade_line(def_id)]
-		CardDB.KIND_ATTACK:
+		OnWorkCardDB.KIND_ATTACK:
 			return "配齐%s×%d\n→ 移除对方%s×%d\n%s" % [
 				card_catalog.card_label(def["recipe_res"]), combo_rules.recipe_need(def, mods),
 				card_catalog.card_label(def["attack_res"]), int(def["attack_n"]),
 				"资金装弹时花掉" if def["recipe_res"] == card_catalog.RES_CASH else "用户保留，参与攻击"]
-		CardDB.KIND_LEGEND:
+		OnWorkCardDB.KIND_LEGEND:
 			var routes: PackedStringArray = []
 			for tier in [1, 2]:
 				var counts: PackedStringArray = []
@@ -1099,7 +1099,7 @@ func describe_def(def_id: String, mods: Dictionary = {}) -> String:
 			if routes.is_empty():
 				return "当前配置无合成路线"
 			return "合成：\n%s\n同名异名均可\n张数须精确\n不能夹杂其他牌" % "\n或".join(routes)
-		CardDB.KIND_BUFF:
+		OnWorkCardDB.KIND_BUFF:
 			var bt := str(def.get("buff_type", ""))
 			match bt:
 				# 主语必须是**配方**而不是用户：写「用户视为满」会读成「用户变多了」，
@@ -1118,15 +1118,15 @@ func describe_def(def_id: String, mods: Dictionary = {}) -> String:
 				# 两种资源共用一句模板，各写一遍时改措辞只会改到一半
 				"protect_user", "protect_cash":
 					return "入组立即保护\n组内%s不可被移除\n仅限配方所需张数" % card_catalog.card_label(bt.trim_prefix("protect_"))
-		CardDB.KIND_UNIT:
+		OnWorkCardDB.KIND_UNIT:
 			# 单位卡本身没有效果，说明它是配方材料，否则悬停时这类卡完全没有反馈
 			return "配方材料：%s" % card_catalog.card_label(str(def.get("res", "")))
-		CardDB.KIND_SPECIAL:
+		OnWorkCardDB.KIND_SPECIAL:
 			# 行宽同样受 DESC_WIDTH 约束，按意群手动断行（见本函数开头那段）
 			match card_catalog.special_type(def_id):
-				CardDB.SPECIAL_GRAB:
+				OnWorkCardDB.SPECIAL_GRAB:
 					return "拖到购牌区任一张牌上\n→ 直接拿走，不花现金\n用完即消失\n不能典当"
-				CardDB.SPECIAL_IDEA:
+				OnWorkCardDB.SPECIAL_IDEA:
 					return "和一张未升级的生产卡\n叠放 → 升级成它的\n升级版生产卡\n合成传说时\n可顶替其中一张\n用完即消失\n不能典当"
 	return ""
 
@@ -1142,9 +1142,9 @@ func _upgrade_line(def_id: String) -> String:
 	var tier := int(def.get("tier", 0))
 	for n in range(2, card_catalog.max_upgrade_n() + 1):
 		var target: String = combo_rules.upgrade_target(def_id, n)
-		if def.get("kind", "") == CardDB.KIND_PRODUCT and combo_rules.legend_upgrade_target(tier, n) != "":
+		if def.get("kind", "") == OnWorkCardDB.KIND_PRODUCT and combo_rules.legend_upgrade_target(tier, n) != "":
 			legend_ns.append(str(n))
-		if target != "" and card_catalog.get_def(target).get("kind", "") != CardDB.KIND_LEGEND and near == "":
+		if target != "" and card_catalog.get_def(target).get("kind", "") != OnWorkCardDB.KIND_LEGEND and near == "":
 			near = "\n同名×%d → %s" % [n, card_catalog.card_name(target)]
 	if not legend_ns.is_empty():
 		near += "\n%s\n×%s → 传说卡\n同名异名均可\n张数须精确\n不能夹杂其他牌" % [_production_stage_name(tier), "/".join(legend_ns)]
@@ -1263,7 +1263,7 @@ func cancel_drag() -> void:
 ## 这两条路的共同点是牌不落回桌面，由接收方决定去处，所以这里只做「放手」：
 ## 牌停止拖拽、摘平、清掉拖拽态和吸附高亮，然后把 `_drag_compact` 转存到
 ## `last_drag_compact` —— 接收方要靠它知道交过来的是收拢摞还是摊开的几张
-## （买不起时 main.gd 照原样把摞重建回来）。
+## （买不起时 on_work_main.gd 照原样把摞重建回来）。
 ##
 ## 不并进 `cancel_drag`：那条路牌是散着落回桌面的，要 `is_instance_valid` 保护、
 ## 要恢复 `freeze`、要退配方进度，且不存 `last_drag_compact`（没有接收方）
@@ -1592,9 +1592,9 @@ func _push_effect_mult(g) -> void:
 		# 产出卡吃 output_x2、攻击卡吃 attack_x2，各认自己那一路：
 		# 一个组里同时放 996 和热搜时，两张核心不该互相串台
 		var k: String = card_catalog.get_def(c.def_id).get("kind", "")
-		if k == CardDB.KIND_PRODUCT:
+		if k == OnWorkCardDB.KIND_PRODUCT:
 			c.set_effect_mult(int(mult["output"]))
-		elif k == CardDB.KIND_ATTACK:
+		elif k == OnWorkCardDB.KIND_ATTACK:
 			c.set_effect_mult(int(mult["attack"]))
 
 # ---------- 收拢摞的侧边清单 ----------
@@ -1647,7 +1647,7 @@ const SIDE_MAX_ROWS := 6
 ## 于是第二张既看不见、清单也不提 —— 屏幕上和「只合出一张」一模一样。
 ## 按张判则出一行「独角兽 ×2」，跟资源摞的 ×N 同一个口径
 static func side_spec(cards: Array) -> Array:
-	var catalog: Script = CardDB
+	var catalog: Script = OnWorkCardDB
 	var n_user := 0
 	var n_cash := 0
 	var buffs: Array = []      # [def_id]，保持出现顺序
@@ -1660,12 +1660,12 @@ static func side_spec(cards: Array) -> Array:
 		catalog = c.card_catalog
 		var def: Dictionary = catalog.get_def(c.def_id)
 		match str(def.get("kind", "")):
-			CardDB.KIND_UNIT:
+			OnWorkCardDB.KIND_UNIT:
 				if def.get("res") == catalog.RES_CASH:
 					n_cash += 1
 				else:
 					n_user += 1
-			CardDB.KIND_BUFF:
+			OnWorkCardDB.KIND_BUFF:
 				if not buff_n.has(c.def_id):
 					buffs.append(c.def_id)
 					buff_n[c.def_id] = 0
@@ -1705,7 +1705,7 @@ static func side_spec(cards: Array) -> Array:
 ## 一摞牌在 z 向的跨度（最南那张 − 最北那张）。
 ##
 ## 联网同步拿它把「摞顶那张」换算成**整摞的中点**：摞顶在两种形态下坐的位置
-## 不一样（摊开态最北、收拢态最南，见 main.gd 的 my_pile_lists），拿它当锚点
+## 不一样（摊开态最北、收拢态最南，见 on_work_main.gd 的 my_pile_lists），拿它当锚点
 ## 发出去，双击收拢会让摞在对手屏幕上平移半个摞长 —— 而收拢是原地的动作。
 ## 中点和形态无关，代价是发之前加半个跨度、收之后减回去
 static func z_span(g) -> float:
@@ -1967,7 +1967,7 @@ static func reset_recipe_progress(c: CardEntity) -> void:
 func _group_progress(g) -> Dictionary:
 	for c in g["cards"]:
 		var def: Dictionary = card_catalog.get_def(c.def_id)
-		if def.get("kind") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
+		if def.get("kind") in [OnWorkCardDB.KIND_PRODUCT, OnWorkCardDB.KIND_ATTACK]:
 			var need: int = combo_rules.recipe_need(def, card_mods(c))
 			var res: String = def.get("recipe_res", "")
 			if need == 0:
@@ -1976,7 +1976,7 @@ func _group_progress(g) -> Dictionary:
 			var fill := false   # 裂变鬼才：有一张就算配方满（只对用户配方）
 			for c2 in g["cards"]:
 				var d2: Dictionary = card_catalog.get_def(c2.def_id)
-				if d2.get("kind") == CardDB.KIND_UNIT and d2.get("res") == res:
+				if d2.get("kind") == OnWorkCardDB.KIND_UNIT and d2.get("res") == res:
 					have += 1
 				elif d2.get("buff_type", "") == "user_fill" and res == card_catalog.RES_USER:
 					fill = true
@@ -2235,7 +2235,7 @@ func refresh_group(g, top_pos := Vector3.INF) -> bool:  # 返回: 这次更新�
 	var has_core := false
 	for c in g["cards"]:
 		var k: String = card_catalog.get_def(c.def_id).get("kind", "")
-		if k in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK, CardDB.KIND_LEGEND] or combo_rules.is_wild(c.def_id):
+		if k in [OnWorkCardDB.KIND_PRODUCT, OnWorkCardDB.KIND_ATTACK, OnWorkCardDB.KIND_LEGEND] or combo_rules.is_wild(c.def_id):
 			has_core = true
 			break
 	if not has_core:
@@ -2394,9 +2394,9 @@ static func core_first_order(cards: Array) -> Array:
 		if not is_instance_valid(c):
 			continue
 		match str(c.card_catalog.get_def(c.def_id).get("kind", "")):
-			CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK, CardDB.KIND_LEGEND:
+			OnWorkCardDB.KIND_PRODUCT, OnWorkCardDB.KIND_ATTACK, OnWorkCardDB.KIND_LEGEND:
 				core.append(c)
-			CardDB.KIND_BUFF:
+			OnWorkCardDB.KIND_BUFF:
 				buffs.append(c)
 			_:
 				rest.append(c)

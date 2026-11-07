@@ -17,7 +17,7 @@ func _run() -> void:
 	preview.set_process(false)
 	await physics_frame
 	# 张数从卡表读：加了角色专属卡之后从 31 变成 33，写死的数字只会跟着卡表漂
-	var total := CardDB.all_cards().size()
+	var total := OnWorkCardDB.all_cards().size()
 	check(preview._ids.size() == total and preview._buttons.size() == total, "独立入口列出全部 %d 张牌" % total)
 	check(preview._motion.get_script() == Motion, "预览与正式对局使用同一运动实现")
 	check(not preview.table_hands.cursor_enabled, "悬停页使用小光标，避免遮挡主图动作")

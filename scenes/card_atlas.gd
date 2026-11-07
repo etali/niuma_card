@@ -5,10 +5,10 @@
 extends VBoxContainer
 
 ## 学习中心的卡牌总览与升级关系图。每次绑定/刷新都读取当前卡表；
-## 文案从教程目录读取，升级边仅由真实 ComboRules 产生。
+## 文案从教程目录读取，升级边仅由真实 OnWorkComboRules 产生。
 const Catalog = preload("res://engine/tutorial_catalog.gd")
-const Content = preload("res://scenes/rulebook_content.gd")
-const CardPreview = preload("res://scenes/card_preview.gd")
+const Content = preload("res://scenes/on_work_rulebook_content.gd")
+const CardPreview = preload("res://scenes/on_work_card_preview.gd")
 
 const TILE_HEIGHT := 250.0
 const NODE_HEIGHT := 180.0
@@ -78,8 +78,8 @@ func refresh() -> void:
 		child.queue_free()
 	_tiles.clear()
 	_kind_filter = ""
-	entries = card_entries()
-	var routes := upgrade_routes()
+	entries = _card_entries()
+	var routes := _upgrade_routes()
 	ordinary_routes = routes.ordinary
 	legend_routes = routes.legends
 	_grid = null
@@ -117,35 +117,43 @@ func refresh() -> void:
 	call_deferred("_update_columns")
 
 
+func _card_entries() -> Array:
+	return card_entries()
+
+
+func _upgrade_routes() -> Dictionary:
+	return upgrade_routes()
+
+
 static func card_entries() -> Array:
 	var out: Array = []
-	for id in CardDB.all_cards():
+	for id in OnWorkCardDB.all_cards():
 		var def_id := str(id)
-		var def := CardDB.get_def(def_id)
+		var def := OnWorkCardDB.get_def(def_id)
 		var kind := str(def.get("kind", ""))
 		var tier := int(def.get("tier", 0))
 		var entry := {
-			"def_id": def_id, "name": CardDB.card_name(def_id), "kind": kind, "tier": tier,
+			"def_id": def_id, "name": OnWorkCardDB.card_name(def_id), "kind": kind, "tier": tier,
 			"kind_label": Catalog.ui("atlas.kind." + kind),
 			"recipe": Catalog.ui("atlas.no_recipe"), "effect": "",
-			"price": int(def.get("price", -1)), "pawn": CardDB.pawn_value(def_id),
+			"price": int(def.get("price", -1)), "pawn": OnWorkCardDB.pawn_value(def_id),
 		}
 		if def.has("recipe_res"):
-			entry.recipe = Catalog.ui("atlas.recipe", {"resource": CardDB.card_label(str(def.recipe_res)), "count": int(def.get("recipe_n", 0))})
+			entry.recipe = Catalog.ui("atlas.recipe", {"resource": OnWorkCardDB.card_label(str(def.recipe_res)), "count": int(def.get("recipe_n", 0))})
 		match kind:
-			CardDB.KIND_PRODUCT:
-				entry.effect = Catalog.ui("atlas.production", {"resource": CardDB.res_label(str(def.get("output_res", ""))), "count": int(def.get("output_n", 0))})
-			CardDB.KIND_ATTACK:
-				entry.effect = Catalog.ui("atlas.attack", {"resource": CardDB.res_label(str(def.get("attack_res", ""))), "count": int(def.get("attack_n", 0))})
-			CardDB.KIND_BUFF:
+			OnWorkCardDB.KIND_PRODUCT:
+				entry.effect = Catalog.ui("atlas.production", {"resource": OnWorkCardDB.res_label(str(def.get("output_res", ""))), "count": int(def.get("output_n", 0))})
+			OnWorkCardDB.KIND_ATTACK:
+				entry.effect = Catalog.ui("atlas.attack", {"resource": OnWorkCardDB.res_label(str(def.get("attack_res", ""))), "count": int(def.get("attack_n", 0))})
+			OnWorkCardDB.KIND_BUFF:
 				var buff_type := str(def.get("buff_type", ""))
-				entry.effect = Catalog.ui("atlas.buff." + buff_type, {"multiplier": CardDB.buff_mult(buff_type)})
-			CardDB.KIND_UNIT:
+				entry.effect = Catalog.ui("atlas.buff." + buff_type, {"multiplier": OnWorkCardDB.buff_mult(buff_type)})
+			OnWorkCardDB.KIND_UNIT:
 				entry.effect = Catalog.ui("atlas.resource_note")
-			CardDB.KIND_LEGEND:
+			OnWorkCardDB.KIND_LEGEND:
 				entry.effect = Catalog.ui("atlas.legend_pawn", {"count": entry.pawn})
-			CardDB.KIND_SPECIAL:
-				entry.effect = Catalog.ui("atlas.special." + CardDB.special_type(def_id), {"role": _granted_by(def_id)})
+			OnWorkCardDB.KIND_SPECIAL:
+				entry.effect = Catalog.ui("atlas.special." + OnWorkCardDB.special_type(def_id), {"role": _granted_by(def_id)})
 		out.append(entry)
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		var left := int(KIND_ORDER.get(a.kind, 5))
@@ -157,9 +165,9 @@ static func card_entries() -> Array:
 ## 开局发这张专属卡的角色名（「「我是BOSS」」）；没有角色发它就说「角色」
 static func _granted_by(def_id: String) -> String:
 	var names: Array = []
-	for role in Roles.ids():
-		if Roles.start_cards(role).has(def_id):
-			names.append("「%s」" % Roles.role_name(role))
+	for role in OnWorkRoles.ids():
+		if OnWorkRoles.start_cards(role).has(def_id):
+			names.append("「%s」" % OnWorkRoles.role_name(role))
 	return "、".join(names) if not names.is_empty() else "角色"
 
 
@@ -169,10 +177,10 @@ static func upgrade_routes() -> Dictionary:
 	var legends: Array = []
 	var legendary: Dictionary = {}
 	var no_ordinary: Array = []
-	for id in CardDB.all_cards():
+	for id in OnWorkCardDB.all_cards():
 		var def_id := str(id)
-		var def := CardDB.get_def(def_id)
-		if str(def.get("kind", "")) != CardDB.KIND_PRODUCT:
+		var def := OnWorkCardDB.get_def(def_id)
+		if str(def.get("kind", "")) != OnWorkCardDB.KIND_PRODUCT:
 			continue
 		var has_ordinary := false
 		for route: Dictionary in Content.upgrade_paths(def_id):
@@ -183,18 +191,18 @@ static func upgrade_routes() -> Dictionary:
 			no_ordinary.append(def_id)
 	for tier in [1, 2]:
 		var sources: Array = []
-		for id in CardDB.all_cards():
-			var def := CardDB.get_def(str(id))
-			if str(def.get("kind", "")) == CardDB.KIND_PRODUCT and int(def.get("tier", 0)) == tier:
+		for id in OnWorkCardDB.all_cards():
+			var def := OnWorkCardDB.get_def(str(id))
+			if str(def.get("kind", "")) == OnWorkCardDB.KIND_PRODUCT and int(def.get("tier", 0)) == tier:
 				sources.append(str(id))
 		if sources.is_empty():
 			continue
-		for count in range(2, CardDB.max_upgrade_n() + 1):
-			var target := ComboRules.legend_upgrade_target(tier, count)
+		for count in range(2, OnWorkCardDB.max_upgrade_n() + 1):
+			var target := OnWorkComboRules.legend_upgrade_target(tier, count)
 			if target.is_empty():
 				continue
 			if not legendary.has(target):
-				legendary[target] = {"target_id": target, "pawn": CardDB.pawn_value(target), "sources": []}
+				legendary[target] = {"target_id": target, "pawn": OnWorkCardDB.pawn_value(target), "sources": []}
 			legendary[target].sources.append({"tier": tier, "count": count, "card_ids": sources.duplicate()})
 	for value in legendary.values():
 		legends.append(value)
@@ -327,11 +335,11 @@ func _build_map() -> void:
 		row.add_child(_card_stack(ids))
 		row.add_child(_arrow())
 		row.add_child(_card_node(_entry(str(route.target_id)), true))
-	var no_ordinary: Array = upgrade_routes().no_ordinary
+	var no_ordinary: Array = _upgrade_routes().no_ordinary
 	if not no_ordinary.is_empty():
 		var names: PackedStringArray = []
 		for id in no_ordinary:
-			names.append(CardDB.card_name(str(id)))
+			names.append(OnWorkCardDB.card_name(str(id)))
 		_map.add_child(_label(_ui("no_ordinary_route", {"names": _ui("join").join(names)}), 14))
 	_map.add_child(HSeparator.new())
 	_map.add_child(_label(_ui("legend_title"), 18))

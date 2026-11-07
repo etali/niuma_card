@@ -13,8 +13,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	print("=== 选项规则书与配置联动回归 ===")
-	CardDB.ensure_loaded()
-	var content: Script = load("res://scenes/rulebook_content.gd")
+	OnWorkCardDB.ensure_loaded()
+	var content: Script = load("res://scenes/on_work_rulebook_content.gd")
 	if not need(content != null and content.can_instantiate(), "规则书数据模型可加载"):
 		finish()
 		return
@@ -66,9 +66,9 @@ func _has_number(text: String, number: String) -> bool:
 	return regex.search(text) != null
 
 func _check_configuration(content: Script) -> void:
-	var original_game := CardDB.GAME
-	var original_cards := CardDB.CARDS
-	var original_upgrade := CardDB.UPGRADE
+	var original_game := OnWorkCardDB.GAME
+	var original_cards := OnWorkCardDB.CARDS
+	var original_upgrade := OnWorkCardDB.UPGRADE
 	var baseline: Array = content.sections()
 	var baseline_combos := _text(_section(baseline, "combos"))
 	check("同名或异名均可" in baseline_combos and "T1 与 T2 不得混合" in baseline_combos,
@@ -84,55 +84,55 @@ func _check_configuration(content: Script) -> void:
 			and not str(section.get("title", "")).is_empty()
 			and not section.get("blocks", []).is_empty(), "第%d章有稳定标识、标题与可视内容" % (i + 1))
 
-	CardDB.GAME = original_game.duplicate(true)
-	CardDB.CARDS = original_cards.duplicate(true)
-	CardDB.UPGRADE = original_upgrade.duplicate(true)
-	CardDB.GAME["win_cash"] = 137
-	CardDB.GAME["start_cash"] = 29
-	CardDB.GAME["start_user"] = 31
-	CardDB.GAME["market_size"] = 11
+	OnWorkCardDB.GAME = original_game.duplicate(true)
+	OnWorkCardDB.CARDS = original_cards.duplicate(true)
+	OnWorkCardDB.UPGRADE = original_upgrade.duplicate(true)
+	OnWorkCardDB.GAME["win_cash"] = 137
+	OnWorkCardDB.GAME["start_cash"] = 29
+	OnWorkCardDB.GAME["start_user"] = 31
+	OnWorkCardDB.GAME["market_size"] = 11
 	var victory := _text(_section(content.sections(), "victory"))
 	check(_has_number(victory, "137"), "资金胜利线跟随GAME.win_cash即时变化")
 	check(_has_number(victory, "29") and _has_number(victory, "31") and _has_number(victory, "11"),
 		"开局资源与公共区卡位数均跟随配置")
 
-	CardDB.CARDS["yunketang"]["recipe_n"] = 41
-	CardDB.CARDS["yunketang"]["output_n"] = 43
+	OnWorkCardDB.CARDS["yunketang"]["recipe_n"] = 41
+	OnWorkCardDB.CARDS["yunketang"]["output_n"] = 43
 	var combos: Dictionary = _section(content.sections(), "combos")
 	var recipe := _card_text(combos, "yunketang")
 	check(_has_number(recipe, "41") and _has_number(recipe, "43"),
 		"同一张产品卡的配方消耗与产出来自当前卡表")
 
-	CardDB.GAME["attack_cost_per_card"] = 59
-	CardDB.CARDS["butie"]["recipe_n"] = 37
-	CardDB.CARDS["butie"]["attack_n"] = 47
+	OnWorkCardDB.GAME["attack_cost_per_card"] = 59
+	OnWorkCardDB.CARDS["butie"]["recipe_n"] = 37
+	OnWorkCardDB.CARDS["butie"]["attack_n"] = 47
 	var attack: Dictionary = _section(content.sections(), "attack")
 	check(_has_number(_text(attack), "59"), "每张目标卡的攻击消耗跟随GAME.attack_cost_per_card")
 	var attack_card := _card_text(attack, "butie")
 	check(_has_number(attack_card, "37") and _has_number(attack_card, "47"),
 		"攻击卡配方与攻击量来自当前卡表")
 
-	CardDB.GAME["buff_mult"]["output_x2"] = 113
-	CardDB.GAME["buff_mult"]["attack_x2"] = 127
+	OnWorkCardDB.GAME["buff_mult"]["output_x2"] = 113
+	OnWorkCardDB.GAME["buff_mult"]["attack_x2"] = 127
 	var buffs := _text(_section(content.sections(), "buffs"))
 	check("入组立即保护" in buffs and "这一回合尚不提供保护" not in buffs
 		and "从下一回合起" not in buffs, "规则书明确防御入组立即保护且无首回合等待说明")
 	check(_has_number(buffs, "113") and _has_number(buffs, "127"),
 		"BUFF产出与攻击倍率跟随GAME.buff_mult")
 
-	CardDB.GAME["pawn_rate"] = 61.0
-	CardDB.GAME["pawn_user"] = 67
-	CardDB.CARDS["dujiaoshou"]["pawn"] = 173
+	OnWorkCardDB.GAME["pawn_rate"] = 61.0
+	OnWorkCardDB.GAME["pawn_user"] = 67
+	OnWorkCardDB.CARDS["dujiaoshou"]["pawn"] = 173
 	var pawn := _text(_section(content.sections(), "pawn"))
 	check(_has_number(pawn, "61") and _has_number(pawn, "67") and _has_number(pawn, "173"),
 		"典当折价、用户回收和传说固定回收价均跟随配置")
 
 	# 改同档T1折算路线与传说档位；只检查实际可达路线，不复制合成算法。
-	for route: Dictionary in CardDB.UPGRADE["routes"]:
-		if route.get("kind", "") == CardDB.KIND_PRODUCT and int(route.get("tier", -1)) == 1 \
+	for route: Dictionary in OnWorkCardDB.UPGRADE["routes"]:
+		if route.get("kind", "") == OnWorkCardDB.KIND_PRODUCT and int(route.get("tier", -1)) == 1 \
 			and route.get("key", "") == "dup_key":
 			route["per"] = 3
-	CardDB.CARDS["dujiaoshou"]["upgrade_dup_n"] = 5
+	OnWorkCardDB.CARDS["dujiaoshou"]["upgrade_dup_n"] = 5
 	var paths: Array = content.upgrade_paths("yunketang")
 	var changed_route := false
 	for path: Dictionary in paths:
@@ -142,9 +142,9 @@ func _check_configuration(content: Script) -> void:
 	combos = _section(content.sections(), "combos")
 	check(_has_number(_text(combos), "15"), "变更后的合成张数进入可见规则文字")
 
-	CardDB.GAME = original_game
-	CardDB.CARDS = original_cards
-	CardDB.UPGRADE = original_upgrade
+	OnWorkCardDB.GAME = original_game
+	OnWorkCardDB.CARDS = original_cards
+	OnWorkCardDB.UPGRADE = original_upgrade
 	check(content.sections() == baseline, "恢复内存配置后规则书完整恢复且不残留缓存")
 
 func _boot_drawer(viewport_size: Vector2i, dpi: float) -> Node:
@@ -152,7 +152,7 @@ func _boot_drawer(viewport_size: Vector2i, dpi: float) -> Node:
 	root.size = viewport_size
 	root.content_scale_size = Vector2i.ZERO
 	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	main.drawer_ui_scale = dpi
 	root.add_child(main)

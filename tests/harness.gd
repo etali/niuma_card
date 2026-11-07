@@ -47,7 +47,7 @@ func _isolate_user_data() -> void:
 		return
 	# 产品录像和设置默认走 HOME 下的 ~/.niumapai_record，必须显式覆盖，才能一起隔离、清理。
 	# 设置放回 user:// 根目录：没有旧存档可搬，测试直接读写的文件也就是产品读写的那份。
-	Tape.directory_override = "user://replays"
+	SavePaths.recordings_override = "user://replays"
 	SavePaths.settings_override = "user://"
 	# 本进程派生的游戏子进程（真实主场景、服务器）不跑 harness，靠继承环境留在同一沙箱。
 	OS.set_environment(SavePaths.DATA_DIR_ENV, _test_data_dir.path_join("player-data"))
@@ -188,7 +188,7 @@ func boot_main(frames := -1) -> Node:
 ## 而 _ready 是 add_child 那一刻跑的 —— 所以 instantiate 与 add_child
 ## 之间是唯一的窗口，set_seats 只能插在这里
 func boot_main_seated(mine: String, foe: String, frames := -1) -> Node:
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	if mine != "":
 		main.set_seats(mine, foe)
 	root.add_child(main)
@@ -260,8 +260,8 @@ func _assert_booted(main: Node) -> void:
 ##
 ## 要在两击之间等的，用 settle_within_dbl()：这里等得比 DBL_WINDOW 长，会把双击拆散。
 ##
-## main.gd 用 load() 现取而不在文件头 preload：纯引擎的那几个测试
-## （test_engine / test_simulator 等）不该因为 main.gd 有语法错就一起挂
+## on_work_main.gd 用 load() 现取而不在文件头 preload：纯引擎的那几个测试
+## （test_engine / test_simulator 等）不该因为 on_work_main.gd 有语法错就一起挂
 ##
 ## **不按墙钟等满，问机制**（和 arrivals_landed / bot_moves_landed 同一个理由）：
 ## 原先一律 create_timer(0.52)，而 107 个调用点里绝大多数身上一条补间都没在跑 ——
@@ -287,7 +287,7 @@ func _assert_booted(main: Node) -> void:
 ## 真有一击在窗口内才补齐到 DBL_WINDOW 之外，没有就不付这个钱。
 ## （这不是判据，和原来一样是同步。判据不许读被测常量）
 func settle() -> void:
-	var main_script: Variant = load("res://scenes/main.gd")
+	var main_script: Variant = load("res://scenes/on_work_main.gd")
 	var longest: float = maxf(main_script.TEAR_TIME, main_script.SPAWN_FLY_TIME)
 	var main: Node = _booted
 	if main == null or not is_instance_valid(main):
@@ -363,14 +363,14 @@ func _anim_busy(main: Node) -> bool:
 ## 实测：单跑 8/8 全绿，和全表变异抢 CPU 时 test_arrivals 的
 ## 「BOT 那批也各有落点」直接红了一次 —— 而基线一红，mutate_check 整轮就废了。
 ##
-## 改成问机制本身：飞入的补间记在卡的 `fly_tw` meta 上（main.gd `_fly_from`），
+## 改成问机制本身：飞入的补间记在卡的 `fly_tw` meta 上（on_work_main.gd `_fly_from`），
 ## 逐帧看还有没有在跑的。等多久由「补间跑完了没有」说，跟机器快慢无关。
 ## 上限仍按源常量折算兜底（补间被 _cancel_fly 掐掉时 meta 还在，但 is_running 为假；
 ## 真卡住也不该把测试挂死在这里）。
 ##
 ## 这不是判据，和 settle() 一样是同步 —— 判据不许读被测常量。
 func arrivals_landed(main: Node) -> void:
-	var main_script: Variant = load("res://scenes/main.gd")
+	var main_script: Variant = load("res://scenes/on_work_main.gd")
 	# 兜底上限：整批错开 + 一趟飞行，再给一倍余量
 	var cap: float = (main_script.SPAWN_FLY_SPREAD + main_script.SPAWN_FLY_TIME) * 2.0
 	# SceneTree 上没有 get_physics_process_delta_time()，按帧数折算：
@@ -643,9 +643,9 @@ func make_stack(main: Node, board: Board, uid0: int, core_id: String, n: int,
 ## 传说卡阶梯 {同名 T2 张数: 传说卡 id}，取自卡表 `upgrade_from == dup_t2` 那几张
 func dup_ladder() -> Dictionary:
 	var out: Dictionary = {}
-	for def_id in CardDB.all_cards():
-		var d: Dictionary = CardDB.get_def(def_id)
-		if str(d.get("upgrade_from", "")) == CardDB.DUP_T2:
+	for def_id in OnWorkCardDB.all_cards():
+		var d: Dictionary = OnWorkCardDB.get_def(def_id)
+		if str(d.get("upgrade_from", "")) == OnWorkCardDB.DUP_T2:
 			out[int(d["upgrade_dup_n"])] = def_id
 	return out
 
@@ -661,7 +661,7 @@ func dup_slashed(ns: Array) -> String:
 ## 反查某张 T1 对应的 T2（T2 用 upgrade_from 指回 T1 的卡面 id）。
 ## 没有对应 T2 的 T1（春晚冠名）返回空串 —— 它只剩直达传说这一条路
 func t2_of(t1_id: String) -> String:
-	for def_id in CardDB.all_cards():
-		if str(CardDB.get_def(def_id).get("upgrade_from", "")) == t1_id:
+	for def_id in OnWorkCardDB.all_cards():
+		if str(OnWorkCardDB.get_def(def_id).get("upgrade_from", "")) == t1_id:
 			return def_id
 	return ""

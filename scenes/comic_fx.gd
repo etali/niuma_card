@@ -166,9 +166,9 @@ static func hit(parent: Node3D, camera: Camera3D, cards: Array, at: Vector3, sha
 			card.impact_damage(crack_time)
 	shake(camera, shake_amount(shake_kind, config), 0.45 if shake_kind == "final" else 0.28)
 	var count := maxi(1, cards.size())
-	if resource == CardDB.RES_USER:
+	if resource == OnWorkCardDB.RES_USER:
 		runaway(parent, at, mini(count, 4), flee)
-	elif resource == CardDB.RES_CASH:
+	elif resource == OnWorkCardDB.RES_CASH:
 		coin_spill(parent, at, mini(4 + count * 2, 14), Palette.semantic("cash"))
 
 ## 产出到账（方案 P）：核心牌右下的效果墨团「+N」弹起、换成产出资源的颜色，钱从它里面冒出来；
@@ -177,7 +177,7 @@ static func hit(parent: Node3D, camera: Camera3D, cards: Array, at: Vector3, sha
 static func production(parent: Node3D, camera: Camera3D, core: CardEntity, fallback: Vector3, cash: bool,
 		amount: int, sfx: Node) -> Vector3:
 	var config := rules()
-	var res := CardDB.RES_CASH if cash else CardDB.RES_USER
+	var res := OnWorkCardDB.RES_CASH if cash else OnWorkCardDB.RES_USER
 	var color := Palette.plate_color("plate_cash" if cash else "plate_user", "accent")
 	var anchor := fallback
 	var text := "+%d" % amount

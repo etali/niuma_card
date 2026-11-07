@@ -41,10 +41,10 @@ func _center_bounds(who: String) -> Rect2:
 		maxf(0.0, raw.size.x - hx * 2.0), maxf(0.0, raw.size.y - hz * 2.0))
 
 func _unit_anchor(who: String, def_id: String) -> Vector3:
-	var def := CardDB.get_def(def_id)
+	var def := OnWorkCardDB.get_def(def_id)
 	var foe: bool = who == _main.foe_seat
-	if def.get("kind") == CardDB.KIND_UNIT:
-		if def.get("res") == CardDB.RES_CASH:
+	if def.get("kind") == OnWorkCardDB.KIND_UNIT:
+		if def.get("res") == OnWorkCardDB.RES_CASH:
 			return DRAWER_FOE_CASH_ANCHOR if foe else DRAWER_PLAYER_CASH_ANCHOR
 		return DRAWER_FOE_USER_ANCHOR if foe else DRAWER_PLAYER_USER_ANCHOR
 	return Vector3(0.0, 0.05, -1.7 if foe else 2.1)
@@ -134,7 +134,7 @@ func _tidy_player_idle() -> void:
 	for g in board.groups.duplicate():
 		var pure := true
 		for c in g["cards"]:
-			if CardDB.get_def(c.def_id).get("kind") != CardDB.KIND_UNIT:
+			if OnWorkCardDB.get_def(c.def_id).get("kind") != OnWorkCardDB.KIND_UNIT:
 				pure = false
 				break
 		if pure:
@@ -146,7 +146,7 @@ func _tidy_player_idle() -> void:
 func _group_pile(pile: Array, anchor: Vector3) -> void:
 	if pile.is_empty():
 		return
-	var res: String = str(CardDB.get_def(pile[0].def_id).get("res", CardDB.RES_CASH))
+	var res: String = str(OnWorkCardDB.get_def(pile[0].def_id).get("res", OnWorkCardDB.RES_CASH))
 	var cols: Array = _drawer_resource_columns(res)
 	var taken: Array = []
 	var mine := {}
@@ -158,13 +158,13 @@ func _group_pile(pile: Array, anchor: Vector3) -> void:
 	_stack_arrivals(pile, anchor, DRAWER_PILE_CHUNK, false, 1, cols, taken, false, mine)
 
 func _drawer_resource_columns(res: String) -> Array:
-	if res == CardDB.RES_USER:
+	if res == OnWorkCardDB.RES_USER:
 		return [3.3, 5.95, 8.6]
 	return [-7.6, -4.95, -2.3]
 
 func _pile_slot(anchor: Vector3, taken: Array, skip: Dictionary = {},
 		col_xs: Array = []) -> Vector3:
-	var cols: Array = col_xs if not col_xs.is_empty() else _drawer_resource_columns(CardDB.RES_CASH)
+	var cols: Array = col_xs if not col_xs.is_empty() else _drawer_resource_columns(OnWorkCardDB.RES_CASH)
 	var safe := _center_bounds(_main.my_seat)
 	var best := Vector3(clampf(anchor.x, safe.position.x, safe.end.x), 0.05,
 		clampf(anchor.z, safe.position.y, safe.end.y))
@@ -221,11 +221,11 @@ func end_arrivals() -> void:
 	_arr_mine.clear()
 
 func arrival_spot(who: String, card: Dictionary) -> Vector3:
-	var def := CardDB.get_def(card["def_id"])
+	var def := OnWorkCardDB.get_def(card["def_id"])
 	var anchor := _unit_anchor(who, card["def_id"])
-	if not _arr_open or who != _main.my_seat or def.get("kind") != CardDB.KIND_UNIT:
+	if not _arr_open or who != _main.my_seat or def.get("kind") != OnWorkCardDB.KIND_UNIT:
 		return _free_spot(anchor, who, _arr_claimed)
-	var res: String = str(def.get("res", CardDB.RES_CASH))
+	var res: String = str(def.get("res", OnWorkCardDB.RES_CASH))
 	var cols: Array = _drawer_resource_columns(res)
 	var idx: int = int(_drawer_arr_count.get(res, 0))
 	_drawer_arr_count[res] = idx + 1
@@ -252,14 +252,14 @@ func _stack_settled(known: Dictionary) -> void:
 		var e: CardEntity = entities[uid]
 		if not is_instance_valid(e):
 			continue
-		var def := CardDB.get_def(rec["def_id"])
-		if def.get("kind") != CardDB.KIND_UNIT:
+		var def := OnWorkCardDB.get_def(rec["def_id"])
+		if def.get("kind") != OnWorkCardDB.KIND_UNIT:
 			continue
-		(cash if def.get("res") == CardDB.RES_CASH else user).append(e)
+		(cash if def.get("res") == OnWorkCardDB.RES_CASH else user).append(e)
 	var taken: Array = []
 	if not cash.is_empty():
 		_stack_arrivals(cash, DRAWER_PLAYER_CASH_ANCHOR, DRAWER_PILE_CHUNK, false, 1,
-			_drawer_resource_columns(CardDB.RES_CASH), taken, false, {})
+			_drawer_resource_columns(OnWorkCardDB.RES_CASH), taken, false, {})
 	if not user.is_empty():
 		_stack_arrivals(user, DRAWER_PLAYER_USER_ANCHOR, DRAWER_PILE_CHUNK, false, 1,
-			_drawer_resource_columns(CardDB.RES_USER), taken, false, {})
+			_drawer_resource_columns(OnWorkCardDB.RES_USER), taken, false, {})

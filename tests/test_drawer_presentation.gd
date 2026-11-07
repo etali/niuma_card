@@ -104,7 +104,7 @@ func _run() -> void:
 	var post_buy_rect: Rect2 = presentation.content_rect()
 	var post_buy_camera: Camera3D = main.board.camera
 	_assert_all_entities_inside(main, post_buy_camera, post_buy_rect)
-	check(main.market_cards.size() == CardDB.game_rules()["market_size"] - 1, "购买后市场卡数量按规则减少一张")
+	check(main.market_cards.size() == OnWorkCardDB.game_rules()["market_size"] - 1, "购买后市场卡数量按规则减少一张")
 
 	# 设置入口必须仍可打开；关闭后不得残留 modal，避免抽屉被 can_collapse 永久阻塞。
 	presentation._open_utility(0)
@@ -183,7 +183,7 @@ func _find_buttons(root: Node) -> Array[Control]:
 	return out
 
 func _boot_drawer_main(size: Vector2i) -> Node:
-	var scene := load("res://scenes/main.tscn")
+	var scene := load("res://scenes/on_work_main.tscn")
 	var main: Node = scene.instantiate()
 	if main.get("force_drawer_layout") != null:
 		main.force_drawer_layout = true

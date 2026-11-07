@@ -57,8 +57,8 @@ func _run() -> void:
 	world.add_child(card)
 	card.position = Vector3(0.725, 0.05, 0.0)
 	cards[2] = card
-	card.set_effect_mult(CardDB.buff_mult("output_x2"))
-	card.set_recipe_progress(int(CardDB.get_def(card.def_id)["recipe_n"]), true)
+	card.set_effect_mult(OnWorkCardDB.buff_mult("output_x2"))
+	card.set_recipe_progress(int(OnWorkCardDB.get_def(card.def_id)["recipe_n"]), true)
 	var args := OS.get_cmdline_user_args()
 	if args.size() >= 2 and args[0] == "--render":
 		await _render_closeup(world, args[1], float(args[2]) if args.size() > 2 else 90.0,

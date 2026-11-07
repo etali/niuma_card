@@ -5,14 +5,14 @@
 class_name BOTPanel
 extends Control
 
-var preferences: Script = BOTSearch
+var preferences: Script = OnWorkBOTSearch
 var help_text := "每回合计算与单项搜索节点上限可单独调整\n改变强度保留两个上限；计算使用比例只读\n修改立即生效，仅本次运行，下次启动恢复默认"
 
 ## 右上角「BOT 强度」面板，贴在配色面板下方。
 ## 结构照着 scenes/palette_panel.gd：折叠标题栏、mouse_filter = STOP、
 ## _syncing 护栏。BOT 参数仅保留在本次运行中，修改立即广播，下次启动恢复默认。
 ##
-## 面板修改 engine/bot_search.gd 中本次运行的设置，不改变卡表或规则指纹。
+## 面板修改 engine/on_work_bot_search.gd 中本次运行的设置，不改变卡表或规则指纹。
 ## 对局中途调整不影响联网握手；下一次新搜索和选靶读取最新参数，
 ## 已开始的搜索和已生成的行动计划保留原有快照。
 ##
@@ -145,7 +145,7 @@ const PRESET_LABELS := {
 }
 
 ## 档位快捷键。取的是 preferences.PRESETS 里那几个名字 ——
-## `tools/eval.sh` 的档位参数认的是同一批名字，面板和命令行说的是一种话
+## `tools/on_work_eval.sh` 的档位参数认的是同一批名字，面板和命令行说的是一种话
 func _build_presets() -> VBoxContainer:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 3)

@@ -19,7 +19,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	print("=== 生产卡功能配色 ===")
-	CardDB.load_default()
+	OnWorkCardDB.load_default()
 	Palette.restore_defaults()
 	for pair in [["cash", "shangshi"], ["user", "ditui"], ["yunketang", "ditui"]]:
 		var first := CardArt.face_color(pair[0])
@@ -33,15 +33,15 @@ func _run() -> void:
 	var world := Node3D.new()
 	root.add_child(world)
 	var counts := {"1:cash": 0, "1:user": 0, "2:cash": 0, "2:user": 0}
-	var original_hash := StateCodec.table_hash()
-	for id in CardDB.all_cards():
-		var definition := CardDB.get_def(str(id))
-		if definition.get("kind") != CardDB.KIND_PRODUCT:
+	var original_hash := OnWorkStateCodec.table_hash()
+	for id in OnWorkCardDB.all_cards():
+		var definition := OnWorkCardDB.get_def(str(id))
+		if definition.get("kind") != OnWorkCardDB.KIND_PRODUCT:
 			continue
 		var output := str(definition["output_res"])
 		var key := "%d:%s" % [int(definition["tier"]), output]
 		counts[key] = int(counts.get(key, 0)) + 1
-		var reference := "yunketang" if output == CardDB.RES_CASH else "ditui"
+		var reference := "yunketang" if output == OnWorkCardDB.RES_CASH else "ditui"
 		check(definition["recipe_res"] != output,
 			"%s 的真实配方与产出属于资源转换方向" % definition["name"])
 		_check_same_colors(str(id), reference)
@@ -56,12 +56,12 @@ func _run() -> void:
 		check(CardArt.plate_slot(id) == OTHER_SLOTS[id], "%s 保留非生产卡原有类别配色" % id)
 	_check_custom_colors(world)
 	_check_shared_palette(world)
-	check(StateCodec.table_hash() == original_hash, "修改生产功能色不改变卡牌规则指纹")
+	check(OnWorkStateCodec.table_hash() == original_hash, "修改生产功能色不改变卡牌规则指纹")
 	_check_imported_directions()
 	world.queue_free()
 	await process_frame
 	Palette.restore_defaults()
-	CardDB.load_default()
+	OnWorkCardDB.load_default()
 	finish()
 
 func _check_same_colors(id: String, reference: String) -> void:
@@ -110,10 +110,10 @@ func _check_custom_colors(world: Node3D) -> void:
 		"配色面板提供两条功能线，不显示已无作用的等级色控件")
 
 func _check_imported_directions() -> void:
-	var cards: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(CardDB.BUILTIN_PATH))
+	var cards: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(OnWorkCardDB.BUILTIN_PATH))
 	# 既有 ID 改方向、陌生 ID 复制高等级生产牌，均应按导入后的效果取色。
-	cards["xinxijianfang"]["recipe_res"] = CardDB.RES_CASH
-	cards["xinxijianfang"]["output_res"] = CardDB.RES_USER
+	cards["xinxijianfang"]["recipe_res"] = OnWorkCardDB.RES_CASH
+	cards["xinxijianfang"]["output_res"] = OnWorkCardDB.RES_USER
 	cards["imported_money"] = cards["jiaolv"].duplicate(true)
 	cards["imported_money"]["name"] = "测试变现核心"
 	cards["imported_growth"] = cards["liulianghe"].duplicate(true)
@@ -121,7 +121,7 @@ func _check_imported_directions() -> void:
 	var file := FileAccess.open(IMPORTED, FileAccess.WRITE)
 	file.store_string(JSON.stringify(cards))
 	file.close()
-	check(CardDB.load_from(IMPORTED), "导入带新生产牌及修改方向的卡表")
+	check(OnWorkCardDB.load_from(IMPORTED), "导入带新生产牌及修改方向的卡表")
 	_check_same_colors("xinxijianfang", "ditui")
 	_check_same_colors("imported_money", "yunketang")
 	_check_same_colors("imported_growth", "ditui")

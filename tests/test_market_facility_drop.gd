@@ -19,7 +19,7 @@ func _run() -> void:
 	await process_frame
 	_booted = null
 
-	var drawer: Node = load("res://scenes/main.tscn").instantiate()
+	var drawer: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	drawer.force_drawer_layout = true
 	root.add_child(drawer)
 	_booted = drawer

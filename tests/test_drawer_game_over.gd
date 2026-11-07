@@ -31,7 +31,7 @@ func _boot_drawer(dpi: float) -> Node:
 	root.size = Vector2i(roundi(1280 * dpi), roundi(800 * dpi))
 	root.content_scale_size = Vector2i.ZERO
 	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	main.drawer_ui_scale = dpi
 	root.add_child(main)
@@ -225,7 +225,7 @@ func _check_network_resign_center(dpi: float) -> void:
 	# 接收方必须由 main._process 自己 poll：测试在 physics_frame 抢先 poll
 	# 会改变弹窗与主题更新的帧内顺序，掩盖首帧容器被最小高度撑大的问题。
 	net_pump_until([b], func(): return _resign_finished)
-	var result: Dictionary = await b.submit(Intent.resign(b.my_seat))
+	var result: Dictionary = await b.submit(OnWorkIntent.resign(b.my_seat))
 	_resign_finished = true
 	check(result.get("ok", false), "联网居中：对手认输被服务器接受")
 	if need(await net_until([b], func(): return main.game_over_panel != null),

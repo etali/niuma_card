@@ -13,10 +13,10 @@ extends SceneTree
 ##   b. 引擎有 2 张、画面只画 1 张 —— 张数一路是 2，问题在 scenes/
 ##   c. 压根没合出 2 张 —— 张数从没到过 2，问题在升级判定
 ##
-## 不用 `Tape.replay`：那个只给终局和第一处分叉，中间每一步的张数看不见。
+## 不用 `OnWorkTape.replay`：那个只给终局和第一处分叉，中间每一步的张数看不见。
 ##
 ## 哈希对不上**不停**，只记一笔：这份录像在 `arm_attacks` 那步就分叉了，
-## 而独角兽是在结算（`Settle._resolve_combo` 的 upgrade 分支）里才落地的，
+## 而独角兽是在结算（`OnWorkSettle._resolve_combo` 的 upgrade 分支）里才落地的，
 ## 停在分叉处等于永远看不到要看的那一段。分叉之后的读数标成「已污染」
 const CARD := "dujiaoshou"
 
@@ -27,18 +27,18 @@ func _initialize() -> void:
 		quit()
 		return
 	var path := String(args[0])
-	var d := Tape.load_from(path)
+	var d := OnWorkTape.load_from(path)
 	if not bool(d.get("ok", false)):
 		print("读不了：%s" % str(d.get("reason", "?")))
 		quit()
 		return
-	var t: Tape = d["tape"]
-	var same := "一致" if str(t.table) == StateCodec.table_hash() else "不一致"
+	var t: OnWorkTape = d["tape"]
+	var same := "一致" if str(t.table) == OnWorkStateCodec.table_hash() else "不一致"
 	print("录像 %s：%d 步，卡表 %s" % [path, t.steps.size(), same])
 
-	var s := GameState.new()
-	StateCodec.restore(s, t.head)
-	var ap := IntentApply.new(s)
+	var s := OnWorkState.new()
+	OnWorkStateCodec.restore(s, t.head)
+	var ap := OnWorkIntentApply.new(s)
 	ap.pools_restore(t.head_pools)
 
 	var prev := _pair(s)
@@ -61,7 +61,7 @@ func _initialize() -> void:
 			print("第 %d 步被拒：%s —— %s" % [no, tag, str(r.get("reason", "?"))])
 			break
 		var want := str(e.get("hash", ""))
-		if want != "" and want != StateCodec.state_hash(s) and dirty == 0:
+		if want != "" and want != OnWorkStateCodec.state_hash(s) and dirty == 0:
 			dirty = no
 			print("第 %d 步哈希分叉：%s —— 往下的读数带「污」字，另案查" % [no, tag])
 
@@ -83,8 +83,8 @@ func _initialize() -> void:
 	quit()
 
 ## 这个 create_combo 是不是升级配方，产物是什么。
-## 念的是 ComboRules 的判定，和引擎结算走同一条，不另写一份张数规则
-func _note_upgrade(s: GameState, no: int, tag: String, it: Dictionary) -> void:
+## 念的是 OnWorkComboRules 的判定，和引擎结算走同一条，不另写一份张数规则
+func _note_upgrade(s: OnWorkState, no: int, tag: String, it: Dictionary) -> void:
 	var seat := str(it.get("seat", ""))
 	if not s.players.has(seat):
 		return
@@ -98,16 +98,16 @@ func _note_upgrade(s: GameState, no: int, tag: String, it: Dictionary) -> void:
 			continue
 		names.append(str(c.get("def_id", "?")))
 		cards.append(c)
-	var ev := ComboRules.evaluate(cards)
+	var ev := OnWorkComboRules.evaluate(cards)
 	if str(ev.get("type", "")) != "upgrade":
 		return
 	print("第 %d 步 %s：升级配方 %s → 「%s」（产物要到结算才落卡）" % [
 		no, tag, str(names), str(ev.get("output_card", "?"))])
 
-func _pair(s: GameState) -> Array:
-	return [_count(s, GameState.PLAYER), _count(s, GameState.BOT)]
+func _pair(s: OnWorkState) -> Array:
+	return [_count(s, OnWorkState.PLAYER), _count(s, OnWorkState.BOT)]
 
-func _count(s: GameState, who: String) -> int:
+func _count(s: OnWorkState, who: String) -> int:
 	var n := 0
 	for c in s.players[who]["cards"]:
 		if str(c.get("def_id", "")) == CARD:

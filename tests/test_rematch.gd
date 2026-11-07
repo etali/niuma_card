@@ -4,12 +4,12 @@
 
 extends "res://tests/harness.gd"
 
-## 「再来一局」（net/room.gd 的 rematch 投票与重开）
+## 「再来一局」（net/on_work_room.gd 的 rematch 投票与重开）
 ##
 ## 这条路径上每一处漏做的症状都**不报错**，这也是它要单独一条判据的理由：
 ## 桌子摆得好好的、按钮亮着、日志干净，就是一步也走不了。
 ## 四层各钉一段：
-##   T1 引擎：GameState.new_game() 同一个对象调第二次是不是干净的一局
+##   T1 引擎：OnWorkState.new_game() 同一个对象调第二次是不是干净的一局
 ##   T2 房间：三道拦（不在座、局没完、投过了）+ 掉线撤票
 ##   T3 房间：一票只广播进度、两票才真重开（先手轮换、弹药池清空）
 ##   T4 客户端：rematch_start 要清收件箱、换座位、覆盖状态
@@ -20,7 +20,7 @@ extends "res://tests/harness.gd"
 ##      服务器认不认」——  这一段是唯一走 Server.poll → dispatch 的
 ##
 ## 为什么 T1 排在最前：它是下面三段的地基。带着上一局的 winner 进新局，
-## IntentApply._decide 和 PhaseMachine.check 开头那两道 game_over 护栏
+## OnWorkIntentApply._decide 和 OnWorkPhaseMachine.check 开头那两道 game_over 护栏
 ## 会把**每一条**意图静默拒掉 —— 而 T2/T3/T4 全都要发意图才能验
 ## （memory: game-over-guard-voids-late-sections 说的是同一个形状）
 ##
@@ -35,7 +35,7 @@ extends "res://tests/harness.gd"
 ##   4. room.reset_for_rematch 里去掉 `applier.pools_restore({})`
 ##      → T3「新局双方都没装弹」红（不清的话新局第一次装弹撞 already_armed，
 ##        那一方整个攻击阶段静默跳过；memory: adjudicator-state-not-in-codec）
-##   5. room.reset_for_rematch 里把 `GameState.opponent(state.draw_first)`
+##   5. room.reset_for_rematch 里把 `OnWorkState.opponent(state.draw_first)`
 ##      改成 `state.draw_first` → T3「先手在局间轮换」红
 ##   6. room.handle_rematch 里去掉 `state.winner == ""` 那道拦
 ##      → T2「局中不能投票」红（这一条是要紧的：局中能投等于任何一方随时掀桌）
@@ -51,12 +51,12 @@ extends "res://tests/harness.gd"
 ##      抓得住它的是**喂 JSON 文本**的那几节 —— 走 _on_text 就走 decode；
 ##      直接拿 Protocol.rematch_state(...) 的返回值判字段的写法看不见它
 
-const A := GameState.PLAYER
-const B := GameState.BOT
+const A := OnWorkState.PLAYER
+const B := OnWorkState.BOT
 
 func _initialize() -> void:
 	print("=== 再来一局（rematch）测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	_t1_new_game_is_a_real_reset()
 	_t2_vote_guards()
 	_t3_two_votes_reset()
@@ -68,8 +68,8 @@ func _initialize() -> void:
 
 # ---------- T1 new_game 必须是真复位 ----------
 
-## 单机局的「再战一局」是换一个 GameState，所以第一版 new_game 只清了 players
-## 就够用。联网的 rematch 不能换对象（场景层、IntentApply、NetTransport
+## 单机局的「再战一局」是换一个 OnWorkState，所以第一版 new_game 只清了 players
+## 就够用。联网的 rematch 不能换对象（场景层、OnWorkIntentApply、NetTransport
 ## 三处都持着同一份引用），于是这个函数必须自己复位。
 ##
 ## 判据全部落在**后果**上而不是字段值上：比如 winner 那条判的是
@@ -78,7 +78,7 @@ func _initialize() -> void:
 ## 而玩家看到的是同一个症状（一步也走不了）
 func _t1_new_game_is_a_real_reset() -> void:
 	print("\n-- T1 new_game 是真复位 --")
-	var s := GameState.new()
+	var s := OnWorkState.new()
 	s.set_seed(20260826)
 	s.new_game()
 	var uid_after_first: int = s.peek_uid()
@@ -86,7 +86,7 @@ func _t1_new_game_is_a_real_reset() -> void:
 
 	# 把第一局跑成「结束了的一局」：造一个组合、推几个回合、定下胜负
 	s.buy(A, 0)
-	var uids: Array = _unit_uids(s, A, CardDB.RES_CASH, 3)
+	var uids: Array = _unit_uids(s, A, OnWorkCardDB.RES_CASH, 3)
 	uids.append(int(s.add_card(A, "ditui")["uid"]))
 	s.create_combo(A, uids)
 	s.round_num = 7
@@ -97,16 +97,16 @@ func _t1_new_game_is_a_real_reset() -> void:
 	s.new_game()
 
 	# 最狠的那一条：护栏在两处，判的是「意图走不走得通」
-	var ap := IntentApply.new(s)
-	var r: Dictionary = ap.apply(Intent.buy(s.action_first(), 0), s.action_first())
+	var ap := OnWorkIntentApply.new(s)
+	var r: Dictionary = ap.apply(OnWorkIntent.buy(s.action_first(), 0), s.action_first())
 	check(bool(r.get("ok", false)),
 		"第二局能走意图（%s）—— 带着上一局的 winner 进来的话这里被静默拒掉"
 			% str(r.get("reason", "")))
 	# check 收的是 op **字符串**，放行时返回空字典（不是 {ok:true}）
-	var pm := PhaseMachine.new(s)
-	var gate: Dictionary = pm.check(s.action_first(), Intent.OP_BUY)
-	check(gate.is_empty(), "第二局的次序闸门也放行（%s）—— PhaseMachine 开头"
-		% str(gate.get("code", "")) + "那道 game_over 护栏和 IntentApply 那道是两处")
+	var pm := OnWorkPhaseMachine.new(s)
+	var gate: Dictionary = pm.check(s.action_first(), OnWorkIntent.OP_BUY)
+	check(gate.is_empty(), "第二局的次序闸门也放行（%s）—— OnWorkPhaseMachine 开头"
+		% str(gate.get("code", "")) + "那道 game_over 护栏和 OnWorkIntentApply 那道是两处")
 
 	check(s.winner == "" and s.win_reason == "", "winner/win_reason 清了")
 	# 买卡不推回合，所以这里应当还是第 1 回合。
@@ -128,7 +128,7 @@ func _t1_new_game_is_a_real_reset() -> void:
 			% [str(market_first), str(s.market)])
 
 	# first 参数：留空沿用当前值，给了就换
-	var s2 := GameState.new()
+	var s2 := OnWorkState.new()
 	s2.set_seed(1)
 	s2.new_game()
 	check(s2.draw_first == A, "单机局照旧从 PLAYER 开（%s）" % s2.draw_first)
@@ -137,28 +137,28 @@ func _t1_new_game_is_a_real_reset() -> void:
 	s2.new_game()
 	check(s2.draw_first == B, "留空 = 沿用当前值，不悄悄改回默认（%s）" % s2.draw_first)
 
-func _unit_uids(s: GameState, who: String, res: String, n: int) -> Array:
+func _unit_uids(s: OnWorkState, who: String, res: String, n: int) -> Array:
 	var out: Array = []
 	for c in s.players[who]["cards"]:
 		if out.size() >= n:
 			break
 		if bool(c.get("locked", false)):
 			continue
-		var def: Dictionary = CardDB.get_def(c["def_id"])
-		if def.get("kind", "") == CardDB.KIND_UNIT and def.get("res", "") == res:
+		var def: Dictionary = OnWorkCardDB.get_def(c["def_id"])
+		if def.get("kind", "") == OnWorkCardDB.KIND_UNIT and def.get("res", "") == res:
 			out.append(int(c["uid"]))
 	return out
 
 # ---------- 房间小工具 ----------
 
-func _room(seed_value := 4242) -> NetRoom:
-	var r := NetRoom.new("TEST", seed_value)
+func _room(seed_value := 4242) -> OnWorkRoom:
+	var r := OnWorkRoom.new("TEST", seed_value)
 	r.seat_peer(1)
 	r.seat_peer(2)
 	r.start_if_ready()
 	return r
 
-func _peer_of(r: NetRoom, seat: String) -> int:
+func _peer_of(r: OnWorkRoom, seat: String) -> int:
 	return int(r.occupants[seat])
 
 ## 房间吐的消息列表 → 拒绝码（"" = 没被拒）
@@ -180,7 +180,7 @@ func _msgs_of(out: Array, t: String) -> Array:
 
 ## 把局面推成「结束了的一局」。直接写 winner 而不是真打到分出胜负：
 ## 这几条判据钉的是投票，不是胜负判定（那由 test_full_game 盯着）
-func _finish_game(r: NetRoom) -> void:
+func _finish_game(r: OnWorkRoom) -> void:
 	r.state.winner = A
 	r.state.win_reason = "测试造的终局"
 
@@ -241,7 +241,7 @@ func _t3_two_votes_reset() -> void:
 	print("\n-- T3 两票齐了 --")
 	var r := _room(777)
 	# 造点残留：组合、回合数、弹药池 —— 三样各有一条判据
-	var uids: Array = _unit_uids(r.state, A, CardDB.RES_CASH, 3)
+	var uids: Array = _unit_uids(r.state, A, OnWorkCardDB.RES_CASH, 3)
 	uids.append(int(r.state.add_card(A, "ditui")["uid"]))
 	r.state.create_combo(A, uids)
 	r.state.round_num = 5
@@ -272,7 +272,7 @@ func _t3_two_votes_reset() -> void:
 		check(r.seat_of(to) == mine,
 			"发给 %d 的那条写的是他自己的座位（%s / 实占 %s）"
 				% [to, mine, r.seat_of(to)])
-		check(str(m["foe_seat"]) == GameState.opponent(mine), "对手座位跟着对")
+		check(str(m["foe_seat"]) == OnWorkState.opponent(mine), "对手座位跟着对")
 		check((m["snapshot"] as Dictionary).has("pools"), "带的是全量快照（含池子）")
 	check(seen.size() == 2, "两条写的是两个不同的座位（%s）" % str(seen.keys()))
 
@@ -281,7 +281,7 @@ func _t3_two_votes_reset() -> void:
 	check(ph.size() == 1, "跟着广播了一条 phase（%d 条）" % ph.size())
 	if not ph.is_empty():
 		check(str(((ph[0] as Dictionary)["msg"] as Dictionary)["phase"])
-			== PhaseMachine.ACTION, "而且是行动阶段")
+			== OnWorkPhaseMachine.ACTION, "而且是行动阶段")
 
 	# 真的是干净的一局吗
 	check(r.state.winner == "", "新局没带着上一局的 winner")
@@ -292,20 +292,20 @@ func _t3_two_votes_reset() -> void:
 	check(r.state.peek_uid() > uid_before, "uid 接着发号（%d → %d）"
 		% [uid_before, r.state.peek_uid()])
 
-	# 弹药池：跟着 applier 活着，StateCodec 看不见它
+	# 弹药池：跟着 applier 活着，OnWorkStateCodec 看不见它
 	check(not r.applier.armed(A) and not r.applier.armed(B),
 		"新局双方都没装弹 —— 不清的话新局第一次装弹撞 already_armed，"
 		+ "那一方整个攻击阶段静默跳过")
 
 	# 先手轮换
-	check(r.state.draw_first == GameState.opponent(first_before),
+	check(r.state.draw_first == OnWorkState.opponent(first_before),
 		"先手在局间轮换（%s → %s）：房间里先进来的人坐 PLAYER，"
 		% [first_before, r.state.draw_first]
 		+ "不轮换的话同一个人局局先抽")
 
 	# 新局真能走：次序闸门也跟着换了新的（phase 是重建的那个）
 	var actor: String = r.phase.actor
-	check(_reject_code(r.handle_intent(_peer_of(r, actor), Intent.buy(actor, 0))) == "",
+	check(_reject_code(r.handle_intent(_peer_of(r, actor), OnWorkIntent.buy(actor, 0))) == "",
 		"新局第一条意图走得通（%s 买卡）" % actor)
 
 	# 再打一局再投，先手要再翻回来
@@ -313,7 +313,7 @@ func _t3_two_votes_reset() -> void:
 	var f2: String = r.state.draw_first
 	r.handle_rematch(_peer_of(r, A))
 	r.handle_rematch(_peer_of(r, B))
-	check(r.state.draw_first == GameState.opponent(f2),
+	check(r.state.draw_first == OnWorkState.opponent(f2),
 		"第三局又翻回来（%s → %s）" % [f2, r.state.draw_first])
 	check(r.game_num == 3, "局数到 3（%d）" % r.game_num)
 
@@ -330,12 +330,12 @@ func _t4_client_adopts_new_game() -> void:
 	c.foe_seat = B
 
 	# 造上一局的残留：队里压着两条服务器操作 + 一条在飞的意图
-	var old := NetRoom.new("OLD", 1)
+	var old := OnWorkRoom.new("OLD", 1)
 	old.state.round_num = 6
 	c._on_text(JSON.stringify(Protocol.applied(
-		{ "ok": true, "op": Intent.OP_ARM, "seat": A, "empty": true, "pools": {"cash": 0, "user": 0} }, 1, old.snapshot())))
+		{ "ok": true, "op": OnWorkIntent.OP_ARM, "seat": A, "empty": true, "pools": {"cash": 0, "user": 0} }, 1, old.snapshot())))
 	c._on_text(JSON.stringify(Protocol.applied(
-		{ "ok": true, "op": Intent.OP_FINALIZE, "seat": A }, 2, old.snapshot())))
+		{ "ok": true, "op": OnWorkIntent.OP_FINALIZE, "seat": A }, 2, old.snapshot())))
 	c._pending = true
 	check(c._inbox.size() == 2, "队里压着上一局的两条（%d）" % c._inbox.size())
 
@@ -395,7 +395,7 @@ func _t5_scene_keeps_connection() -> void:
 	var c := NetTransport.new("ws://127.0.0.1:1", "TR5")
 	c.my_seat = A
 	c.foe_seat = B
-	# **必须先喂一份快照**：客户端那份 GameState 是空的（连 players 都没有键），
+	# **必须先喂一份快照**：客户端那份 OnWorkState 是空的（连 players 都没有键），
 	# 而 begin_net_game 里的 _respawn_all 头一件事就是遍历 state.players[my_seat]。
 	# 真实路径上这一步由 seated 带着快照做掉，测试里少了它就崩在摆桌子上 ——
 	# 而崩在那里的后果是 begin_net_game 后半段（藏联网入口、灰按钮）一句都没跑，
@@ -418,7 +418,7 @@ func _t5_scene_keeps_connection() -> void:
 
 	# 不带参数那条照旧断连接、退回单机局
 	main._reset_session_flags()
-	check(main.my_seat == GameState.PLAYER and main.foe_seat == GameState.BOT,
+	check(main.my_seat == OnWorkState.PLAYER and main.foe_seat == OnWorkState.BOT,
 		"不带 keep_net 就退回单机那一对座位（%s/%s）" % [main.my_seat, main.foe_seat])
 	check(main.btn_net.visible, "联网入口放回来了")
 
@@ -508,7 +508,7 @@ func _t6_socket_roundtrip() -> void:
 		check((t.state().players[t.my_seat]["cards"] as Array).size() > 0,
 			"%s 手里有开局的牌（%d 张）" % [t.my_seat,
 				(t.state().players[t.my_seat]["cards"] as Array).size()])
-	check(room.state.draw_first == GameState.opponent(first_before),
+	check(room.state.draw_first == OnWorkState.opponent(first_before),
 		"先手轮换（%s → %s）" % [first_before, room.state.draw_first])
 
 	# 新局真能走一步：这是「重开了」和「重开了但走不动」的分界
@@ -516,7 +516,7 @@ func _t6_socket_roundtrip() -> void:
 	var mover: NetTransport = a if a.my_seat == actor else b
 	var done := false
 	net_pump_until([a, b], func(): return done)
-	var r: Dictionary = await mover.submit(Intent.buy(actor, 0))
+	var r: Dictionary = await mover.submit(OnWorkIntent.buy(actor, 0))
 	done = true
 	check(bool(r.get("ok", false)), "新局第一条意图过网线走通了（%s：%s）"
 		% [actor, str(r.get("reason", ""))])
@@ -534,7 +534,7 @@ const PORT_BASE := 47300
 func _seated_pair(seed_value := 0, room := "TEST") -> Array:
 	return await net_seated_pair(PORT_BASE, seed_value, room)
 
-func _server_room() -> NetRoom:
+func _server_room() -> OnWorkRoom:
 	for code in _srv.rooms:
 		return _srv.rooms[code]
 	return null

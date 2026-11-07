@@ -14,7 +14,7 @@ func _run() -> void:
 	root.size = Vector2i(1600, 900)
 	root.content_scale_size = Vector2i.ZERO
 	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_mobile_layout = true
 	root.add_child(main)
 	_booted = main
@@ -109,12 +109,12 @@ func _check_touch(main: Node) -> void:
 	check(board.group_of(card)["compact"] != compact_before, "双击触摸复用原收拢/展开入口")
 	var market: CardEntity = main.market_cards[0]
 	screen = board.camera.unproject_position(market.position + Vector3(0, 0.04, 0))
-	var hash_before := StateCodec.state_hash(main.state)
+	var hash_before := OnWorkStateCodec.state_hash(main.state)
 	await _screen_event(screen, true)
 	await create_timer(0.6).timeout
 	check(main.drawer_presentation._detail.visible and main.drawer_presentation._detail_id == market.def_id, "长按商品用共享说明组件显示价格和规则")
 	await _screen_event(screen, false)
-	check(StateCodec.state_hash(main.state) == hash_before, "查看说明没有购买卡牌或改变规则状态")
+	check(OnWorkStateCodec.state_hash(main.state) == hash_before, "查看说明没有购买卡牌或改变规则状态")
 	var muted: bool = main.sfx.user_muted
 	var sound_at: Vector2 = main.drawer_presentation._sound_button.get_global_rect().get_center()
 	await _screen_event(sound_at, true)

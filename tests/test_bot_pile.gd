@@ -17,29 +17,29 @@ extends "res://tests/harness.gd"
 
 func _initialize() -> void:
 	print("=== BOT 理牌测试 ===")
-	CardDB.ensure_loaded()
-	var original_cards := CardDB.CARDS
-	var original_rules := CardDB.GAME
+	OnWorkCardDB.ensure_loaded()
+	var original_cards := OnWorkCardDB.CARDS
+	var original_rules := OnWorkCardDB.GAME
 	var main: Node = await _boot_geometry_main()
 
 	_check_open_symmetry(main)
 	_check_plan_row_stress(main)
 
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 
 	# 给 BOT 补一批现金，补到远超 SettleLayout.PILE_CHUNK 好几倍是刻意的：
 	# 按「按张数切块」的旧口径这会切成好几摞，正是「同一种资源摞了好几坨」那个样子。
 	# 补几张是判据自己的规模，只要多到一眼看得出切没切块就够。
 	# 补这么多还有一层用处：后面那节要看「后排的摞沿 +z 长出去会不会顶到前排」，
 	# 摞得够厚才看得出「按张数往北退」这件事有没有做
-	# 生在 BOT 区上空、还没落下来：这是真实开局那一刻的样子（main.gd 发牌用
+	# 生在 BOT 区上空、还没落下来：这是真实开局那一刻的样子（on_work_main.gd 发牌用
 	# _rand_pos 把牌生在 y=2..5 的半空里，再飞到位）。这个高度是下面那条
 	# 「侧边清单不许飘在半空」的考场 —— 清单是在这些牌还在空中时挂上去的，
 	# 高度要是扫周围的实时坐标算，就会被半路上的牌顶上去。
 	# 坐标写死不用 randf：判据不能靠随机数碰上才成立
 	var extra_cash := 14
 	for i in extra_cash:
-		var c: Dictionary = state.add_card(GameState.BOT, "cash")
+		var c: Dictionary = state.add_card(OnWorkState.BOT, "cash")
 		var e: CardEntity = main._spawn_entity(c,
 			Vector3(-7.0 + float(i), 3.0, main.BOT_ZONE_Z - 2.0), false)
 		e.set_dimmed(true)
@@ -47,22 +47,22 @@ func _initialize() -> void:
 	# BOT 编一个组合（刷不停 + 一份配方的用户）：组合同样要被收拢成摞。
 	# 配方量读本测试的几何夹具：8 张组合用于验证多列摊开。
 	var core_id := "shuabuting"
-	var core_def: Dictionary = CardDB.get_def(core_id)
+	var core_def: Dictionary = OnWorkCardDB.get_def(core_id)
 	var seats := int(core_def["recipe_n"])
-	check(seats < int(CardDB.game_rules()["start_user"]),
+	check(seats < int(OnWorkCardDB.game_rules()["start_user"]),
 		"牌桌前提：%s 的配方量 %d 少于开局用户数，编完还剩得下闲置用户摞" % [
 			core_def["name"], seats])
-	var prod: Dictionary = state.add_card(GameState.BOT, core_id)
+	var prod: Dictionary = state.add_card(OnWorkState.BOT, core_id)
 	main._spawn_entity(prod, Vector3(0, 0.05, -3.6), false)
 	var combo_uids: Array = [prod["uid"]]
 	var n := 0
-	for c in state.players[GameState.BOT]["cards"]:
+	for c in state.players[OnWorkState.BOT]["cards"]:
 		if c["def_id"] == "user" and n < seats:
 			combo_uids.append(c["uid"])
 			n += 1
-	var r: Dictionary = state.create_combo(GameState.BOT, combo_uids)
+	var r: Dictionary = state.create_combo(OnWorkState.BOT, combo_uids)
 	check(r["ok"], "BOT「%s+%s×%d」编组成立" % [
-		core_def["name"], CardDB.card_name("user"), seats])
+		core_def["name"], OnWorkCardDB.card_name("user"), seats])
 
 	main.layout._layout_bot_idle()
 	await create_timer(0.6).timeout
@@ -82,7 +82,7 @@ func _initialize() -> void:
 	# 张数从开局配置推出来，不写死：rebalance 调 start_cash 就会把写死的数字放旧
 	# （这条曾经把三个数直接写在数组里，start_cash 一调就一直是红的）。
 	# 这里被测的是「同一种资源不按张数切块」，start_cash 不是被测的那个常量
-	var rules: Dictionary = CardDB.game_rules()
+	var rules: Dictionary = OnWorkCardDB.game_rules()
 	var want_sizes: Array = [
 		int(rules["start_user"]) - seats,     # 闲置用户：开局的用户卡去掉编进组合的那几张
 		seats + 1,                           # 组合：核心 1 张 + 一份配方
@@ -241,22 +241,22 @@ func _initialize() -> void:
 	# 用最便宜的配方（地推）连编 6 个组合，凑到 9 摞。
 	# 配方张数从卡表取：这一节量的是「摞数超过一行怎么换排」，地推吃几张现金无关，
 	# 硬写的话每轮调数值都在这儿红一次，而红的原因和排布毫无关系
-	var ditui_n := int(CardDB.get_def("ditui")["recipe_n"])
+	var ditui_n := int(OnWorkCardDB.get_def("ditui")["recipe_n"])
 	for i in 6:
 		var locked := {}
 		for combo in state.combos:
-			if combo["owner"] == GameState.BOT:
+			if combo["owner"] == OnWorkState.BOT:
 				for u in combo["uids"]:
 					locked[u] = true
-		var p2: Dictionary = state.add_card(GameState.BOT, "ditui")
+		var p2: Dictionary = state.add_card(OnWorkState.BOT, "ditui")
 		main._spawn_entity(p2, Vector3(0, 0.05, -3.6), false)
 		var uids2: Array = [p2["uid"]]
 		var got := 0
-		for c in state.players[GameState.BOT]["cards"]:
+		for c in state.players[OnWorkState.BOT]["cards"]:
 			if c["def_id"] == "cash" and got < ditui_n and not locked.has(c["uid"]):
 				uids2.append(c["uid"])
 				got += 1
-		var rr: Dictionary = state.create_combo(GameState.BOT, uids2)
+		var rr: Dictionary = state.create_combo(OnWorkState.BOT, uids2)
 		check(rr["ok"], "BOT 第 %d 个「地推+现金×%d」编组成立" % [i + 1, ditui_n])
 	# 再加**最宽的那个配方**（春晚冠名，10 张现金 → 连核心卡 11 张 = 3 列）。
 	#
@@ -265,30 +265,30 @@ func _initialize() -> void:
 	# 加起来还在一行的宽度里 —— 也就是说**降列那条路一次都跑不到**，
 	# 而那条路正是「摆不下时靠收拢 + 侧边清单顶上」的唯一出口。
 	# 11 张这一组把整行顶出去，降列才真的发生（memory: green-mutation-means-no-observer）
-	var chunwan_n := int(CardDB.get_def("chunwan")["recipe_n"])
+	var chunwan_n := int(OnWorkCardDB.get_def("chunwan")["recipe_n"])
 	var locked3 := {}
 	for combo in state.combos:
-		if combo["owner"] == GameState.BOT:
+		if combo["owner"] == OnWorkState.BOT:
 			for u in combo["uids"]:
 				locked3[u] = true
 	# 现金可能已经被上面几组吃光了：这一节要的是「一行摆不下」这个几何，
 	# 不是「BOT 攒得出这么多现金」，缺多少就补多少
 	var have_cash := 0
-	for c in state.players[GameState.BOT]["cards"]:
+	for c in state.players[OnWorkState.BOT]["cards"]:
 		if c["def_id"] == "cash" and not locked3.has(c["uid"]):
 			have_cash += 1
 	for i in maxi(chunwan_n - have_cash, 0):
-		var cc: Dictionary = state.add_card(GameState.BOT, "cash")
+		var cc: Dictionary = state.add_card(OnWorkState.BOT, "cash")
 		main._spawn_entity(cc, Vector3(-7.0, 0.05, -6.5), false)
-	var p4: Dictionary = state.add_card(GameState.BOT, "chunwan")
+	var p4: Dictionary = state.add_card(OnWorkState.BOT, "chunwan")
 	main._spawn_entity(p4, Vector3(0, 0.05, -3.6), false)
 	var uids4: Array = [p4["uid"]]
 	var got4 := 0
-	for c in state.players[GameState.BOT]["cards"]:
+	for c in state.players[OnWorkState.BOT]["cards"]:
 		if c["def_id"] == "cash" and got4 < chunwan_n and not locked3.has(c["uid"]):
 			uids4.append(c["uid"])
 			got4 += 1
-	var r4: Dictionary = state.create_combo(GameState.BOT, uids4)
+	var r4: Dictionary = state.create_combo(OnWorkState.BOT, uids4)
 	check(r4["ok"], "BOT「春晚冠名+现金×%d」编组成立（%s）" % [chunwan_n, str(r4.get("err", ""))])
 	main.layout._layout_bot_idle()
 	await create_timer(0.6).timeout
@@ -410,8 +410,8 @@ func _initialize() -> void:
 	await _check_same_core_twice()
 	await _check_resource_anchor_configs()
 
-	CardDB.CARDS = original_cards
-	CardDB.GAME = original_rules
+	OnWorkCardDB.CARDS = original_cards
+	OnWorkCardDB.GAME = original_rules
 	finish()
 
 
@@ -421,16 +421,16 @@ func _initialize() -> void:
 ## main._ready 会重新加载卡表，因此每次起场景后应用夹具，再重建实际开局牌片。
 func _boot_geometry_main() -> Node:
 	var main: Node = await boot_main()
-	CardDB.CARDS = CardDB.CARDS.duplicate(true)
-	CardDB.GAME = CardDB.GAME.duplicate(true)
-	CardDB.GAME["start_cash"] = 20
-	CardDB.GAME["start_user"] = 10
+	OnWorkCardDB.CARDS = OnWorkCardDB.CARDS.duplicate(true)
+	OnWorkCardDB.GAME = OnWorkCardDB.GAME.duplicate(true)
+	OnWorkCardDB.GAME["start_cash"] = 20
+	OnWorkCardDB.GAME["start_user"] = 10
 	var recipe_sizes := {"shuabuting": 7, "ditui": 3, "chunwan": 10, "zuokong": 2}
 	for id in recipe_sizes:
-		CardDB.CARDS[id]["recipe_n"] = recipe_sizes[id]
+		OnWorkCardDB.CARDS[id]["recipe_n"] = recipe_sizes[id]
 	main._teardown_for_new_game(true)
 	main._reset_session_flags()
-	main.state = GameState.new()
+	main.state = OnWorkState.new()
 	main.state.new_game()
 	main._rebuild_pipe()
 	main._sync_round()
@@ -443,26 +443,26 @@ func _boot_geometry_main() -> Node:
 func _check_resource_anchor_configs() -> void:
 	print("--- 切换开局张数后，收拢资源仍与玩家资源片中线对齐 ---")
 	var main: Node = await _boot_geometry_main()
-	var original_rules := CardDB.GAME.duplicate(true)
+	var original_rules := OnWorkCardDB.GAME.duplicate(true)
 	for counts in [[8, 8], [17, 17], [8, 8]]:
-		CardDB.GAME["start_cash"] = counts[0]
-		CardDB.GAME["start_user"] = counts[1]
+		OnWorkCardDB.GAME["start_cash"] = counts[0]
+		OnWorkCardDB.GAME["start_user"] = counts[1]
 		main._teardown_for_new_game(true)
 		main._reset_session_flags()
-		main.state = GameState.new()
+		main.state = OnWorkState.new()
 		main.state.new_game()
 		main._rebuild_pipe()
 		main._sync_round()
 		await settle()
 		# 多一整列现金，迫使两种闲置资源收拢；玩家一侧保留开局排布作为独立基准。
 		for i in main.layout.PLAYER_PILE_PER_COL:
-			var card: Dictionary = main.state.add_card(main.foe_seat, CardDB.unit_id(CardDB.RES_CASH))
+			var card: Dictionary = main.state.add_card(main.foe_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
 			main._spawn_entity(card, Vector3(-7, 0.05, -6), false)
 		main.layout._layout_bot_idle()
 		await settle()
 		var compact_x := {}
-		for res in [CardDB.RES_CASH, CardDB.RES_USER]:
-			var did := CardDB.unit_id(res)
+		for res in [OnWorkCardDB.RES_CASH, OnWorkCardDB.RES_USER]:
+			var did := OnWorkCardDB.unit_id(res)
 			var lo := INF
 			var hi := -INF
 			var columns := {}
@@ -490,10 +490,10 @@ func _check_resource_anchor_configs() -> void:
 				"新到资源卡的落位锚点使用同一当前中线（%s）" % label)
 		var window: Vector2 = main.layout.bench_window([], false)
 		var clearance := CardEntity.CARD_SIZE.x + 0.2
-		check(compact_x.size() == 2 and is_equal_approx(window.x, float(compact_x.get(CardDB.RES_CASH, INF)) + clearance)
-				and is_equal_approx(window.y, float(compact_x.get(CardDB.RES_USER, INF)) - clearance),
+		check(compact_x.size() == 2 and is_equal_approx(window.x, float(compact_x.get(OnWorkCardDB.RES_CASH, INF)) + clearance)
+				and is_equal_approx(window.y, float(compact_x.get(OnWorkCardDB.RES_USER, INF)) - clearance),
 			"备牌窗口跟随当前资源席位并留足卡宽（开局现金/用户=%s）" % str(counts))
-	CardDB.GAME = original_rules
+	OnWorkCardDB.GAME = original_rules
 
 
 ## 同一张核心卡攥了两张：摞在一起是对的，但清单必须说出「×2」。
@@ -518,22 +518,22 @@ func _check_same_core_twice() -> void:
 	print("--- 同名核心攥两张：摞在一起，清单说得出 ×2 ---")
 	var main: Node = await _boot_geometry_main()
 	await settle()
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# 挑一张传说卡：从卡表里取，不写死 dujiaoshou —— 这一条问的是「同名两张」
 	# 这件事，哪张卡是数值侧的选择。取 kind=legend 里 id 最小的那张，
 	# 每次跑都是同一张（keys() 的次序不保证，得排）
 	var legend := ""
-	var ids: Array = CardDB.all_cards().keys()
+	var ids: Array = OnWorkCardDB.all_cards().keys()
 	ids.sort()
 	for def_id in ids:
-		if str(CardDB.get_def(str(def_id)).get("kind", "")) == CardDB.KIND_LEGEND:
+		if str(OnWorkCardDB.get_def(str(def_id)).get("kind", "")) == OnWorkCardDB.KIND_LEGEND:
 			legend = str(def_id)
 			break
 	check(legend != "", "卡表里有传说卡（没有的话这一节考不了同名核心）")
 	if legend == "":
 		return
 	for i in 2:
-		main._spawn_entity(state.add_card(GameState.BOT, legend),
+		main._spawn_entity(state.add_card(OnWorkState.BOT, legend),
 			Vector3(9.0 + float(i), 0.05, -7.0), false)
 	main.layout._layout_bot_idle()
 	await bot_moves_landed(main)
@@ -550,10 +550,10 @@ func _check_same_core_twice() -> void:
 				n += 1
 		if n > 0:
 			check(n == 2, "两张「%s」在同一摞里（%s 里有 %d 张）" % [
-				CardDB.card_name(legend), str(k), n])
+				OnWorkCardDB.card_name(legend), str(k), n])
 			key = str(k)
 			uids = arr
-	check(key != "", "两张「%s」登记在某一摞里" % CardDB.card_name(legend))
+	check(key != "", "两张「%s」登记在某一摞里" % OnWorkCardDB.card_name(legend))
 	if key == "":
 		return
 	# 收拢的：摊开的话每张自己露标题带，清单本来就不画，下面量的不是同一件事
@@ -610,13 +610,13 @@ func _check_bench_spread() -> void:
 	print("--- 备牌那一片种类多起来也不出桌 ---")
 	var main: Node = await _boot_geometry_main()
 	await settle()
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# 开局这一刻：BOT 手上是 start_cash 张现金、没有组合，资源那一片正是**摊开**的。
 	# 备牌就往这上头加，不清场 —— 摊开的现金片会把备牌的左边界往右推，
 	# 窗口最窄的就是这一刻，穿模也最容易出（清了场资源片反而不摊开，量的就不是这件事）
 	var non_res: Array = []
-	for id in CardDB.all_cards():
-		if str(CardDB.get_def(id).get("kind", "")) != CardDB.KIND_UNIT:
+	for id in OnWorkCardDB.all_cards():
+		if str(OnWorkCardDB.get_def(id).get("kind", "")) != OnWorkCardDB.KIND_UNIT:
 			non_res.append(id)
 	non_res.sort()
 	check(non_res.size() >= 12,
@@ -625,7 +625,7 @@ func _check_bench_spread() -> void:
 	# 两档：12 是刚过 cap 的第一档，全部种类是这个数的上界
 	for kinds in [12, non_res.size()]:
 		while added < kinds:
-			var c2: Dictionary = state.add_card(GameState.BOT, non_res[added])
+			var c2: Dictionary = state.add_card(OnWorkState.BOT, non_res[added])
 			main._spawn_entity(c2, Vector3(13.0, 0.05, -7.0), false)
 			added += 1
 		main.layout._layout_bot_idle()
@@ -788,7 +788,7 @@ func _check_spread_width() -> void:
 	print("--- 摊开那一片不比开局更宽 ---")
 	var main: Node = await _boot_geometry_main()
 	await settle()
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	var key := "bot_cash_0"
 	# 开局那一刻这一片有多宽：BOT 无组合、现金正好 start_cash，是摊开的
 	main.layout._layout_bot_idle()
@@ -800,10 +800,10 @@ func _check_spread_width() -> void:
 	var w0: float = _extent(main, main.layout._bot_pile_uids.get(key, [])).x
 	check(cols0 > 1, "开局就摊成了 %d 列（1 列量不出「横着长出去」）" % cols0)
 	# 补到明显放不下的张数：翻一倍多，按开局那个口径要 5 列
-	var want: int = int(CardDB.game_rules()["start_cash"]) * 2 + 5
+	var want: int = int(OnWorkCardDB.game_rules()["start_cash"]) * 2 + 5
 	var have: int = int(main.layout._bot_pile_uids.get(key, []).size())
 	for i in maxi(want - have, 0):
-		main._spawn_entity(state.add_card(GameState.BOT, "cash"),
+		main._spawn_entity(state.add_card(OnWorkState.BOT, "cash"),
 			Vector3(13.0, 0.05, -7.0), false)
 	main.layout._layout_bot_idle()
 	await bot_moves_landed(main)
@@ -966,9 +966,9 @@ func _col_count(main: Node, key: String) -> int:
 ## 且它一句话就把「封顶了」和「封在正地方」都问到了
 func _check_pile_footprint(main: Node) -> void:
 	print("--- 收拢摞的占地不随张数长 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	var cap: int = main.layout.back_pile_cap()
-	var win_n: int = int(CardDB.game_rules()["win_cash"])
+	var win_n: int = int(OnWorkCardDB.game_rules()["win_cash"])
 	# 三档：刚好满级（占地第一次到顶）、胜利线、胜利线的两倍多。
 	# 满级那一档单独取，是因为「到顶」和「到顶之后不再长」是两件事：
 	# 只量两个大数的话，封顶的级数比 cap 小一截（摞更矮）同样两个都相同
@@ -985,7 +985,7 @@ func _check_pile_footprint(main: Node) -> void:
 		# 补到 want 张。只加不减：这一节在最后跑，后面没有别的判据看这批牌
 		var have: int = int(main.layout._bot_pile_uids.get(key, []).size())
 		for i in maxi(want - have, 0):
-			main._spawn_entity(state.add_card(GameState.BOT, "cash"),
+			main._spawn_entity(state.add_card(OnWorkState.BOT, "cash"),
 				Vector3(13.0, 0.05, -7.0), false)
 		main.layout._layout_bot_idle()
 		await bot_moves_landed(main)
@@ -1042,28 +1042,28 @@ func _check_pile_footprint(main: Node) -> void:
 ## 南界那条尤其要实测 —— 货架牌的北缘从 is_market 那几张身上量
 func _check_combo_form(main: Node) -> void:
 	print("--- 组合的形态：摊得下就摊开，摊不下才收拢 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# 已编进组合的牌不能再编：上面那节连编了 7 个组合，BOT 手里的现金被吃掉不少
 	var locked := {}
 	for combo in state.combos:
-		if combo["owner"] == GameState.BOT:
+		if combo["owner"] == OnWorkState.BOT:
 			for u in combo["uids"]:
 				locked[u] = true
 	# 夹具中的攻击配方为 2 张资源，确保本节同时存在摊开的小组与收拢的大组。
-	var zk_def: Dictionary = CardDB.get_def("zuokong")
+	var zk_def: Dictionary = OnWorkCardDB.get_def("zuokong")
 	var zk_n := int(zk_def["recipe_n"])
 	# 喂什么资源也从卡表取：写死 "cash" 的话，配方币种一改这一节就编不成组，
 	# 而报出来的是「排布不对」——错的位置对，说法把人往错方向带
-	var zk_unit := CardDB.unit_id(str(zk_def["recipe_res"]))
-	var p3: Dictionary = state.add_card(GameState.BOT, "zuokong")
+	var zk_unit := OnWorkCardDB.unit_id(str(zk_def["recipe_res"]))
+	var p3: Dictionary = state.add_card(OnWorkState.BOT, "zuokong")
 	main._spawn_entity(p3, Vector3(0, 0.05, -3.6), false)
 	var uids3: Array = [p3["uid"]]
-	for c in state.players[GameState.BOT]["cards"]:
+	for c in state.players[OnWorkState.BOT]["cards"]:
 		if c["def_id"] == zk_unit and uids3.size() <= zk_n and not locked.has(c["uid"]):
 			uids3.append(c["uid"])
-	var r3: Dictionary = state.create_combo(GameState.BOT, uids3)
+	var r3: Dictionary = state.create_combo(OnWorkState.BOT, uids3)
 	check(r3["ok"], "BOT「做空报告+%s×%d」编组成立（%s）" % [
-		CardDB.card_name(zk_unit), zk_n, str(r3.get("err", ""))])
+		OnWorkCardDB.card_name(zk_unit), zk_n, str(r3.get("err", ""))])
 	main.layout._layout_bot_idle()
 	await create_timer(0.6).timeout
 	for i in 5:
@@ -1421,17 +1421,17 @@ func _check_open_symmetry(main: Node) -> void:
 		var e: CardEntity = main.entities[uid]
 		if not is_instance_valid(e) or e.is_market:
 			continue
-		var who: String = GameState.PLAYER if e.draggable else GameState.BOT
+		var who: String = OnWorkState.PLAYER if e.draggable else OnWorkState.BOT
 		var k := "%s:%s" % [who, e.def_id]
 		lo[k] = minf(float(lo.get(k, INF)), e.position.x)
 		hi[k] = maxf(float(hi.get(k, -INF)), e.position.x)
 		var d: float = absf(e.position.z - main.MARKET_Z)
 		near[who] = minf(float(near.get(who, INF)), d)
 
-	var pc := "%s:%s" % [GameState.PLAYER, CardDB.unit_id(CardDB.RES_CASH)]
-	var pu := "%s:%s" % [GameState.PLAYER, CardDB.unit_id(CardDB.RES_USER)]
-	var ac := "%s:%s" % [GameState.BOT, CardDB.unit_id(CardDB.RES_CASH)]
-	var au := "%s:%s" % [GameState.BOT, CardDB.unit_id(CardDB.RES_USER)]
+	var pc := "%s:%s" % [OnWorkState.PLAYER, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH)]
+	var pu := "%s:%s" % [OnWorkState.PLAYER, OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER)]
+	var ac := "%s:%s" % [OnWorkState.BOT, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH)]
+	var au := "%s:%s" % [OnWorkState.BOT, OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER)]
 	if not (lo.has(pc) and lo.has(pu) and lo.has(ac) and lo.has(au)):
 		check(false, "开局双方都有现金和用户卡（缺 key）")
 		return
@@ -1446,9 +1446,9 @@ func _check_open_symmetry(main: Node) -> void:
 	check(float(hi[ac]) < float(lo[au]), "BOT 侧也是现金在左、用户在右")
 	# 开局零组合时 BOT 的牌不许贴着购牌区：离购牌区至少和玩家侧一样远。
 	# 这是那个 bug 的正脸 —— BOT 的两堆闲置卡被排进了靠购牌区的前排
-	check(float(near.get(GameState.BOT, 0.0)) >= float(near.get(GameState.PLAYER, INF)) - 0.01,
+	check(float(near.get(OnWorkState.BOT, 0.0)) >= float(near.get(OnWorkState.PLAYER, INF)) - 0.01,
 		"BOT 的牌离购牌区不比玩家近（BOT %.2f / 玩家 %.2f）" % [
-			float(near.get(GameState.BOT, 0.0)), float(near.get(GameState.PLAYER, 0.0))])
+			float(near.get(OnWorkState.BOT, 0.0)), float(near.get(OnWorkState.PLAYER, 0.0))])
 	_check_open_form(main)
 
 ## 开局两边的形态也得一样：玩家摊开，BOT 就不许收拢成一坨。
@@ -1465,7 +1465,7 @@ func _check_open_form(main: Node) -> void:
 		var e: CardEntity = main.entities[uid]
 		if not is_instance_valid(e) or e.is_market:
 			continue
-		var k := "%s:%s" % [GameState.PLAYER if e.draggable else GameState.BOT, e.def_id]
+		var k := "%s:%s" % [OnWorkState.PLAYER if e.draggable else OnWorkState.BOT, e.def_id]
 		if not cols.has(k):
 			cols[k] = {}
 		# 归列：同一列的 x 是一个数，抖动归到 0.1 的格子里
@@ -1474,10 +1474,10 @@ func _check_open_form(main: Node) -> void:
 			cols[k][bx] = []
 		cols[k][bx].append(e.position.z)
 
-	for res in [CardDB.RES_CASH, CardDB.RES_USER]:
-		var did: String = CardDB.unit_id(res)
-		var p: Array = _columns_of(cols, GameState.PLAYER, did)
-		var a: Array = _columns_of(cols, GameState.BOT, did)
+	for res in [OnWorkCardDB.RES_CASH, OnWorkCardDB.RES_USER]:
+		var did: String = OnWorkCardDB.unit_id(res)
+		var p: Array = _columns_of(cols, OnWorkState.PLAYER, did)
+		var a: Array = _columns_of(cols, OnWorkState.BOT, did)
 		if p.is_empty() or a.is_empty():
 			check(false, "%s：开局双方都有这种资源（玩家 %d 列 / BOT %d 列）" % [
 				did, p.size(), a.size()])
@@ -1532,8 +1532,8 @@ func _check_pile_x(main: Node, piles: Dictionary) -> void:
 			continue
 		lo[e.def_id] = minf(float(lo.get(e.def_id, INF)), e.position.x)
 		hi[e.def_id] = maxf(float(hi.get(e.def_id, -INF)), e.position.x)
-	for res in [CardDB.RES_CASH, CardDB.RES_USER]:
-		var did: String = CardDB.unit_id(res)
+	for res in [OnWorkCardDB.RES_CASH, OnWorkCardDB.RES_USER]:
+		var did: String = OnWorkCardDB.unit_id(res)
 		var key := "bot_%s_0" % did
 		if not piles.has(key) or not lo.has(did):
 			check(false, "%s：这一刻双方都有这种资源（BOT 摞 %s / 玩家 %s）" % [

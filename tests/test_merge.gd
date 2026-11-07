@@ -12,7 +12,7 @@ func _initialize() -> void:
 	var main: Node = await boot_main()
 
 	var board: Board = main.board
-	var cs: Array = main.state.players[GameState.PLAYER]["cards"]
+	var cs: Array = main.state.players[OnWorkState.PLAYER]["cards"]
 	var e1: CardEntity = main.entities[cs[0]["uid"]]
 	var e2: CardEntity = main.entities[cs[1]["uid"]]
 	var e3: CardEntity = main.entities[cs[2]["uid"]]
@@ -142,17 +142,17 @@ func _initialize() -> void:
 	# --- 配方凑满：整条牌列金色高亮 + group_completed 信号 ---
 	# 配方量读卡表，下面所有「几张 / 几分之几」都从它推：这一节量的是高亮和信号，
 	# 吃几张是数值旋钮，写死等于每轮调参都要回来改十几处
-	var core_def: Dictionary = CardDB.get_def("shuabuting")
+	var core_def: Dictionary = OnWorkCardDB.get_def("shuabuting")
 	var need := int(core_def["recipe_n"])
 	var full := need + 1                     # 核心 1 张 + 一份配方
 	var half := need / 2                     # 半成品：凑一半，够写出「没满」
 	check(half > 0 and half < need, "夹具前提：半成品 %d 张确实介于 0 和 %d 之间" % [half, need])
-	var prod: Dictionary = main.state.add_card(GameState.PLAYER, "shuabuting")
+	var prod: Dictionary = main.state.add_card(OnWorkState.PLAYER, "shuabuting")
 	var e_prod: CardEntity = main._spawn_entity(prod, Vector3(-5, 0.3, 4.5), true)
 	var combo_cards: Array = [e_prod]
 	# 开局的散用户已被理牌成真实分组，这里新造一份干净的用户卡
 	for k in need:
-		var uc: Dictionary = main.state.add_card(GameState.PLAYER, "user")
+		var uc: Dictionary = main.state.add_card(OnWorkState.PLAYER, "user")
 		combo_cards.append(main._spawn_entity(uc, Vector3(-5, 0.3, 4.5), true))
 	if combo_cards.size() == full:
 		var fired := [false]
@@ -172,11 +172,11 @@ func _initialize() -> void:
 		check(e_prod.recipe_progress_text() == txt_full,
 			"凑满时核心卡 D 位显示 %s（%s）" % [txt_full, e_prod.recipe_progress_text()])
 		# 半成品 → D 位按已到位数量显示
-		var prod2: Dictionary = main.state.add_card(GameState.PLAYER, "shuabuting")
+		var prod2: Dictionary = main.state.add_card(OnWorkState.PLAYER, "shuabuting")
 		var e_prod2: CardEntity = main._spawn_entity(prod2, Vector3(6, 0.3, 4.5), true)
 		var half_cards: Array = [e_prod2]
 		for k in half:
-			var uc: Dictionary = main.state.add_card(GameState.PLAYER, "user")
+			var uc: Dictionary = main.state.add_card(OnWorkState.PLAYER, "user")
 			half_cards.append(main._spawn_entity(uc, Vector3(6.5 + k * 0.3, 0.3, 5.2), true))
 		if half_cards.size() == half + 1:
 			var hg = { "cards": half_cards, "label": null }
@@ -192,11 +192,11 @@ func _initialize() -> void:
 		check(false, "凑齐%s+%d用户（实际 %d 张）" % [core_def["name"], need, combo_cards.size()])
 
 	# --- 双音效回归：一拖凑满配方时 card_stacked 只发一次且 completed=true，group_completed 只发一次 ---
-	var prod3: Dictionary = main.state.add_card(GameState.PLAYER, "shuabuting")
+	var prod3: Dictionary = main.state.add_card(OnWorkState.PLAYER, "shuabuting")
 	var e_prod3: CardEntity = main._spawn_entity(prod3, Vector3(-11, 0.3, 3), true)
 	var five: Array = [e_prod3]
 	for k in need - 1:      # 差一张凑满：下面那张就是「一拖凑满」的那一张
-		var uc5: Dictionary = main.state.add_card(GameState.PLAYER, "user")
+		var uc5: Dictionary = main.state.add_card(OnWorkState.PLAYER, "user")
 		five.append(main._spawn_entity(uc5, Vector3(-11, 0.3, 3), true))
 	var g5 = { "cards": five, "label": null }
 	board.groups.append(g5)
@@ -204,7 +204,7 @@ func _initialize() -> void:
 	board.refresh_group(g5)   # 差一张，未凑满
 	check(not g5.get("was_valid", true), "%s+%d用户 未凑满（was_valid=false）" % [
 		core_def["name"], need - 1])
-	var last_uc: Dictionary = main.state.add_card(GameState.PLAYER, "user")
+	var last_uc: Dictionary = main.state.add_card(OnWorkState.PLAYER, "user")
 	var e_last: CardEntity = main._spawn_entity(last_uc, Vector3(0, 0.3, 7), true)
 	var stack_events: Array = []
 	var completed_count := [0]
@@ -252,11 +252,11 @@ func _initialize() -> void:
 		check(ding2[0] == 0, "退回牌区不触发风铃双叮（实际 %d 次）" % ding2[0])
 
 	# --- 单卡拖上组：发 card_stacked(false) 记账，声音走落桌那一声 ---
-	var prod4: Dictionary = main.state.add_card(GameState.PLAYER, "shuabuting")
+	var prod4: Dictionary = main.state.add_card(OnWorkState.PLAYER, "shuabuting")
 	var e_prod4: CardEntity = main._spawn_entity(prod4, Vector3(-14, 0.3, 3), true)
 	var half2: Array = [e_prod4]
 	for k in half:
-		var uc6: Dictionary = main.state.add_card(GameState.PLAYER, "user")
+		var uc6: Dictionary = main.state.add_card(OnWorkState.PLAYER, "user")
 		half2.append(main._spawn_entity(uc6, Vector3(-14, 0.3, 3), true))
 	var g_half2 = { "cards": half2, "label": null }
 	board.groups.append(g_half2)
@@ -264,7 +264,7 @@ func _initialize() -> void:
 	await create_timer(0.25).timeout
 	for i in 3:
 		await physics_frame
-	var single_uc: Dictionary = main.state.add_card(GameState.PLAYER, "user")
+	var single_uc: Dictionary = main.state.add_card(OnWorkState.PLAYER, "user")
 	var e_single: CardEntity = main._spawn_entity(single_uc, Vector3(18, 0.3, 6), true)
 	var stacks2: Array = []
 	var drops2 := [0]
@@ -294,7 +294,7 @@ func _initialize() -> void:
 		"摞牌不再借 card_stacked 发声（多发了 %d 次）" % [stacks2.size() - stacks_after])
 
 	# --- 区域拦截：玩家卡不能放过购牌区（z<0.6 一律钳回边界） ---
-	var bc: Dictionary = main.state.add_card(GameState.PLAYER, "cash")
+	var bc: Dictionary = main.state.add_card(OnWorkState.PLAYER, "cash")
 	var e_bc: CardEntity = main._spawn_entity(bc, Vector3(0, 0.3, 4), true)
 	board._on_card_clicked(e_bc)
 	e_bc.global_position = Vector3(2, 0.3, -3.0)   # 拖到购牌区以北（避开货架卡位）
@@ -310,8 +310,8 @@ func _initialize() -> void:
 	# 配方组最少要 3 张（recipe_n 最小 2 + 核心），所以只有同名组会走
 	# 「2 张金光亮着 → 1 张」这个转换，而 refresh_group 的 size()<2
 	# 提前返回原先只退进度、不灭灯
-	var up_a: Dictionary = main.state.add_card(GameState.PLAYER, "shuabuting")
-	var up_b: Dictionary = main.state.add_card(GameState.PLAYER, "shuabuting")
+	var up_a: Dictionary = main.state.add_card(OnWorkState.PLAYER, "shuabuting")
+	var up_b: Dictionary = main.state.add_card(OnWorkState.PLAYER, "shuabuting")
 	var e_ua: CardEntity = main._spawn_entity(up_a, Vector3(-8, 0.3, 5.5), true)
 	var e_ub: CardEntity = main._spawn_entity(up_b, Vector3(-8, 0.3, 5.5), true)
 	var ug = { "cards": [e_ua, e_ub], "label": null }
@@ -340,19 +340,19 @@ func _initialize() -> void:
 ## 整摞落在哪儿不重要（玩家松手的位置、钳回边界都会改它），
 ## **整摞在一起**才是这一条要的东西
 func _drop_onto_flying_core(main: Node, board: Board) -> void:
-	var st: GameState = main.state
+	var st: OnWorkState = main.state
 	# 清场：这一节要量「摞在不在一起」，别的牌落在附近会被 _nearest_group 吸走
-	for c in st.players[GameState.PLAYER]["cards"]:
+	for c in st.players[OnWorkState.PLAYER]["cards"]:
 		var e: CardEntity = main.entities[c["uid"]]
 		if is_instance_valid(e):
 			e.freeze = true
 			e.global_position = Vector3(20, 0.2, 20)
-	var core: Dictionary = st.add_card(GameState.PLAYER, "shuabuting")
+	var core: Dictionary = st.add_card(OnWorkState.PLAYER, "shuabuting")
 	# 摞几张单位卡是判据自己的规模：这一节量的是「并没并到一起」，配方满不满不参与
 	var n_units := 4
 	var units: Array = []
 	for i in n_units:
-		units.append(st.add_card(GameState.PLAYER, CardDB.unit_id(CardDB.RES_USER)))
+		units.append(st.add_card(OnWorkState.PLAYER, OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER)))
 	main._sync_entities()
 	await settle()
 

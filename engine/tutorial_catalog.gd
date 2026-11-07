@@ -20,12 +20,12 @@ static func ui(key: String, vars: Dictionary = {}) -> String:
 	return format_text(str(data().get("ui", {}).get(key, key)), vars)
 
 static func format_text(value: String, vars: Dictionary = {}) -> String:
-	var out := value.replace("{win_cash}", text_value(CardDB.game_rules().get("win_cash", 100)))
+	var out := value.replace("{win_cash}", text_value(OnWorkCardDB.game_rules().get("win_cash", 100)))
 	for key in vars:
 		out = out.replace("{%s}" % str(key), text_value(vars[key]))
 	if "{card." in out:
-		for id in CardDB.all_cards():
-			var definition := CardDB.get_def(str(id))
+		for id in OnWorkCardDB.all_cards():
+			var definition := OnWorkCardDB.get_def(str(id))
 			for key in definition:
 				out = out.replace("{card.%s.%s}" % [id, key], text_value(definition[key]))
 	# 中文智能换行仍可拆开“6 张”甚至“6张”；展开后用零宽连接符绑定数量与量词。

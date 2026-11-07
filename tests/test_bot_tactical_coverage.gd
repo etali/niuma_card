@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 extends "res://tests/harness.gd"
 
-const Env = preload("res://engine/bot_environment.gd")
-const Plan = preload("res://engine/bot_turn_plan.gd")
-const Cap = preload("res://engine/bot_capabilities.gd")
+const Env = preload("res://engine/on_work_bot_environment.gd")
+const Plan = preload("res://engine/on_work_bot_turn_plan.gd")
+const Cap = preload("res://engine/on_work_bot_capabilities.gd")
 var fixture: Dictionary
 
 func _initialize() -> void:
@@ -13,22 +13,22 @@ func _initialize() -> void:
 	var f := FileAccess.open(path,FileAccess.WRITE)
 	f.store_string(JSON.stringify(fixture.cards))
 	f.close()
-	CardDB.load_from(path)
+	OnWorkCardDB.load_from(path)
 	_test_cross_core_defense()
 	_test_tactical_coverage()
 	finish()
 
-func _state(row: Dictionary) -> GameState:
-	var s := GameState.new()
-	StateCodec.restore(s,row.state)
+func _state(row: Dictionary) -> OnWorkState:
+	var s := OnWorkState.new()
+	OnWorkStateCodec.restore(s,row.state)
 	return s
 
 func _fast() -> Dictionary:
 	var p := Plan._fast_profile(fixture.parameters)
-	p["_context"] = BOTActions.Context.new()
+	p["_context"] = OnWorkBOTActions.Context.new()
 	return p
 
-func _settled(s: GameState, p: Dictionary) -> GameState:
+func _settled(s: OnWorkState, p: Dictionary) -> OnWorkState:
 	var result := Env.copy(s)
 	Env.settle(result,Plan._target_policy(p))
 	return result
@@ -73,15 +73,15 @@ func _test_tactical_coverage() -> void:
 		var row: Dictionary = positions[index]
 		var label := "实际市场" if index == 0 else "采样市场%d" % (index-1)
 		var s := _state(row)
-		var original := StateCodec.state_hash(s)
+		var original := OnWorkStateCodec.state_hash(s)
 		var p := _fast()
 		p["generation_budget"] = int(p.rollout_step_budget)
 		p["_work"] = [int(p.rollout_step_budget)]
-		var generated := BOTActions.generate_with_status(s,"bot",p)
+		var generated := OnWorkBOTActions.generate_with_status(s,"bot",p)
 		check(generated.baseline_complete,"%s：有限未来生成先完成基础方案" % label)
 		check(generated.nodes.any(func(n):return _settled(n.state,p).winner == "bot"),
 			"%s：未来完整候选能表示真实现金融资后的用户清零攻击" % label)
-		check(generated.nodes.all(func(n):return absf(float(n.rank)) < BOTEvaluator.TERMINAL_SCORE),
+		check(generated.nodes.all(func(n):return absf(float(n.rank)) < OnWorkBOTEvaluator.TERMINAL_SCORE),
 			"%s：候选保留不把待回应的攻击直接标为终局胜利" % label)
 		check(int(p._work[0]) >= 0 and int(p._work[0]) <= int(p.rollout_step_budget),
 			"%s：攻防代表仍共用原有限展开总账" % label)
@@ -92,11 +92,11 @@ func _test_tactical_coverage() -> void:
 		var result := Plan.resolve_current(leaf,"bot",rp)
 		check(result.complete,"%s：当前有限防守回应完整完成" % label)
 		if index <= 1:
-			check(result.responses.all(func(r):return r.winner == "bot") and result.score == BOTEvaluator.TERMINAL_SCORE,
+			check(result.responses.all(func(r):return r.winner == "bot") and result.score == OnWorkBOTEvaluator.TERMINAL_SCORE,
 				"%s：真实回应仍识别清零败局，不能凭空添加护盾防守" % label)
 		else:
 			check(result.responses.any(func(r):return r.winner == "" and r.resource_count("player","user") > 0),
 				"%s：轻量回应保留合法购盾并组后的真实存活路线" % label)
-			check(absf(float(result.score)) < BOTEvaluator.TERMINAL_SCORE,
+			check(absf(float(result.score)) < OnWorkBOTEvaluator.TERMINAL_SCORE,
 				"%s：补入攻击后仍比较真实防守，不能误报强制必胜" % label)
-		check(StateCodec.state_hash(s) == original,"%s：候选与结算不修改输入状态" % label)
+		check(OnWorkStateCodec.state_hash(s) == original,"%s：候选与结算不修改输入状态" % label)

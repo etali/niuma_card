@@ -9,7 +9,7 @@ extends "res://tests/harness.gd"
 ## 为什么单独立一个文件：`tests/test_bot_search.gd` 判的是**参数对象**
 ## （梯子、覆盖、会话隔离），它对面板只有两条静态判据（档位名有没有中文标签、
 ## 每个旋钮有没有列出来）。而「玩家点得到、点了有用」这一段原先没有任何观察点 ——
-## 实测把 `scenes/main.gd` 里 `canvas.add_child(aip)` 那一行删掉，
+## 实测把 `scenes/on_work_main.gd` 里 `canvas.add_child(aip)` 那一行删掉，
 ## 55 个测试文件一条不红：面板从此不在画面上，参数层的判据照旧全绿。
 ## 那正是 `net/` 那一层踩过的坑的同款（测试全绿而玩家点不到，
 ## 见 `scenes/join_panel.gd` 文件头），所以这里从**booted 出来的树**里找面板，
@@ -24,7 +24,7 @@ extends "res://tests/harness.gd"
 
 func _initialize() -> void:
 	print("=== BOT 参数面板测试 ===")
-	BOTSearch.restore_defaults()
+	OnWorkBOTSearch.restore_defaults()
 
 	var main: Node = await boot_main()
 	var panel := _find_panel(main)
@@ -150,9 +150,9 @@ func _t_toggle(panel: BOTPanel) -> void:
 	if body.visible:
 		toggle.emit_signal("pressed")
 		await process_frame
-	var knobs: Array = BOTSearch.editable_knobs()
+	var knobs: Array = OnWorkBOTSearch.editable_knobs()
 	var kk: Dictionary = knobs[0]
-	BOTSearch.set_override(str(kk["key"]),
+	OnWorkBOTSearch.set_override(str(kk["key"]),
 		true if str(kk["kind"]) == "bool" else int(kk.get("max", 3)))
 	panel._sync_rows()
 	await process_frame
@@ -163,7 +163,7 @@ func _t_toggle(panel: BOTPanel) -> void:
 	check(absf(w2 - pc2.get_combined_minimum_size().x) < 0.5,
 		"读数变长之后框子跟着变宽（框子 %.0f 内容 %.0f）—— 不然星号被切掉"
 			% [w2, pc2.get_combined_minimum_size().x])
-	BOTSearch.restore_defaults()
+	OnWorkBOTSearch.restore_defaults()
 	panel._sync_rows()
 	await process_frame
 
@@ -216,16 +216,16 @@ func _t_slider_drives_prefs(panel: BOTPanel) -> void:
 		"滑块步进够细（%.2f）—— 五个档位之间取值是这个面板存在的理由之一" % sl.step)
 
 	sl.value = 0.0
-	check(is_equal_approx(BOTSearch.pref_strength(), 0.0),
+	check(is_equal_approx(OnWorkBOTSearch.pref_strength(), 0.0),
 		"滑块拖到 0 = 梯子最底档")
 	check(panel._slider_val.text.begins_with("0.00"),
 		"读数跟着滑块（现在「%s」）" % panel._slider_val.text)
 
 	sl.value = 0.8
-	check(is_equal_approx(BOTSearch.pref_strength(), 0.8),
-		"拖到 0.8 之后偏好就是 0.8（读回 %.2f）" % BOTSearch.pref_strength())
-	var high := BOTSearch.prefs().resolved_parameters()
-	var low := BOTSearch.from_model(BOTSearch.pref_model(), 0.0).resolved_parameters()
+	check(is_equal_approx(OnWorkBOTSearch.pref_strength(), 0.8),
+		"拖到 0.8 之后偏好就是 0.8（读回 %.2f）" % OnWorkBOTSearch.pref_strength())
+	var high := OnWorkBOTSearch.prefs().resolved_parameters()
+	var low := OnWorkBOTSearch.from_model(OnWorkBOTSearch.pref_model(), 0.0).resolved_parameters()
 	check(high["buy_beam"] == low["buy_beam"] and high["search_fraction"] > low["search_fraction"],
 		"改变强度保留共同搜索规格，只提高计算比例")
 
@@ -238,24 +238,24 @@ func _t_syncing_guard(panel: BOTPanel) -> void:
 	# 两个方向都走，保证预算数值真的改变并触发控件的回填信号。
 	# 布尔与枚举由 test_bot_settings 的额外模型覆盖。
 	for pair in [[0.8, 0.0], [0.0, 0.8]]:
-		BOTSearch.clear_overrides()
+		OnWorkBOTSearch.clear_overrides()
 		panel._slider.value = float(pair[0])
-		BOTSearch.clear_overrides()
+		OnWorkBOTSearch.clear_overrides()
 		panel._sync_rows()
 		panel._slider.value = float(pair[1])
-		check(not BOTSearch.has_overrides(),
+		check(not OnWorkBOTSearch.has_overrides(),
 			"从 %.2f 拖到 %.2f 之后没有逐项覆盖 —— 回填没有反过来写覆盖（_syncing 护栏）" % [
 				pair[0], pair[1]])
 		check(not panel._slider_val.text.ends_with("*"),
 			"读数上没有星号（现在「%s」）" % panel._slider_val.text)
 
-	BOTSearch.clear_overrides()
+	OnWorkBOTSearch.clear_overrides()
 	panel._slider.value = 0.55
 	check(not panel._syncing, "回填结束后护栏已经放下（不然后面所有输入都被吃掉）")
 
 	# 每一行的显示值 = 当前档位算出来的值。回填漏掉某一行的话，
 	# 那一行显示的是上一档的数，玩家照着它调就是调错的
-	var cfg := BOTSearch.prefs()
+	var cfg := OnWorkBOTSearch.prefs()
 	var stale: Array = []
 	for r in panel._rows:
 		var key := str(r["key"])
@@ -269,37 +269,37 @@ func _t_syncing_guard(panel: BOTPanel) -> void:
 ## 逐项旋钮：改一行 → 落一条覆盖 → 读数带星号。
 ## 星号是「滑块的数已经不能完整描述 BOT 强度」的唯一提示
 func _t_knob_rows(panel: BOTPanel) -> void:
-	check(panel._rows.size() == BOTSearch.editable_knobs().size(),
+	check(panel._rows.size() == OnWorkBOTSearch.editable_knobs().size(),
 		"面板上的行数 = 可调旋钮数（%d 行）" % panel._rows.size())
 	if not need(not panel._rows.is_empty(), "至少有一行旋钮"):
 		return
 
-	BOTSearch.clear_overrides()
+	OnWorkBOTSearch.clear_overrides()
 	panel._slider.value = 0.0
 	var missed: Array = []
 	for r in panel._rows:
 		if r["kind"] == "readonly":
 			check(r["node"] is Label,"计算使用比例显示为只读标签")
 			continue
-		BOTSearch.clear_overrides()
+		OnWorkBOTSearch.clear_overrides()
 		panel._sync_rows()
 		var key := str(r["key"])
 		var want: Variant = _change_row(r)
-		if not _same_value(BOTSearch.prefs().get_knob(key), want):
+		if not _same_value(OnWorkBOTSearch.prefs().get_knob(key), want):
 			missed.append(key)
 	check(missed.is_empty(), "面板上每一行改了都落到偏好里（%s）" % (
 		"全部生效" if missed.is_empty() else "失灵：" + ", ".join(missed)))
-	check(BOTSearch.has_overrides() and panel._slider_val.text.ends_with("*"),
+	check(OnWorkBOTSearch.has_overrides() and panel._slider_val.text.ends_with("*"),
 		"有逐项覆盖时读数带星号（现在「%s」）" % panel._slider_val.text)
 
 	# 反过来：拖滑块要把星号和覆盖一起清掉（拖滑块 = 整档换掉）
 	panel._slider.value = 0.3
-	check(not BOTSearch.has_overrides()
+	check(not OnWorkBOTSearch.has_overrides()
 			and not panel._slider_val.text.ends_with("*"),
 		"拖滑块清掉逐项覆盖，星号跟着消失（现在「%s」）" % panel._slider_val.text)
 
 
-## 档位快捷键。按钮上的名字和 `tools/eval.sh` 认的档位名是同一批 ——
+## 档位快捷键。按钮上的名字和 `tools/on_work_eval.sh` 认的档位名是同一批 ——
 ## 面板和命令行说的是一种话，不然对着报告调不出同一个 BOT
 func _t_presets(panel: BOTPanel) -> void:
 	var btns: Array = []
@@ -312,7 +312,7 @@ func _t_presets(panel: BOTPanel) -> void:
 
 	check(not by_text.has("标准配置（默认）") and not by_text.has("增强配置"), "界面只用统一强度轴，不显示两种独立配置")
 	var missing: Array = []
-	for key in BOTSearch.PRESETS:
+	for key in OnWorkBOTSearch.PRESETS:
 		var label := str(BOTPanel.PRESET_LABELS.get(key, key))
 		if not by_text.has(label):
 			missing.append("%s（%s）" % [key, label])
@@ -321,14 +321,14 @@ func _t_presets(panel: BOTPanel) -> void:
 		return
 
 	var wrong: Array = []
-	for key in BOTSearch.PRESETS:
-		var want := float(BOTSearch.PRESETS[key])
+	for key in OnWorkBOTSearch.PRESETS:
+		var want := float(OnWorkBOTSearch.PRESETS[key])
 		var b: Button = by_text[str(BOTPanel.PRESET_LABELS.get(key, key))]
-		BOTSearch.clear_overrides()
+		OnWorkBOTSearch.clear_overrides()
 		panel._slider.value = 0.11          # 先挪开，免得「本来就在那个值上」蒙对
 		b.emit_signal("pressed")
-		if not is_equal_approx(BOTSearch.pref_strength(), want):
-			wrong.append("%s 想要 %.2f 得到 %.2f" % [key, want, BOTSearch.pref_strength()])
+		if not is_equal_approx(OnWorkBOTSearch.pref_strength(), want):
+			wrong.append("%s 想要 %.2f 得到 %.2f" % [key, want, OnWorkBOTSearch.pref_strength()])
 		elif not is_equal_approx(panel._slider.value, want):
 			wrong.append("%s 滑块没跟上（%.2f）" % [key, panel._slider.value])
 	check(wrong.is_empty(), "按档位按钮把强度和滑块一起拨过去（%s）" % (
@@ -336,9 +336,9 @@ func _t_presets(panel: BOTPanel) -> void:
 
 	# 按钮的 tooltip 念的是它真的会设的那个数。念错的话玩家按着报告调不出同一档
 	var bad_tip: Array = []
-	for key in BOTSearch.PRESETS:
+	for key in OnWorkBOTSearch.PRESETS:
 		var b: Button = by_text[str(BOTPanel.PRESET_LABELS.get(key, key))]
-		var want := "强度 %.2f" % float(BOTSearch.PRESETS[key])
+		var want := "强度 %.2f" % float(OnWorkBOTSearch.PRESETS[key])
 		if not b.tooltip_text.begins_with(want):
 			bad_tip.append("%s：「%s」不以「%s」开头" % [key, b.tooltip_text, want])
 	check(bad_tip.is_empty(), "每颗档位按钮的悬停说明念的是它真会设的强度（%s）" % (
@@ -354,32 +354,32 @@ func _t_session_and_reset(panel: BOTPanel) -> void:
 	check(_visible_text(panel).contains("修改立即生效，仅本次运行")
 			and _visible_text(panel).contains("下次启动恢复默认"), "面板说明参数生效时机和有效期限")
 
-	BOTSearch.restore_defaults()
+	OnWorkBOTSearch.restore_defaults()
 	panel._slider.value = 0.62
-	check(not FileAccess.file_exists(BOTSearch.USER_PATH), "拖滑块不落盘，强度仅留在本次运行")
+	check(not FileAccess.file_exists(OnWorkBOTSearch.USER_PATH), "拖滑块不落盘，强度仅留在本次运行")
 	var wrong := []
 	for row in panel._rows:
 		if row["kind"] == "readonly": continue
 		var wanted: Variant = _change_row(row)
-		if not _same_value(BOTSearch.prefs().get_knob(str(row["key"])), wanted):
+		if not _same_value(OnWorkBOTSearch.prefs().get_knob(str(row["key"])), wanted):
 			wrong.append(row["key"])
 	check(wrong.is_empty(), "每个自定义参数改动后当场生效（失配：%s）" % str(wrong))
 	check(panel._slider_val.text.ends_with("*"), "即时生效的自定义参数有星号提示")
-	check(not FileAccess.file_exists(BOTSearch.USER_PATH), "全部参数调整后仍未生成持久文件")
+	check(not FileAccess.file_exists(OnWorkBOTSearch.USER_PATH), "全部参数调整后仍未生成持久文件")
 
-	BOTSearch._reset_pref_cache()
-	check(is_equal_approx(BOTSearch.pref_strength(), BOTSearch.default_strength())
-			and not BOTSearch.has_overrides(), "模拟重启后恢复默认强度并丢弃全部自定义参数")
+	OnWorkBOTSearch._reset_pref_cache()
+	check(is_equal_approx(OnWorkBOTSearch.pref_strength(), OnWorkBOTSearch.default_strength())
+			and not OnWorkBOTSearch.has_overrides(), "模拟重启后恢复默认强度并丢弃全部自定义参数")
 	panel._sync_rows()
 	check(not panel._slider_val.text.ends_with("*")
-			and is_equal_approx(panel._slider.value, BOTSearch.default_strength()), "重启后的面板显示默认参数")
+			and is_equal_approx(panel._slider.value, OnWorkBOTSearch.default_strength()), "重启后的面板显示默认参数")
 	panel._slider.value = 0.9
 	_change_row(panel._rows[0])
 	reset.emit_signal("pressed")
-	check(is_equal_approx(BOTSearch.pref_strength(), BOTSearch.default_strength())
-			and not BOTSearch.has_overrides(), "按还原默认回到出厂档位并清空自定义参数")
-	check(not FileAccess.file_exists(BOTSearch.USER_PATH), "还原默认不产生参数文件")
-	check(is_equal_approx(panel._slider.value, BOTSearch.default_strength()), "滑块跟着回到出厂强度")
+	check(is_equal_approx(OnWorkBOTSearch.pref_strength(), OnWorkBOTSearch.default_strength())
+			and not OnWorkBOTSearch.has_overrides(), "按还原默认回到出厂档位并清空自定义参数")
+	check(not FileAccess.file_exists(OnWorkBOTSearch.USER_PATH), "还原默认不产生参数文件")
+	check(is_equal_approx(panel._slider.value, OnWorkBOTSearch.default_strength()), "滑块跟着回到出厂强度")
 	check(panel._status.text.begins_with("已还原"), "状态栏说明已还原默认")
 
 
@@ -441,34 +441,34 @@ func _btn(panel: BOTPanel, txt: String) -> Button:
 ##
 ## 判据分两半，写清楚各自证到哪儿：
 ##
-## 1. 下面这一段**真的驱动 `scenes/main.gd._drive_bot_action()`**（不是自己造
-##    `BOTAgent`），所以它证的是「面板拖到非默认档之后，屏幕上那条路照旧走得完」。
+## 1. 下面这一段**真的驱动 `scenes/on_work_main.gd._drive_bot_action()`**（不是自己造
+##    `OnWorkBOTAgent`），所以它证的是「面板拖到非默认档之后，屏幕上那条路照旧走得完」。
 ##    这一条原先没有任何测试碰过 —— `_drive_bot_action` 在 tests/ 里一次都没被调过。
-## 2. 「main.gd 用的是玩家偏好而不是写死的贪心」**不由这里证**，
+## 2. 「on_work_main.gd 用的是玩家偏好而不是写死的贪心」**不由这里证**，
 ##    由 `tests/test_bot_search.gd._t_headless_ignores_prefs` 那条静态判据证
-##    （扫去掉注释之后的 main.gd 正文里有没有 `BOTSearch.prefs()`）。
+##    （扫去掉注释之后的 on_work_main.gd 正文里有没有 `OnWorkBOTSearch.prefs()`）。
 ##    那条变异（换成 `strength=0 profile`）登记在 tools/mutate_check.py，
 ##    报的关键字是「场景层读玩家偏好」。
 ##
-## 别把第 2 件事写成这里的判据文字：`BOTSearch.prefs()` 在这个文件里是**自己调的**，
-## 调出来当然是新档位 —— 那句话不管 main.gd 怎么写都成立
+## 别把第 2 件事写成这里的判据文字：`OnWorkBOTSearch.prefs()` 在这个文件里是**自己调的**，
+## 调出来当然是新档位 —— 那句话不管 on_work_main.gd 怎么写都成立
 func _t_takes_effect_mid_match(main: Node, panel: BOTPanel) -> void:
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	if not need(state != null and state.winner == "", "局还在进行中"):
 		return
 	var round_before: int = state.round_num
-	var hash_before := StateCodec.state_hash(state)
+	var hash_before := OnWorkStateCodec.state_hash(state)
 
 	panel._slider.value = 0.45
-	check(is_equal_approx(BOTSearch.pref_strength(), 0.45),
-		"对局中途拖滑块，偏好当场就是 0.45（读回 %.2f）" % BOTSearch.pref_strength())
-	check(StateCodec.state_hash(state) == hash_before,
+	check(is_equal_approx(OnWorkBOTSearch.pref_strength(), 0.45),
+		"对局中途拖滑块，偏好当场就是 0.45（读回 %.2f）" % OnWorkBOTSearch.pref_strength())
+	check(OnWorkStateCodec.state_hash(state) == hash_before,
 		"改档位本身一个字都没动局面（改的是偏好，不是卡表也不是状态）")
 	check(state.round_num == round_before and state.winner == "",
 		"这一局还在，没被打断（第 2 条要的「任何时机」）")
 
 	# 走**屏幕那条路**：main 自己的 _drive_bot_action，它内部现读 prefs()、
-	# 现造 BOTAgent、每步之间垫演出节拍。0.45 档在这条路上跑不动的话
+	# 现造 OnWorkBOTAgent、每步之间垫演出节拍。0.45 档在这条路上跑不动的话
 	# （试算抄快照漏字段、节拍等在一个不会来的信号上），
 	# 表现是「BOT 回合卡住」，而参数层那一整串判据全绿
 	var who: String = main.foe_seat
@@ -488,23 +488,23 @@ func _t_takes_effect_mid_match(main: Node, panel: BOTPanel) -> void:
 	# 别写成 `winner == "" or winner != ""` 那种伪比较，
 	# 那个长得像判据而永远为真，比明写 true 更难发现
 	check(true, "0.45 档在对局中途接手一个行动阶段，跑完没崩")
-	check(state.resource_count(who, CardDB.RES_CASH) >= 0
-			and state.resource_count(who, CardDB.RES_USER) >= 0,
+	check(state.resource_count(who, OnWorkCardDB.RES_CASH) >= 0
+			and state.resource_count(who, OnWorkCardDB.RES_USER) >= 0,
 		"跑完之后资源没有负数")
 
 	# 中途换到最弱档也一样得走得动（玩家嫌慢往回拖），同样走屏幕那条路
 	panel._slider.value = 0.0
-	check(is_equal_approx(BOTSearch.prefs().strength, 0.0), "中途拖回 0 = 最底档")
+	check(is_equal_approx(OnWorkBOTSearch.prefs().strength, 0.0), "中途拖回 0 = 最底档")
 	await main._drive_bot_action()
 	await bot_moves_landed(main)
 	check(true, "拖回最弱档之后 _drive_bot_action 又跑完一个行动阶段")
-	check(state.resource_count(who, CardDB.RES_CASH) >= 0, "最弱档接手也没坏")
+	check(state.resource_count(who, OnWorkCardDB.RES_CASH) >= 0, "最弱档接手也没坏")
 
 
 ## 测试结束也不恢复已废弃的持久参数文件。
 func _restore() -> void:
-	BOTSearch.restore_defaults()
-	BOTSearch._reset_pref_cache()
+	OnWorkBOTSearch.restore_defaults()
+	OnWorkBOTSearch._reset_pref_cache()
 
 func _visible_text(node: Node) -> String:
 	var text := ""

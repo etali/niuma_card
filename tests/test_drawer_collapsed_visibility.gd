@@ -27,7 +27,7 @@ func _check_attack_updates(main: Node, prefix: String) -> void:
 	var presentation: Node = main.drawer_presentation
 	main.phase = main.PHASE_ATTACK
 	main.board.attack_mode = true
-	main.pipe.applier().pools_restore({main.my_seat: {CardDB.RES_CASH: 2, CardDB.RES_USER: 3}})
+	main.pipe.applier().pools_restore({main.my_seat: {OnWorkCardDB.RES_CASH: 2, OnWorkCardDB.RES_USER: 3}})
 	main._show_attack_label("展开时的玩家攻击", true)
 	check(_renders(main.lbl_attack) and _renders(main.attack_panel),
 		"%s：展开牌桌显示攻击标签和攻击面板" % prefix)
@@ -35,7 +35,7 @@ func _check_attack_updates(main: Node, prefix: String) -> void:
 	check(paused == (main._host == null), "%s：收起进入对应暂停分支" % prefix)
 	_check_entry_only(main, prefix + "已有攻击收起")
 
-	main.pipe.applier().pools_restore({main.my_seat: {CardDB.RES_CASH: 7, CardDB.RES_USER: 3}})
+	main.pipe.applier().pools_restore({main.my_seat: {OnWorkCardDB.RES_CASH: 7, OnWorkCardDB.RES_USER: 3}})
 	main._show_attack_label("收起期间收到的新玩家攻击", true)
 	main._refresh_attack_panel()
 	check(main.lbl_attack.visible and main.attack_panel.visible,
@@ -162,18 +162,18 @@ func _check_real_bot_attack() -> void:
 	var main := await _boot_drawer()
 	var core := ""
 	var cost := 2147483647
-	for id in CardDB.all_cards():
-		var definition: Dictionary = CardDB.get_def(id)
-		if (definition.get("kind") == CardDB.KIND_ATTACK
-				and definition.get("recipe_res") == CardDB.RES_USER
-				and definition.get("attack_res") == CardDB.RES_CASH
+	for id in OnWorkCardDB.all_cards():
+		var definition: Dictionary = OnWorkCardDB.get_def(id)
+		if (definition.get("kind") == OnWorkCardDB.KIND_ATTACK
+				and definition.get("recipe_res") == OnWorkCardDB.RES_USER
+				and definition.get("attack_res") == OnWorkCardDB.RES_CASH
 				and int(definition.get("recipe_n", 0)) < cost):
 			core = str(id)
 			cost = int(definition["recipe_n"])
 	if not need(core != "", "真实 BOT 攻击夹具从配置找到攻击现金的组合"):
 		await _dispose(main)
 		return
-	var damage := int(CardDB.get_def(core)["attack_n"])
+	var damage := int(OnWorkCardDB.get_def(core)["attack_n"])
 	main.state.market.clear()
 	main.state.combos.clear()
 	for who in [main.my_seat, main.foe_seat]:
@@ -194,7 +194,7 @@ func _check_real_bot_attack() -> void:
 		leaked = leaked or _renders(main.lbl_attack) or _renders(main.attack_panel)
 		await process_frame
 	check(main.board.attack_mode and paused, "BOT真实攻击完毕并交棒给收起状态的玩家")
-	check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == 2,
+	check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == 2,
 		"收起期间真实攻击按配置扣除了现金")
 	check(not leaked and not _renders(main.lbl_attack) and not _renders(main.attack_panel),
 		"BOT攻击到玩家攻击的后台协程全程没有泄漏攻击提示")
@@ -235,7 +235,7 @@ func _boot_drawer() -> Node:
 	root.size = Vector2i(1280, 900)
 	root.content_scale_size = Vector2i.ZERO
 	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	root.add_child(main)
 	_booted = main

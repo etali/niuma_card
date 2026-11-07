@@ -29,7 +29,7 @@ from project_paths import relative_path, display_path, redact_paths, sanitize_fi
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from tools.balance import realtime as off_work
+from tools.balance import off_work_workbench as off_work
 from tools.balance.storage import read_json, atomic_json
 from tools.balance.service import PageSessions, resolve_listener, store_key
 
@@ -56,12 +56,12 @@ PLAY_START_TIMEOUT = 20.0
 
 
 def source_version():
-    files = [Path(__file__).resolve(), WEB/'report.html', WEB/'report.js', WEB/'report.css',
-             ROOT/'data/card_config_schema.json', Path(__file__).with_name('project_paths.py'),
+    files = [Path(__file__).resolve(), WEB/'on_work_report.html', WEB/'on_work_report.js', WEB/'report.css',
+             ROOT/'data/on_work_card_config_schema.json', Path(__file__).with_name('project_paths.py'),
              Path(__file__).with_name('legacy_names.py')]
     files.extend(WEB.glob('mode-nav.*'))
     files.append(Path(__file__).resolve().parent/'balance/service.py')
-    files.extend(WEB / name for name in ('storage.py', 'realtime.py', 'realtime_run.gd', 'realtime.html', 'realtime.js', 'realtime.css'))
+    files.extend(WEB / name for name in ('storage.py', 'off_work_workbench.py', 'off_work_run.gd', 'off_work_workbench.html', 'off_work_workbench.js', 'off_work_workbench.css'))
     return hashlib.sha256(b''.join(p.read_bytes() for p in files)).hexdigest()[:16]
 
 
@@ -87,7 +87,7 @@ def numeric(v):
 
 
 # 字段白名单、数值边界和跨字段约束与游戏/无头评估共用同一份规格。
-CARD_SCHEMA = read_json(ROOT / 'data/card_config_schema.json')
+CARD_SCHEMA = read_json(ROOT / 'data/on_work_card_config_schema.json')
 
 
 def editable_specs(key, card):
@@ -200,14 +200,14 @@ def validate_options(o, schema):
 
 def engine_fingerprint():
     # 上班评估的指纹只覆盖参与回合模拟的规则；调整下班脚本不应使运行中的上班评估失效。
-    files = sorted(p for p in (ROOT/'engine').glob('*.gd') if not p.name.startswith('work_'))
-    files += [p for p in sorted(WEB.glob('*.gd')) if p.name != 'realtime_run.gd']
+    files = sorted(p for p in (ROOT/'engine').glob('*.gd') if not p.name.startswith('off_work_'))
+    files += [p for p in sorted(WEB.glob('*.gd')) if p.name != 'off_work_run.gd']
     files += [
-        ROOT/'tools/eval_report.gd', ROOT/'tools/bot_duel_report.gd', ROOT/'tools/bot_duel.gd', ROOT/'tools/bot_decision_stats.gd', ROOT/'data/on_work_bot.json', ROOT/'data/card_config_schema.json']
+        ROOT/'tools/on_work_eval_report.gd', ROOT/'tools/on_work_bot_duel_report.gd', ROOT/'tools/on_work_bot_duel.gd', ROOT/'tools/on_work_bot_decision_stats.gd', ROOT/'data/on_work_bot.json', ROOT/'data/on_work_card_config_schema.json']
     return digest({str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files})
 
 
-class Workbench:
+class OnWorkWorkbench:
     def __init__(self, store, godot):
         self.store = Path(store)
         self.godot = str(godot)
@@ -245,7 +245,7 @@ class Workbench:
             request,output = Path(tmp)/'request.json',Path(tmp)/'result.json'
             atomic_json(request,{'action':'metadata','strength':strength,'output_path':relative_path(output,ROOT)})
             try:
-                r = subprocess.run([self.godot,'--headless','--path','.','--log-file',relative_path(Path(tmp)/'engine.log',ROOT),'-s','tools/eval_report.gd','--',relative_path(request,ROOT)],
+                r = subprocess.run([self.godot,'--headless','--path','.','--log-file',relative_path(Path(tmp)/'engine.log',ROOT),'-s','tools/on_work_eval_report.gd','--',relative_path(request,ROOT)],
                                    cwd=str(ROOT),capture_output=True,text=True,timeout=45)
             except (OSError,subprocess.TimeoutExpired) as error:
                 raise ValueError('无法读取真实BOT参数：'+redact_paths(str(error),ROOT)) from error
@@ -513,7 +513,7 @@ class Workbench:
             with (folder/'godot.log').open('w',encoding='utf-8') as log:
                 with self.lock:
                     if job['cancel'].is_set(): return
-                    proc = subprocess.Popen([self.godot,'--headless','--path','.','--log-file',relative_path(folder/'engine.log',ROOT),'-s',('tools/bot_duel_report.gd' if run.get('kind') == 'bot-duel' else 'tools/eval_report.gd'),'--',relative_path(folder/'request.json',ROOT)],
+                    proc = subprocess.Popen([self.godot,'--headless','--path','.','--log-file',relative_path(folder/'engine.log',ROOT),'-s',('tools/on_work_bot_duel_report.gd' if run.get('kind') == 'bot-duel' else 'tools/on_work_eval_report.gd'),'--',relative_path(folder/'request.json',ROOT)],
                                             cwd=str(ROOT),stdout=log,stderr=subprocess.STDOUT)
                     job['proc'] = proc
                     run['status']='running'
@@ -545,7 +545,7 @@ class Workbench:
             text = (folder/'godot.log').read_text(encoding='utf-8') if (folder/'godot.log').exists() else ''
             result = read_json(folder/'result.json') if (folder/'result.json').exists() else {}
             # 完整结果已成功落盘并正常退出时，稍晚到达的停止不能把成功改成取消。
-            completed = error is None and code == 0 and result.get('status') == 'complete' \
+            completed = error is None and code == 0 and result.get('status') == 'complete'\
                         and 'SCRIPT ERROR:' not in text and '\nERROR:' not in text
             if completed:
                 if engine_fingerprint() != run['engine_fingerprint']:
@@ -595,7 +595,7 @@ class Workbench:
         self._file_lock.close()
 
 
-class Handler(off_work.Routes, BaseHTTPRequestHandler):
+class Handler(off_work.OffWorkRoutes, BaseHTTPRequestHandler):
     server_version = 'LocalBalance/1'
     def log_message(self,*args): pass
 
@@ -606,7 +606,7 @@ class Handler(off_work.Routes, BaseHTTPRequestHandler):
         if origin and origin != 'http://'+expected: raise PermissionError('拒绝跨站请求')
         if self.headers.get('Sec-Fetch-Site') == 'cross-site': raise PermissionError('拒绝跨站请求')
         if write:
-            token = self.server.control_token if urlsplit(self.path).path == '/api/shutdown' else self.server.token
+            token = self.server.control_token if urlsplit(self.path).path == '/api/shutdown' else self.server.on_work_token
             if self.headers.get('X-Balance-Token') != token: raise PermissionError('请刷新页面后重试')
         if self.path not in ('/api/health','/api/session','/api/shutdown'):
             self.server.pages.touch()
@@ -644,20 +644,20 @@ class Handler(off_work.Routes, BaseHTTPRequestHandler):
         try:
             self.guard()
             path = urlsplit(self.path).path
-            app = self.server.app
+            on_work_workbench = self.server.on_work_workbench
             if path=='/api/session':
                 self.server.pages.stream(self)
             elif path=='/api/bootstrap':
-                self.reply({'token':self.server.token,'default_options':DEFAULT_OPTIONS,'definitions':DEFINITIONS,
-                            'fields':mutable_fields(app.base),'labels':LABELS,'bot':app.metadata,
-                            'configs':app.configs(),**app.run_overview()})
-            elif path=='/api/runs': self.reply(app.run_overview())
+                self.reply({'token':self.server.on_work_token,'default_options':DEFAULT_OPTIONS,'definitions':DEFINITIONS,
+                            'fields':mutable_fields(on_work_workbench.base),'labels':LABELS,'bot':on_work_workbench.metadata,
+                            'configs':on_work_workbench.configs(),**on_work_workbench.run_overview()})
+            elif path=='/api/runs': self.reply(on_work_workbench.run_overview())
             elif path=='/api/health': self.reply({'app':'manual-balance-v1','project':project_id(),'source_version':self.server.source_version,'pid':os.getpid(),'lifecycle':1,'closing':self.server.pages.ended.is_set()})
             elif path.startswith('/api/recording/'):
                 parts = path.removeprefix('/api/recording/').split('/')
                 if len(parts) != 2: raise ValueError('录像路径无效')
-                self.reply(app.recording(parts[0],unquote(parts[1])))
-            elif path.startswith('/api/run/'): self.reply(app.run(path.removeprefix('/api/run/')))
+                self.reply(on_work_workbench.recording(parts[0],unquote(parts[1])))
+            elif path.startswith('/api/run/'): self.reply(on_work_workbench.run(path.removeprefix('/api/run/')))
             elif path.startswith('/assets/art/icon/'):
                 name = Path(path).name
                 target = (ROOT/'assets/art/icon'/name).resolve()
@@ -667,8 +667,8 @@ class Handler(off_work.Routes, BaseHTTPRequestHandler):
                 else:
                     self.reply(target.read_bytes(),mime='image/png')
             elif path in ('/','/report.js','/report.css','/mode-nav.css','/mode-nav.js'):
-                file = 'report.html' if path=='/' else path[1:]
-                mime = {'report.html':'text/html; charset=utf-8','report.js':'text/javascript; charset=utf-8','report.css':'text/css; charset=utf-8','mode-nav.css':'text/css; charset=utf-8','mode-nav.js':'text/javascript; charset=utf-8'}[file]
+                file = {'/':'on_work_report.html', '/report.js':'on_work_report.js'}.get(path, path[1:])
+                mime = {'on_work_report.html':'text/html; charset=utf-8','on_work_report.js':'text/javascript; charset=utf-8','report.css':'text/css; charset=utf-8','mode-nav.css':'text/css; charset=utf-8','mode-nav.js':'text/javascript; charset=utf-8'}[file]
                 self.reply((WEB/file).read_bytes(),mime=mime)
             else: self.reply({'error':'找不到页面'},404)
         except PermissionError as e: self.reply({'error':redact_paths(str(e),ROOT)},403)
@@ -683,20 +683,20 @@ class Handler(off_work.Routes, BaseHTTPRequestHandler):
             if self.headers.get_content_type()!='application/json': raise ValueError('仅接受JSON请求')
             body = json.loads(self.rfile.read(size),parse_constant=lambda s: (_ for _ in ()).throw(ValueError('不接受非有限数值')))
             if not isinstance(body,dict): raise ValueError('请求必须是对象')
-            app = self.server.app
+            on_work_workbench = self.server.on_work_workbench
             path = urlsplit(self.path).path
             if path=='/api/shutdown':
                 stopped = self.server.pages.stop_if_idle()
                 self.reply({'stopping': stopped}, 200 if stopped else 409)
                 return
             if path=='/api/profile':
-                result=app.profile(body.get('strength'))
-                result['token']=self.server.token
+                result=on_work_workbench.profile(body.get('strength'))
+                result['token']=self.server.on_work_token
                 self.reply(result)
                 return
             else:
-                routes = {'/api/config':app.save,'/api/notes':app.notes,'/api/run':app.start,'/api/play':app.play,
-                          '/api/stop':app.stop,'/api/export':app.export,'/api/duel':app.start_duel}
+                routes = {'/api/config':on_work_workbench.save,'/api/notes':on_work_workbench.notes,'/api/run':on_work_workbench.start,'/api/play':on_work_workbench.play,
+                          '/api/stop':on_work_workbench.stop,'/api/export':on_work_workbench.export,'/api/duel':on_work_workbench.start_duel}
                 action = routes.get(path)
                 if not action: self.reply({'error':'接口不存在'},404); return
                 self.reply(action(body))
@@ -747,12 +747,12 @@ def main():
         except BlockingIOError as exc:
             raise ValueError('下班配置库已有服务运行，请使用现有工作台') from exc
         class_cache = ROOT / '.godot/global_script_class_cache.cfg'
-        if not class_cache.is_file() or '"class": &"WorkConfig"' not in class_cache.read_text():
+        if not class_cache.is_file() or '"class": &"OffWorkConfig"' not in class_cache.read_text():
             subprocess.run([args.godot, '--headless', '--editor', '--path', str(ROOT), '--import'], check=True)
-        app = Workbench(on_work_store,args.godot)
-        server = off_work.Lab(args.godot, args.port, handler=Handler, store=off_work_store)
+        on_work_workbench = OnWorkWorkbench(on_work_store,args.godot)
+        server = off_work.OffWorkWorkbench(args.godot, args.port, handler=Handler, store=off_work_store)
     except (ValueError,OSError) as e: p.error(redact_paths(str(e),ROOT))
-    server.app,server.token,server.source_version = app,secrets.token_urlsafe(32),current_version
+    server.on_work_workbench,server.on_work_token,server.source_version = on_work_workbench,secrets.token_urlsafe(32),current_version
     url = f'http://127.0.0.1:{server.server_port}/'
     server.control_token = secrets.token_urlsafe(32)
     server.pages = PageSessions(server, transient=args.reuse and not args.open)
@@ -767,7 +767,7 @@ def main():
                     'off_work_store_key':store_key(off_work_store)})
         launch_lock.close()
         print('牛马牌调参工作台 '+url,flush=True)
-        print('数据目录：'+display_path(app.store,ROOT)+'；关闭此终端将停止服务。',flush=True)
+        print('数据目录：'+display_path(on_work_workbench.store,ROOT)+'；关闭此终端将停止服务。',flush=True)
         if args.open:
             import webbrowser
             webbrowser.open(url + ('off-work/' if args.off_work else ''))
@@ -777,7 +777,7 @@ def main():
         for signum in exit_signals: signal.signal(signum,signal.SIG_IGN)
         server.pages.ended.set()
         server.close_jobs()
-        app.close()
+        on_work_workbench.close()
         server.server_close()
         (off_work_store / 'service.json').unlink(missing_ok=True)
         off_work_lock.close()

@@ -10,10 +10,10 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	CardDB.ensure_loaded()
-	for id in CardDB.all_cards():
+	OnWorkCardDB.ensure_loaded()
+	for id in OnWorkCardDB.all_cards():
 		var texture := CardArt.illustration_texture(id)
-		check((texture == null) == (CardDB.get_def(id).get("kind") == CardDB.KIND_UNIT),
+		check((texture == null) == (OnWorkCardDB.get_def(id).get("kind") == OnWorkCardDB.KIND_UNIT),
 			"%s：资源牌使用共享简笔符号，功能牌使用情景插画" % id)
 		check(CardArt.icon_texture(id).resource_path == "res://assets/art/icon/icon_" + id + ".png"
 				and (texture == null or texture == CardArt.icon_texture(id))
@@ -131,7 +131,7 @@ func _hand_drawn_overlays() -> void:
 	await process_frame
 
 func _real_group_and_details() -> void:
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	root.add_child(main)
 	_booted = main
@@ -140,14 +140,14 @@ func _real_group_and_details() -> void:
 	var card: CardEntity = main._spawn_entity(main.state.add_card(main.my_seat, "baoyue"), Vector3(0, 0.05, 3.5), true)
 	var other: CardEntity = main._spawn_entity(main.state.add_card(main.my_seat, "baoyue"), Vector3(2, 0.05, 3.5), true)
 	var cards: Array = [card]
-	for i in int(CardDB.get_def("baoyue")["recipe_n"]):
+	for i in int(OnWorkCardDB.get_def("baoyue")["recipe_n"]):
 		cards.append(main._spawn_entity(main.state.add_card(main.my_seat, "user"), Vector3(0, 0.05, 3.5), true))
 	cards.append(main._spawn_entity(main.state.add_card(main.my_seat, "yinqing996"), Vector3(0, 0.05, 3.5), true))
 	var group: Dictionary = main.board.make_group(cards, true, false)
 	main.board.groups.append(group)
-	var state_hash := StateCodec.state_hash(main.state)
+	var state_hash := OnWorkStateCodec.state_hash(main.state)
 	main.board.refresh_group(group)
-	check(card.recipe_status_text().contains("可生产") and card.recipe_status_text().contains(str(int(CardDB.get_def("baoyue")["output_n"]) * CardDB.buff_mult("output_x2"))),
+	check(card.recipe_status_text().contains("可生产") and card.recipe_status_text().contains(str(int(OnWorkCardDB.get_def("baoyue")["output_n"]) * OnWorkCardDB.buff_mult("output_x2"))),
 		"真实组合状态显示有效产出，并包含增强后的数值")
 	check(card._recipe_label.position.x < card._effect_label.position.x, "桌面按条件在左、结果在右阅读")
 	check(card._recipe_blob.modulate == CardArt.accent_color("baoyue"), "配方凑齐通过徽标强调色呈现")
@@ -166,6 +166,6 @@ func _real_group_and_details() -> void:
 		"窄窗的长卡说明保持在牌桌内，不盖住回合操作栏")
 	detail.show_facility_detail(Vector2(400, 350))
 	check(not detail._detail_flavor.visible and not detail._detail_status.visible, "典当行详情不残留前一张卡的状态")
-	check(StateCodec.state_hash(main.state) == state_hash, "说明和动效不改对局规则状态")
+	check(OnWorkStateCodec.state_hash(main.state) == state_hash, "说明和动效不改对局规则状态")
 	main.queue_free()
 	await process_frame

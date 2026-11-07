@@ -6,7 +6,7 @@ extends RefCounted
 
 ## 玩家数据统一放在**家目录下的 `~/.niumapai_record`**（用户指定）：
 ##
-##     ~/.niumapai_record/            录像（Tape.path_dir）
+##     ~/.niumapai_record/            录像（recordings_dir）
 ##     ~/.niumapai_record/settings/   学习进度、UI、配色、音效、卡牌配置、角色
 ##
 ## 不走 `user://`：那个前缀落在哪儿是引擎定的（macOS 上
@@ -21,19 +21,21 @@ extends RefCounted
 ## 而且这个坏法在屏幕上看不出来，路径照样报得出来）。见 `_home_dir()`
 const DIR_NAME := ".niumapai_record"
 const SETTINGS_DIR := "settings"
+const RECORDINGS_DIR_FALLBACK := "user://replays"
 ## 指向另一个玩家数据根目录（绝对路径）。测试 harness 与 runner 设置它，
 ## 由它们派生的游戏子进程继承环境，录像和设置都留在测试沙箱里，不碰玩家真实存档
 const DATA_DIR_ENV := "CARD_DATA_DIR"
 
 ## 旧版放在 `user://` 根目录的存档。第一次取设置路径时搬进 settings/，搬成功才删旧文件；
 ## 新位置已经有同名文件时以新位置为准，旧文件原样留着不动。
-## 已废弃的 bot_search.json 不搬，仍由 BOTSearch 在 `user://` 原地清理。
+## 已废弃的 bot_search.json 不搬，仍由 OnWorkBOTSearch 在 `user://` 原地清理。
 const LEGACY_FILES := ["tutorial_progress.json", "ui_preferences.json", "palette.json",
 	"sound.json", "cards_config.json", "role.json"]
 
 ## 进程内覆盖设置目录；测试指向隔离的 `user://`，空串保持产品默认目录。
 ## 不读取或修改 HOME，也不持久化为玩家偏好。
 static var settings_override := ""
+static var recordings_override := ""
 static var _prepared_dir := ""
 
 ## 家目录。macOS/Linux 是 `HOME`，Windows 是 `USERPROFILE`。
@@ -58,6 +60,15 @@ static func root() -> String:
 	if home == "":
 		return ""
 	return home.path_join(DIR_NAME)
+
+## 两种玩法共用的录像目录。覆盖值仅用于隔离测试，不修改玩家偏好。
+static func recordings_dir() -> String:
+	if not recordings_override.is_empty():
+		return ProjectSettings.globalize_path(recordings_override)
+	var directory := root()
+	if directory == "":
+		return ProjectSettings.globalize_path(RECORDINGS_DIR_FALLBACK)
+	return directory
 
 ## 设置与学习进度目录的绝对路径。每次解析覆盖值；换到一个新目录时先建目录、搬旧存档。
 static func settings_dir() -> String:
@@ -93,7 +104,7 @@ static func _migrate_legacy(dir: String) -> void:
 			DirAccess.remove_absolute(temporary)
 
 ## 下班特有的操作偏好仍沿用原存储位置。
-static func work_settings_file(file_name: String) -> String:
+static func off_work_settings_file(file_name: String) -> String:
 	var base := OS.get_environment("WORK_DATA_DIR")
 	if base.is_empty():
 		base = root().path_join("off_work") if not root().is_empty() else "user://off_work"

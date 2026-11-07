@@ -12,7 +12,7 @@
     "employee": {
       "name": "员工",
       "category": "person",
-      "description": "可以喝咖啡逐级晋升。",
+      "description": "与工作组堆可处理工作。拆出后与咖啡单独组堆，可以逐级提升卷度。",
       "price": 4,
       "art": "employee",
       "purchasable": true,
@@ -37,7 +37,7 @@
     "coffee": {
       "name": "咖啡",
       "category": "ingredient",
-      "description": "与可晋升的人员组队。按员工、卷王、肝帝、打工皇帝的顺序逐级晋升。每段进度读满时消耗该级所需的咖啡。",
+      "description": "把人员从工作堆拆出，与咖啡单独组堆，按员工、卷王、肝帝、打工皇帝的顺序逐级提升卷度。每段进度读满时消耗该级所需的咖啡。同堆有工作时会先处理工作。",
       "price": 4,
       "art": "coffee",
       "purchasable": true
@@ -94,7 +94,7 @@
     "grinder": {
       "name": "卷王",
       "category": "person",
-      "description": "由员工喝咖啡晋升而来。",
+      "description": "员工喝咖啡提升卷度后变成卷王。",
       "price": 8,
       "art": "grinder",
       "purchasable": false,
@@ -103,7 +103,7 @@
     "workaholic": {
       "name": "肝帝",
       "category": "person",
-      "description": "由卷王喝咖啡晋升而来。",
+      "description": "卷王喝咖啡提升卷度后变成肝帝。",
       "price": 16,
       "art": "workaholic",
       "purchasable": false,
@@ -112,7 +112,7 @@
     "work_emperor": {
       "name": "打工皇帝",
       "category": "person",
-      "description": "由肝帝喝咖啡晋升而来，已达最高等级。",
+      "description": "肝帝喝咖啡提升卷度后变成打工皇帝，卷度已满。",
       "price": 32,
       "art": "work_emperor",
       "purchasable": false,

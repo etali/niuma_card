@@ -34,7 +34,7 @@ func _run() -> void:
 	on.free()
 	_booted = null
 
-	var off: Node3D = load("res://scenes/work_main.tscn").instantiate()
+	var off: Node3D = load("res://scenes/off_work_main.tscn").instantiate()
 	off.set_meta("shift_enter_expanded", true)
 	root.add_child(off)
 	off.set_process(false)

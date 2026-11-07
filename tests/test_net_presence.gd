@@ -14,7 +14,7 @@ class ObservedServer extends NetServer:
 
 func _replaced_connection_is_not_departure() -> void:
 	var server := ObservedServer.new()
-	var room := NetRoom.new("REPLACED", 778)
+	var room := OnWorkRoom.new("REPLACED", 778)
 	room.seat_peer(101)
 	room.seat_peer(102)
 	room.start_if_ready()
@@ -30,7 +30,7 @@ func _replaced_connection_is_not_departure() -> void:
 
 func _initialize() -> void:
 	print("=== 入座后的对手在线状态测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	_replaced_connection_is_not_departure()
 	_presence_across_packet_boundaries()
 	await _reconnect_while_foe_absent()
@@ -40,7 +40,7 @@ func _initialize() -> void:
 ## 入座检查点已含 phase，不代表紧随其后的在线状态消息也已收齐。
 ## 明确分开这两个包，覆盖接管早于/晚于 FOE_LEFT 的两种合法网络时序。
 func _presence_across_packet_boundaries() -> void:
-	var room := NetRoom.new("BOUNDARY", 778)
+	var room := OnWorkRoom.new("BOUNDARY", 778)
 	room.seat_peer(101)
 	room.seat_peer(102)
 	room.start_if_ready()
@@ -50,7 +50,7 @@ func _presence_across_packet_boundaries() -> void:
 		client.defer_scene_events()
 		client.connected.connect(func(_mine: String, _foe: String): events.append("seated"))
 		client.foe_left.connect(func(): events.append("left"))
-		client._on_text(Protocol.encode(room.seated_msg(GameState.PLAYER)))
+		client._on_text(Protocol.encode(room.seated_msg(OnWorkState.PLAYER)))
 		check(client.phase() != "" and events == ["seated"], "仅入座包已提供阶段，不能据此假定离线包到达")
 		if before_handoff:
 			client._on_text(Protocol.encode(Protocol.foe_left()))
@@ -88,7 +88,7 @@ func _reconnect_while_foe_absent() -> void:
 	var my_token := first.resume_token
 	var foe_seat := foe.my_seat
 	var foe_token := foe.resume_token
-	var room: NetRoom = _srv.rooms[room_code]
+	var room: OnWorkRoom = _srv.rooms[room_code]
 	foe.close()
 	if not need(await net_until([first, foe], func():
 		return first_presence == ["left"] and room.free_seat() == foe_seat),

@@ -12,7 +12,7 @@ func _initialize() -> void:
 func _run() -> void:
 	main = await boot_drawer(Vector2i(1280, 800), 1.0, true)
 	if not need(main != null, "原牌桌启动"): return
-	var original := StateCodec.snapshot(main.state)
+	var original := OnWorkStateCodec.snapshot(main.state)
 	# 不同表现随机数下，都不能把用户业务塞进现金的操作区域。
 	for random_seed in [4, 17, 444]:
 		seed(random_seed)
@@ -30,7 +30,7 @@ func _run() -> void:
 	await _idle()
 	_check_cash_lane(_card("pinshaoshao"))
 	main.drawer_presentation.finish_tutorial()
-	check(StateCodec.snapshot(main.state) == original, "教学布局调整不改变原对局")
+	check(OnWorkStateCodec.snapshot(main.state) == original, "教学布局调整不改变原对局")
 	await dispose_drawer(main)
 	finish()
 

@@ -10,10 +10,10 @@ const CameraFit = preload("res://scenes/drawer_camera_fit.gd")
 const CameraView = preload("res://scenes/table_camera_view.gd")
 const UIConfig = preload("res://engine/ui_config.gd")
 const Rulebook = preload("res://scenes/rulebook.gd")
-const CardConfig = preload("res://engine/card_config.gd")
+const OnWorkCardConfig = preload("res://engine/on_work_card_config.gd")
 const TutorialCatalog = preload("res://engine/tutorial_catalog.gd")
 const TutorialProgress = preload("res://engine/tutorial_progress.gd")
-const TutorialContext = preload("res://engine/tutorial_context.gd")
+const TutorialContext = preload("res://engine/on_work_tutorial_context.gd")
 const ResultFx = preload("res://scenes/result_fx.gd")
 
 # 展示顺序与动作ID分开，增加首页不会改变既有设置入口。
@@ -64,7 +64,7 @@ var _utility: PanelContainer
 var _utility_title: Label
 var _utility_body: VBoxContainer
 var _rulebook_button: Button
-## 底栏角色按钮：显示这一局本方的角色，点开向上弹出角色面板（README.md §「2.12 角色」）。
+## 底栏角色按钮：显示这一局本方的角色，点开向上弹出角色面板（README.md §「角色」）。
 ## 按钮上念短名（「牛马」「产品经理」），面板标题和列表念全名「我是XXX」：
 ## 底栏一行贴着窗口宽，短名让 667 宽的横屏手机也放得下全部角色
 var _role_button: Button
@@ -102,7 +102,9 @@ var _detail_source_signature: Array = []
 var _detail_layout_signature: Array = []
 var _preview_detail_source: WeakRef
 var _preview_detail_card: WeakRef
-var _ui_icon_cache: Dictionary = {}
+const DRAWER_GLYPHS := preload("res://assets/art/icon/drawer_controls.png")
+const GLYPHS := ["gear", "pin", "pin_on", "sound_on", "sound_off"]
+static var _ui_icon_cache: Dictionary = {}
 var _content := Rect2()
 var _last_size := Vector2.ZERO
 var _viewport_pixels := Vector2.ZERO
@@ -157,7 +159,7 @@ func bind(main: Node) -> void:
 	_build_details()
 	TutorialProgress.settle_returning_player()
 	_build_learning_invitation()
-	contextual_coach = preload("res://scenes/contextual_coach.gd").new()
+	contextual_coach = preload("res://scenes/on_work_contextual_coach.gd").new()
 	add_child(contextual_coach)
 	contextual_coach.bind(self)
 	for panel in [_header, _footer, _detail, _main.table_hud]:
@@ -235,89 +237,12 @@ func _button(text: String, font_size := UI_FONT_BODY, compact := false) -> Butto
 	return button
 
 func _ui_icon(kind: String) -> Texture2D:
-	if _ui_icon_cache.has(kind):
-		return _ui_icon_cache[kind]
-	var image := Image.create(128, 128, false, Image.FORMAT_RGBA8)
-	var ink := Color.WHITE
-	match kind:
-		"gear":
-			_draw_polyline(image, _gear_points(), 7, ink, true)
-			_draw_circle(image, Vector2(64, 64), 23, 7, ink)
-		"pin", "pin_on":
-			_draw_pin(image, kind == "pin_on", ink)
-		"sound_on", "sound_off":
-			_draw_polyline(image, [Vector2(16, 51), Vector2(37, 51), Vector2(61, 31), Vector2(61, 97), Vector2(37, 77), Vector2(16, 77), Vector2(16, 51)], 7, ink, false)
-			if kind == "sound_off":
-				_draw_line(image, Vector2(73, 40), Vector2(111, 88), 7, ink)
-				_draw_line(image, Vector2(111, 40), Vector2(73, 88), 7, ink)
-			else:
-				_draw_polyline(image, [Vector2(76, 41), Vector2(91, 51), Vector2(91, 77), Vector2(76, 87)], 7, ink, false)
-				_draw_polyline(image, [Vector2(94, 29), Vector2(111, 43), Vector2(111, 85), Vector2(94, 99)], 7, ink, false)
-	var texture := ImageTexture.create_from_image(image)
-	_ui_icon_cache[kind] = texture
-	return texture
-
-## 用轮廓、方向和勾区分状态，避免无边框按钮只靠颜色表达是否钉住。
-func _draw_pin(image: Image, pinned: bool, ink: Color) -> void:
-	var head: Array[Vector2] = [Vector2(42, 17), Vector2(86, 17), Vector2(82, 44), Vector2(96, 58), Vector2(96, 69), Vector2(32, 69), Vector2(32, 58), Vector2(46, 44)]
-	var stem := Vector2(64, 69)
-	var tip := Vector2(64, 112)
-	if pinned:
-		var polygon := PackedVector2Array(head)
-		for y in range(17, 70):
-			for x in range(32, 97):
-				if Geometry2D.is_point_in_polygon(Vector2(x, y), polygon):
-					image.set_pixel(x, y, ink)
-		_draw_polyline(image, [Vector2(82, 94), Vector2(93, 105), Vector2(113, 81)], 8, ink)
-	else:
-		var center := Vector2(64, 64)
-		var angle := deg_to_rad(32.0)
-		for i in head.size():
-			head[i] = center + (head[i] - center).rotated(angle)
-		stem = center + (stem - center).rotated(angle)
-		tip = center + (tip - center).rotated(angle)
-	_draw_polyline(image, head, 7, ink, true)
-	_draw_line(image, stem, tip, 7, ink)
-
-func _gear_points() -> Array[Vector2]:
-	var points: Array[Vector2] = []
-	for i in 32:
-		var angle := -PI * 0.5 + float(i) * TAU / 32.0
-		var radius := 51.0 if i % 4 in [0, 1] else 36.0
-		points.append(Vector2(64, 64) + Vector2(cos(angle), sin(angle)) * radius)
-	return points
-
-func _plot(image: Image, point: Vector2, width: int, color: Color) -> void:
-	var radius := maxi(1, width / 2)
-	var center := Vector2i(roundi(point.x), roundi(point.y))
-	for y in range(-radius, radius + 1):
-		for x in range(-radius, radius + 1):
-			if x * x + y * y <= radius * radius:
-				var px := center.x + x
-				var py := center.y + y
-				if px >= 0 and py >= 0 and px < image.get_width() and py < image.get_height():
-					image.set_pixel(px, py, color)
-
-func _draw_line(image: Image, from: Vector2, to: Vector2, width: int, color: Color) -> void:
-	var distance := from.distance_to(to)
-	var steps := maxi(1, ceili(distance * 2.0))
-	for i in steps + 1:
-		_plot(image, from.lerp(to, float(i) / float(steps)), width, color)
-
-func _draw_polyline(image: Image, points: Array[Vector2], width: int, color: Color, closed := false) -> void:
-	if points.size() < 2:
-		return
-	for i in points.size() - 1:
-		_draw_line(image, points[i], points[i + 1], width, color)
-	if closed:
-		_draw_line(image, points[-1], points[0], width, color)
-
-func _draw_circle(image: Image, center: Vector2, radius: float, width: int, color: Color) -> void:
-	var points: Array[Vector2] = []
-	for i in 65:
-		var angle := float(i) * TAU / 64.0
-		points.append(center + Vector2(cos(angle), sin(angle)) * radius)
-	_draw_polyline(image, points, width, color, false)
+	if not _ui_icon_cache.has(kind):
+		var tile := AtlasTexture.new()
+		tile.atlas = DRAWER_GLYPHS
+		tile.region = Rect2(128 * GLYPHS.find(kind), 0, 128, 128)
+		_ui_icon_cache[kind] = tile
+	return _ui_icon_cache[kind]
 
 func _install_icon_visual(button: Button, texture: Texture2D) -> void:
 	var visual := TextureRect.new()
@@ -644,9 +569,7 @@ func _build_learning_invitation() -> void:
 	start.set_meta("ui_role", "primary")
 	start.pressed.connect(func():
 		_dismiss_learning_invitation("tutorial")
-		var courses := TutorialCatalog.courses()
-		if not courses.is_empty():
-			start_tutorial(str(courses[0]["id"])))
+		_start_invitation_course())
 	actions.add_child(start)
 	var skip := _button(TutorialCatalog.ui("hub.invitation_skip"))
 	skip.name = "InvitationSkip"
@@ -655,6 +578,10 @@ func _build_learning_invitation() -> void:
 	_learning_invitation.hide()
 	_guard_table_panel(_learning_invitation, true)
 	_apply_tree_theme(_learning_invitation)
+
+func _start_invitation_course() -> void:
+	var courses := TutorialCatalog.courses()
+	if not courses.is_empty(): start_tutorial(str(courses[0].id))
 
 func _dismiss_learning_invitation(choice: String) -> void:
 	_invitation_offered = true
@@ -689,9 +616,7 @@ func add_post_game_tutorial(body: VBoxContainer) -> void:
 	var learn := _button(TutorialCatalog.ui("hub.post_game_nudge"))
 	learn.name = "ResultTutorial"
 	learn.pressed.connect(func():
-		var courses := TutorialCatalog.courses()
-		if not courses.is_empty():
-			start_tutorial(str(courses[0]["id"])))
+		_start_invitation_course())
 	body.add_child(learn)
 
 ## 课程在原牌桌上进行；规则页仅负责选择课程，不再承载第二张牌桌。
@@ -709,7 +634,7 @@ func start_tutorial(id: String) -> bool:
 	close_panels()
 	_learning_invitation.hide()
 	_tutorial_context = scope
-	tutorial = load("res://scenes/tutorial_player.gd").new()
+	tutorial = load("res://scenes/on_work_tutorial_player.gd").new()
 	add_child(tutorial)
 	tutorial.exited.connect(finish_tutorial)
 	tutorial.progress_changed.connect(_record_tutorial_progress)
@@ -827,7 +752,7 @@ func _style_primary_table_action(button: Button) -> void:
 	_apply_button_theme(button)
 
 func _build_role_button(row: HBoxContainer) -> void:
-	_role_button = _button(Roles.tag(Roles.DEFAULT))
+	_role_button = _button(OnWorkRoles.tag(OnWorkRoles.DEFAULT))
 	_role_button.name = "RoleButton"
 	_role_button.pressed.connect(_show_role_popup)
 	row.add_child(_role_button)
@@ -842,7 +767,7 @@ func _build_role_button(row: HBoxContainer) -> void:
 ## 按钮仍念玩家自己的选择 —— 教程结束回到的是那一局
 func _active_role() -> String:
 	if is_instance_valid(tutorial) or _main.state == null:
-		return RolePref.selected()
+		return OnWorkRolePref.selected()
 	return _main.state.role_of(_main.my_seat)
 
 ## 联网、录像、教程中都不能换角色：联网双方固定默认角色，录像和教程不是可以重开的单机局
@@ -851,7 +776,7 @@ func _role_lock_reason() -> String:
 	if bool(info["replay_locked"]):
 		return "正在播放录像；退出录像后才能切换角色"
 	if bool(info["network_locked"]):
-		return "联网对局双方固定为「%s」" % Roles.role_name(Roles.DEFAULT)
+		return "联网对局双方固定为「%s」" % OnWorkRoles.role_name(OnWorkRoles.DEFAULT)
 	if is_instance_valid(tutorial):
 		return "教程中不能切换角色"
 	return ""
@@ -860,10 +785,10 @@ func _refresh_role_button() -> void:
 	if not is_instance_valid(_role_button):
 		return
 	var role := _active_role()
-	var text := Roles.tag(role)
+	var text := OnWorkRoles.tag(role)
 	if _role_button.text != text:
 		_role_button.text = text
-	_role_button.accessibility_name = "角色：" + Roles.role_name(role)
+	_role_button.accessibility_name = "角色：" + OnWorkRoles.role_name(role)
 	var lock := _role_lock_reason()
 	_role_button.disabled = lock != ""
 	# 只留短提示（和「选项」「钉住」这些按钮一样）；角色效果在弹出的面板里看
@@ -909,7 +834,7 @@ func _footer_room(width: float) -> float:
 
 ## 角色面板从按钮**上方**弹出：底栏贴着窗口下沿，往下弹会被裁掉或盖住按钮本身。
 ## 左边是角色按钮，右边是悬停（或键盘选中）那一项的效果说明，默认说明当前角色。
-## 说明全由 Roles.describe 从卡表字段生成。面板、按钮、字号都走抽屉的设计令牌，
+## 说明全由 OnWorkRoles.describe 从卡表字段生成。面板、按钮、字号都走抽屉的设计令牌，
 ## 和设置页、卡牌详情是同一套样式。
 ## 窗口窄时说明改排到按钮下面；按钮一列竖着放不下（横屏手机）时改成两列
 func _show_role_popup(anchor_control: Control = null) -> void:
@@ -929,9 +854,9 @@ func _show_role_popup(anchor_control: Control = null) -> void:
 	choices.add_theme_constant_override("h_separation", 8)
 	choices.add_theme_constant_override("v_separation", 8)
 	var group := ButtonGroup.new()
-	for id in Roles.ids():
+	for id in OnWorkRoles.ids():
 		var role_id: String = id
-		var button := _button(Roles.role_name(role_id))
+		var button := _button(OnWorkRoles.role_name(role_id))
 		button.name = "Role_" + role_id
 		button.toggle_mode = true
 		button.button_group = group
@@ -1021,7 +946,7 @@ func _show_role_popup(anchor_control: Control = null) -> void:
 ## 说明区按最长的那个角色定高：悬停换角色时面板不跳
 func _size_role_detail(width: float, hint: Label) -> void:
 	var text_height := 0.0
-	for id in Roles.ids():
+	for id in OnWorkRoles.ids():
 		text_height = maxf(text_height, _wrapped_height(_role_detail_lines(id), width, _role_detail_text))
 	_role_detail_text.custom_minimum_size = Vector2(width, text_height)
 	_role_detail_title.custom_minimum_size.x = width
@@ -1029,12 +954,12 @@ func _size_role_detail(width: float, hint: Label) -> void:
 	hint.custom_minimum_size = Vector2(width, _wrapped_height(hint.text, width, hint))
 
 func _role_detail_lines(id: String) -> String:
-	return "\n".join(Roles.describe(id).map(func(line): return "· " + line))
+	return "\n".join(OnWorkRoles.describe(id).map(func(line): return "· " + line))
 
 func _show_role_detail(id: String) -> void:
 	if not is_instance_valid(_role_detail_title):
 		return
-	_role_detail_title.text = Roles.role_name(id)
+	_role_detail_title.text = OnWorkRoles.role_name(id)
 	_role_detail_text.text = _role_detail_lines(id)
 
 ## 自动换行文本在给定宽度下的高度。面板要在弹出前定好尺寸，而标签要排进容器之后才知道
@@ -1527,7 +1452,8 @@ func pointer_over_panels(point: Vector2) -> bool:
 		and tutorial.get_global_rect().has_point(point):
 		return true
 	# 首次邀请是模态的：压暗层铺满视口，任何位置都不能悬停或操作牌桌。
-	if is_learning_invitation_open():
+	if is_learning_invitation_open() and (_invitation_scrim.mouse_filter != Control.MOUSE_FILTER_IGNORE
+			or _learning_invitation.get_global_rect().has_point(point)):
 		return true
 	if _utility.visible and _utility.get_global_rect().has_point(point):
 		return true
@@ -1695,7 +1621,7 @@ func _theme_external_panel(panel: CanvasLayer) -> void:
 func _build_card_config_page() -> void:
 	_utility_title.text = "卡牌配置"
 	var info: Dictionary = _main.card_config_info()
-	var filename := str(info.get("filename", CardConfig.DEFAULT_PATH.get_file()))
+	var filename := str(info.get("filename", OnWorkCardConfig.DEFAULT_PATH.get_file()))
 	var intro := _label(str(info.get("description", "单机和 BOT 对局可使用自定义上班卡表。联网使用默认配置。新选择从下一局生效。")), UI_FONT_BODY)
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_utility_body.add_child(intro)
@@ -1813,7 +1739,7 @@ func _open_card_config_file_dialog(status: Label, path: LineEdit) -> void:
 
 func _card_config_display_path(path: String) -> String:
 	if path.is_empty():
-		return "默认 " + str(_main.card_config_info().get("filename", CardConfig.DEFAULT_PATH.get_file()))
+		return "默认 " + str(_main.card_config_info().get("filename", OnWorkCardConfig.DEFAULT_PATH.get_file()))
 	return path
 
 func _build_details() -> void:
@@ -1940,16 +1866,16 @@ func _preview_contains_pointer(source: Control, pointer: Vector2) -> bool:
 
 func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 	var id := card.def_id
-	var def: Dictionary = CardDB.get_def(id)
+	var def: Dictionary = OnWorkCardDB.get_def(id)
 	# 升级说明会遍历可合成路线，只在卡表/规则改变时重建；配置导入后同名卡也刷新。
 	# 本方的牌按本方角色念数（HR 的云课堂要 2 个用户），同名牌在双方手里说明不同，角色修正也进签名
 	var mods: Dictionary = _main.board.card_mods(card)
-	var source_signature: Array = [CardDB.CARDS.hash(), CardDB.GAME.hash(), CardDB.UPGRADE.hash(), mods.hash()]
+	var source_signature: Array = [OnWorkCardDB.CARDS.hash(), OnWorkCardDB.GAME.hash(), OnWorkCardDB.UPGRADE.hash(), mods.hash()]
 	if id != _detail_id or card.is_market != _detail_market or source_signature != _detail_source_signature:
 		_detail_id = id
 		_detail_market = card.is_market
 		_detail_source_signature = source_signature
-		_detail_title.text = CardDB.card_name(id)
+		_detail_title.text = OnWorkCardDB.card_name(id)
 		_detail_flavor.text = str(def.get("flavor", ""))
 		_detail_effect = null
 		for child in _detail_facts.get_children():
@@ -1957,25 +1883,25 @@ func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 			child.queue_free()
 		if card.is_market:
 			_detail_fact("购买", "%d 资金" % int(def.get("price", 0)))
-		if def.get("kind", "") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
-			_detail_fact("配方", "%s × %d" % [CardDB.card_label(str(def.recipe_res)), ComboRules.recipe_need(def, mods)])
-			if def.kind == CardDB.KIND_PRODUCT:
-				_detail_fact("产出", "每回合 %s + %d" % [CardDB.res_label(str(def.output_res)),
-					ComboRules.scaled_output(int(def.output_n), str(def.output_res), mods)])
+		if def.get("kind", "") in [OnWorkCardDB.KIND_PRODUCT, OnWorkCardDB.KIND_ATTACK]:
+			_detail_fact("配方", "%s × %d" % [OnWorkCardDB.card_label(str(def.recipe_res)), OnWorkComboRules.recipe_need(def, mods)])
+			if def.kind == OnWorkCardDB.KIND_PRODUCT:
+				_detail_fact("产出", "每回合 %s + %d" % [OnWorkCardDB.res_label(str(def.output_res)),
+					OnWorkComboRules.scaled_output(int(def.output_n), str(def.output_res), mods)])
 			else:
-				_detail_fact("攻击", "移除对方%s × %d" % [CardDB.card_label(str(def.attack_res)), int(def.attack_n)])
+				_detail_fact("攻击", "移除对方%s × %d" % [OnWorkCardDB.card_label(str(def.attack_res)), int(def.attack_n)])
 			_detail_effect = _detail_facts.get_child(_detail_facts.get_child_count() - 1)
-		var pawn := CardDB.pawn_value(id)
+		var pawn := OnWorkCardDB.pawn_value(id)
 		if pawn > 0:
 			_detail_fact("典当", "资金 + %d" % pawn)
 		_detail_scroll.scroll_vertical = 0
 		var notes: String = _main.board.describe_def(id, mods)
-		if def.get("kind", "") in [CardDB.KIND_PRODUCT, CardDB.KIND_ATTACK]:
+		if def.get("kind", "") in [OnWorkCardDB.KIND_PRODUCT, OnWorkCardDB.KIND_ATTACK]:
 			notes = "\n".join(notes.split("\n").slice(2))
 		_detail_text.text = notes.replace("\n→ ", " → ").replace("\n张数须精确\n不能夹杂其他牌", "\n须精确张数，不混入其他牌")
 	if _detail_effect != null:
 		var value := card.effect_value()
-		_detail_effect.text = "每回合 %s + %d" % [CardDB.res_label(str(def.output_res)), value] if def.kind == CardDB.KIND_PRODUCT else "移除对方%s × %d" % [CardDB.card_label(str(def.attack_res)), value]
+		_detail_effect.text = "每回合 %s + %d" % [OnWorkCardDB.res_label(str(def.output_res)), value] if def.kind == OnWorkCardDB.KIND_PRODUCT else "移除对方%s × %d" % [OnWorkCardDB.card_label(str(def.attack_res)), value]
 	# 进度属于当前实体，不能沿用同名卡另一组的状态。
 	_detail_status.text = "购入后拖入理牌区组合" if card.is_market else card.recipe_status_text()
 	_detail_status.visible = _detail_status.text != ""
@@ -2201,8 +2127,8 @@ func compact_header_resources() -> void:
 		var full := label.text
 		label.tooltip_text = full
 		label.text = "%s · %s%d · %s%d%s" % [item[2],
-			CardDB.res_label(CardDB.RES_CASH), _main.state.resource_count(seat, CardDB.RES_CASH),
-			CardDB.res_label(CardDB.RES_USER), _main.state.resource_count(seat, CardDB.RES_USER),
+			OnWorkCardDB.res_label(OnWorkCardDB.RES_CASH), _main.state.resource_count(seat, OnWorkCardDB.RES_CASH),
+			OnWorkCardDB.res_label(OnWorkCardDB.RES_USER), _main.state.resource_count(seat, OnWorkCardDB.RES_USER),
 			" ⚠" if "⚠" in full else ""]
 	if _last_size.x > 300.0:
 		_fit_header_width(_last_size.x - _px(PAD * 2))

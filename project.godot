@@ -32,7 +32,7 @@ config/features=PackedStringArray("4.7")
 ; 而那正是用户点名要挪走的地方。user:// 现在只剩引擎日志和着色器缓存（手机、网页除外）。
 ;
 ; BOT 参数仅在本次运行中生效，
-; engine/bot_search.gd 初始化时清理旧 bot_search.json，不再读取或写入。
+; engine/on_work_bot_search.gd 初始化时清理旧 bot_search.json，不再读取或写入。
 
 [configuration]
 
@@ -42,7 +42,7 @@ config_version=5
 
 ; 抽屉收起态使用每像素透明窗口，只显示游戏图标拉手。
 window/per_pixel_transparency/allowed=true
-; macOS 必须在窗口创建时就采用最终窗口属性；若等 main.gd 再设置，会先闪一下黑框。
+; macOS 必须在窗口创建时就采用最终窗口属性；若等 on_work_main.gd 再设置，会先闪一下黑框。
 window/size/transparent.macos=true
 window/size/borderless.macos=true
 window/size/resizable.macos=false

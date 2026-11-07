@@ -5,27 +5,27 @@
 extends "res://tests/harness.gd"
 
 ## 意图重放：录下一局的意图流，重放一遍，末态必须逐字相同
-## 运行入口见 README.md §「4.5 测试」。
+## 运行入口见 README.md §「测试」。
 ##
 ## 这条判据钉的是**状态 = f(种子, 意图序列)**：除了这两样，没有第三个输入。
 ## 一旦有人在引擎里读了别的东西（Time.get_ticks、OS 的什么、一个没进快照的
 ## 成员变量），重放就对不上 —— 而那种 bug 在单机局里根本不表现，
 ## 它只在「另一台机器上重算一遍」的时候炸。
 ##
-## 顺带把「网络层有没有偷偷改状态」钉死：录的是 NetRoom 广播出去的
-## applied 流（服务器认定发生了什么），重放走的是**裸引擎**（IntentApply，
-## 没有房间、没有协议、没有 PhaseMachine）。两者末态相同 = 房间除了
+## 顺带把「网络层有没有偷偷改状态」钉死：录的是 OnWorkRoom 广播出去的
+## applied 流（服务器认定发生了什么），重放走的是**裸引擎**（OnWorkIntentApply，
+## 没有房间、没有协议、没有 OnWorkPhaseMachine）。两者末态相同 = 房间除了
 ## 转发意图之外什么都没干。房间要是偷偷补了一张卡、多清了一次组合，
 ## 这里立刻红。
 ##
 ## 变异提示（都实跑过）：
-##   1. net/room.gd 的 _arm_current 里删掉 out.append(_applied(r)) →
+##   1. net/on_work_room.gd 的 _arm_current 里删掉 out.append(_applied(r)) →
 ##      「广播流里有 arm_attacks」红（**不是**「seq 连号」红：漏播时 seq 自增
 ##      也跟着不发生，剩下那些照旧连号 —— 详见 T3 第二条判据上面那段）
-##   2. net/room.gd 的 handle_intent 末尾加一句 state.add_card(seat, "cash")
+##   2. net/on_work_room.gd 的 handle_intent 末尾加一句 state.add_card(seat, "cash")
 ##      → 「重放末态一致」红（房间偷偷改了状态）
-##   3. engine/intent.gd 的 ints() 改成直接返回 a → 「解出来的 uid 是整数」红
-##   4. engine/state_codec.gd 的 canon 里把 TYPE_ARRAY 也排序 → 「卡序参与哈希」红
+##   3. engine/on_work_intent.gd 的 ints() 改成直接返回 a → 「解出来的 uid 是整数」红
+##   4. engine/on_work_state_codec.gd 的 canon 里把 TYPE_ARRAY 也排序 → 「卡序参与哈希」红
 ##
 ## 哈希**验不出** int/float 走样：canon 把整值 float 印成整数
 ## （"%d" 而不是 "3.0"），那是故意的 —— 不然经 JSON 还原的状态永远
@@ -34,7 +34,7 @@ extends "res://tests/harness.gd"
 
 func _initialize() -> void:
 	print("=== 意图重放测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	_t1_replay()
 	_t2_replay_via_json()
 	_t3_seq_monotonic()
@@ -59,7 +59,7 @@ func eq(got: int, want: int, msg: String) -> bool:
 ## 反推得出来这件事本身就是个判据：说明 applied 广播里带足了「发生了什么」，
 ## 一个重连的客户端拿它就能追上，不必额外问服务器
 func _record(seed_value: int, rounds: int) -> Dictionary:
-	var r := NetRoom.new("REC", seed_value)
+	var r := OnWorkRoom.new("REC", seed_value)
 	r.seat_peer(1)
 	r.seat_peer(2)
 	r.start_if_ready()
@@ -72,7 +72,7 @@ func _record(seed_value: int, rounds: int) -> Dictionary:
 		if r.state.winner != "":
 			break
 		for who in r.state.action_order():
-			if r.state.winner != "" or r.phase.phase != PhaseMachine.ACTION:
+			if r.state.winner != "" or r.phase.phase != OnWorkPhaseMachine.ACTION:
 				break
 			# 买一张产出卡，再拿它编一个产出组。
 			#
@@ -83,17 +83,17 @@ func _record(seed_value: int, rounds: int) -> Dictionary:
 			var idx := _product_idx(r.state, who)
 			if idx < 0:
 				# 公共区这回合没刷出买得起的产出卡：买 0 号凑个动作，别空过
-				_send(r, who, Intent.buy(who, 0), tape, seqs, ops)
+				_send(r, who, OnWorkIntent.buy(who, 0), tape, seqs, ops)
 			else:
-				var bought: Dictionary = _send(r, who, Intent.buy(who, idx), tape, seqs, ops)
+				var bought: Dictionary = _send(r, who, OnWorkIntent.buy(who, idx), tape, seqs, ops)
 				if bought.get("ok", false):
 					var combo := _combo_with(r.state, who, int(bought["new_uid"]))
 					if not combo.is_empty():
 						_send(r, who, combo, tape, seqs, ops)
-			_send(r, who, Intent.action_done(who), tape, seqs, ops)
+			_send(r, who, OnWorkIntent.action_done(who), tape, seqs, ops)
 		# 攻击段：房间停在「等你点选」时把点得起的靶都点掉
 		var guard := 0
-		while r.phase.phase == PhaseMachine.ATTACK and r.state.winner == "":
+		while r.phase.phase == OnWorkPhaseMachine.ATTACK and r.state.winner == "":
 			guard += 1
 			if guard > 8:
 				check(false, "攻击段没收敛")
@@ -103,13 +103,13 @@ func _record(seed_value: int, rounds: int) -> Dictionary:
 				var aff: Array = r.applier.affordable_targets(who)
 				if aff.is_empty():
 					break
-				_send(r, who, Intent.apply_attack(who, aff[0]), tape, seqs, ops)
-			_send(r, who, Intent.attack_done(who), tape, seqs, ops)
+				_send(r, who, OnWorkIntent.apply_attack(who, aff[0]), tape, seqs, ops)
+			_send(r, who, OnWorkIntent.attack_done(who), tape, seqs, ops)
 	return { "room": r, "tape": tape, "seqs": seqs, "ops": ops }
 
 ## 发一条意图，把它和房间随后自己驱动的那些一起记进 tape。
 ## 返回这条意图自己的 applied 结果（买卡要用里面的 new_uid），被拒则返回 {}
-func _send(r: NetRoom, seat: String, it: Dictionary, tape: Array, seqs: Array,
+func _send(r: OnWorkRoom, seat: String, it: Dictionary, tape: Array, seqs: Array,
 		ops: Array = []) -> Dictionary:
 	var peer := int(r.occupants[seat])
 	var out: Array = r.handle_intent(peer, it)
@@ -138,26 +138,26 @@ func _send(r: NetRoom, seat: String, it: Dictionary, tape: Array, seqs: Array,
 ## from_seat 是空的：这几条正是「不由客户端发起」的那些
 func _intent_from_applied(r: Dictionary) -> Dictionary:
 	match str(r.get("op", "")):
-		Intent.OP_ARM:
-			return Intent.arm_attacks(str(r["seat"]))
-		Intent.OP_PRODUCE:
-			return Intent.produce(int(r["combo_idx"]))
-		Intent.OP_FINALIZE:
-			return Intent.finalize()
-		Intent.OP_NEXT_ROUND:
-			return Intent.next_round()
+		OnWorkIntent.OP_ARM:
+			return OnWorkIntent.arm_attacks(str(r["seat"]))
+		OnWorkIntent.OP_PRODUCE:
+			return OnWorkIntent.produce(int(r["combo_idx"]))
+		OnWorkIntent.OP_FINALIZE:
+			return OnWorkIntent.finalize()
+		OnWorkIntent.OP_NEXT_ROUND:
+			return OnWorkIntent.next_round()
 	return {}
 
 ## 公共区里第一张「现金配方的产出卡」的卡位，买不起就返回 -1。
 ## 挑现金配方是因为开局现金多（`_game.start_cash`）而用户少（`_game.start_user`），
 ## 用户配方的产出卡编不了几组就见底了
-func _product_idx(s: GameState, who: String) -> int:
-	var cash := s.resource_count(who, CardDB.RES_CASH)
+func _product_idx(s: OnWorkState, who: String) -> int:
+	var cash := s.resource_count(who, OnWorkCardDB.RES_CASH)
 	for i in s.market.size():
-		var def: Dictionary = CardDB.get_def(s.market[i])
-		if def.get("kind", "") != CardDB.KIND_PRODUCT:
+		var def: Dictionary = OnWorkCardDB.get_def(s.market[i])
+		if def.get("kind", "") != OnWorkCardDB.KIND_PRODUCT:
 			continue
-		if def.get("recipe_res", "") != CardDB.RES_CASH:
+		if def.get("recipe_res", "") != OnWorkCardDB.RES_CASH:
 			continue
 		var price := int(def.get("price", -1))
 		var recipe := int(def.get("recipe_n", 99))
@@ -168,61 +168,61 @@ func _product_idx(s: GameState, who: String) -> int:
 	return -1
 
 ## 「n 张散现金 + 刚买的那张产出卡」的编组意图。凑不出返回 {}
-func _combo_with(s: GameState, who: String, core_uid: int) -> Dictionary:
+func _combo_with(s: OnWorkState, who: String, core_uid: int) -> Dictionary:
 	var card: Dictionary = s.find_card(who, core_uid)
 	if card.is_empty():
 		return {}
-	var n := int(CardDB.get_def(card["def_id"]).get("recipe_n", 0))
+	var n := int(OnWorkCardDB.get_def(card["def_id"]).get("recipe_n", 0))
 	if n <= 0:
 		return {}
-	var uids: Array = _unit_uids(s, who, CardDB.RES_CASH, n)
+	var uids: Array = _unit_uids(s, who, OnWorkCardDB.RES_CASH, n)
 	if uids.size() < n:
 		return {}
 	uids.append(core_uid)
-	return Intent.create_combo(who, uids)
+	return OnWorkIntent.create_combo(who, uids)
 
-func _unit_uids(s: GameState, who: String, res: String, n: int) -> Array:
+func _unit_uids(s: OnWorkState, who: String, res: String, n: int) -> Array:
 	var out: Array = []
 	for c in s.players[who]["cards"]:
 		if out.size() >= n:
 			break
 		if bool(c.get("locked", false)):
 			continue
-		var def: Dictionary = CardDB.get_def(c["def_id"])
-		if def.get("kind", "") == CardDB.KIND_UNIT and def.get("res", "") == res:
+		var def: Dictionary = OnWorkCardDB.get_def(c["def_id"])
+		if def.get("kind", "") == OnWorkCardDB.KIND_UNIT and def.get("res", "") == res:
 			out.append(int(c["uid"]))
 	return out
 
 # ---------- 重放 ----------
 
-## 重放到一个**裸引擎**上：只有 GameState + IntentApply，
+## 重放到一个**裸引擎**上：只有 OnWorkState + OnWorkIntentApply，
 ## 没有房间、没有协议、没有次序机。种子相同 + 意图相同 → 末态必须相同
 func _replay(seed_value: int, tape: Array, via_json := false) -> Dictionary:
-	var s := GameState.new()
+	var s := OnWorkState.new()
 	s.set_seed(seed_value)
 	s.new_game()
-	var ap := IntentApply.new(s)
+	var ap := OnWorkIntentApply.new(s)
 	var bad: Array = []
 	for i in tape.size():
 		var e: Dictionary = tape[i]
 		var it = e["intent"]
 		if via_json:
 			# 过一趟网线的形状：Dictionary → JSON 文本 → Dictionary。
-			# JSON 里没有整数，uid 数组回来全是 double —— Intent.ints() 就是为这个存在的
-			it = Intent.encode(it)
+			# JSON 里没有整数，uid 数组回来全是 double —— OnWorkIntent.ints() 就是为这个存在的
+			it = OnWorkIntent.encode(it)
 		var r: Dictionary = ap.apply(it, str(e["from"]))
 		if not r.get("ok", false):
 			bad.append("#%d %s：%s" % [i, str((e["intent"] as Dictionary).get("op", "?")),
 				r.get("reason", r.get("code", ""))])
 	return { "state": s, "bad": bad }
 
-func _same_state(a: GameState, b: GameState, msg: String) -> void:
-	var ha := StateCodec.state_hash(a)
-	var hb := StateCodec.state_hash(b)
+func _same_state(a: OnWorkState, b: OnWorkState, msg: String) -> void:
+	var ha := OnWorkStateCodec.state_hash(a)
+	var hb := OnWorkStateCodec.state_hash(b)
 	if ha == hb:
 		check(true, msg)
 		return
-	var d: Array = StateCodec.diff(a, b)
+	var d: Array = OnWorkStateCodec.diff(a, b)
 	check(false, "%s（%s ≠ %s；差异：%s）" % [msg, ha.substr(0, 8), hb.substr(0, 8),
 		"；".join(d) if not d.is_empty() else "只有键序不同？"])
 
@@ -232,7 +232,7 @@ func _t1_replay() -> void:
 	print("\n-- T1 录制 + 重放 --")
 	var seed_value := 8888
 	var rec := _record(seed_value, 3)
-	var room: NetRoom = rec["room"]
+	var room: OnWorkRoom = rec["room"]
 	var tape: Array = rec["tape"]
 	if not need(tape.size() >= 10, "录到了足够长的意图流（%d 条）" % tape.size()):
 		return
@@ -249,12 +249,12 @@ func _t1_replay() -> void:
 
 ## 上一条比的是「同一份 Dictionary 再跑一遍」。这一条把意图**编码成文本**
 ## 再解回来 —— 那才是真的过了网线。JSON 没有整数类型，uid 数组回来是 double，
-## 少了 Intent.ints() 这层，uid 比较会静默失配（找不到卡，报「不属于你」）
+## 少了 OnWorkIntent.ints() 这层，uid 比较会静默失配（找不到卡，报「不属于你」）
 func _t2_replay_via_json() -> void:
 	print("\n-- T2 过 JSON 再重放 --")
 	var seed_value := 31415
 	var rec := _record(seed_value, 3)
-	var room: NetRoom = rec["room"]
+	var room: OnWorkRoom = rec["room"]
 	var rp := _replay(seed_value, rec["tape"], true)
 	check((rp["bad"] as Array).is_empty(),
 		"过 JSON 后全部落地" if (rp["bad"] as Array).is_empty()
@@ -293,7 +293,7 @@ func _t3_seq_monotonic() -> void:
 	# （memory: combo-type-is-test-coverage 的同一形状）。
 	# 所以量的不是状态，是**广播流里有没有这一条**
 	var ops: Array = rec["ops"]
-	for op in [Intent.OP_ARM, Intent.OP_PRODUCE, Intent.OP_FINALIZE, Intent.OP_NEXT_ROUND]:
+	for op in [OnWorkIntent.OP_ARM, OnWorkIntent.OP_PRODUCE, OnWorkIntent.OP_FINALIZE, OnWorkIntent.OP_NEXT_ROUND]:
 		check(ops.has(op), "广播流里有房间自己驱动的 %s（共 %d 条 applied）" % [op, ops.size()])
 
 # ---------- T4：卡序参与哈希 ----------
@@ -303,30 +303,30 @@ func _t3_seq_monotonic() -> void:
 ## 这条判据一红就说明有人把数组也排序了（「反正集合相等就行」）
 func _t4_card_order_matters() -> void:
 	print("\n-- T4 卡序参与哈希 --")
-	var s := GameState.new()
+	var s := OnWorkState.new()
 	s.set_seed(1234)
 	s.new_game()
-	var h0 := StateCodec.state_hash(s)
-	var cards: Array = s.players[GameState.PLAYER]["cards"]
+	var h0 := OnWorkStateCodec.state_hash(s)
+	var cards: Array = s.players[OnWorkState.PLAYER]["cards"]
 	if not need(cards.size() >= 3, "开局手牌够换序"):
 		return
 	# 换两张同名卡的位置：集合不变、次序变了
 	var tmp = cards[0]
 	cards[0] = cards[2]
 	cards[2] = tmp
-	check(StateCodec.state_hash(s) != h0, "换了卡序哈希就变（数组保序）")
+	check(OnWorkStateCodec.state_hash(s) != h0, "换了卡序哈希就变（数组保序）")
 	# 换回来必须回到原哈希（说明哈希只看内容，不带上「动过手」的痕迹）
 	tmp = cards[0]
 	cards[0] = cards[2]
 	cards[2] = tmp
-	check(StateCodec.state_hash(s) == h0, "换回来哈希也回来")
+	check(OnWorkStateCodec.state_hash(s) == h0, "换回来哈希也回来")
 
 	# 字典键序**不该**影响哈希：同一份状态经引擎组装和经 JSON 还原，
 	# 键的插入次序不同（canon 排键就是为这个）
-	var d := StateCodec.snapshot(s)
-	var back := GameState.new()
-	StateCodec.restore(back, JSON.parse_string(JSON.stringify(d)))
-	check(StateCodec.state_hash(back) == h0, "过 JSON 还原后哈希不变（键序不参与）")
+	var d := OnWorkStateCodec.snapshot(s)
+	var back := OnWorkState.new()
+	OnWorkStateCodec.restore(back, JSON.parse_string(JSON.stringify(d)))
+	check(OnWorkStateCodec.state_hash(back) == h0, "过 JSON 还原后哈希不变（键序不参与）")
 
 # ---------- T5：没有第三个输入 ----------
 
@@ -345,7 +345,7 @@ func _t5_no_hidden_input() -> void:
 
 	# 不同种子必须不一样（否则上面那条判据可能只是「状态根本没在动」）
 	var c := _record(seed_value + 1, 3)
-	check(StateCodec.state_hash(c["room"].state) != StateCodec.state_hash(a["room"].state),
+	check(OnWorkStateCodec.state_hash(c["room"].state) != OnWorkStateCodec.state_hash(a["room"].state),
 		"换种子末态就不同（判据不是恒真）")
 
 # ---------- T6：解出来的 uid 必须是整数 ----------
@@ -356,11 +356,11 @@ func _t5_no_hidden_input() -> void:
 ## 于是这条 bug 能一路潜到「拿 uid 当字典键」的地方才炸
 ## （uid_set 用 int(u) 建键，某天有人不过它就直接 has(uid)）。
 ##
-## 这条判据看的是 Intent.from_dict 的**出口类型**，一眼定生死
+## 这条判据看的是 OnWorkIntent.from_dict 的**出口类型**，一眼定生死
 func _t6_uids_are_ints() -> void:
 	print("\n-- T6 解出来的 uid 是整数 --")
 	var raw := '{"op":"create_combo","seat":"player","uids":[3,7,11]}'
-	var dec: Dictionary = Intent.decode(raw)
+	var dec: Dictionary = OnWorkIntent.decode(raw)
 	if not need(dec.get("ok", false), "编组意图解得开"):
 		return
 	var uids: Array = dec["intent"]["uids"]
@@ -373,17 +373,17 @@ func _t6_uids_are_ints() -> void:
 		[typeof(uids[0]), typeof(uids[1]), typeof(uids[2])]])
 
 	# 典当和买卡的 uid 数组走同一条路，一起判 —— 漏一条就等于这条判据没测那条
-	var pawn: Dictionary = Intent.decode('{"op":"pawn","seat":"bot","uids":[2,5]}')
+	var pawn: Dictionary = OnWorkIntent.decode('{"op":"pawn","seat":"bot","uids":[2,5]}')
 	check(pawn.get("ok", false) and typeof((pawn["intent"]["uids"] as Array)[0]) == TYPE_INT,
 		"pawn 的 uids 是 int")
-	var buy: Dictionary = Intent.decode(
+	var buy: Dictionary = OnWorkIntent.decode(
 		'{"op":"buy","seat":"bot","market_idx":1,"pay_uids":[4,9]}')
 	check(buy.get("ok", false) and typeof((buy["intent"]["pay_uids"] as Array)[0]) == TYPE_INT,
 		"buy 的 pay_uids 是 int")
 	check(buy.get("ok", false) and typeof(buy["intent"]["market_idx"]) == TYPE_INT,
 		"buy 的 market_idx 是 int")
 	# 攻击目标里的 uids 也一样（target_ref 自己也调 ints）
-	var atk: Dictionary = Intent.decode(
+	var atk: Dictionary = OnWorkIntent.decode(
 		'{"op":"apply_attack","seat":"player","target":{"kind":"combo","res":"cash","uids":[6]}}')
 	check(atk.get("ok", false)
 			and typeof(((atk["intent"]["target"] as Dictionary)["uids"] as Array)[0]) == TYPE_INT,

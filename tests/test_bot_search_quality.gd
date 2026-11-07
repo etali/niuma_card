@@ -1,11 +1,11 @@
 # Copyright (C) 2026 etali (https://github.com/etali)
 # SPDX-License-Identifier: AGPL-3.0-only
 extends "res://tests/harness.gd"
-const Env = preload("res://engine/bot_environment.gd")
-const Plan = preload("res://engine/bot_turn_plan.gd")
+const Env = preload("res://engine/on_work_bot_environment.gd")
+const Plan = preload("res://engine/on_work_bot_turn_plan.gd")
 var fixture: Dictionary
 func _initialize() -> void:
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	fixture = JSON.parse_string(FileAccess.get_file_as_string("res://tests/fixtures/bot_search_quality.json"))
 	_test_partial_current()
 	_test_attack_consistency()
@@ -19,13 +19,13 @@ func _initialize() -> void:
 	_test_incumbent()
 	_test_stage_incumbents()
 	finish()
-func _position() -> GameState:
-	var s := GameState.new()
-	StateCodec.restore(s,fixture.state)
+func _position() -> OnWorkState:
+	var s := OnWorkState.new()
+	OnWorkStateCodec.restore(s,fixture.state)
 	return s
 func _profile() -> Dictionary:
-	var p := BOTSearch.from_model("bot",1.0).resolved_parameters()
-	p["_context"] = BOTActions.Context.new()
+	var p := OnWorkBOTSearch.from_model("bot",1.0).resolved_parameters()
+	p["_context"] = OnWorkBOTActions.Context.new()
 	p["reply_generation_budget"] = 4096
 	p["rollout_step_budget"] = 2048
 	p["future_reply_limit"] = 2
@@ -33,9 +33,9 @@ func _profile() -> Dictionary:
 	return p
 func _test_partial_current() -> void:
 	var leaf := _position()
-	check(Env.replay(leaf,[Intent.create_combo("bot",[41,39,52,53,54,55,76,77])]),"录像56双996生产对照经真实规则编成")
+	check(Env.replay(leaf,[OnWorkIntent.create_combo("bot",[41,39,52,53,54,55,76,77])]),"录像56双996生产对照经真实规则编成")
 	var full := Plan.resolve_current(leaf,"bot",_profile())
-	check(full.complete and full.score == -BOTEvaluator.TERMINAL_SCORE,"完整回应识别仅1现金的生产路线会在产出前被做空击败")
+	check(full.complete and full.score == -OnWorkBOTEvaluator.TERMINAL_SCORE,"完整回应识别仅1现金的生产路线会在产出前被做空击败")
 	for remaining in [0,313,4000]:
 		var p := _profile()
 		p["_work"] = [remaining]
@@ -46,7 +46,7 @@ func _test_partial_current() -> void:
 		check(int(p._work[0]) >= 0 and int(p._work[0]) <= remaining,
 			"剩%d节点按实际生成工作扣费，不再预扣固定回应额度" % remaining)
 	for budget in [4000,4500]:
-		var cfg := BOTSearch.from_model("bot",1.0)
+		var cfg := OnWorkBOTSearch.from_model("bot",1.0)
 		cfg.apply_override("compute_budget",budget)
 		cfg.apply_override("search_fraction",1.0)
 		cfg.apply_override("future_rounds",0)
@@ -54,45 +54,45 @@ func _test_partial_current() -> void:
 		var actual := _position()
 		check(Env.replay(actual,result.intents),"%d总预算仍返回合法方案" % budget)
 		var verified := Plan.resolve_current(actual,"bot",_profile())
-		var is_loss: bool = verified.complete and verified.score == -BOTEvaluator.TERMINAL_SCORE
-		check(not is_loss or not result.diagnostics.selected_evaluation_complete or result.diagnostics.score == -BOTEvaluator.TERMINAL_SCORE,
+		var is_loss: bool = verified.complete and verified.score == -OnWorkBOTEvaluator.TERMINAL_SCORE
+		check(not is_loss or not result.diagnostics.selected_evaluation_complete or result.diagnostics.score == -OnWorkBOTEvaluator.TERMINAL_SCORE,
 			"%d总预算不能把已知必败的末根当已完成安全评价" % budget)
 		check(result.diagnostics.compute_used <= budget,"%d总预算计数未越界" % budget)
 		var stats: Dictionary=result.diagnostics
 		check(stats.generation_nodes>=0 and stats.current_nodes>=0 and stats.future_nodes>=0 and
 			stats.generation_nodes+stats.current_nodes+stats.future_nodes==stats.expanded_nodes,
 			"%d预算三阶段实际展开分账与总账一致" % budget)
-func _small() -> GameState:
-	var s := GameState.new()
+func _small() -> OnWorkState:
+	var s := OnWorkState.new()
 	s.players={"bot":{"cards":[]},"player":{"cards":[]}}
 	s.draw_first="bot"
 	for who in s.players:
 		for i in 10:s.add_card(who,"cash")
 		for i in 11:s.add_card(who,"user")
 	return s
-func _users(s: GameState, who: String, count: int) -> Array:
+func _users(s: OnWorkState, who: String, count: int) -> Array:
 	var out := []
 	for c in s.players[who].cards:
 		if c.def_id=="user" and not c.get("locked",false):out.append(c.uid)
 	return out.slice(0,count)
-func _attack_state() -> GameState:
+func _attack_state() -> OnWorkState:
 	var s := _small()
 	var attack := s.add_card("bot","chaping")
 	var large := s.add_card("player","shuabuting")
 	var small := s.add_card("player","yunketang")
-	check(Env.replay(s,[Intent.create_combo("bot",[attack.uid]+_users(s,"bot",int(CardDB.get_def("chaping").recipe_n)))]),"差评攻击夹具合法")
-	check(Env.replay(s,[Intent.create_combo("player",[large.uid]+_users(s,"player",8))]),"抗3击的大生产组合法")
-	check(Env.replay(s,[Intent.create_combo("player",[small.uid]+_users(s,"player",3))]),"一击可拆的小生产组合法")
+	check(Env.replay(s,[OnWorkIntent.create_combo("bot",[attack.uid]+_users(s,"bot",int(OnWorkCardDB.get_def("chaping").recipe_n)))]),"差评攻击夹具合法")
+	check(Env.replay(s,[OnWorkIntent.create_combo("player",[large.uid]+_users(s,"player",8))]),"抗3击的大生产组合法")
+	check(Env.replay(s,[OnWorkIntent.create_combo("player",[small.uid]+_users(s,"player",3))]),"一击可拆的小生产组合法")
 	return s
-func _real_settle(s: GameState,cfg: BOTSearch) -> void:
+func _real_settle(s: OnWorkState,cfg: OnWorkBOTSearch) -> void:
 	for who in s.action_order():
-		if s.winner=="":Settle.attack_phase(s,who,Plan.target_picker(cfg))
-	if s.winner=="":Settle.produce(s)
-	Settle.finalize(s)
+		if s.winner=="":OnWorkSettle.attack_phase(s,who,Plan.target_picker(cfg))
+	if s.winner=="":OnWorkSettle.produce(s)
+	OnWorkSettle.finalize(s)
 func _test_attack_consistency() -> void:
 	var initial := _attack_state()
 	for strength in [0.5,1.0]:
-		var cfg := BOTSearch.from_model("bot",strength)
+		var cfg := OnWorkBOTSearch.from_model("bot",strength)
 		var predicted := Env.copy(initial)
 		var actual := Env.copy(initial)
 		Env.settle(predicted,Plan._target_policy(cfg.resolved_parameters()))
@@ -100,13 +100,13 @@ func _test_attack_consistency() -> void:
 		check(Env.key(predicted)==Env.key(actual),"强度%s内部攻防预测与实战选靶完全一致" % strength)
 		check(actual.resource_count("player","cash")==18,"强度%s能选择拆掉云课堂而非徒打抗拆刷不停" % strength)
 	# 第二方也攻击：双方必须各自有预算，不共用先手消耗后的余额。
-	var attack_need := int(CardDB.get_def("chaping").recipe_n)
+	var attack_need := int(OnWorkCardDB.get_def("chaping").recipe_n)
 	for i in attack_need:initial.add_card("player","user")
 	var second := initial.add_card("player","chaping")
-	check(Env.replay(initial,[Intent.create_combo("player",[second.uid]+_users(initial,"player",attack_need))]),"双方攻击夹具合法")
+	check(Env.replay(initial,[OnWorkIntent.create_combo("player",[second.uid]+_users(initial,"player",attack_need))]),"双方攻击夹具合法")
 	var own := initial.add_card("bot","yunketang")
-	check(Env.replay(initial,[Intent.create_combo("bot",[own.uid]+_users(initial,"bot",3))]),"先手也有可攻击生产组")
-	var cfg := BOTSearch.from_model("bot",1.0)
+	check(Env.replay(initial,[OnWorkIntent.create_combo("bot",[own.uid]+_users(initial,"bot",3))]),"先手也有可攻击生产组")
+	var cfg := OnWorkBOTSearch.from_model("bot",1.0)
 	cfg.apply_override("target_trials",2)
 	var predicted := Env.copy(initial)
 	var actual := Env.copy(initial)
@@ -122,28 +122,28 @@ func _test_turn_boundary() -> void:
 	var after_first := Plan.resolve_current(s,"bot",p)
 	check(not after_first.complete,"先手确实需要回应，额度不足不能伪装后手已行动")
 	s.winner="bot"
-	check(Plan.resolve_current(s,"bot",p).score==BOTEvaluator.TERMINAL_SCORE,"真实终局胜利不依赖剩余搜索额度")
+	check(Plan.resolve_current(s,"bot",p).score==OnWorkBOTEvaluator.TERMINAL_SCORE,"真实终局胜利不依赖剩余搜索额度")
 	check(Plan.bounded_score(s,"player",p)==-1.0,"未来样本真实失败始终为-1")
 	var live := _small()
 	check(absf(Plan.bounded_score(live,"bot",_profile()))<1.0,"非终局分不会与真实胜负混为一谈")
-func _candidate(s: GameState, baseline := false) -> Dictionary:
+func _candidate(s: OnWorkState, baseline := false) -> Dictionary:
 	return {"node":{"state":s,"intents":[]},"state":s,"responses":[s],"score":0.0,"baseline":baseline}
 func _test_current_financing_reply() -> void:
 	var data: Dictionary=JSON.parse_string(FileAccess.get_file_as_string("res://tests/fixtures/bot_seed101002.json"))
-	var leaf:=GameState.new()
-	StateCodec.restore(leaf,data.first_before)
+	var leaf:=OnWorkState.new()
+	OnWorkStateCodec.restore(leaf,data.first_before)
 	check(Env.replay(leaf,data.first_unsafe_intents),"101002先手买生产牌后仅剩4现金的历史方案合法")
 	var actual:=Env.copy(leaf)
 	check(Env.replay(actual,data.actual_reply_intents),"实际强度0的单用户融资与做空热搜回应合法")
-	var p:=BOTSearch.from_model("bot",0.5).resolved_parameters()
+	var p:=OnWorkBOTSearch.from_model("bot",0.5).resolved_parameters()
 	p["rollout_capabilities"] = 0 # 明确验证未来能力开关，不依赖强度关闭它。
-	p["_context"]=BOTActions.Context.new();p["_work"]=[10000]
+	p["_context"]=OnWorkBOTActions.Context.new();p["_work"]=[10000]
 	p["_compute"]=Plan.Work.new(2000000)
 	Env.settle(actual,Plan._target_policy(p))
 	check(actual.winner=="bot","实际融资回应在首回合清空先手现金")
 	var resolved:=Plan.resolve_current(leaf,"player",p)
 	check(p.rollout_capabilities==0 and Plan._fast_profile(p).sales==0,"夹具关闭未来扩展，未来局部规格仍可限制典当")
-	check(resolved.complete and resolved.score==-BOTEvaluator.TERMINAL_SCORE,
+	check(resolved.complete and resolved.score==-OnWorkBOTEvaluator.TERMINAL_SCORE,
 		"当前回应不受未来扩展开关影响，明确识别同一个融资击杀")
 	var found:=false
 	for response in resolved.responses:
@@ -229,7 +229,7 @@ func _test_common_layers() -> void:
 	var interrupted := Plan._deepen(_small(),"bot",[_candidate(won),_candidate(_small())],p)
 	check(interrupted.incomplete and interrupted.complete_layers==0 and not interrupted.has("best"),"只完成首候选不能覆盖此前完整决策")
 func _test_future_ties_keep_current() -> void:
-	var initial:=GameState.new();initial.set_seed(1)
+	var initial:=OnWorkState.new();initial.set_seed(1)
 	initial.players={"bot":{"cards":[]},"player":{"cards":[]}}
 	initial.draw_first="player"
 	for i in 12:initial.add_card("bot","cash")
@@ -240,17 +240,17 @@ func _test_future_ties_keep_current() -> void:
 	var buff:=initial.add_card("player","resou")
 	initial.add_card("player","resou")
 	initial.market=["yunketang","yinqing996"]
-	check(Env.replay(initial,[Intent.create_combo("player",[attack.uid,buff.uid]+_users(initial,"player",6))]),
+	check(Env.replay(initial,[OnWorkIntent.create_combo("player",[attack.uid,buff.uid]+_users(initial,"player",6))]),
 		"前推平分夹具的当前攻击只编入一张热搜")
 	var safe:=Env.copy(initial)
-	var safe_intents:=[Intent.buy("bot",0)]
+	var safe_intents:=[OnWorkIntent.buy("bot",0)]
 	check(Env.replay(safe,safe_intents),"保现金方案合法购入云课堂")
 	var core: Dictionary=safe.players.bot.cards[-1]
-	var combo:=Intent.create_combo("bot",[core.uid]+_users(safe,"bot",3))
+	var combo:=OnWorkIntent.create_combo("bot",[core.uid]+_users(safe,"bot",3))
 	safe_intents.append(combo)
 	check(Env.replay(safe,[combo]),"保现金方案合法编成生产组合")
 	var bad:=Env.copy(initial)
-	var bad_intents:=[Intent.buy("bot",0),Intent.buy("bot",0)]
+	var bad_intents:=[OnWorkIntent.buy("bot",0),OnWorkIntent.buy("bot",0)]
 	check(Env.replay(bad,bad_intents),"多买996且停编的危险对照也能合法执行")
 	var p:=_profile()
 	p.rollout_capabilities=0;p.future_rounds=1;p.samples=1;p.future_reply_limit=1
@@ -260,7 +260,7 @@ func _test_future_ties_keep_current() -> void:
 		"真实当前结算区分仍有6现金与已经归零失败")
 	var a:={"node":{"state":safe,"intents":safe_intents},"state":live,"responses":[live],"score":Plan.settled_score(live,"bot",p)}
 	var b:={"node":{"state":bad,"intents":bad_intents},"state":lost,"responses":[lost],"score":Plan.settled_score(lost,"bot",p)}
-	check(BOTActions.Capabilities.compare_nodes({"node":b.node,"value":-1.0},{"node":a.node,"value":-1.0},"bot","value",p),
+	check(OnWorkBOTActions.Capabilities.compare_nodes({"node":b.node,"value":-1.0},{"node":a.node,"value":-1.0},"bot","value",p),
 		"仅按复杂度破未来平手确实会偏向立即失败的停编方案")
 	var result:=Plan._deepen(initial,"bot",[a,b],p)
 	check(result.complete_layers==1 and result.trace[0].values==[-1.0,-1.0],
@@ -271,10 +271,10 @@ func _test_completed_layer_survives_interrupt() -> void:
 	var other := _small()
 	other.add_card("bot","cash")
 	var b := _candidate(other)
-	var p := BOTSearch.from_model("bot",0.5).resolved_parameters()
+	var p := OnWorkBOTSearch.from_model("bot",0.5).resolved_parameters()
 	p.merge({"buy_beam":1,"build_beam":1,"plans":1,"replies":1,"rollout_buy_beam":1,"rollout_build_beam":1,"rollout_plans":1,
 		"sales":0,"reply_generation_budget":256,"rollout_step_budget":128,"future_reply_limit":1,"future_rounds":1,"samples":1},true)
-	p["_context"]=BOTActions.Context.new()
+	p["_context"]=OnWorkBOTActions.Context.new()
 	p["_work"]=[100000]
 	var first := Plan._deepen(_small(),"bot",[a,b],p)
 	var used := 100000-int(p._work[0])
@@ -327,10 +327,10 @@ func _test_stage_incumbents() -> void:
 	check(Plan._finalists(basic,3)==basic.slice(0,3),"仅基础层时不改变原有高分入围顺序")
 	var gaps := _stage_candidates([4,4,2,0])
 	check(Plan._finalists(gaps,3)==[gaps[0],gaps[2],gaps[3]],"保护按通用阶段序号工作，不硬编码融资模式或强度")
-	var p := BOTSearch.from_model("bot",0.5).resolved_parameters()
+	var p := OnWorkBOTSearch.from_model("bot",0.5).resolved_parameters()
 	p.merge({"buy_beam":1,"build_beam":1,"plans":1,"replies":1,"rollout_buy_beam":1,"rollout_build_beam":1,"rollout_plans":1,
 		"sales":0,"reply_generation_budget":256,"rollout_step_budget":128,"future_reply_limit":1,"future_rounds":1,"samples":1},true)
-	p["_context"]=BOTActions.Context.new();p["_work"]=[100000]
+	p["_context"]=OnWorkBOTActions.Context.new();p["_work"]=[100000]
 	var one := Plan._deepen(_small(),"bot",[selected[0]],p)
 	var one_used := 100000-int(p["_work"][0])
 	p["_work"]=[100000]

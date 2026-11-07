@@ -12,16 +12,16 @@ func _initialize() -> void:
 	print("=== M4 整场对局测试 ===")
 	# 本测试验证编组→结算→推进的账目。固定即时策略，避免未来随机市场的
 	# 前推评价改变本回合是否生产；高强度策略的可执行性由BOT专门测试覆盖。
-	BOTSearch.set_pref_strength(0.0)
-	BOTSearch.set_override("sales", 0)
+	OnWorkBOTSearch.set_pref_strength(0.0)
+	OnWorkBOTSearch.set_override("sales", 0)
 	var main: Node = await boot_main()
 
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	check(state != null, "引擎状态已装配")
 
-	var cash0: int = state.resource_count(GameState.PLAYER, CardDB.RES_CASH)
-	var user0: int = state.resource_count(GameState.PLAYER, CardDB.RES_USER)
-	var bot_cash0: int = state.resource_count(GameState.BOT, CardDB.RES_CASH)
+	var cash0: int = state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH)
+	var user0: int = state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_USER)
+	var bot_cash0: int = state.resource_count(OnWorkState.BOT, OnWorkCardDB.RES_CASH)
 
 	# --- 清空公共区：BOT 无卡可买，保证确定性 ---
 	# 借 main 自己那份收货架（_clear_market），不在这儿手抄一遍：抄的那份漏了
@@ -35,26 +35,26 @@ func _initialize() -> void:
 	# 配方量和产出都读卡表：这一节冒烟走的是「组合→结算→推回合」整条链，
 	# 数值是谁不影响链通不通
 	var core_id := "shuabuting"
-	var core_def: Dictionary = CardDB.get_def(core_id)
+	var core_def: Dictionary = OnWorkCardDB.get_def(core_id)
 	var seats := int(core_def["recipe_n"])
 	var out_n := int(core_def["output_n"])
 	var group_want := seats + 1          # 核心 1 张 + 一份配方
-	var prod: Dictionary = state.add_card(GameState.PLAYER, core_id)
+	var prod: Dictionary = state.add_card(OnWorkState.PLAYER, core_id)
 	var e_prod: CardEntity = main._spawn_entity(prod, Vector3(3, 0.3, 3.2), true)
 	var group_cards: Array = [e_prod]
-	for c in state.players[GameState.PLAYER]["cards"]:
+	for c in state.players[OnWorkState.PLAYER]["cards"]:
 		if c["def_id"] == "user" and group_cards.size() < group_want:
 			group_cards.append(main.entities[c["uid"]])
 	check(group_cards.size() == group_want, "凑齐「%s + %s×%d」（实际 %d 张）" % [
-		core_def["name"], CardDB.card_name("user"), seats, group_cards.size()])
+		core_def["name"], OnWorkCardDB.card_name("user"), seats, group_cards.size()])
 	main.board.groups.append({ "cards": group_cards, "label": null })
 	main.board.refresh_group(main.board.groups.back())
 
 	# --- 给 BOT 一张同款核心卡，验证 BOT 组卡决策（BOT 开局的用户够凑一份配方） ---
-	check(int(CardDB.game_rules()["start_user"]) >= seats,
+	check(int(OnWorkCardDB.game_rules()["start_user"]) >= seats,
 		"牌桌前提：开局用户数够 BOT 自己凑出一份 %s 的配方（要 %d 张）" % [
 			core_def["name"], seats])
-	state.add_card(GameState.BOT, core_id)
+	state.add_card(OnWorkState.BOT, core_id)
 
 	# --- 玩家完成行动：注册组合 → BOT 行动 → 整理 → 攻击 → 结算 ---
 	var round0: int = state.round_num
@@ -62,11 +62,11 @@ func _initialize() -> void:
 	var pawn_income := [0]
 	var purchased := [0]
 	main.pipe.applier().landed.connect(func(result: Dictionary):
-		if result.get("seat", "") != GameState.BOT:
+		if result.get("seat", "") != OnWorkState.BOT:
 			return
-		if result.get("op", "") == Intent.OP_PAWN:
+		if result.get("op", "") == OnWorkIntent.OP_PAWN:
 			pawn_income[0] += int(result.get("total", 0))
-		if result.get("op", "") == Intent.OP_BUY:
+		if result.get("op", "") == OnWorkIntent.OP_BUY:
 			purchased[0] += 1)
 	main._on_action_done()
 
@@ -83,9 +83,9 @@ func _initialize() -> void:
 	check(settled, "结算完成并进入第 %d 回合（或分出胜负）" % (round0 + 1))
 	check(state.combos.is_empty(), "结算后组合队列已清空")
 
-	var cash1: int = state.resource_count(GameState.PLAYER, CardDB.RES_CASH)
-	var user1: int = state.resource_count(GameState.PLAYER, CardDB.RES_USER)
-	var bot_cash1: int = state.resource_count(GameState.BOT, CardDB.RES_CASH)
+	var cash1: int = state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH)
+	var user1: int = state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_USER)
+	var bot_cash1: int = state.resource_count(OnWorkState.BOT, OnWorkCardDB.RES_CASH)
 	print("       玩家：%d资金/%d用户 → %d资金/%d用户" % [cash0, user0, cash1, user1])
 	print("       对手：%d资金 → %d资金" % [bot_cash0, bot_cash1])
 
@@ -98,8 +98,8 @@ func _initialize() -> void:
 			out_n, int(pawn_income[0]), bot_cash0, bot_cash1])
 
 	# --- 实体与引擎状态一致 ---
-	var state_count: int = state.players[GameState.PLAYER]["cards"].size() \
-		+ state.players[GameState.BOT]["cards"].size()
+	var state_count: int = state.players[OnWorkState.PLAYER]["cards"].size() \
+		+ state.players[OnWorkState.BOT]["cards"].size()
 	check(main.entities.size() == state_count,
 		"实体与引擎卡数一致（实体 %d / 引擎 %d）" % [main.entities.size(), state_count])
 	check(main.phase == "action", "已回到行动阶段，等待玩家操作")

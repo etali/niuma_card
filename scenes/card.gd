@@ -5,8 +5,8 @@
 class_name CardEntity
 extends RigidBody3D
 
-var card_catalog: Script = CardDB
-var combo_rules: Script = ComboRules
+var card_catalog: Script = OnWorkCardDB
+var combo_rules: Script = OnWorkComboRules
 
 ## 单卡实体：RigidBody3D 刚体卡牌
 ## 拖拽时冻结物理跟随鼠标，松手恢复刚体自然落定（Stacklands 手感）
@@ -117,6 +117,13 @@ var draggable := true    # BOT 的牌不可拖
 var hover_stack_member := false
 var is_market := false   # 公共区的牌：拖拽用于购买，不参与堆叠
 
+# Geometry and physics are identical for every sheet. Colour, ink and all
+# animated shader inputs remain on each card's own material override.
+static var _body_geometry: BoxMesh
+static var _face_geometry: QuadMesh
+static var _card_collision: BoxShape3D
+static var _paper_physics: PhysicsMaterial
+
 var label: Label3D
 var card_mesh: MeshInstance3D
 var _shield: Node3D = null    # 防御 Buff 保护标记（护盾角标）
@@ -161,7 +168,7 @@ var _effect_base_n := 0               # 卡面自己的效果值（不含任何 
 var _effect_mark := ""                # "+" 产出 / "−" 攻击
 var _effect_kind := ""                # 这张卡的效果取的是 output 还是 attack
 var _effect_mult := 1                 # 当前生效倍数（1 = 没有翻倍 Buff）
-## 牌主人的角色修正（Roles.mods）。只改墨团上念的数，卡的定义不动；
+## 牌主人的角色修正（OnWorkRoles.mods）。只改墨团上念的数，卡的定义不动；
 ## 由 TableActions 在牌归属本方时写入（apply_rule_mods），空字典 = 卡面原值
 var _rule_mods := {}
 ## 墨团旁的资源图标（着墨色）。选色面板改图标前景色时要跟着刷，故留引用
@@ -264,10 +271,11 @@ func _ensure_visual() -> Node3D:
 
 func _ready() -> void:
 	# 物理材质：高摩擦、低弹性，纸牌感
-	var pmat := PhysicsMaterial.new()
-	pmat.friction = 0.9
-	pmat.bounce = 0.05
-	physics_material_override = pmat
+	if _paper_physics == null:
+		_paper_physics = PhysicsMaterial.new()
+		_paper_physics.friction = 0.9
+		_paper_physics.bounce = 0.05
+	physics_material_override = _paper_physics
 	# 手感：落得更快更稳，不飘；薄卡防穿桌
 	gravity_scale = 3.0
 	linear_damp = 2.0
@@ -281,14 +289,19 @@ func _ready() -> void:
 func setup(p_uid: int, p_def_id: String) -> void:
 	uid = p_uid
 	def_id = p_def_id
+	_build_face()
+	_build_collision()
+
+func _build_face() -> void:
 	var def: Dictionary = card_catalog.get_def(def_id)
 	_ink = CardArt.ink_color(def_id, card_catalog)
 
 	card_mesh = MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(CARD_SIZE.x - PLATE_ART_INSET * 2.0, CARD_SIZE.y,
-		CARD_SIZE.z - PLATE_ART_INSET * 2.0)
-	card_mesh.mesh = box
+	if _body_geometry == null:
+		_body_geometry = BoxMesh.new()
+		_body_geometry.size = Vector3(CARD_SIZE.x - PLATE_ART_INSET * 2.0, CARD_SIZE.y,
+			CARD_SIZE.z - PLATE_ART_INSET * 2.0)
+	card_mesh.mesh = _body_geometry
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Palette.get_color("card", "body")
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -296,9 +309,10 @@ func setup(p_uid: int, p_def_id: String) -> void:
 	_add_visual(card_mesh)
 
 	_plate = MeshInstance3D.new()
-	var quad := QuadMesh.new()
-	quad.size = CardArt.FRAME_SIZE
-	_plate.mesh = quad
+	if _face_geometry == null:
+		_face_geometry = QuadMesh.new()
+		_face_geometry.size = CardArt.FRAME_SIZE
+	_plate.mesh = _face_geometry
 	_plate.material_override = _make_plate_material()
 	_plate.position = Vector3(0, Y_PLATE, 0)
 	_plate.rotation_degrees = Vector3(-90, 0, 0)
@@ -321,7 +335,7 @@ func setup(p_uid: int, p_def_id: String) -> void:
 		# 图标前景色：配置留空则跟随底板墨色（改造前的行为），填了就全卡统一
 		_icon.modulate = Color.WHITE if _illustrated else Palette.icon_color(_ink)
 		_icon.rotation_degrees = Vector3(-90, 0, 0)
-		var icon_cy := CardArt.UNIT_ICON_CY if def.get("kind") == CardDB.KIND_UNIT else CardArt.ICON_CY
+		var icon_cy := CardArt.UNIT_ICON_CY if def.get("kind") == OnWorkCardDB.KIND_UNIT else CardArt.ICON_CY
 		_icon.position = Vector3(0, Y_ICON, _frac_to_z(icon_cy))
 		_icon.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		# 不能用 ALPHA_CUT_DISCARD：图标在屏上只有约 60px，1024px 线稿降采样 17 倍后
@@ -334,7 +348,7 @@ func setup(p_uid: int, p_def_id: String) -> void:
 		hover_animation_duration = float(CardArt.hover_config(_art_id).get("frames", 0)) / CardArt.hover_fps()
 
 	# 卡名（A 位）：底板墨色，落在标题带上
-	label = Label3D.new()
+	if label == null: label = Label3D.new()
 	label.text = def.get("name", "?")
 	label.font = Fonts.zh_bold()
 	label.font_size = _raster()
@@ -348,7 +362,7 @@ func setup(p_uid: int, p_def_id: String) -> void:
 	label.position = Vector3(0, Y_TEXT, _frac_to_z(CardArt.band_cy(def_id)) - ink_fix)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.rotation_degrees = Vector3(-90, 0, 0)
-	_add_visual(label)
+	if label.get_parent() == null: _add_visual(label)
 	_face_elems.append(label)
 
 	# 底部右墨团：效果 = 资源图标 + ±数量
@@ -358,11 +372,13 @@ func setup(p_uid: int, p_def_id: String) -> void:
 	if has_recipe_badge():
 		_add_face_note("→", CardArt.BLOB_CY, 105)
 
+func _build_collision() -> void:
 	var shape := CollisionShape3D.new()
-	var box_shape := BoxShape3D.new()
 	# 碰撞厚度与卡身一致，避免冻结牌摞的隐形厚盒把旁边散卡挤入桌面。
-	box_shape.size = CARD_SIZE
-	shape.shape = box_shape
+	if _card_collision == null:
+		_card_collision = BoxShape3D.new()
+		_card_collision.size = CARD_SIZE
+	shape.shape = _card_collision
 	add_child(shape)
 
 ## 卡面纵向比例（0=上边缘 1=下边缘）→ 卡牌本地 z 坐标
@@ -482,12 +498,12 @@ func _add_effect_badge(def: Dictionary, textured: bool) -> void:
 	var n := 0
 	var mark := ""
 	match def.get("kind", ""):
-		CardDB.KIND_PRODUCT:
+		OnWorkCardDB.KIND_PRODUCT:
 			res = def.get("output_res", "")
 			n = int(def.get("output_n", 0))
 			mark = "+"
 			_effect_kind = "output"
-		CardDB.KIND_ATTACK:
+		OnWorkCardDB.KIND_ATTACK:
 			res = def.get("attack_res", "")
 			n = int(def.get("attack_n", 0))
 			mark = "−"
@@ -549,7 +565,7 @@ func set_effect_mult(mult: int) -> void:
 		_effect_blob.modulate = CardArt.accent_color(def_id, card_catalog) if m > 1 else Color.WHITE
 		_effect_blob.scale = _effect_blob_scale * (BADGE_DONE_SCALE if m > 1 else 1.0)
 
-## 当前效果值：卡面值 × Buff 倍数，产出再按主人的角色修正缩放（和 ComboRules 同一个式子）
+## 当前效果值：卡面值 × Buff 倍数，产出再按主人的角色修正缩放（和 OnWorkComboRules 同一个式子）
 func effect_value() -> int:
 	var n := _effect_base_n * _effect_mult
 	if _effect_kind != "output":
@@ -561,7 +577,7 @@ func recipe_need() -> int:
 	return _recipe_need if has_recipe_badge() else 0
 
 ## 按牌主人的角色重念两个墨团：HR 手里的云课堂写 0/2，财务手里的写 +8。
-## 只改显示 —— 组合成不成立、产出多少，结算时由 ComboRules 带着同一份修正现算
+## 只改显示 —— 组合成不成立、产出多少，结算时由 OnWorkComboRules 带着同一份修正现算
 func apply_rule_mods(mods: Dictionary) -> void:
 	if mods == _rule_mods:
 		return
@@ -584,7 +600,7 @@ func _add_kind_badge(def: Dictionary, textured: bool) -> void:
 	var mark := ""
 	var res := ""
 	match def.get("kind", ""):
-		CardDB.KIND_BUFF:
+		OnWorkCardDB.KIND_BUFF:
 			match def.get("buff_type", ""):
 				"user_fill":
 					# 「✓/N」而不是「满[用户]」：这一格的语法是「记号 + 资源图标」＝
@@ -605,17 +621,17 @@ func _add_kind_badge(def: Dictionary, textured: bool) -> void:
 					# 不认识的 buff_type 就**不画这一格**。原先兜底成「×2」，
 					# 那不是缺信息而是给错信息：一张实际没生效的卡被标成「翻倍」。
 					# 空着只是少一个记号（悬停说明同样会空），
-					# 加载时 CardDB._check_buff_types 已经点名警告过了
+					# 加载时 OnWorkCardDB._check_buff_types 已经点名警告过了
 					mark = ""
-		CardDB.KIND_LEGEND:
+		OnWorkCardDB.KIND_LEGEND:
 			mark = "★"
-		CardDB.KIND_SPECIAL:
+		OnWorkCardDB.KIND_SPECIAL:
 			# 角色专属卡沿用同一套语法：「给我」付 0 现金拿牌 → [现金] ¥0；
 			# Idea 是升级材料 → ↑（不配资源图标，它不动资源；也不写档位代号，卡面只说玩家语言）
 			match card_catalog.special_type(def_id):
-				CardDB.SPECIAL_GRAB:
+				OnWorkCardDB.SPECIAL_GRAB:
 					mark = "¥0"; res = card_catalog.RES_CASH
-				CardDB.SPECIAL_IDEA:
+				OnWorkCardDB.SPECIAL_IDEA:
 					mark = "↑"
 	if mark == "":
 		return
@@ -668,8 +684,8 @@ func recipe_status_text() -> String:
 		return "还缺%d张%s" % [maxi(0, _recipe_need - _recipe_have), resource] if _recipe_have < _recipe_need else "组合无效，请检查材料"
 	var def: Dictionary = card_catalog.get_def(def_id)
 	var n := effect_value()
-	return "可%s：%s%d%s" % ["攻击" if def.get("kind") == CardDB.KIND_ATTACK else "生产", _effect_mark, n,
-		card_catalog.res_label(str(def.get("attack_res" if def.get("kind") == CardDB.KIND_ATTACK else "output_res", "")))]
+	return "可%s：%s%d%s" % ["攻击" if def.get("kind") == OnWorkCardDB.KIND_ATTACK else "生产", _effect_mark, n,
+		card_catalog.res_label(str(def.get("attack_res" if def.get("kind") == OnWorkCardDB.KIND_ATTACK else "output_res", "")))]
 
 ## 卡面材质不使用 mask/PNG；所有卡都走相同的圆角与标题分隔线。
 func _make_plate_material() -> ShaderMaterial:

@@ -17,7 +17,7 @@ func _initialize() -> void:
 	var core: CardEntity = main._spawn_entity(
 		{ "uid": 9101, "def_id": "shuabuting" }, Vector3(-1.0, 0.05, 3.0), true)
 	var units: Array = _take(board, "user", 6)
-	var recipe_n := int(CardDB.get_def(core.def_id)["recipe_n"])
+	var recipe_n := int(OnWorkCardDB.get_def(core.def_id)["recipe_n"])
 	var progress := "%d/%d" % [units.size(), recipe_n]
 	var empty_progress := "0/%d" % recipe_n
 	# buff 卡要花钱买，开局牌堆里没有：直接造一张，否则取不到会连带后面全崩

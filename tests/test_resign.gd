@@ -9,11 +9,11 @@ extends "res://tests/harness.gd"
 ## 用户的原话是两句：「增加『认输』按钮，放在左下角」+「联网模式下，认输后，
 ## 弹出结算界面，可以选择进行下一局，双方都确认，则开启下一局」。
 ## 后面那半句**不是新东西** —— 双方确认开下一局就是已经落地的 rematch 协议
-## （net/room.gd 的 rematch 投票与重开，tests/test_rematch.gd 钉着）。所以这一条判据要钉的是「认输
+## （net/on_work_room.gd 的 rematch 投票与重开，tests/test_rematch.gd 钉着）。所以这一条判据要钉的是「认输
 ## 能不能真的把局面推到那个已有的终局面板上」，不是把 rematch 再验一遍。
 ##
 ## 五段，各钉一层：
-##   T1 引擎：GameState.resign 定谁赢、战报和面板文案的视角分工
+##   T1 引擎：OnWorkState.resign 定谁赢、战报和面板文案的视角分工
 ##   T2 裁决器：认输是客户端操作（能发），但不能替对手认，也不能认第二次
 ##   T3 场景层（单机）：按钮要两下才认，第一下只改字
 ##   T4 真 socket：**我**认输 → 对手那份状态里判他赢 → 双方投票开下一局
@@ -27,7 +27,7 @@ extends "res://tests/harness.gd"
 ##
 ## 为什么这两节一定要过网线（不能像 T3 那样直接调 _on_resign_pressed）：
 ## 认输这条意图的收信人是**对手**。我这边的面板是我自己弹的，
-## 就算 OP_RESIGN 一个字节都没发出去、就算 Intent.CLIENT_OPS 漏登记它，
+## 就算 OP_RESIGN 一个字节都没发出去、就算 OnWorkIntent.CLIENT_OPS 漏登记它，
 ## T3 照样全绿 —— 我这半边看不出区别。对手那边收不到才是症状，
 ## 而那要走 Server.poll → dispatch → _on_intent_applied 整条路
 ## （和 test_rematch T6 是同一个理由：字段白名单的洞只有过 decode 才看得见）
@@ -35,7 +35,7 @@ extends "res://tests/harness.gd"
 ## 变异登记在 tools/mutate_check.py 第 23 节，七条，都实跑确认过红：
 ##   a. CLIENT_OPS 去掉 OP_RESIGN     → T2「认输是客户端操作」
 ##   b. winner = who（认输的那个赢）  → T1「认输的是**输**的那个」
-##   c. 去掉 PhaseMachine 那道豁免    → T5「他那条认输走通了」
+##   c. 去掉 OnWorkPhaseMachine 那道豁免    → T5「他那条认输走通了」
 ##      这条是实跑才发现的：光看 CLIENT_OPS 是通的，ALLOWED 那张
 ##      per-phase 白名单会把认输按 wrong_phase 拒掉
 ##   d. 第一下就发意图              → T3「第一下不认输」
@@ -44,15 +44,15 @@ extends "res://tests/harness.gd"
 ##   g. win_reason 写成带视角的      → T1「win_reason 视角中立」
 
 const PORT_BASE := 47420
-const A := GameState.PLAYER
-const B := GameState.BOT
+const A := OnWorkState.PLAYER
+const B := OnWorkState.BOT
 
 ## 协程里要翻的标志位得是成员变量：lambda 捕获局部量是**按值**的
 var _flag := false
 
 func _initialize() -> void:
 	print("=== 认输测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	_t1_engine_decides_winner()
 	_t2_adjudicator_guards()
 	await _t3_two_presses()
@@ -65,7 +65,7 @@ func _initialize() -> void:
 
 func _t1_engine_decides_winner() -> void:
 	print("\n-- T1 引擎判胜负 --")
-	var s := GameState.new()
+	var s := OnWorkState.new()
 	s.new_game()
 	var log_before: int = s.log.size()
 
@@ -105,7 +105,7 @@ func _t1_engine_decides_winner() -> void:
 	# 不存在的座位。**要另起一份**：上面那份 winner 已经落了，
 	# 而 resign 里 winner 那道拦在座位之前，拿它试的话报的是 game_over，
 	# 「座位不存在」这条压根没走到
-	var s2 := GameState.new()
+	var s2 := OnWorkState.new()
 	s2.new_game()
 	var bad: Dictionary = s2.resign("nobody")
 	check(not bool(bad.get("ok", true)), "不存在的座位认不了输")
@@ -120,32 +120,32 @@ func _t1_engine_decides_winner() -> void:
 ## 结束之后认不了（game_over 那道护栏，它管所有操作）
 func _t2_adjudicator_guards() -> void:
 	print("\n-- T2 裁决器 --")
-	check(Intent.is_client_op(Intent.OP_RESIGN),
+	check(OnWorkIntent.is_client_op(OnWorkIntent.OP_RESIGN),
 		"认输是客户端操作 —— 不登记的话服务器按「客户端想推进阶段」拒掉，"
 		+ "而认输本来就是玩家的决定")
-	check(Intent.SEAT_OPS.has(Intent.OP_RESIGN),
+	check(OnWorkIntent.SEAT_OPS.has(OnWorkIntent.OP_RESIGN),
 		"而且是带座位的操作：不登记就跳过「有这个座位吗」那道校验")
-	check(Intent.REQUIRED_FIELDS.has(Intent.OP_RESIGN),
+	check(OnWorkIntent.REQUIRED_FIELDS.has(OnWorkIntent.OP_RESIGN),
 		"登记进 REQUIRED_FIELDS —— from_dict 拿它当**操作码白名单**，"
 		+ "漏了就是整条 bad_op（参见 net/protocol.gd 的 REQUIRED 类型白名单）")
 
 	# 过一趟编解码：联网时认输是文本进文本出的
-	var enc := Intent.encode(Intent.resign(A))
-	var dec: Dictionary = Intent.decode(enc)
+	var enc := OnWorkIntent.encode(OnWorkIntent.resign(A))
+	var dec: Dictionary = OnWorkIntent.decode(enc)
 	if need(bool(dec.get("ok", false)), "认输意图过得了编解码（%s）"
 			% str(dec.get("reason", ""))):
-		check(str((dec["intent"] as Dictionary)["op"]) == Intent.OP_RESIGN,
+		check(str((dec["intent"] as Dictionary)["op"]) == OnWorkIntent.OP_RESIGN,
 			"解出来还是 resign")
 		check(str((dec["intent"] as Dictionary)["seat"]) == A,
 			"座位也在（seat 是**认输的那个**，不是赢的那个："
 			+ "写成赢家的话这条意图自称是对手发的，撞 wrong_seat）")
 
-	var s := GameState.new()
+	var s := OnWorkState.new()
 	s.new_game()
-	var ap := IntentApply.new(s)
+	var ap := OnWorkIntentApply.new(s)
 
 	# 冒充：from_seat 是连接自带的身份，seat 是包里自称的
-	var fake: Dictionary = ap.apply(Intent.resign(B), A)
+	var fake: Dictionary = ap.apply(OnWorkIntent.resign(B), A)
 	check(not bool(fake.get("ok", true)), "不能替对手认输")
 	check(str(fake.get("code", "")) == "wrong_seat",
 		"而且拒的码是 wrong_seat（实为 %s）—— 替对手认输 = 单方面宣布自己赢了"
@@ -153,16 +153,16 @@ func _t2_adjudicator_guards() -> void:
 	check(s.winner == "", "被拒之后局面没动（winner=%s）" % s.winner)
 
 	# 真认
-	var ok: Dictionary = ap.apply(Intent.resign(A), A)
+	var ok: Dictionary = ap.apply(OnWorkIntent.resign(A), A)
 	check(bool(ok.get("ok", false)), "自己认自己的输走得通（%s）"
 		% str(ok.get("reason", "")))
-	check(str(ok.get("op", "")) == Intent.OP_RESIGN, "结果里带着 op（对手侧靠它分支）")
+	check(str(ok.get("op", "")) == OnWorkIntent.OP_RESIGN, "结果里带着 op（对手侧靠它分支）")
 	check(str(ok.get("seat", "")) == A,
 		"也带着座位 —— 对手侧的 is_foe_client_op 拿它认「这是他做的」")
 	check(s.winner == B, "赢家落地了（%s）" % s.winner)
 
 	# 结束之后：那道 game_over 护栏管所有操作，认输也一样
-	var late: Dictionary = ap.apply(Intent.resign(B), B)
+	var late: Dictionary = ap.apply(OnWorkIntent.resign(B), B)
 	check(not bool(late.get("ok", true)), "已经结束了，另一位也认不了")
 	check(str(late.get("code", "")) == "game_over",
 		"拒的码是 game_over（实为 %s）" % str(late.get("code", "")))
@@ -285,7 +285,7 @@ func _t4_socket_foe_sees_panel_then_rematch() -> void:
 		return
 	check(b.state().winner == b.my_seat,
 		"他那份写的是他自己赢（winner=%s / 他坐 %s）" % [str(b.state().winner), b.my_seat])
-	check(his_ops.has(Intent.OP_RESIGN),
+	check(his_ops.has(OnWorkIntent.OP_RESIGN),
 		"而且他收到的是一条 resign（收到的是 %s）—— CLIENT_OPS 漏登记的话"
 			% str(his_ops)
 		+ "服务器按 not_client_op 拒掉，我这边面板照弹，两边各看一局")
@@ -381,7 +381,7 @@ func _t5_socket_he_resigns_i_see_it() -> void:
 
 	# 前提：现在是**我的**行动阶段，输入开着。这一条不是判据是前提 ——
 	# 不成立的话下面那句「面板自己弹出来了」钉的是别的事
-	if not await net_until([a, b], func(): return main.phase == PhaseMachine.ACTION):
+	if not await net_until([a, b], func(): return main.phase == OnWorkPhaseMachine.ACTION):
 		check(false, "开局进了行动阶段（实为 %s）" % str(main.phase))
 		main.queue_free()
 		return
@@ -391,7 +391,7 @@ func _t5_socket_he_resigns_i_see_it() -> void:
 	# 他认输。submit 是协程且只泵自己，服务器得有人摇
 	_flag = false
 	net_pump_until([a, b], func(): return _flag)
-	var r: Dictionary = await b.submit(Intent.resign(b.my_seat))
+	var r: Dictionary = await b.submit(OnWorkIntent.resign(b.my_seat))
 	_flag = true
 	check(bool(r.get("ok", false)), "他那条认输走通了（%s）" % str(r.get("reason", "")))
 
@@ -419,7 +419,7 @@ func _t5_socket_he_resigns_i_see_it() -> void:
 	await physics_frame
 
 # ---------- 真服务器的小工具（同 test_foe_offline，端口段错开） ----------
-func _server_room() -> NetRoom:
+func _server_room() -> OnWorkRoom:
 	for code in _srv.rooms:
 		return _srv.rooms[code]
 	return null

@@ -3,11 +3,11 @@
 
 extends "res://tests/harness.gd"
 
-const Eval = preload("res://engine/bot_evaluation.gd")
-const Context = preload("res://engine/bot_context.gd")
+const Eval = preload("res://engine/on_work_bot_evaluation.gd")
+const Context = preload("res://engine/on_work_bot_context.gd")
 
 func _initialize() -> void:
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	_test_optional_cores()
 	_test_cash_monotonicity()
 	_test_resource_monotonicity()
@@ -17,8 +17,8 @@ func _initialize() -> void:
 	_test_cache()
 	finish()
 
-func _state(cash := 10, users := 8) -> GameState:
-	var s := GameState.new()
+func _state(cash := 10, users := 8) -> OnWorkState:
+	var s := OnWorkState.new()
 	s.players = {"bot":{"cards":[]},"player":{"cards":[]}}
 	_add(s,"cash",cash)
 	_add(s,"user",users)
@@ -26,24 +26,24 @@ func _state(cash := 10, users := 8) -> GameState:
 		for _n in 20: s.add_card("player",id)
 	return s
 
-func _add(s: GameState, id: String, count := 1) -> Array:
+func _add(s: OnWorkState, id: String, count := 1) -> Array:
 	var ids := []
 	for _n in count: ids.append(s.add_card("bot",id).uid)
 	return ids
 
-func _units(s: GameState, res: String) -> Array:
+func _units(s: OnWorkState, res: String) -> Array:
 	var ids := []
 	for c in s.players.bot.cards:
-		if not c.locked and CardDB.get_def(c.def_id).get("res") == res: ids.append(c.uid)
+		if not c.locked and OnWorkCardDB.get_def(c.def_id).get("res") == res: ids.append(c.uid)
 	return ids
 
 func _profile(strength := 1.0) -> Dictionary:
-	return BOTSearch.from_model("bot",strength).resolved_parameters()
+	return OnWorkBOTSearch.from_model("bot",strength).resolved_parameters()
 
-func _compile(s: GameState, groups: Array) -> bool:
-	var app := IntentApply.new(s)
+func _compile(s: OnWorkState, groups: Array) -> bool:
+	var app := OnWorkIntentApply.new(s)
 	for ids in groups:
-		if not app.apply(Intent.create_combo("bot",ids)).get("ok",false): return false
+		if not app.apply(OnWorkIntent.create_combo("bot",ids)).get("ok",false): return false
 	return true
 
 func _test_optional_cores() -> void:
@@ -59,10 +59,10 @@ func _test_optional_cores() -> void:
 		check(after.total >= before.total,"免费增加%s不会降低整体评分" % spec[3])
 		var users := _units(s,"user")
 		var groups := []
-		var need := int(CardDB.get_def(spec[1]).recipe_n)
+		var need := int(OnWorkCardDB.get_def(spec[1]).recipe_n)
 		for i in cores.size(): groups.append([cores[i]]+users.slice(i*need,(i+1)*need)+(buffs if i == 0 else []))
-		check(_compile(s,groups),"原%s方案经真实Intent仍能编组" % spec[1])
-		Settle.produce(s)
+		check(_compile(s,groups),"原%s方案经真实OnWorkIntent仍能编组" % spec[1])
+		OnWorkSettle.produce(s)
 		check(s.resource_count("bot","cash") == 10+int(spec[5]),"真实结算确认%s产出%d现金" % [spec[1],spec[5]])
 	# 同库存输入顺序不影响最优分配；不能靠把一个反例的核心排在前面修补。
 	var order := _state()
@@ -77,14 +77,14 @@ func _test_cash_monotonicity() -> void:
 	var group := _add(s,"xinxijianfang")+_add(s,"yinqing996",2)+_units(s,"user")
 	for strength in [0.0,0.5,0.75,1.0]:
 		var p := _profile(strength)
-		var richer := BOTEnvironment.copy(s)
+		var richer := OnWorkBOTEnvironment.copy(s)
 		var before := Eval.score(richer,"bot",p)
 		_add(richer,"cash")
 		check(Eval.score(richer,"bot",p) > before,"强度%s：真实增加现金严格提高评分" % strength)
-		var produced := BOTEnvironment.copy(s)
+		var produced := OnWorkBOTEnvironment.copy(s)
 		before = Eval.score(produced,"bot",p)
 		check(_compile(produced,[group]),"强度%s产能单调夹具可真实编组" % strength)
-		Settle.produce(produced)
+		OnWorkSettle.produce(produced)
 		check(produced.resource_count("bot","cash") == 82 and Eval.score(produced,"bot",p) > before,
 			"强度%s实际生产72现金不会被缩短时域抵消" % strength)
 	var terminal := _state()
@@ -92,7 +92,7 @@ func _test_cash_monotonicity() -> void:
 	check(Eval.score(terminal,"bot") == Eval.TERMINAL_SCORE and Eval.score(terminal,"player") == -Eval.TERMINAL_SCORE,
 		"实际胜负始终优先于经济估值")
 
-func _threat(s: GameState) -> float:
+func _threat(s: OnWorkState) -> float:
 	var p := _profile()
 	p.engine_horizon = 0.0
 	p.upgrade_weight = 0.0
@@ -119,7 +119,7 @@ func _test_resource_monotonicity() -> void:
 					for id in ["zuokong","butie","resou"]: s.add_card("player",id)
 					var before := Eval.features(s,"bot",p)
 					for resource in ["cash","user"]:
-						var richer := BOTEnvironment.copy(s)
+						var richer := OnWorkBOTEnvironment.copy(s)
 						_add(richer,resource)
 						var after := Eval.features(richer,"bot",p)
 						if failure.is_empty() and (after.engine < before.engine or after.total < before.total):
@@ -134,8 +134,8 @@ func _test_user_financing() -> void:
 		for id in ["baoyue","baoyue","ditui"]: _add(s,id)
 		var p := _profile(strength)
 		var before := Eval.features(s,"bot",p)
-		var sold := IntentApply.new(s).apply(Intent.pawn("bot",_units(s,"user").slice(0,1)))
-		check(sold.get("ok",false),"强度%s单用户融资经真实Intent合法" % strength)
+		var sold := OnWorkIntentApply.new(s).apply(OnWorkIntent.pawn("bot",_units(s,"user").slice(0,1)))
+		check(sold.get("ok",false),"强度%s单用户融资经真实OnWorkIntent合法" % strength)
 		var after := Eval.features(s,"bot",p)
 		check(before.asset == after.asset and before.engine == 6.0 and after.engine == 6.0 and after.total <= before.total,
 			"强度%s：同资产交换且未解锁付款路线，卖用户不能凭空抬高产能或总分" % strength)
@@ -143,11 +143,11 @@ func _test_user_financing() -> void:
 	var financed := _state(2,2)
 	var ids := _add(financed,"ditui")+_add(financed,"yinqing996")
 	var before := Eval.capacity(financed,"bot")
-	check(IntentApply.new(financed).apply(Intent.pawn("bot",_units(financed,"user").slice(0,1))).get("ok",false),
+	check(OnWorkIntentApply.new(financed).apply(OnWorkIntent.pawn("bot",_units(financed,"user").slice(0,1))).get("ok",false),
 		"保留1用户的真实融资可使现金从2变3")
 	var after := Eval.capacity(financed,"bot")
 	check(_compile(financed,[ids+_units(financed,"cash").slice(0,2)]),"融资后的地推与996真实可编组")
-	Settle.produce(financed)
+	OnWorkSettle.produce(financed)
 	check(before == 0.0 and after == 2.0 and financed.resource_count("bot","cash") == 1 and financed.resource_count("bot","user") == 5,
 		"解锁付款的融资实付2现金产4用户，产能只计真实净资产增量2")
 
@@ -184,7 +184,7 @@ func _test_shared_resources() -> void:
 	var buffs := _add(s,"yinqing996",2)
 	check(Eval.capacity(s,"bot") == 72.0,"单张裂变只能补齐一个用户配方，两996可叠乘同一个核心")
 	check(_compile(s,[first+fill+buffs+_units(s,"user").slice(0,1)]),"最优裂变和叠乘方案真实可编组")
-	Settle.produce(s)
+	OnWorkSettle.produce(s)
 	check(s.resource_count("bot","cash") == 82,"真实结算验证裂变和两996的72现金产能")
 
 func _test_cash_order() -> void:
@@ -193,7 +193,7 @@ func _test_cash_order() -> void:
 	var recruit := _add(s,"ditui")
 	var before := Eval.capacity(s,"bot")
 	check(_compile(s,[recruit+_units(s,"cash"),product+_units(s,"user")]),"先进账再付款夹具按相反建组顺序也合法")
-	Settle.produce(s)
+	OnWorkSettle.produce(s)
 	check(s.resource_count("bot","cash") == 4 and s.resource_count("bot","user") == 5 and before >= 4.0,
 		"用户配方先生产，原有2现金席位之后可合法支付地推")
 	s = _state(1,3)
@@ -209,15 +209,15 @@ func _test_cache() -> void:
 	var p := _profile()
 	var context := Context.new()
 	p["_context"] = context
-	var before := StateCodec.state_hash(s)
+	var before := OnWorkStateCodec.state_hash(s)
 	var value := Eval.capacity(s,"bot",p)
 	var states := int(context.allocation_stats.get("states",0))
 	s.players.bot.cards.reverse()
 	for c in s.players.bot.cards: c.uid += 1000
 	check(Eval.capacity(s,"bot",p) == value and context.allocation_stats.hits == 1
 		and context.allocation_stats.states == states,"同库存换顺序/UID复用资源DP，不重做分配")
-	var intact := BOTEnvironment.copy(s)
-	var snapshot := StateCodec.state_hash(intact)
+	var intact := OnWorkBOTEnvironment.copy(s)
+	var snapshot := OnWorkStateCodec.state_hash(intact)
 	Eval.features(intact,"bot",p)
-	check(StateCodec.state_hash(intact) == snapshot and before != snapshot,"评估缓存不修改输入牌局")
+	check(OnWorkStateCodec.state_hash(intact) == snapshot and before != snapshot,"评估缓存不修改输入牌局")
 	print("ALLOCATION_CACHE ",context.allocation_stats," entries=",context.allocation_values.size())

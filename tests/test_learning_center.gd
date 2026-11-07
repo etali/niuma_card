@@ -31,12 +31,12 @@ func _run() -> void:
 	var book: Node = presentation._rulebook
 	check(book.find_child("StartTutorial", true, false).text == Catalog.ui("hub.next_course", {"title": "扩大生意"}), "学完后推荐下一门课程")
 
-	var original_rules: Dictionary = CardDB.GAME
-	var original_source: String = CardDB.loaded_from
-	CardDB.GAME = CardDB.GAME.duplicate(true)
-	CardDB.GAME["win_cash"] = 137
-	CardDB.loaded_from = "test-custom-rules"
-	var original_state: GameState = main.state
+	var original_rules: Dictionary = OnWorkCardDB.GAME
+	var original_source: String = OnWorkCardDB.loaded_from
+	OnWorkCardDB.GAME = OnWorkCardDB.GAME.duplicate(true)
+	OnWorkCardDB.GAME["win_cash"] = 137
+	OnWorkCardDB.loaded_from = "test-custom-rules"
+	var original_state: OnWorkState = main.state
 	var original_pipe: RefCounted = main.pipe
 	var original_tape: RefCounted = main.tape
 	var original_board: Board = main.board
@@ -55,7 +55,7 @@ func _run() -> void:
 	var original_attack: bool = main.board.attack_mode
 	var original_locked: bool = main.board.input_locked
 	var signals_before := _board_connections(main.board)
-	var hash_before := StateCodec.state_hash(original_state)
+	var hash_before := OnWorkStateCodec.state_hash(original_state)
 	var join: Node = main._open_join_panel()
 	check(join.visible and not main._network_join_pending(), "未连接的联机面板可与原局并存")
 	var view_center: Vector2 = presentation.content_rect().get_center()
@@ -103,7 +103,7 @@ func _run() -> void:
 		for _frame in 40: await physics_frame
 		check(_physics_state(airborne) == physical_before and _physics_state(resting) == resting_before,
 			"原卡离场保管40物理帧，位置、冻结、睡眠、速度和碰撞仍完整保留")
-		check(CardDB.loaded_from == CardDB.BUILTIN_PATH and int(CardDB.GAME["win_cash"]) == 100, "练习使用标准规则")
+		check(OnWorkCardDB.loaded_from == OnWorkCardDB.BUILTIN_PATH and int(OnWorkCardDB.GAME["win_cash"]) == 100, "练习使用标准规则")
 		check(main.state == tutorial.session.state and main.state != original_state, "原牌桌临时显示教学状态，原局对象另行保管")
 		check(tutorial.find_children("*", "Button", true, false).size() == 1,
 			"教学只保留退出按钮，没有下一步、更多、演示或重试面板")
@@ -113,7 +113,7 @@ func _run() -> void:
 		tutorial.retry()
 		await relayout_drawer(main)
 		check(_same_table_view(presentation, view_before), "重试只重置练习，不重置用户原有镜头")
-		check(StateCodec.state_hash(original_state) == hash_before and main.tape == original_tape and main.tape.to_dict() == tape_before,
+		check(OnWorkStateCodec.state_hash(original_state) == hash_before and main.tape == original_tape and main.tape.to_dict() == tape_before,
 			"重试不改原局状态、随机数或录像")
 		check(FileAccess.get_file_as_string(saved_path) == saved_text, "教学不覆写已有存档")
 		var escape := InputEventKey.new()
@@ -131,16 +131,16 @@ func _run() -> void:
 		check(main.board.process_mode == original_mode and main.board.touch_mode == original_touch and main.board.attack_mode == original_attack and main.board.input_locked == original_locked,
 			"退出恢复原Board输入模式与锁定状态")
 		check(join.visible and main.btn_pass == pass_button and main.btn_pass.disabled == pass_before, "恢复原有弹层与行动按钮状态")
-		check(CardDB.loaded_from == "test-custom-rules" and int(CardDB.GAME["win_cash"]) == 137, "退出恢复原自定义卡表的内存快照")
-		check(StateCodec.state_hash(original_state) == hash_before and main.tape.to_dict() == tape_before, "退出未重开原局，录像不含教学事件")
+		check(OnWorkCardDB.loaded_from == "test-custom-rules" and int(OnWorkCardDB.GAME["win_cash"]) == 137, "退出恢复原自定义卡表的内存快照")
+		check(OnWorkStateCodec.state_hash(original_state) == hash_before and main.tape.to_dict() == tape_before, "退出未重开原局，录像不含教学事件")
 	join._on_cancel()
 	for _frame in 10: await physics_frame
 	check(airborne.position != physical_before["transform"].origin, "退出后原来正在运动的卡继续运动")
-	CardDB.GAME = original_rules
-	CardDB.loaded_from = original_source
+	OnWorkCardDB.GAME = original_rules
+	OnWorkCardDB.loaded_from = original_source
 	# 直接关窗口也要释放离树保管的原牌，而非只能从对话退出。
 	var stored_cards: Array = main.board.cards.map(func(card): return weakref(card))
-	var cards_before_shutdown: Dictionary = CardDB.CARDS
+	var cards_before_shutdown: Dictionary = OnWorkCardDB.CARDS
 	check(presentation.start_tutorial("income"), "正常退出后可再次开课以验证直接关闭场景")
 	var arena_ref: WeakRef = weakref(main._tutorial_arena)
 	var lesson_cards: Array = main.board.cards.map(func(card): return weakref(card))
@@ -149,7 +149,7 @@ func _run() -> void:
 	check(stored_cards.all(func(card): return not is_instance_valid(card.get_ref())), "直接关闭教学场景时释放全部离树保管的原牌")
 	check(lesson_cards.all(func(card): return not is_instance_valid(card.get_ref())) and not is_instance_valid(arena_ref.get_ref()),
 		"直接关闭时全部教学卡与Arena完整释放")
-	check(not context.active and is_same(CardDB.CARDS, cards_before_shutdown) and is_same(CardDB.GAME, original_rules) and CardDB.loaded_from == original_source,
+	check(not context.active and is_same(OnWorkCardDB.CARDS, cards_before_shutdown) and is_same(OnWorkCardDB.GAME, original_rules) and OnWorkCardDB.loaded_from == original_source,
 		"直接关闭清理教学上下文并恢复全局卡表")
 	finish()
 

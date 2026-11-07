@@ -50,22 +50,22 @@ func _initialize() -> void:
 
 ## 路线表是「按次序试、先中先返回」，所以它的每一项都得能被代码解释。
 ## 空表 / 键写错 / per 为 0 这三种都会让传说卡整片合不出来，而**一条错都不报**
-## （CardDB 的 _check_upgrade_routes 就是为这个加的，这里验它拦得住的那些形态
+## （OnWorkCardDB 的 _check_upgrade_routes 就是为这个加的，这里验它拦得住的那些形态
 ## 在真配置上确实不出现）
 func _t1_routes_wellformed() -> void:
 	print("\n--- T1 路线表立得住 ---")
-	var rules: Dictionary = CardDB.upgrade_rules()
+	var rules: Dictionary = OnWorkCardDB.upgrade_rules()
 	check(not rules.is_empty(), "配置里有 _upgrade 段")
 	var routes: Array = rules.get("routes", [])
 	check(routes.size() >= 2,
 		"路线表至少两条（T2 直查 + T1 折算，实 %d 条）" % routes.size())
 	# dup_key 是 upgrade_from 里那个占位符。它和卡表必须对得上，
 	# 否则「拿这个键去查」一条都查不到 —— 症状是传说卡突然全都合不出来
-	var dup_key := CardDB.dup_key()
+	var dup_key := OnWorkCardDB.dup_key()
 	check(dup_key != "", "配置里写了 dup_key（实 %s）" % dup_key)
 	var users := 0
-	for def_id in CardDB.all_cards():
-		if str(CardDB.all_cards()[def_id].get("upgrade_from", "")) == dup_key:
+	for def_id in OnWorkCardDB.all_cards():
+		if str(OnWorkCardDB.all_cards()[def_id].get("upgrade_from", "")) == dup_key:
 			users += 1
 	check(users >= 1, "卡表里真有卡认这个占位符（%s，实 %d 张）" % [dup_key, users])
 	var bad: Array = []
@@ -103,10 +103,10 @@ func _t1_routes_wellformed() -> void:
 ## 「最高那档试不出来」，而它不报错，只是清单上少一行
 func _t2_t1_ladder_follows_per() -> void:
 	print("\n--- T2 T1 那几档 = T2 各档 × per ---")
-	var dup_key := CardDB.dup_key()
+	var dup_key := OnWorkCardDB.dup_key()
 	# T1 走的是哪条路线：认 dup_key、且限定 tier 1 的那条
 	var per := 0
-	for r in CardDB.upgrade_rules().get("routes", []):
+	for r in OnWorkCardDB.upgrade_rules().get("routes", []):
 		if typeof(r) != TYPE_DICTIONARY:
 			continue
 		if str(r.get("key", "")) == "dup_key" and int(r.get("tier", 0)) == 1:
@@ -117,8 +117,8 @@ func _t2_t1_ladder_follows_per() -> void:
 	# dup_key 侧的档位 = 那几张传说卡各自的 upgrade_dup_n
 	var t2_ns: Array = []
 	var target_of: Dictionary = {}
-	for def_id in CardDB.all_cards():
-		var def: Dictionary = CardDB.all_cards()[def_id]
+	for def_id in OnWorkCardDB.all_cards():
+		var def: Dictionary = OnWorkCardDB.all_cards()[def_id]
 		if str(def.get("upgrade_from", "")) == dup_key:
 			var n := int(def.get("upgrade_dup_n", 0))
 			t2_ns.append(n)
@@ -127,9 +127,9 @@ func _t2_t1_ladder_follows_per() -> void:
 	check(t2_ns.size() >= 2, "dup_key 侧至少两档（实 %d 档）" % t2_ns.size())
 	# 挑一张有 T2 的 T1 来问：它认的档必须正好是上面那几档 ×per
 	var t1_id := ""
-	for def_id in CardDB.all_cards():
-		var def: Dictionary = CardDB.all_cards()[def_id]
-		if def.get("kind", "") == CardDB.KIND_PRODUCT and int(def.get("tier", 0)) == 1:
+	for def_id in OnWorkCardDB.all_cards():
+		var def: Dictionary = OnWorkCardDB.all_cards()[def_id]
+		if def.get("kind", "") == OnWorkCardDB.KIND_PRODUCT and int(def.get("tier", 0)) == 1:
 			t1_id = def_id
 			break
 	if not need(t1_id != "", "卡表里有 T1 产品卡"):
@@ -137,21 +137,21 @@ func _t2_t1_ladder_follows_per() -> void:
 	var bad: Array = []
 	for n in t2_ns:
 		var want: String = target_of[n]
-		var got := ComboRules.upgrade_target(t1_id, n * per)
+		var got := OnWorkComboRules.upgrade_target(t1_id, n * per)
 		if got != want:
 			bad.append("×%d 应得 %s，实得 %s" % [n * per, want, "空" if got == "" else got])
 	check(bad.is_empty(), "%s 的 ×%s 各档都对上 dup_key 侧同一张（坏的：%s）" % [
-		CardDB.card_name(t1_id),
+		OnWorkCardDB.card_name(t1_id),
 		"/".join(t2_ns.map(func(n): return str(n * per))),
 		"无" if bad.is_empty() else ", ".join(bad)])
 	# 上界得等于最长那条路线，否则最高那档「试」不出来。
-	# 这个数只许有一处出处（CardDB.max_upgrade_n），这里验它算得对
-	check(CardDB.max_upgrade_n() == CardDB.max_upgrade_dup_n() * CardDB.max_upgrade_per(),
+	# 这个数只许有一处出处（OnWorkCardDB.max_upgrade_n），这里验它算得对
+	check(OnWorkCardDB.max_upgrade_n() == OnWorkCardDB.max_upgrade_dup_n() * OnWorkCardDB.max_upgrade_per(),
 		"搜索上界 = 最高档 × 最大折算率（%d = %d × %d）" % [
-			CardDB.max_upgrade_n(), CardDB.max_upgrade_dup_n(), CardDB.max_upgrade_per()])
-	check(CardDB.max_upgrade_per() >= per,
+			OnWorkCardDB.max_upgrade_n(), OnWorkCardDB.max_upgrade_dup_n(), OnWorkCardDB.max_upgrade_per()])
+	check(OnWorkCardDB.max_upgrade_per() >= per,
 		"max_upgrade_per 覆盖得住 T1 那条路线的 per（%d >= %d）" % [
-			CardDB.max_upgrade_per(), per])
+			OnWorkCardDB.max_upgrade_per(), per])
 
 # ---------- T3 动作名两头都要对得上 ----------
 
@@ -161,7 +161,7 @@ func _t2_t1_ladder_follows_per() -> void:
 ## 后者不算 bug，但它是「音效表和代码飘开了」最早的迹象，所以只警告不判红
 func _t3_action_names_match_both_ways() -> void:
 	print("\n--- T3 动作名：代码用的 ⊆ 配置有的 ---")
-	var actions: Dictionary = CardDB.sfx_rules().get("actions", {})
+	var actions: Dictionary = OnWorkCardDB.sfx_rules().get("actions", {})
 	var sounds: Dictionary = Sfx.sounds()
 	# 数的时候撇掉 _note_actions 之类的说明字段：那不是动作，
 	# 算进去的话「配置里有几个动作」和「代码里用到几个」永远差一个，
@@ -226,7 +226,7 @@ func _t3_action_names_match_both_ways() -> void:
 ## 只扒 scenes/：engine/ 不出声（无头模拟器也得跑得动）
 ##
 ## **整个目录扒，不列文件名。** 原先写死三份（main/board/card），
-## 而眼下只有 main.gd 真在播 —— 那份名单是防着以后的，可它防不住
+## 而眼下只有 on_work_main.gd 真在播 —— 那份名单是防着以后的，可它防不住
 ## 「以后」落在名单外：在 join_panel.gd 里加一句 sfx.play 拼错了名字，
 ## 这条判据看不见，而 Sfx.action() 那句 push_error 也接不住 ——
 ## 它印的是 `ERROR:`，run_tests.sh 只把 `SCRIPT ERROR` 当失败（实测过）。
@@ -289,7 +289,7 @@ func _t4_db_comes_from_config() -> void:
 			nulls.append(str(k))
 	check(nulls.is_empty(), "12 个 wav 都加载上了（空的：%s）" % [
 		"无" if nulls.is_empty() else ", ".join(nulls)])
-	var actions: Dictionary = CardDB.sfx_rules().get("actions", {})
+	var actions: Dictionary = OnWorkCardDB.sfx_rules().get("actions", {})
 	var pick := ""
 	for name in actions:
 		if typeof(actions[name]) == TYPE_DICTIONARY and actions[name].has("db"):
@@ -335,12 +335,12 @@ func _t4_db_comes_from_config() -> void:
 ## 这几种都不会让任何行为判据变红，所以只能读文本
 func _t5_no_second_copy_in_code() -> void:
 	print("\n--- T5 代码里没有第二份 ---")
-	var main_src := FileAccess.open("res://scenes/main.gd", FileAccess.READ).get_as_text()
+	var main_src := FileAccess.open("res://scenes/on_work_main.gd", FileAccess.READ).get_as_text()
 	# play("动作名", 数字) —— 响度从调用点传进去的老写法
 	var re_db := RegEx.new()
 	re_db.compile('play\\("[a-z_]+", *-?[0-9]')
 	check(re_db.search(main_src) == null,
-		"main.gd 里没有 play(动作名, 响度) 这种写法（响度只许在配置里）")
+		"on_work_main.gd 里没有 play(动作名, 响度) 这种写法（响度只许在配置里）")
 	# sfx.gd 里也不许再有音效名→文件的表，或者写死的 db
 	var sfx_src := FileAccess.open("res://scenes/sfx.gd", FileAccess.READ).get_as_text()
 	check(not sfx_src.contains("res://assets/sfx/"),
@@ -353,15 +353,15 @@ func _t5_no_second_copy_in_code() -> void:
 	# combo_rules 拿它当真值用，就等于路线表在代码里还有一份。
 	# **只看代码行**：注释里提一句「upgrade_from 写那个占位符」是说明，不是第二份数据 ——
 	# 连注释一起禁的话，这条判据会逼着人把话说不清楚
-	var cr_code := _code_lines("res://engine/combo_rules.gd")
-	check(not cr_code.contains("CardDB.DUP_T2"),
-		"combo_rules.gd 的代码不直接用 DUP_T2 常量（占位符从 CardDB.dup_key() 走配置）")
+	var cr_code := _code_lines("res://engine/on_work_combo_rules.gd")
+	check(not cr_code.contains("OnWorkCardDB.DUP_T2"),
+		"on_work_combo_rules.gd 的代码不直接用 DUP_T2 常量（占位符从 OnWorkCardDB.dup_key() 走配置）")
 	# 折算率：`/ 2` 这类写死的折算不许再有
 	check(not cr_code.contains("n / 2"),
-		"combo_rules.gd 里没有写死的折算（per 从路线上读）")
+		"on_work_combo_rules.gd 里没有写死的折算（per 从路线上读）")
 
 ## 去掉整行注释之后的源码。行尾注释不去 —— 去它得判断 # 在不在字符串里，
-## 而这几条查的东西（`CardDB.DUP_T2`、`n / 2`）没有一个会出现在行尾注释里
+## 而这几条查的东西（`OnWorkCardDB.DUP_T2`、`n / 2`）没有一个会出现在行尾注释里
 func _code_lines(path: String) -> String:
 	var out: PackedStringArray = []
 	for line in FileAccess.open(path, FileAccess.READ).get_as_text().split("\n"):

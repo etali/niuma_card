@@ -23,7 +23,7 @@ class SlimEngineTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         (self.root / 'scenes').mkdir()
-        (self.root / 'scenes/main.gd').write_text('''extends RigidBody3D
+        (self.root / 'scenes/on_work_main.gd').write_text('''extends RigidBody3D
 var camera := Camera3D.new()
 var panel := Control.new()
 var socket := WebSocketPeer.new()
@@ -54,7 +54,7 @@ var socket := WebSocketPeer.new()
         for name in ['raycast', 'vhacd', 'meshoptimizer', 'msdfgen', 'svg', 'astcenc', 'basis_universal']:
             self.assertFalse(plan[f'module_{name}_enabled'], name)
         self.assertTrue(plan['module_etcpak_enabled'])
-        code = self.root / 'scenes/main.gd'
+        code = self.root / 'scenes/on_work_main.gd'
         code.write_text(code.read_text() + '\nvar mesh = obj.convex_decompose()\nvar lod = obj.generate_lods()\nvar text = image.load_svg_from_string("<svg/>")\nfont.set_multichannel_signed_distance_field(true)\nview.use_occlusion_culling = true\n')
         plan = slim.make_plan(self.root, self.capabilities)['scons_options']
         for name in ['raycast', 'vhacd', 'meshoptimizer', 'msdfgen', 'svg']:
@@ -80,7 +80,7 @@ var socket := WebSocketPeer.new()
         self.assertTrue(plan['scons_options']['module_raycast_enabled'])
 
     def test_byte_stream_delta_codec_does_not_enable_gpu_texture_encoders(self):
-        code = self.root / 'scenes/main.gd'
+        code = self.root / 'scenes/on_work_main.gd'
         base = code.read_text()
         code.write_text(base + '\nvar raw = bytes.decompress(589824, FileAccess.COMPRESSION_DEFLATE)\n'
                         'var packed = bytes.compress(FileAccess.COMPRESSION_DEFLATE)\n')
@@ -132,7 +132,7 @@ var socket := WebSocketPeer.new()
             slim.configure_build(plan, self.capabilities, keep_classes=['不存在'])
 
     def test_string_referenced_native_class_is_preserved(self):
-        source = self.root / 'scenes/main.gd'
+        source = self.root / 'scenes/on_work_main.gd'
         source.write_text(source.read_text() + '\nvar dynamic = ClassDB.instantiate("AnimationPlayer")\n')
         self.capabilities['classes'].update({'AnimationMixer': 'Node', 'AnimationPlayer': 'AnimationMixer'})
         plan = slim.make_plan(self.root, self.capabilities)

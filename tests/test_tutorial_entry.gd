@@ -3,7 +3,7 @@
 
 extends "res://tests/support/drawer_fixture.gd"
 
-const Codec = preload("res://engine/state_codec.gd")
+const Codec = preload("res://engine/on_work_state_codec.gd")
 var main: Node
 var p: Node
 var original: Dictionary

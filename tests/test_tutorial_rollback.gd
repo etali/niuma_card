@@ -4,9 +4,9 @@
 
 extends "res://tests/support/drawer_fixture.gd"
 
-const Scope = preload("res://engine/tutorial_context.gd")
-const Arena = preload("res://scenes/tutorial_arena.gd")
-const Snapshot = preload("res://scenes/table_snapshot.gd")
+const Scope = preload("res://engine/on_work_tutorial_context.gd")
+const Arena = preload("res://scenes/on_work_tutorial_arena.gd")
+const Snapshot = preload("res://scenes/on_work_table_snapshot.gd")
 
 class RecordedSound extends Sfx:
 	var events: Array[String] = []
@@ -25,9 +25,9 @@ func _initialize() -> void:
 
 func _run() -> void:
 	main = await boot_drawer(Vector2i(1280, 800), 1.0, true)
-	var original_state: GameState = main.state
+	var original_state: OnWorkState = main.state
 	var original_cards: Array = main.board.cards.duplicate()
-	var original_hash := StateCodec.state_hash(original_state)
+	var original_hash := OnWorkStateCodec.state_hash(original_state)
 	sound = RecordedSound.new()
 	main.add_child(sound)
 	main.sfx = sound
@@ -37,8 +37,8 @@ func _run() -> void:
 	await _drag(_resource_top("cash"), arena.market_cards[1].position)
 	check(arena.operation_pending and arena.state.market != before.logic.state.market,
 		"买错先执行真实购买并短暂显示，随后锁住等待回滚")
-	var changed_hash := StateCodec.state_hash(arena.state)
-	check(arena.finish_action().get("code") == "busy" and StateCodec.state_hash(arena.state) == changed_hash,
+	var changed_hash := OnWorkStateCodec.state_hash(arena.state)
+	check(arena.finish_action().get("code") == "busy" and OnWorkStateCodec.state_hash(arena.state) == changed_hash,
 		"回滚等待期间不能重复完成行动")
 	await _rolled_back(before, "买错恢复现金、市场、UID、RNG与原牌位")
 	check(sound.events.count("buy") == 1 and sound.events.count("deny_quiet") == 1
@@ -67,7 +67,7 @@ func _run() -> void:
 	_advance()
 	before = _snapshot()
 	await _drag(_card("yunketang"), main.board.pawn_pos)
-	check(arena.operation_pending and arena.state.find_card(GameState.PLAYER, bought_uid).is_empty(),
+	check(arena.operation_pending and arena.state.find_card(OnWorkState.PLAYER, bought_uid).is_empty(),
 		"错误典当先执行真实卖牌与到账")
 	await _rolled_back(before, "典当回滚保留此前正确购买的业务与现金")
 	check(_card("yunketang").uid == bought_uid and sound.events.count("pawn") == 1,
@@ -77,7 +77,7 @@ func _run() -> void:
 	before = _snapshot()
 	await _drag(main.board.group_of(_resource_top("cash"))["cards"][-1], _free_drop(), true)
 	await _wait_operation()
-	check(results[-1].expected and StateCodec.snapshot(arena.state) == before.logic.state,
+	check(results[-1].expected and OnWorkStateCodec.snapshot(arena.state) == before.logic.state,
 		"整理无关的现金摞应保留，只改布局不改资源或步骤")
 	await _expand(_resource_top("user"))
 	results.clear()
@@ -85,7 +85,7 @@ func _run() -> void:
 	await _wait_operation()
 	check(results[-1].expected and not arena.session.step_complete, "拆出一张用户被判为配牌的正确准备，组牌目标尚未完成")
 	# 正式配方允许附加现金和富余用户；用第二张不相干业务核心制造真正无效的组。
-	arena.state.add_card(GameState.PLAYER, "baoyue")
+	arena.state.add_card(OnWorkState.PLAYER, "baoyue")
 	arena.sync_state()
 	await create_timer(0.4).timeout
 	before = _snapshot()
@@ -111,12 +111,12 @@ func _run() -> void:
 	before = _snapshot()
 	await _drag(_card("baoyue"), _card("yunketang").position)
 	await _rolled_back(before, "加入不相干业务核心后恢复已完成配方")
-	var cash_before: int = arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH)
+	var cash_before: int = arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH)
 	main.btn_pass.pressed.emit()
 	check(arena.operation_pending, "正确完成行动先播放生产，不提前发accepted")
 	await _wait_operation()
 	check(not arena.operation_pending and arena.session.step_complete
-		and arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == cash_before + 4,
+		and arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == cash_before + 4,
 		"正确完成行动保留真实生产结果并被接受")
 	await create_timer(0.4).timeout
 	before = _snapshot()
@@ -132,16 +132,16 @@ func _run() -> void:
 	arena.finish_action()
 	await _wait_operation()
 	check(arena.session.phase == "attack" and not arena.operation_pending, "正确完成行动进入攻击阶段")
-	var target_count: int = arena.session.applier.affordable_targets(GameState.PLAYER).size()
-	var pool: Dictionary = arena.session.applier.pools(GameState.PLAYER)
+	var target_count: int = arena.session.applier.affordable_targets(OnWorkState.PLAYER).size()
+	var pool: Dictionary = arena.session.applier.pools(OnWorkState.PLAYER)
 	check(target_count > 0 and main.attack_target_text.text.contains("可攻击目标 %d" % target_count),
 		"原攻击面板按进攻方查询合法目标，与教学引擎保持一致")
-	check(main.attack_pool_text.text == "现金攻击 %d    用户攻击 %d" % [pool.get(CardDB.RES_CASH, 0), pool.get(CardDB.RES_USER, 0)],
+	check(main.attack_pool_text.text == "现金攻击 %d    用户攻击 %d" % [pool.get(OnWorkCardDB.RES_CASH, 0), pool.get(OnWorkCardDB.RES_USER, 0)],
 		"原攻击点数面板直接显示真实池")
 	_advance()
 	before = _snapshot()
 	var wrong: Dictionary = {}
-	for target in arena.session.applier.affordable_targets(GameState.PLAYER):
+	for target in arena.session.applier.affordable_targets(OnWorkState.PLAYER):
 		if target.get("leader", "") != "pinshaoshao": wrong = target; break
 	if need(not wrong.is_empty(), "存在当前目标以外的合法攻击靶"):
 		arena._attack(arena.entities[int(wrong.uids[0])])
@@ -168,7 +168,7 @@ func _run() -> void:
 	check(arena.operation_pending, "为退出创建待回滚操作")
 	scope.release()
 	await create_timer(0.5).timeout
-	check(main.state == original_state and StateCodec.state_hash(main.state) == original_hash
+	check(main.state == original_state and OnWorkStateCodec.state_hash(main.state) == original_hash
 		and main.board.cards == original_cards, "待回滚时退出完整恢复原局，延迟回调不污染它")
 	await dispose_drawer(main)
 	finish()
@@ -207,7 +207,7 @@ func _check_attack_resource_recovery() -> void:
 	# 后面的每次修正仍经过真实按下、拖动、释放和 Arena 审查。
 	var cash_ids: Array = []
 	var user_ids: Array = []
-	for record in arena.state.players[GameState.PLAYER]["cards"]:
+	for record in arena.state.players[OnWorkState.PLAYER]["cards"]:
 		if record["def_id"] == "cash": cash_ids.append(record["uid"])
 		if record["def_id"] == "user": user_ids.append(record["uid"])
 	arena.apply_groups([
@@ -248,8 +248,8 @@ func _check_attack_resource_recovery() -> void:
 			"把拆出的第%d张用户移给云课堂，允许逐手调整资源分配" % (index + 1))
 	check(arena.session.step_complete and _core_resource_count("zuokong", "user") == 6
 		and _core_resource_count("yunketang", "user") == 3
-		and arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 11
-		and arena.state.resource_count(GameState.PLAYER, CardDB.RES_USER) == 10,
+		and arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == 11
+		and arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_USER) == 10,
 		"截图坏局面可通过真实拆牌重配修好：六用户攻击、三用户赚钱，资源不增不减")
 	await _expand(_loose_resource("cash"))
 	await _accepted_drag(_loose_resource("cash"), _card("yunketang").position,
@@ -262,7 +262,7 @@ func _check_growth_resource_exchange() -> void:
 	_advance()
 	var cash_ids: Array = []
 	var user_ids: Array = []
-	for record in arena.state.players[GameState.PLAYER]["cards"]:
+	for record in arena.state.players[OnWorkState.PLAYER]["cards"]:
 		if record["def_id"] == "cash": cash_ids.append(record["uid"])
 		if record["def_id"] == "user": user_ids.append(record["uid"])
 	arena.apply_groups([
@@ -291,8 +291,8 @@ func _check_growth_resource_exchange() -> void:
 		and _core_resource_count("ditui", "cash") == 2 and _core_resource_count("yunketang", "cash") == 7
 		and _core_resource_count("ditui", "user") == 5,
 		"交换错配后两组真实配方均成立，合法富余资源不要求强行拆净")
-	check(arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == cash_ids.size()
-		and arena.state.resource_count(GameState.PLAYER, CardDB.RES_USER) == user_ids.size(),
+	check(arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == cash_ids.size()
+		and arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_USER) == user_ids.size(),
 		"交换错配不重置整步、不新增或丢弃任何资源")
 
 func _accepted_drag(card: CardEntity, at: Vector3, message: String) -> void:
@@ -331,7 +331,7 @@ func _start(course: String) -> void:
 	if not need(scope.begin(main), "原牌桌开始课程 " + course): return
 	arena = Arena.new()
 	main.add_child(arena)
-	arena.configure_on_table(main, TutorialSession.new(course))
+	arena.configure_on_table(main, OnWorkTutorialSession.new(course))
 	arena.operation_finished.connect(func(result): results.append(result))
 	main.board.touch_mode = true
 	await create_timer(0.45).timeout
@@ -345,8 +345,8 @@ func _snapshot() -> Dictionary:
 		"zoom": main.drawer_presentation.camera_view.zoom, "offset": main.drawer_presentation.camera_view.offset}
 
 func _same_snapshot(before: Dictionary) -> bool:
-	return StateCodec.canon(arena.session.capture_operation()) == StateCodec.canon(before.logic) \
-		and StateCodec.canon(Snapshot.capture(main)) == StateCodec.canon(before.visual) \
+	return OnWorkStateCodec.canon(arena.session.capture_operation()) == OnWorkStateCodec.canon(before.logic) \
+		and OnWorkStateCodec.canon(Snapshot.capture(main)) == OnWorkStateCodec.canon(before.visual) \
 		and main.board.camera.transform.is_equal_approx(before.transform) \
 		and is_equal_approx(main.board.camera.fov, before.fov) \
 		and is_equal_approx(main.drawer_presentation.camera_view.zoom, before.zoom) \
@@ -394,7 +394,7 @@ func _expand(card: CardEntity) -> void:
 		await create_timer(0.25).timeout
 
 func _free_drop() -> Vector3:
-	return arena.layout._free_spot(Vector3(0, 0.05, 4), GameState.PLAYER)
+	return arena.layout._free_spot(Vector3(0, 0.05, 4), OnWorkState.PLAYER)
 
 func _drag(card: CardEntity, at: Vector3, immediate_followup := false) -> void:
 	sound.events.clear()

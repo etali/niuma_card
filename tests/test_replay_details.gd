@@ -4,8 +4,8 @@
 
 extends "res://tests/harness.gd"
 
-const Replay = preload("res://engine/replay_session.gd")
-const Snapshot = preload("res://scenes/table_snapshot.gd")
+const Replay = preload("res://engine/on_work_replay_session.gd")
+const Snapshot = preload("res://scenes/on_work_table_snapshot.gd")
 const Regions = preload("res://scenes/table_regions.gd")
 var _done := false
 
@@ -13,7 +13,7 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	await _local_recording()
 	await _payment_completion()
 	await _remote_recording()
@@ -21,7 +21,7 @@ func _run() -> void:
 
 func _local_recording() -> void:
 	paused = false
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	root.add_child(main)
 	_booted = main
@@ -34,7 +34,7 @@ func _local_recording() -> void:
 	await settle()
 	main.tape.update_view()
 	var first: Dictionary = Snapshot.capture(main)
-	check(main.tape.configuration["rules"]["cards"] == CardDB.all_cards(), "完整有效卡牌配置随录像保存")
+	check(main.tape.configuration["rules"]["cards"] == OnWorkCardDB.all_cards(), "完整有效卡牌配置随录像保存")
 	check(main.tape.configuration["cards_json"].get("_game") is Dictionary and main.tape.configuration["settings"].has("bot_parameters"), "原cards.json与BOT设置均已dump")
 	# 买走中间卡，再买一张：它们必须是两个操作，剩余商品原槽位保持不变。
 	for index in [3, 1]:
@@ -43,7 +43,7 @@ func _local_recording() -> void:
 		check(bought.get("ok", false), "真实购卡成功")
 		await settle()
 		main.tape.update_view()
-	check(main.tape.steps.filter(func(e): return e["intent"]["op"] == Intent.OP_BUY).size() == 2, "连续购买两张保留两个独立步骤")
+	check(main.tape.steps.filter(func(e): return e["intent"]["op"] == OnWorkIntent.OP_BUY).size() == 2, "连续购买两张保留两个独立步骤")
 	# 拖动和收拢不通过裁决器，也应各有一步。
 	var group: Dictionary = main.board.groups[0]
 	var card: CardEntity = group["cards"][0]
@@ -80,7 +80,7 @@ func _local_recording() -> void:
 	main.queue_free()
 	await process_frame
 	if loaded.get("ok", false):
-		var replay: Node = load("res://scenes/main.tscn").instantiate()
+		var replay: Node = load("res://scenes/on_work_main.tscn").instantiate()
 		replay.force_drawer_layout = true
 		replay.replay_session = loaded["session"]
 		root.add_child(replay)
@@ -138,31 +138,31 @@ func _remote_recording() -> void:
 	var a: NetTransport = clients[0]
 	var b: NetTransport = clients[1]
 	await net_until(clients, func(): return a.phase() != "")
-	var record := Tape.new()
+	var record := OnWorkTape.new()
 	record.start_remote(b)
 	_done = false
 	net_pump_until(clients, func(): return _done)
 	var active: NetTransport = a if a.actor() == a.my_seat else b
 	var index := -1
 	for i in active.state().market.size():
-		if int(CardDB.get_def(active.state().market[i]).get("price", -1)) in range(1, 10):
+		if int(OnWorkCardDB.get_def(active.state().market[i]).get("price", -1)) in range(1, 10):
 			index = i
 			break
-	var bought: Dictionary = await active.submit(Intent.buy(active.my_seat, index))
+	var bought: Dictionary = await active.submit(OnWorkIntent.buy(active.my_seat, index))
 	await net_until(clients, func(): return record.size() >= 1)
 	check(bought.get("ok", false) and record.size() == 1, "纯客户端录制自己或对手逐张购买的服务器回执")
-	var pawned: Dictionary = await active.submit(Intent.pawn(active.my_seat, [bought["new_uid"]]))
+	var pawned: Dictionary = await active.submit(OnWorkIntent.pawn(active.my_seat, [bought["new_uid"]]))
 	await net_until(clients, func(): return record.size() >= 2)
 	check(pawned.get("ok", false) and record.size() == 2, "纯客户端独立记录典当步骤")
 	record.rebind_remote(a)
 	check(record.size() == 2 and record.recording(), "切换联网连接不丢失已录制步骤")
 	_done = true
-	var decoded := Tape.from_dict(JSON.parse_string(JSON.stringify(record.to_dict())))
+	var decoded := OnWorkTape.from_dict(JSON.parse_string(JSON.stringify(record.to_dict())))
 	check(decoded.get("ok", false), "联网录像落盘后可解码")
 	if decoded.get("ok", false):
-		var tape: Tape = decoded["tape"]
-		var replay := Tape.replay(tape)
-		check(replay["ok"] and StateCodec.state_hash(replay["state"]) == StateCodec.state_hash(b.state()), "客户端录像完整恢复服务器末态")
+		var tape: OnWorkTape = decoded["tape"]
+		var replay := OnWorkTape.replay(tape)
+		check(replay["ok"] and OnWorkStateCodec.state_hash(replay["state"]) == OnWorkStateCodec.state_hash(b.state()), "客户端录像完整恢复服务器末态")
 		check(tape.steps[0]["result"]["new_uid"] is int and tape.steps[1]["result"]["uids"][0] is int, "联网录像UID从JSON正确还原为整数，供动画查找实体")
 	record.stop()
 	for client in clients:
@@ -194,16 +194,16 @@ func _positions_match(actual: Dictionary, expected: Dictionary) -> bool:
 
 func _payment_completion() -> void:
 	var main: Node = await boot_main()
-	var before := GameState.new()
-	StateCodec.restore(before, StateCodec.snapshot(main.state))
-	var def := CardDB.get_def("butie")
+	var before := OnWorkState.new()
+	OnWorkStateCodec.restore(before, OnWorkStateCodec.snapshot(main.state))
+	var def := OnWorkCardDB.get_def("butie")
 	var payment := int(def["recipe_n"])
 	# 这里验证三组错峰付款动画；夹具要按当前配方提供完整弹药，并留一现金通过护栏。
-	while before.resource_count(main.foe_seat,CardDB.RES_CASH) < payment * 3 + 1:
-		before.add_card(main.foe_seat,CardDB.unit_id(CardDB.RES_CASH))
+	while before.resource_count(main.foe_seat,OnWorkCardDB.RES_CASH) < payment * 3 + 1:
+		before.add_card(main.foe_seat,OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
 	var cash: Array = []
 	for card in before.players[main.foe_seat]["cards"]:
-		if card["def_id"] == CardDB.unit_id(CardDB.RES_CASH):
+		if card["def_id"] == OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH):
 			cash.append(card["uid"])
 	for i in 3:
 		var weapon := before.add_card(main.foe_seat, "butie")
@@ -215,10 +215,10 @@ func _payment_completion() -> void:
 	main._rebuild_pipe()
 	main._respawn_all()
 	await settle()
-	var current := GameState.new()
-	StateCodec.restore(current, StateCodec.snapshot(before))
-	var applier := IntentApply.new(current)
-	var result := applier.apply(Intent.arm_attacks(main.foe_seat))
+	var current := OnWorkState.new()
+	OnWorkStateCodec.restore(current, OnWorkStateCodec.snapshot(before))
+	var applier := OnWorkIntentApply.new(current)
+	var result := applier.apply(OnWorkIntent.arm_attacks(main.foe_seat))
 	var consumed: Array = []
 	for uid in main.entities:
 		if before.find_card(main.foe_seat, uid).is_empty() or not current.find_card(main.foe_seat, uid).is_empty():
@@ -226,10 +226,10 @@ func _payment_completion() -> void:
 		consumed.append(main.entities[uid])
 	check(consumed.size() == payment * 3, "装弹产生多张错峰付款动画")
 	main.state = current
-	var player := preload("res://scenes/replay_presentation.gd").new()
+	var player := preload("res://scenes/on_work_replay_presentation.gd").new()
 	main.add_child(player)
 	player.bind(main)
-	await player.play({"result": result, "intent": Intent.arm_attacks(main.foe_seat)}, before)
+	await player.play({"result": result, "intent": OnWorkIntent.arm_attacks(main.foe_seat)}, before)
 	await process_frame
 	check(consumed.all(func(card): return not is_instance_valid(card)), "下一步解锁前全部错峰付款已结束，没有跳过末尾卡牌")
 	main.queue_free()

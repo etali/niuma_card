@@ -5,7 +5,7 @@
 extends RefCounted
 
 ## 刻意不写 class_name：这是开发工具，不该占全局类名。
-## main.gd 用 const DebugShot = preload(...) 引它
+## on_work_main.gd 用 const DebugShot = preload(...) 引它
 
 ## 开发用截图钩子：CARD_SHOT=<路径>[,<秒>[,<动作>]] 时，等布局稳定后截真窗口再退出。
 ##
@@ -39,7 +39,7 @@ extends RefCounted
 ## 这里刻意只读 main/Board 的成员、不复制它们的逻辑：截图要验的就是真实代码路径，
 ## 钩子里另写一套摆放/落位等于验了个假的。也因此调用了若干下划线成员。
 
-var m: Node = null           # 场景控制器（scenes/main.gd）
+var m: Node = null           # 场景控制器（scenes/on_work_main.gd）
 var board: Board = null
 
 ## main 在 _ready 末尾调这一处。main 必须持有返回的实例：
@@ -50,7 +50,7 @@ func run(main: Node) -> void:
 	var benchmark_path := OS.get_environment("CARD_ENGINE_BENCH")
 	if benchmark_path != "":
 		await m.get_tree().process_frame
-		var result: Dictionary = preload("res://scenes/engine_benchmark.gd").run()
+		var result: Dictionary = preload("res://scenes/on_work_engine_benchmark.gd").run()
 		var file := FileAccess.open(benchmark_path, FileAccess.WRITE)
 		file.store_string(JSON.stringify(result, "  "))
 		file.close()
@@ -160,14 +160,14 @@ func _action(spec: String) -> void:
 						if card._visual_retired:
 							seen[uid] = true
 							print("REPLAY_TEAR click=", step + 1, " uid=", uid,
-								" points=", m.pipe.applier().pools(m.my_seat).get(CardDB.RES_CASH, 0),
-								" foe_cash=", m.state.resource_count(m.foe_seat, CardDB.RES_CASH))
+								" points=", m.pipe.applier().pools(m.my_seat).get(OnWorkCardDB.RES_CASH, 0),
+								" foe_cash=", m.state.resource_count(m.foe_seat, OnWorkCardDB.RES_CASH))
 					await tree.process_frame
 				print("REPLAY_STEP ", m.replay_session.cursor, " entities=", m.entities.size())
 				if trace:
 					print("REPLAY_CLICK ", step + 1, " action=", m.replay_session.action_cursor,
-						" tears=", seen.size(), " points=", m.pipe.applier().pools(m.my_seat).get(CardDB.RES_CASH, 0),
-						" foe_cash=", m.state.resource_count(m.foe_seat, CardDB.RES_CASH))
+						" tears=", seen.size(), " points=", m.pipe.applier().pools(m.my_seat).get(OnWorkCardDB.RES_CASH, 0),
+						" foe_cash=", m.state.resource_count(m.foe_seat, OnWorkCardDB.RES_CASH))
 		if bits.size() > 3:
 			for step in int(bits[3]):
 				m._replay_previous_button.pressed.emit()
@@ -188,16 +188,16 @@ func _action(spec: String) -> void:
 		await m.get_tree().create_timer(0.8, true).timeout
 		return
 	if bits[0] == "record":
-		var loaded := Tape.load_from(OS.get_environment("CARD_RECORD"))
+		var loaded := OnWorkTape.load_from(OS.get_environment("CARD_RECORD"))
 		if not loaded.get("ok", false):
 			push_error("截图录像读取失败：%s" % loaded.get("reason", ""))
 			return
-		var replay := Tape.replay(loaded["tape"], int(bits[1]))
-		print("RECORD ", Tape.verdict(replay))
+		var replay := OnWorkTape.replay(loaded["tape"], int(bits[1]))
+		print("RECORD ", OnWorkTape.verdict(replay))
 		if not replay["ok"]:
 			return
-		print("RECORD_EVALUATION score=", BOTPlan.score(replay["state"], m.my_seat),
-			" foe_production_net=", preload("res://engine/bot_evaluation.gd").capacity(replay["state"], m.foe_seat))
+		print("RECORD_EVALUATION score=", OnWorkBOTPlan.score(replay["state"], m.my_seat),
+			" foe_production_net=", preload("res://engine/on_work_bot_evaluation.gd").capacity(replay["state"], m.foe_seat))
 		m.state = replay["state"]
 		m._rebuild_pipe()
 		m._respawn_all()
@@ -206,7 +206,7 @@ func _action(spec: String) -> void:
 		await m.get_tree().create_timer(0.5, true).timeout
 		for card in m.state.players[m.foe_seat]["cards"]:
 			var entity: CardEntity = m.entities[card["uid"]]
-			if int(CardDB.get_def(entity.def_id).get("recipe_n", 0)) > 0:
+			if int(OnWorkCardDB.get_def(entity.def_id).get("recipe_n", 0)) > 0:
 				print("RECORD_RECIPE ", entity.def_id, " uid=", entity.uid, " progress=", entity.recipe_progress_text())
 		return
 	if bits[0] == "edge" and m.drawer_window != null:
@@ -259,7 +259,7 @@ func _action(spec: String) -> void:
 			" cancel_before=", cancel_before, " cancel_after=", panel._cancel_btn.get_global_rect())
 		return
 	if bits[0] == "lanwait":
-		var old_state: GameState = m.state
+		var old_state: OnWorkState = m.state
 		var old_pipe: Transport = m.pipe
 		var panel: JoinPanel = m._open_join_panel()
 		panel._on_host()
@@ -409,7 +409,7 @@ func _merge_pile(count: int, target_id: String) -> void:
 	board.set_process(false)
 	var members: Array = []
 	for data in m.state.players[m.my_seat]["cards"]:
-		if data["def_id"] == CardDB.unit_id(CardDB.RES_CASH) and members.size() < count:
+		if data["def_id"] == OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH) and members.size() < count:
 			members.append(m.entities[data["uid"]])
 	for card: CardEntity in members:
 		board._detach_from_group(card)
@@ -538,11 +538,11 @@ func _report_halves(c: CardEntity, halves: Array) -> void:
 ## 「点一摞扣一摞」只在真窗口里才验得完整（摞的位置、侧边张数、飞出动画都要眼看），
 ## 而进攻击模式要等整轮结算，靠不上；这里直接把玩家的点数池摆好走同一个入口
 func _attack_pile(n: int) -> void:
-	var state: GameState = m.state
-	state.players[GameState.BOT]["cards"].clear()
-	state.combos = state.combos.filter(func(c): return c["owner"] != GameState.BOT)
+	var state: OnWorkState = m.state
+	state.players[OnWorkState.BOT]["cards"].clear()
+	state.combos = state.combos.filter(func(c): return c["owner"] != OnWorkState.BOT)
 	for i in maxi(n, 1):
-		state.add_card(GameState.BOT, CardDB.unit_id(CardDB.RES_CASH))
+		state.add_card(OnWorkState.BOT, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
 	m._sync_entities()
 	m.layout._layout_bot_zone()
 	await m.get_tree().create_timer(0.5).timeout
@@ -557,7 +557,7 @@ func _attack_pile(n: int) -> void:
 	print("ATK_PILE 摞 %s 共 %d 张，点数池 现金×%d" % [key, uids.size(), n - 2])
 	m.phase = m.PHASE_ATTACK
 	board.attack_mode = true
-	m._attack_pools = { CardDB.RES_CASH: maxi(n - 2, 0), CardDB.RES_USER: 0 }
+	m._attack_pools = { OnWorkCardDB.RES_CASH: maxi(n - 2, 0), OnWorkCardDB.RES_USER: 0 }
 	m._refresh_attack_targets()
 	var top: int = uids[0]
 	if not m.entities.has(top):
@@ -569,8 +569,8 @@ func _attack_pile(n: int) -> void:
 	await m._on_attack_clicked(m.entities[top])
 	await m.get_tree().create_timer(0.8).timeout
 	print("ATK_PILE 扣完剩 %d 张，池剩 现金×%d" % [
-		state.resource_count(GameState.BOT, CardDB.RES_CASH),
-		m._attack_pools[CardDB.RES_CASH]])
+		state.resource_count(OnWorkState.BOT, OnWorkCardDB.RES_CASH),
+		m._attack_pools[OnWorkCardDB.RES_CASH]])
 	for k in m.layout._bot_pile_uids:
 		print("ATK_PILE 摞 %s 现登记 %d 张" % [k, (m.layout._bot_pile_uids[k] as Array).size()])
 
@@ -578,12 +578,12 @@ func _attack_pile(n: int) -> void:
 ## 打印摆之前/之后的坐标，用来核对「桌上原有的卡一张没挪」「每份 PILE_CHUNK 摞好」
 ## 「现金一列、用户一列」
 func _settle_pile(n: int, n_user: int = 0) -> void:
-	var state: GameState = m.state
+	var state: OnWorkState = m.state
 	# BOT 也发一批同种资源：验「相同资源不摞两坨」要有足够多的闲置卡
 	for i in 18:
-		state.add_card(GameState.BOT, CardDB.unit_id(CardDB.RES_CASH))
+		state.add_card(OnWorkState.BOT, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
 	for i in 14:
-		state.add_card(GameState.BOT, CardDB.unit_id(CardDB.RES_USER))
+		state.add_card(OnWorkState.BOT, OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER))
 	m._sync_entities()
 	m.layout._layout_bot_idle()
 	await m.get_tree().create_timer(0.6).timeout
@@ -601,9 +601,9 @@ func _settle_pile(n: int, n_user: int = 0) -> void:
 		if is_instance_valid(m.entities[uid]):
 			before[uid] = m.entities[uid].global_position
 	for i in maxi(n, 1):
-		state.add_card(GameState.PLAYER, CardDB.unit_id(CardDB.RES_CASH))
+		state.add_card(OnWorkState.PLAYER, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
 	for i in maxi(n_user, 0):
-		state.add_card(GameState.PLAYER, CardDB.unit_id(CardDB.RES_USER))
+		state.add_card(OnWorkState.PLAYER, OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER))
 	# 和 _run_settle 同样开到货窗口：不开的话产出牌是就地生成的，
 	# 钩子就走不到「从组合中心飞进左侧带」这条真实路径
 	m.layout.begin_arrivals()
@@ -627,7 +627,7 @@ func _settle_pile(n: int, n_user: int = 0) -> void:
 		if board.camera:
 			sp = board.camera.unproject_position(o)
 		# 摞里是哪种资源：结算摞是纯资源摞，取第一张的 def_id 即可
-		var res := str(CardDB.get_def(g["cards"][0].def_id).get("res", "?"))
+		var res := str(OnWorkCardDB.get_def(g["cards"][0].def_id).get("res", "?"))
 		print("SETTLE 摞 %s×%d @ (%.2f, %.2f) 屏幕 %d,%d" % [
 			res, g["cards"].size(), o.x, o.z, sp.x, sp.y])
 	_report_loose()
@@ -636,14 +636,14 @@ func _settle_pile(n: int, n_user: int = 0) -> void:
 func _report_loose() -> void:
 	var loose := {}
 	var spots: Array = []
-	for c in m.state.players[GameState.PLAYER]["cards"]:
+	for c in m.state.players[OnWorkState.PLAYER]["cards"]:
 		if not m.entities.has(c["uid"]):
 			continue
 		var e: CardEntity = m.entities[c["uid"]]
 		if not is_instance_valid(e) or not m.layout._in_settle_zone(e):
 			continue
-		var d: Dictionary = CardDB.get_def(c["def_id"])
-		if d.get("kind") != CardDB.KIND_UNIT or board.group_of(e) != null:
+		var d: Dictionary = OnWorkCardDB.get_def(c["def_id"])
+		if d.get("kind") != OnWorkCardDB.KIND_UNIT or board.group_of(e) != null:
 			continue
 		var r := str(d.get("res", "?"))
 		loose[r] = int(loose.get(r, 0)) + 1
@@ -666,7 +666,7 @@ func _pawn(def_id: String) -> void:
 			target = c
 			break
 	if target == null:
-		var nc: Dictionary = m.state.add_card(GameState.PLAYER, def_id)
+		var nc: Dictionary = m.state.add_card(OnWorkState.PLAYER, def_id)
 		target = m._spawn_entity(nc, Vector3(2.0, 0.05, 3.2), true)
 		await m.get_tree().create_timer(0.4).timeout
 	var spot: Vector3 = target.global_position
@@ -675,7 +675,7 @@ func _pawn(def_id: String) -> void:
 		if is_instance_valid(m.entities[uid]) and uid != target.uid:
 			before[uid] = m.entities[uid].global_position
 	print("PAWN 「%s」在 (%.2f, %.2f)，典当价 %d" % [
-		CardDB.card_name(def_id), spot.x, spot.z, CardDB.pawn_value(def_id)])
+		OnWorkCardDB.card_name(def_id), spot.x, spot.z, OnWorkCardDB.pawn_value(def_id)])
 	await m._on_dropped_on_pawn([target])
 	await m.get_tree().create_timer(0.9).timeout
 	var moved := 0
@@ -698,7 +698,7 @@ func _pawn(def_id: String) -> void:
 ## 给 core 凑齐配方材料并组成一组（摊开态摆好）。
 ## 双击的效果要在「一摞牌」上才看得出来，靠随机牌面等不到
 func _build_group(core: CardEntity):
-	var def: Dictionary = CardDB.get_def(core.def_id)
+	var def: Dictionary = OnWorkCardDB.get_def(core.def_id)
 	var res := str(def.get("recipe_res", ""))
 	var need := int(def.get("recipe_n", 0))
 	if need <= 0:
@@ -709,8 +709,8 @@ func _build_group(core: CardEntity):
 			break
 		if not is_instance_valid(c) or c == core or c.is_market or not c.draggable:
 			continue
-		var d: Dictionary = CardDB.get_def(c.def_id)
-		if d.get("kind") != CardDB.KIND_UNIT or d.get("res") != res:
+		var d: Dictionary = OnWorkCardDB.get_def(c.def_id)
+		if d.get("kind") != OnWorkCardDB.KIND_UNIT or d.get("res") != res:
 			continue
 		board._detach_from_group(c)
 		members.append(c)
@@ -764,10 +764,10 @@ func _expand_panel(which: String) -> void:
 func _any_buff() -> CardEntity:
 	for c in board.cards:
 		if is_instance_valid(c) and not c.is_market and c.draggable \
-			and CardDB.get_def(c.def_id).get("kind") == CardDB.KIND_BUFF:
+			and OnWorkCardDB.get_def(c.def_id).get("kind") == OnWorkCardDB.KIND_BUFF:
 			return c
-	for def_id in CardDB.all_cards():
-		if CardDB.get_def(def_id).get("kind") != CardDB.KIND_BUFF:
+	for def_id in OnWorkCardDB.all_cards():
+		if OnWorkCardDB.get_def(def_id).get("kind") != OnWorkCardDB.KIND_BUFF:
 			continue
 		return m._spawn_entity({ "uid": DEBUG_UID_BUFF, "def_id": def_id },
 			Vector3(0, 0.2, m.PLAYER_ZONE_Z + 1.0), true)
@@ -826,19 +826,19 @@ func _drawer_position_check(mode: String) -> void:
 ## 实包按钮输入验证：演示夹具只布置牌，判定、震动、声音均走正式完成行动入口。
 func _check_action_guard(mode: String) -> void:
 	var target := ""
-	for id in CardDB.all_cards():
-		var def := CardDB.get_def(id)
-		if def.get("kind") == CardDB.KIND_PRODUCT and def.get("recipe_res") == CardDB.RES_CASH:
+	for id in OnWorkCardDB.all_cards():
+		var def := OnWorkCardDB.get_def(id)
+		if def.get("kind") == OnWorkCardDB.KIND_PRODUCT and def.get("recipe_res") == OnWorkCardDB.RES_CASH:
 			target = id
 			break
 	assert(target != "")
 	m.state.players[m.my_seat]["cards"].clear()
 	m.state.combos.clear()
 	m.state.draw_first = m.my_seat
-	m.state.add_card(m.my_seat, CardDB.unit_id(CardDB.RES_USER))
+	m.state.add_card(m.my_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER))
 	var uids: Array = [m.state.add_card(m.my_seat, target)["uid"]]
-	for i in int(CardDB.get_def(target)["recipe_n"]):
-		uids.append(m.state.add_card(m.my_seat, CardDB.unit_id(CardDB.RES_CASH))["uid"])
+	for i in int(OnWorkCardDB.get_def(target)["recipe_n"]):
+		uids.append(m.state.add_card(m.my_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))["uid"])
 	m._rebuild_pipe()
 	m._respawn_all()
 	m.phase = m.PHASE_ACTION
@@ -854,7 +854,7 @@ func _check_action_guard(mode: String) -> void:
 	m.board.groups.append(group)
 	m.board._layout_group(group, Vector3(0, 0.05, 3.8))
 	await m.get_tree().create_timer(0.8).timeout
-	var before := StateCodec.state_hash(m.state)
+	var before := OnWorkStateCodec.state_hash(m.state)
 	var steps: int = m.tape.size()
 	var slot: int = m.sfx._next
 	var point: Vector2 = m.btn_pass.get_global_rect().get_center()
@@ -867,7 +867,7 @@ func _check_action_guard(mode: String) -> void:
 		await m.get_tree().process_frame
 	await m.get_tree().create_timer(0.06).timeout
 	var denied: bool = m.phase == m.PHASE_ACTION and m._actor == m.my_seat and not m.board.input_locked and not m.btn_pass.disabled
-	var same: bool = StateCodec.state_hash(m.state) == before and m.tape.size() == steps
+	var same: bool = OnWorkStateCodec.state_hash(m.state) == before and m.tape.size() == steps
 	var sound: bool = m.sfx._players[slot].stream == m.sfx._streams[Sfx.action("deny")["sound"]] and m.sfx._next != slot
 	print("ACTION_GUARD denied=",denied," unchanged=",same," deny_sound=",sound," rotation=",m.btn_pass.rotation)
 	assert(denied and same and sound and absf(m.btn_pass.rotation) > 0.001)
@@ -875,7 +875,7 @@ func _check_action_guard(mode: String) -> void:
 		await m.get_tree().create_timer(0.4).timeout
 		m.board._remove_group(group)
 		await m._on_action_done()
-		print("ACTION_GUARD_RESUME actor=",m._actor," passed=",m.tape.steps.any(func(e): return e["intent"]["op"] == Intent.OP_ACTION_DONE))
+		print("ACTION_GUARD_RESUME actor=",m._actor," passed=",m.tape.steps.any(func(e): return e["intent"]["op"] == OnWorkIntent.OP_ACTION_DONE))
 
 ## 实包使用真实鼠标投影和 Board._process；夹具只准备牌，不手动改拖拽中的位置。
 func _check_drag_overflow(grouped: bool) -> void:
@@ -900,7 +900,7 @@ func _check_drag_overflow(grouped: bool) -> void:
 		var count := (2 if grouped else 1) if is_target else 10
 		var at := target_at if is_target else Vector3(-4, 0.05, 2.2)
 		for i in count:
-			var record: Dictionary = m.state.add_card(m.my_seat, CardDB.unit_id(CardDB.RES_CASH))
+			var record: Dictionary = m.state.add_card(m.my_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
 			batch.append(m._spawn_entity(record, at, true))
 		if count > 1:
 			var group: Dictionary = board.make_group(batch.duplicate(), is_target)

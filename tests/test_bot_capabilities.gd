@@ -1,8 +1,8 @@
 # Copyright (C) 2026 etali (https://github.com/etali)
 # SPDX-License-Identifier: AGPL-3.0-only
 extends "res://tests/harness.gd"
-const Cap = preload("res://engine/bot_capabilities.gd")
-const Env = preload("res://engine/bot_environment.gd")
+const Cap = preload("res://engine/on_work_bot_capabilities.gd")
+const Env = preload("res://engine/on_work_bot_environment.gd")
 var fixture: Dictionary
 func _initialize() -> void:
 	_isolate_user_data()
@@ -11,24 +11,24 @@ func _initialize() -> void:
 	var f := FileAccess.open(path,FileAccess.WRITE)
 	f.store_string(JSON.stringify(fixture["cards"],"",false))
 	f.close()
-	CardDB.load_from(path)
+	OnWorkCardDB.load_from(path)
 	for strength in [0.0,0.225,0.5]:
-		var p := BOTSearch.from_model("bot",strength).resolved_parameters()
+		var p := OnWorkBOTSearch.from_model("bot",strength).resolved_parameters()
 		for key in ["financing_mode","allocation_mode","formation_mode","candidate_dedup","reply_mode","rollout_capabilities","tactical_extension","resale_mode","attack_mode"]:
-			check(p[key] == BOTSearch.from_strength(1.0).get_knob(key),"强度%s共用%s规格" % [strength,key])
-	check(BOTSearch.from_tier(" BOT:ENHANCED ").get_knob("financing_mode")==2,"命名配置忽略大小写和两端空格")
-	var cfg := BOTSearch.from_strength(1.0)
+			check(p[key] == OnWorkBOTSearch.from_strength(1.0).get_knob(key),"强度%s共用%s规格" % [strength,key])
+	check(OnWorkBOTSearch.from_tier(" BOT:ENHANCED ").get_knob("financing_mode")==2,"命名配置忽略大小写和两端空格")
+	var cfg := OnWorkBOTSearch.from_strength(1.0)
 	# 此用例验证完整节点规格；计算额度另由test_bot_work_budget验证。
 	cfg.apply_override("compute_budget",10000000)
 	cfg.apply_override("search_fraction",1.0)
 	var p := cfg.resolved_parameters()
 	check(p.financing_mode == 2 and p.reply_mode == 1,"增强是同一实现的参数集合")
 	var s := state()
-	var before := StateCodec.state_hash(s)
-	var old := BOTTurnPlan.choose_plan(s,"bot",BOTSearch.from_strength(0.5))
+	var before := OnWorkStateCodec.state_hash(s)
+	var old := OnWorkBOTTurnPlan.choose_plan(s,"bot",OnWorkBOTSearch.from_strength(0.5))
 	check(Env.replay(Env.copy(s),old.intents),"默认配置使用共用评分与搜索，方案通过真实规则")
-	var result := BOTTurnPlan.choose_plan(s,"bot",cfg)
-	check(StateCodec.state_hash(s) == before,"两种搜索都不改变输入状态")
+	var result := OnWorkBOTTurnPlan.choose_plan(s,"bot",cfg)
+	check(OnWorkStateCodec.state_hash(s) == before,"两种搜索都不改变输入状态")
 	check(result.diagnostics.compute_used <= result.diagnostics.compute_limit,"增强搜索遵守总展开额度")
 	check(Env.replay(s,result.intents),"增强方案全部通过真实规则")
 	var bulk := false
@@ -38,7 +38,7 @@ func _initialize() -> void:
 	check(result.diagnostics.selected_evaluation_complete,"增强实际决策具有完整当前回应评价")
 	# 留几张市场牌不是胜负判据：攻击也可能阻止对手融资后存活。
 	# 使用同档完整回应池真实结算，验证所有已比较的回应均不能抢先兑现。
-	var resolved := BOTTurnPlan.resolve_current(s,"bot",p)
+	var resolved := OnWorkBOTTurnPlan.resolve_current(s,"bot",p)
 	check(resolved.complete and not resolved.responses.is_empty(),"制胜路线完成真实对手回应比较")
 	var same_round_safe := true
 	var player_cannot_cashout := true
@@ -51,8 +51,8 @@ func _initialize() -> void:
 		var next := Env.copy(leaf)
 		next.end_round()
 		next.start_round()
-		player_cannot_cashout = player_cannot_cashout and BOTActions.winning_pawn(next,"player").is_empty()
-		bot_wins = bot_wins and Env.replay(next,BOTActions.winning_pawn(next,"bot")) and next.winner == "bot"
+		player_cannot_cashout = player_cannot_cashout and OnWorkBOTActions.winning_pawn(next,"player").is_empty()
+		bot_wins = bot_wins and Env.replay(next,OnWorkBOTActions.winning_pawn(next,"bot")) and next.winner == "bot"
 	check(same_round_safe,"已比较的真实回应均不能在本回合击败BOT")
 	check(player_cannot_cashout,"所有回应结算后，玩家下一先手均不能直接典当冲线")
 	check(bot_wins,"所有回应结算后，BOT当轮获胜或随后合法典当达到现金胜利线")
@@ -62,21 +62,21 @@ func _initialize() -> void:
 	_test_response_retention(p)
 	_test_resale(p)
 	finish()
-func state() -> GameState:
-	var s := GameState.new()
-	StateCodec.restore(s,fixture.state)
+func state() -> OnWorkState:
+	var s := OnWorkState.new()
+	OnWorkStateCodec.restore(s,fixture.state)
 	return s
 func _test_timing(p: Dictionary) -> void:
 	var s := state()
 	s.add_card("player","shangshi",true)
 	check(Cap.cashout_winner_after_round(s) == "player","下一先行动方可兑现升级产物")
-	check(BOTTurnPlan.settled_score(s,"bot",p) == -BOTEvaluator.TERMINAL_SCORE,"即时兑现金额不能被经济分覆盖")
-	check(BOTTurnPlan.bounded_score(s,"bot",p) == -1.0,"前推末端仍检查下一行动兑现，不能在深度边界漏判")
+	check(OnWorkBOTTurnPlan.settled_score(s,"bot",p) == -OnWorkBOTEvaluator.TERMINAL_SCORE,"即时兑现金额不能被经济分覆盖")
+	check(OnWorkBOTTurnPlan.bounded_score(s,"bot",p) == -1.0,"前推末端仍检查下一行动兑现，不能在深度边界漏判")
 	s.draw_first = "player"
 	check(Cap.cashout_winner_after_round(s) == "","后手能典当不等于已必胜")
 	check(s.winner == "","扩展评估不篡改实际winner")
-	var legacy := BOTSearch.from_strength(0.5).resolved_parameters()
-	check(absf(BOTTurnPlan.settled_score(s,"bot",legacy)) < BOTEvaluator.TERMINAL_SCORE,"兼容评估保持原静态分")
+	var legacy := OnWorkBOTSearch.from_strength(0.5).resolved_parameters()
+	check(absf(OnWorkBOTTurnPlan.settled_score(s,"bot",legacy)) < OnWorkBOTEvaluator.TERMINAL_SCORE,"兼容评估保持原静态分")
 func _test_modes(p: Dictionary) -> void:
 	var same := state()
 	var other := Env.copy(same)
@@ -85,18 +85,18 @@ func _test_modes(p: Dictionary) -> void:
 	check(Cap.signature(same) == Cap.signature(other),"等价UID置换被合并")
 	other.players.bot.cards[0].locked = true
 	check(Cap.signature(same) != Cap.signature(other),"不同锁定状态不会被误合并")
-	check(BOTTurnPlan._fast_profile(p).financing_mode == 2,"增强前推保留融资能力")
+	check(OnWorkBOTTurnPlan._fast_profile(p).financing_mode == 2,"增强前推保留融资能力")
 	var off := p.duplicate()
 	off.rollout_capabilities = 0
-	check(BOTTurnPlan._fast_profile(off).financing_mode == 0,"前推动作能力可独立关闭")
-	var tiny := BOTSearch.from_strength(1.0)
+	check(OnWorkBOTTurnPlan._fast_profile(off).financing_mode == 0,"前推动作能力可独立关闭")
+	var tiny := OnWorkBOTSearch.from_strength(1.0)
 	tiny.apply_override("compute_budget",100)
 	tiny.apply_override("search_fraction",1.0)
-	var action := BOTTurnPlan.choose_plan(state(),"bot",tiny)
+	var action := OnWorkBOTTurnPlan.choose_plan(state(),"bot",tiny)
 	check(action.diagnostics.compute_used<=85 and Env.replay(state(),action.intents),"极小预算仍返回合法方案")
 
 func _test_small_space(parameters: Dictionary) -> void:
-	var s := GameState.new()
+	var s := OnWorkState.new()
 	s.players = {"bot":{"cards":[]},"player":{"cards":[]}}
 	for who in ["bot","player"]:
 		for i in 5: s.add_card(who,"cash")
@@ -104,7 +104,7 @@ func _test_small_space(parameters: Dictionary) -> void:
 	s.add_card("bot","yunketang")
 	s.add_card("bot","pinshaoshao")
 	var p := parameters.duplicate()
-	p["_context"] = BOTActions.Context.new()
+	p["_context"] = OnWorkBOTActions.Context.new()
 	p.financing_beam = 512
 	p.financing_choices = 64
 	p.buy_beam = 64
@@ -131,7 +131,7 @@ func _test_small_space(parameters: Dictionary) -> void:
 
 func _test_response_retention(parameters: Dictionary) -> void:
 	# 回应保留只需两种合法资源状态；大型终局策略已在入口用真实胜负验证。
-	var s := GameState.new()
+	var s := OnWorkState.new()
 	s.set_seed(4321)
 	s.players = {"bot":{"cards":[]},"player":{"cards":[]}}
 	s.draw_first = "bot"
@@ -139,22 +139,22 @@ func _test_response_retention(parameters: Dictionary) -> void:
 		s.add_card(who,"cash")
 		s.add_card(who,"user")
 	var extra_user := s.add_card("player","user")
-	var before := StateCodec.state_hash(s)
+	var before := OnWorkStateCodec.state_hash(s)
 	var kept := Env.copy(s)
 	var sold := Env.copy(s)
-	check(Env.replay(sold,[Intent.pawn("player",[extra_user.uid])]),"小回应夹具可合法典当一个用户")
+	check(Env.replay(sold,[OnWorkIntent.pawn("player",[extra_user.uid])]),"小回应夹具可合法典当一个用户")
 	Env.settle(kept,Callable())
 	Env.settle(sold,Callable())
 	var expected := {Cap.signature(kept):true,Cap.signature(sold):true}
 	check(expected.size()==2 and kept.winner=="" and sold.winner=="","保留与典当形成两种非终局语义状态")
 	var p := parameters.duplicate()
-	var resolved := BOTTurnPlan.resolve_current(s,"bot",p)
+	var resolved := OnWorkBOTTurnPlan.resolve_current(s,"bot",p)
 	check(resolved.complete and not resolved.coverage_limited,"小局面完整评价全部规定回应")
 	check(resolved.responses.size()==2 and _response_signatures(resolved.responses)==expected,
 		"当前回应精确保留独立规则执行的两种状态")
-	var future := BOTTurnPlan._future_responses(resolved,p)
+	var future := OnWorkBOTTurnPlan._future_responses(resolved,p)
 	check(future.size()==2 and _response_signatures(future)==expected,"两种回应均保留到后续比较入口")
-	check(StateCodec.state_hash(s)==before,"回应评价与后续筛选不改变输入状态")
+	check(OnWorkStateCodec.state_hash(s)==before,"回应评价与后续筛选不改变输入状态")
 
 func _response_signatures(responses: Array) -> Dictionary:
 	var signatures := {}
@@ -162,9 +162,9 @@ func _response_signatures(responses: Array) -> Dictionary:
 	return signatures
 
 func _test_resale(parameters: Dictionary) -> void:
-	CardDB.CARDS["resale_a"] = {"kind":"product","tier":1,"price":4,"pawn":2,"recipe_res":"user","recipe_n":1,"output_res":"cash","output_n":1}
-	CardDB.CARDS["resale_b"] = {"kind":"product","tier":1,"price":3,"pawn":1,"recipe_res":"user","recipe_n":1,"output_res":"cash","output_n":1}
-	var s := GameState.new()
+	OnWorkCardDB.CARDS["resale_a"] = {"kind":"product","tier":1,"price":4,"pawn":2,"recipe_res":"user","recipe_n":1,"output_res":"cash","output_n":1}
+	OnWorkCardDB.CARDS["resale_b"] = {"kind":"product","tier":1,"price":3,"pawn":1,"recipe_res":"user","recipe_n":1,"output_res":"cash","output_n":1}
+	var s := OnWorkState.new()
 	s.players = {"bot":{"cards":[]},"player":{"cards":[]}}
 	for who in s.players:
 		for i in 6: s.add_card(who,"cash")

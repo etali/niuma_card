@@ -4,8 +4,8 @@
 
 extends "res://tests/harness.gd"
 
-const DemoData = preload("res://scenes/rulebook_demo_data.gd")
-const Arena = preload("res://scenes/rulebook_arena.gd")
+const DemoData = preload("res://scenes/on_work_rulebook_demo_data.gd")
+const Arena = preload("res://scenes/on_work_rulebook_arena.gd")
 
 func _initialize() -> void:
 	call_deferred("_run")

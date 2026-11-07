@@ -8,10 +8,10 @@ const MODE_PREFERENCE := "last_mode"
 const Door = preload("res://scenes/shift_door.gd")
 const Choreography = preload("res://scenes/shift_choreography.gd")
 const Backdrop = preload("res://scenes/table_backdrop.gd")
+const Boot = preload("res://scenes/boot.gd")
+const Setup = preload("res://scenes/table_setup.gd")
 
-const ON_WORK_SCENE := "res://scenes/main.tscn"
-const OFF_WORK_SCENE := "res://scenes/work_main.tscn"
-const SCENES := [ON_WORK_SCENE, OFF_WORK_SCENE]
+const SCENES := Boot.TABLE_SCENES
 var active := 0
 var tables: Array[Node] = [null,null]
 var views: Array[SubViewportContainer] = [null,null]
@@ -38,25 +38,32 @@ func _ready() -> void:
 	var args := LaunchConfig.desktop_args()
 	off_work_playtest = args.has("--off-work-playtest")
 	remember = remembers_mode(args)
-	if remember:
-		var saved := Slots.load_slot(MODE_PREFERENCE)
-		first_intro = saved.get("mode") not in [0,1]
-		active = 0 if first_intro else int(saved.mode)
-		if first_intro: Slots.save(MODE_PREFERENCE,{"mode":active})
-	elif off_work_playtest:
-		active = 1
-	_create_table(active,not remember)
+	var preference := Boot.starting_mode(args)
+	active = maxi(0, preference)
+	first_intro = preference < 0
+	if first_intro: Slots.save(MODE_PREFERENCE, {"mode": active})
+	var first := await Boot.packed_scene(get_tree(), SCENES[active])
+	await _create_table(active, first, not remember)
+	_install_door(active, tables[active])
 	await _present(active)
+	_block_input(active, false)
+	if DisplayServer.get_name() != "headless":
+		# Load the alternate scene's dependencies without starting its game,
+		# changing either drawer or claiming the shared backdrop.
+		Boot.request_scene(SCENES[1 - active])
+
+func _may_warm_table_effects() -> bool:
+	# OpenGL compiles on the render thread. Leave the interval where the
+	# player is moving cards, opening the drawer or turning the sign to play.
+	if switching or not is_instance_valid(tables[active]) or display.texture == null:
+		return false
+	var drawer := _drawer(tables[active])
+	return drawer != null and not drawer.is_expanded() and not drawer.is_transitioning()
 
 static func remembers_mode(args: PackedStringArray) -> bool:
-	var flags := LaunchConfig.parse_flags(args)
-	var explicit_keys := LaunchConfig.KEYS_SERVER + LaunchConfig.KEYS_ROOM + LaunchConfig.KEYS_HOST + LaunchConfig.KEYS_PORT
-	explicit_keys += ["solo","table","cards-config","animation-preview","off-work-playtest"]
-	for key in explicit_keys:
-		if flags.has(key): return false
-	return true
+	return Boot.remembers_mode(args)
 
-func _create_table(mode: int, entering := false) -> void:
+func _create_table(mode: int, scene: PackedScene, entering := false) -> void:
 	var surface := SubViewportContainer.new()
 	surface.name = "OnDuty" if mode == 0 else "OffDuty"
 	add_child(surface)
@@ -84,16 +91,24 @@ func _create_table(mode: int, entering := false) -> void:
 				node.set_meta("shift_enter_expanded",true)
 			tables[mode] = node
 			_install_door.call_deferred(mode,node))
-	var game: Node = load(SCENES[mode]).instantiate()
+	var game: Node = scene.instantiate()
 	game.process_mode = Node.PROCESS_MODE_PAUSABLE
+	var staged: Setup
+	if DisplayServer.get_name() != "headless":
+		staged = Setup.new()
+		game.set_meta("shift_setup", staged)
+		viewport.gui_disable_input = true
+	game.set_meta("may_warm_table_effects", _may_warm_table_effects)
 	game.set_meta("shift_session_enabled",remember)
 	game.set_meta("shift_enter_expanded",entering)
 	if mode == 1: game.set_meta("read_playtest_cards",off_work_playtest)
 	if mode == 0 and DisplayServer.get_name() == "headless": game.force_drawer_layout = true
 	viewport.add_child(game)
+	if staged and not staged.complete: await staged.finished
 
 func _install_door(mode: int, game: Node) -> void:
 	if not is_instance_valid(game) or tables[mode] != game: return
+	if game.has_meta("shift_setup"): return
 	if is_instance_valid(title_slots[mode]): return
 	var presentation: Node = game.drawer_presentation
 	var title: Label
@@ -198,6 +213,8 @@ func _block_input(mode: int, blocked: bool) -> void:
 func switch_mode(next: int) -> void:
 	if switching or next == active or next not in [0, 1]: return
 	switching = true
+	if views[next] == null and DisplayServer.get_name() != "headless":
+		Boot.request_scene(SCENES[next])
 	var previous := active
 	var old := tables[previous]
 	old.save_shift_session()
@@ -215,22 +232,21 @@ func switch_mode(next: int) -> void:
 	await gather.finished
 	if DisplayServer.get_name() != "headless":
 		await RenderingServer.frame_post_draw
-		# Native window/viewport resizing can invalidate the backing framebuffer.
-		# Retain the rolled-up table until the next view has produced a full frame.
-		var image := display.texture.get_image()
-		if image != null and not image.is_empty():
-			display.texture = ImageTexture.create_from_image(image)
-		await get_tree().process_frame
+		# Keep the last rendered GPU texture at its current size until the next
+		# viewport presents. A full-window GPU readback stalls this handoff.
+		views[previous].stretch = false
 	_set_surface(previous, false)
 	leaving.restore()
 
 	active = next
 	get_tree().paused = paused[next]
 	if views[next] == null:
-		_create_table(next, true)
+		var scene := await Boot.packed_scene(get_tree(), SCENES[next])
+		await _create_table(next, scene, true)
 		_suspend(next)
 	else:
 		_mount_backdrop(tables[next], true)
+		views[next].stretch = true
 		_set_surface(next, true)
 	var game := tables[next]
 	var drawer := _drawer(game)

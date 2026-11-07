@@ -157,7 +157,7 @@ func _t4_bot_bench_pile(main: Node) -> void:
 	# 直接塞两张编不进组合的牌：一张 Buff（没有可贴的组合）、一张缺料的生产卡
 	var uid := 9700
 	for def_id in ["jiangjia", "yunketang"]:
-		var c: Dictionary = main.state.add_card(GameState.BOT, def_id)
+		var c: Dictionary = main.state.add_card(OnWorkState.BOT, def_id)
 		main._spawn_entity(c, Vector3(6.0, 0.05, -6.0), false)
 		uid += 1
 	main.layout._layout_bot_zone()
@@ -167,9 +167,9 @@ func _t4_bot_bench_pile(main: Node) -> void:
 		await physics_frame
 
 	var loose: Array = []
-	for c in main.state.players[GameState.BOT]["cards"]:
+	for c in main.state.players[OnWorkState.BOT]["cards"]:
 		if not main.layout._bot_pile_of_uid.has(c["uid"]):
-			loose.append(CardDB.card_name(c["def_id"]))
+			loose.append(OnWorkCardDB.card_name(c["def_id"]))
 	check(loose.is_empty(), "BOT 每张牌都登记进了某个摞（游离：%s）" % [
 		"无" if loose.is_empty() else ", ".join(loose)])
 
@@ -216,7 +216,7 @@ func _t4_bot_bench_pile(main: Node) -> void:
 			min_dx, CardEntity.CARD_SIZE.x])
 
 	# 同一张卡的几份仍然收拢成一摞、带台阶：这是资源摞那条口径，没变
-	var same: Dictionary = main.state.add_card(GameState.BOT, "jiangjia")
+	var same: Dictionary = main.state.add_card(OnWorkState.BOT, "jiangjia")
 	main._spawn_entity(same, Vector3(6.0, 0.05, -6.0), false)
 	main.layout._layout_bot_zone()
 	await create_timer(0.45).timeout

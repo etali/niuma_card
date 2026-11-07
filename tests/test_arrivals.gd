@@ -40,11 +40,11 @@ func _initialize() -> void:
 
 func _t1_pawn_keeps_layout(main: Node, board: Board) -> void:
 	print("--- T1. 典当之后，场上原有的卡一张都没挪 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# 玩家自己摆的一摞（位置刻意选在锚点以外，理牌会把它搬走）
 	var mine: Array = []
 	for i in 4:
-		var c: Dictionary = state.add_card(GameState.PLAYER, "cash")
+		var c: Dictionary = state.add_card(OnWorkState.PLAYER, "cash")
 		mine.append(main._spawn_entity(c, Vector3(0.0 + i * 0.1, 0.05, 3.4), true))
 	for c in mine:
 		board._detach_from_group(c)
@@ -58,12 +58,12 @@ func _t1_pawn_keeps_layout(main: Node, board: Board) -> void:
 			before[uid] = main.entities[uid].global_position
 
 	# 典当一张传说卡（pawn 值大，回收的现金够摞）
-	var legend: Dictionary = state.add_card(GameState.PLAYER, "dujiaoshou")
+	var legend: Dictionary = state.add_card(OnWorkState.PLAYER, "dujiaoshou")
 	var le: CardEntity = main._spawn_entity(legend, Vector3(-2.0, 0.05, 2.6), true)
 	await settle()
 	before.erase(legend["uid"])   # 这张自己会被当掉，不算「原有布局」
 	main.phase = main.PHASE_ACTION
-	main._actor = GameState.PLAYER
+	main._actor = OnWorkState.PLAYER
 	await main._on_dropped_on_pawn([le])
 	await settle()
 
@@ -85,25 +85,25 @@ func _t1_pawn_keeps_layout(main: Node, board: Board) -> void:
 
 func _t2_pawn_stacks_at_card_spot(main: Node, board: Board) -> void:
 	print("--- T2. 典当回收 > 10 → 摞成一组，落在被当那张卡的位置 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# z 取在 1.23~3.98 之间：50 张摞纵深 2.45，摞的中心对到这一带时
 	# board 给玩家卡的钳制（player_min_z=0 / player_max_z=5.2）两头都不生效。
 	# 种在 4.2 那种贴边的位置上，钳制会把不同的算法压成同一个结果，测不出对错
 	var spot := Vector3(6.5, 0.05, 2.6)
-	var legend: Dictionary = state.add_card(GameState.PLAYER, "dujiaoshou")
+	var legend: Dictionary = state.add_card(OnWorkState.PLAYER, "dujiaoshou")
 	var le: CardEntity = main._spawn_entity(legend, spot, true)
 	await settle()
-	var pawn_n := CardDB.pawn_value("dujiaoshou")
+	var pawn_n := OnWorkCardDB.pawn_value("dujiaoshou")
 	check(pawn_n >= main.PILE_CHUNK, "独角兽（dujiaoshou）典当价 %d ≥ %d，够摞一摞" % [pawn_n, main.PILE_CHUNK])
-	var cash_before := int(state.resource_count(GameState.PLAYER, CardDB.RES_CASH))
+	var cash_before := int(state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH))
 	# 只认这一次新建的摞：T1 也典当过一张，桌上已经有一摞同样 50 张的现金
 	var old_groups: Array = board.groups.duplicate()
 
 	main.phase = main.PHASE_ACTION
-	main._actor = GameState.PLAYER
+	main._actor = OnWorkState.PLAYER
 	await main._on_dropped_on_pawn([le])
 	await settle()
-	var gained := int(state.resource_count(GameState.PLAYER, CardDB.RES_CASH)) - cash_before
+	var gained := int(state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH)) - cash_before
 	check(gained == pawn_n, "现金 +%d（实际 +%d）" % [pawn_n, gained])
 
 	# 回收的现金成了一个收拢摞，摞的位置在被当那张卡的原位附近
@@ -132,11 +132,11 @@ func _t2_pawn_stacks_at_card_spot(main: Node, board: Board) -> void:
 
 func _t3_settle_stacks_left(main: Node, board: Board) -> void:
 	print("--- T3. 结算产出 > 10 → 按每份 10 张摞好，摆在屏幕左侧 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# 场上先摆一摞玩家自己的牌，位置压在左侧那一带：验「尽量不重叠」
 	var mine: Array = []
 	for i in 3:
-		var c: Dictionary = state.add_card(GameState.PLAYER, "user")
+		var c: Dictionary = state.add_card(OnWorkState.PLAYER, "user")
 		mine.append(main._spawn_entity(c, main.layout.SETTLE_CASH_ANCHOR + Vector3(0, 0, 0.1), true))
 	for c in mine:
 		board._detach_from_group(c)
@@ -163,7 +163,7 @@ func _t3_settle_stacks_left(main: Node, board: Board) -> void:
 	# 两件事分不出来
 	var t3_n: int = main.PILE_CHUNK * 2 + main.PILE_CHUNK / 2
 	for i in t3_n:
-		state.add_card(GameState.PLAYER, "cash")
+		state.add_card(OnWorkState.PLAYER, "cash")
 	main._sync_entities()
 	await settle()
 	main.layout._stack_settled(known)
@@ -315,10 +315,10 @@ func _clean_slots(main: Node, _board: Board, blockers: Array) -> int:
 ## 两三张现金摆成「一摞」，玩家还得双击展开才看得见是什么，反而更难认
 func _t4_small_batch_not_stacked(main: Node, board: Board) -> void:
 	print("--- T4. 到货不足 %d 张：摆开不摞 ---" % main.PILE_CHUNK)
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	var fresh: Array = []
 	for i in 3:
-		var c: Dictionary = state.add_card(GameState.PLAYER, "cash")
+		var c: Dictionary = state.add_card(OnWorkState.PLAYER, "cash")
 		fresh.append(main._spawn_entity(c, Vector3(2.0, 0.05, 4.6), true))
 	await settle()
 	var made: Array = main.layout._stack_arrivals(fresh, Vector3(2.0, 0.05, 4.6))
@@ -371,11 +371,11 @@ func _t5_hover_shows_pawn_price(main: Node, board: Board) -> void:
 	var t_prod := board.hover_desc_text("yunketang")
 	check(t_prod.contains("典当"), "组合卡的白板上有典当价（%s）" % t_prod.replace("\n", " / "))
 	check(t_prod.contains("→"), "效果描述还在（没被典当价挤掉）")
-	var pv := CardDB.pawn_value("yunketang")
+	var pv := OnWorkCardDB.pawn_value("yunketang")
 	check(t_prod.contains("+%d" % pv), "写的是 pawn_value 算出的 %d" % pv)
 
 	var t_legend := board.hover_desc_text("dujiaoshou")
-	check(t_legend.contains("典当 +%d" % CardDB.pawn_value("dujiaoshou")),
+	check(t_legend.contains("典当 +%d" % OnWorkCardDB.pawn_value("dujiaoshou")),
 		"传说卡的典当价也走同一条（%s）" % t_legend.replace("\n", " / "))
 	check(t_legend.count("典当") == 1,
 		"传说卡不再重复写两遍典当（%s）" % t_legend.replace("\n", " / "))
@@ -393,10 +393,10 @@ func _t5_hover_shows_pawn_price(main: Node, board: Board) -> void:
 ## 这一节就钉住这个顺序：必须走 _run_settle 才算数
 func _t6_real_settle_stacks(main: Node, board: Board) -> void:
 	print("--- T6. 真实回合结束：产出按每份 %d 张摞好 ---" % main.PILE_CHUNK)
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# 先把「已分胜负」这个标记摘掉：前面几节为了验摞给玩家堆了一百多张现金，
 	# 早就过了 `_game.win_cash` 那条胜利线。winner 一旦定下来，结算意图会被
-	# IntentApply 的 game_over 护栏挡掉（只放 finalize 过），一张产出都不会有 ——
+	# OnWorkIntentApply 的 game_over 护栏挡掉（只放 finalize 过），一张产出都不会有 ——
 	# 真实回合结束本来就只发生在未分胜负的局面上，这里补齐这个前提。
 	# **只摘标记，不动牌**：后面 T9 数的是左侧累计张数，删牌会把它的输入一起改掉。
 	# finalize 里还会再判一次胜负，摘掉不影响它把这局重新判成玩家赢
@@ -404,21 +404,21 @@ func _t6_real_settle_stacks(main: Node, board: Board) -> void:
 	state.win_reason = ""
 
 	# 挑信息茧房：它的 output_n 跨过 PILE_CHUNK，一次能同时验分组和余数
-	var ld: Dictionary = CardDB.get_def("xinxijianfang")
-	var members: Array = [state.add_card(GameState.PLAYER, "xinxijianfang")["uid"]]
-	var unit := "cash" if str(ld.get("recipe_res")) == CardDB.RES_CASH else "user"
+	var ld: Dictionary = OnWorkCardDB.get_def("xinxijianfang")
+	var members: Array = [state.add_card(OnWorkState.PLAYER, "xinxijianfang")["uid"]]
+	var unit := "cash" if str(ld.get("recipe_res")) == OnWorkCardDB.RES_CASH else "user"
 	for i in int(ld.get("recipe_n")):
-		members.append(state.add_card(GameState.PLAYER, unit)["uid"])
+		members.append(state.add_card(OnWorkState.PLAYER, unit)["uid"])
 	main._sync_entities()
 	await settle()
 	# 引擎认的是 state.combos（board.groups 只管摆放），得走 create_combo 登记
-	var reg: Dictionary = state.create_combo(GameState.PLAYER, members)
+	var reg: Dictionary = state.create_combo(OnWorkState.PLAYER, members)
 	check(reg.get("ok", false), "组合登记成功（%s）" % str(reg.get("reason", "")))
 	if not reg.get("ok", false):
 		return
 
 	var groups_before: Array = board.groups.duplicate()
-	var n_before: int = state.players[GameState.PLAYER]["cards"].size()
+	var n_before: int = state.players[OnWorkState.PLAYER]["cards"].size()
 	var loose_before := _loose_cash_left(main, board)
 	await main._run_settle()
 	# 结算里有若干 timer（开场 0.6 + 每组 0.5/0.7 + 收尾 0.5），等够再看
@@ -426,7 +426,7 @@ func _t6_real_settle_stacks(main: Node, board: Board) -> void:
 		await physics_frame
 
 	# 产出结算是净增：配方卡不被吃掉（只是 locked 一回合），所以正好 +output_n
-	var gained: int = state.players[GameState.PLAYER]["cards"].size() - n_before
+	var gained: int = state.players[OnWorkState.PLAYER]["cards"].size() - n_before
 	check(gained == int(ld.get("output_n")),
 		"净增 %d 张现金（实际 %+d）" % [int(ld.get("output_n")), gained])
 
@@ -482,8 +482,8 @@ func _t6_real_settle_stacks(main: Node, board: Board) -> void:
 ## 收尾拖到 1.35 倍，两片飞停了还满不透明挂在桌上，最后一下才闪掉。
 func _t7_tear_splits_card(main: Node, board: Board) -> void:
 	print("--- T7. 受击：从中间撕开再渐变消失 ---")
-	var state: GameState = main.state
-	var victim: Dictionary = state.add_card(GameState.PLAYER, "cash")
+	var state: OnWorkState = main.state
+	var victim: Dictionary = state.add_card(OnWorkState.PLAYER, "cash")
 	main._sync_entities()
 	await settle()
 	var e: CardEntity = main.entities.get(victim["uid"])
@@ -588,13 +588,13 @@ func _half_mat(n: Node) -> ShaderMaterial:
 ## 没跑完的补间会逐帧把卡拉回组合那边（实测能把整摞拖偏 8.8）
 func _t8_fly_from_combo(main: Node, board: Board) -> void:
 	print("--- T8. 结算产出从组合飞出来 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	var known := {}
 	for uid in main.entities:
 		known[uid] = true
 	var fresh: Array = []
 	for i in 14:
-		fresh.append(state.add_card(GameState.PLAYER, "cash")["uid"])
+		fresh.append(state.add_card(OnWorkState.PLAYER, "cash")["uid"])
 	# 故意选桌子右边：离结算落点（x≈-11.7）够远，首帧偏哪边一目了然
 	var center := Vector3(3.0, 0.05, 2.0)
 	main._sync_entities(center)
@@ -657,7 +657,7 @@ func _t8_fly_from_combo(main: Node, board: Board) -> void:
 ##    看着就是「产出了一张牌」—— 数量得能数出来
 func _t9_left_side_is_cumulative(main: Node, board: Board) -> void:
 	print("--- T9. 左侧散牌按累计张数决定摞不摞 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	var groups_before: Array = board.groups.duplicate()
 
 	# 第一回合：补到至少「半摞 + 1 张散现金」。前面几节往桌上倒了上百张卡，
@@ -674,7 +674,7 @@ func _t9_left_side_is_cumulative(main: Node, board: Board) -> void:
 		known1[uid] = true
 	var batch1: Array = []
 	for i in maxi(want - already, 0):
-		batch1.append(state.add_card(GameState.PLAYER, "cash")["uid"])
+		batch1.append(state.add_card(OnWorkState.PLAYER, "cash")["uid"])
 	main._sync_entities()
 	await settle()
 	main.layout._stack_settled(known1)
@@ -702,7 +702,7 @@ func _t9_left_side_is_cumulative(main: Node, board: Board) -> void:
 	for uid in main.entities:
 		known2[uid] = true
 	for i in want:
-		state.add_card(GameState.PLAYER, "cash")
+		state.add_card(OnWorkState.PLAYER, "cash")
 	main._sync_entities()
 	await settle()
 	main.layout._stack_settled(known2)
@@ -760,9 +760,9 @@ func _t9_left_side_is_cumulative(main: Node, board: Board) -> void:
 	var shot_cash: int = main.PILE_CHUNK * 2 + main.PILE_CHUNK / 2
 	var shot_user: int = main.PILE_CHUNK + main.PILE_CHUNK / 2
 	for i in shot_cash:
-		state.add_card(GameState.PLAYER, "cash")
+		state.add_card(OnWorkState.PLAYER, "cash")
 	for i in shot_user:
-		state.add_card(GameState.PLAYER, "user")
+		state.add_card(OnWorkState.PLAYER, "user")
 	main._sync_entities()
 	await settle()
 	main.layout._stack_settled(known4)
@@ -802,7 +802,7 @@ func _t9_left_side_is_cumulative(main: Node, board: Board) -> void:
 		main.PILE_CHUNK, "无" if odd.is_empty() else ", ".join(odd)])
 	var on_pile: Array = []
 	var loose_n := 0
-	for c in state.players[GameState.PLAYER]["cards"]:
+	for c in state.players[OnWorkState.PLAYER]["cards"]:
 		if not main.entities.has(c["uid"]):
 			continue
 		var e = main.entities[c["uid"]]
@@ -826,7 +826,7 @@ func _t9_left_side_is_cumulative(main: Node, board: Board) -> void:
 	var dup: Array = []
 	var loose_pos: Array = []
 	var floor_gap: float = CardArt.BAND_FRAC * CardEntity.CARD_SIZE.z
-	for c in state.players[GameState.PLAYER]["cards"]:
+	for c in state.players[OnWorkState.PLAYER]["cards"]:
 		if not main.entities.has(c["uid"]):
 			continue
 		var e2 = main.entities[c["uid"]]
@@ -835,7 +835,7 @@ func _t9_left_side_is_cumulative(main: Node, board: Board) -> void:
 		if not main.layout._in_settle_zone(e2):
 			continue
 		# 玩家自己编在带里的摊开组不算「散牌」：那是他摆的结构，一张都不许动
-		# （见 main.gd 的硬约束）。我们的余数是被 _loose_slots 填进它的缝里的，
+		# （见 on_work_main.gd 的硬约束）。我们的余数是被 _loose_slots 填进它的缝里的，
 		# 两个独立结构在 z 上交错本来就会互相进到标题带的距离内 ——
 		# 判得着也改不了，只能靠 y 台阶不穿模（上一条查的就是这个）。
 		# 这一条要钉的是「**我们自己摆下的**这一条余数，张张认得出是什么」
@@ -866,7 +866,7 @@ func _t9_left_side_is_cumulative(main: Node, board: Board) -> void:
 	# 这两类穿模测不到 —— 而屏幕上的穿模不区分那张卡属于谁
 	var band_pos: Array = []
 	var band_tag: Array = []
-	for c in state.players[GameState.PLAYER]["cards"]:
+	for c in state.players[OnWorkState.PLAYER]["cards"]:
 		if not main.entities.has(c["uid"]):
 			continue
 		var e3 = main.entities[c["uid"]]
@@ -907,7 +907,7 @@ func _t9_left_side_is_cumulative(main: Node, board: Board) -> void:
 	# 不读被测的 STACK_GAP.y，而是从桌上实际最长的摞和实际余数张数反推。
 	#
 	# 变异：把散牌落位的 floor 从 maxf(base_y, _pile_top_under(seats)) 改成
-	# base_y + _pile_top_under(seats)（main.gd 的 _lay_loose_run），这条立刻报
+	# base_y + _pile_top_under(seats)（on_work_main.gd 的 _lay_loose_run），这条立刻报
 	# （实测 2.508 > 上界 1.436）。
 	# 注意**不是**改 _pile_floor / _pile_top_under 里面那两处 maxf ——
 	# 实测那两处改成累加，这条一条都不报：T9 里每个座位身下只压着一层结构，
@@ -1099,7 +1099,7 @@ func _t9_left_side_is_cumulative(main: Node, board: Board) -> void:
 		known3[uid] = true
 	var batch3: Array = []
 	for i in 14:
-		batch3.append(state.add_card(GameState.PLAYER, "user")["uid"])
+		batch3.append(state.add_card(OnWorkState.PLAYER, "user")["uid"])
 	var center := Vector3(3.0, 0.05, 2.0)
 	main._sync_entities(center)
 	await physics_frame
@@ -1159,7 +1159,7 @@ func _t9_left_side_is_cumulative(main: Node, board: Board) -> void:
 ## 只看最终形态测不出这个 bug —— 末尾那趟本来就会把它们拽到带子里
 func _t10_arrivals_land_in_band(main: Node, board: Board) -> void:
 	print("--- T10. 产出直接落进左侧资源带、落地即分组 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# 前面几节往桌上倒了上百张卡，带子里已经躺着一片。这一节要看的是
 	# 「新到的这批落在哪」，所以先把桌面清空到只剩公共区
 	isolate(board, [])
@@ -1171,11 +1171,11 @@ func _t10_arrivals_land_in_band(main: Node, board: Board) -> void:
 	var n := 14
 	var fresh: Array = []
 	for i in n:
-		fresh.append(state.add_card(GameState.PLAYER, "cash")["uid"])
+		fresh.append(state.add_card(OnWorkState.PLAYER, "cash")["uid"])
 	# BOT 也产一批：同一批同时出生，落点也不许互相重叠（对方的产出同样看得见）
 	var bot_fresh: Array = []
 	for i in 5:
-		bot_fresh.append(state.add_card(GameState.BOT, "cash")["uid"])
+		bot_fresh.append(state.add_card(OnWorkState.BOT, "cash")["uid"])
 	var center := Vector3(3.0, 0.05, 2.0)
 	main.layout.begin_arrivals()
 	main._sync_entities(center)
@@ -1276,7 +1276,7 @@ func _t10_arrivals_land_in_band(main: Node, board: Board) -> void:
 		known2[uid] = true
 	var fill: Array = []
 	for i in (chunk - rest):
-		fill.append(state.add_card(GameState.PLAYER, "cash")["uid"])
+		fill.append(state.add_card(OnWorkState.PLAYER, "cash")["uid"])
 	main.layout.begin_arrivals()
 	main._sync_entities(center)
 	await arrivals_landed(main)
@@ -1313,7 +1313,7 @@ func _t10_arrivals_land_in_band(main: Node, board: Board) -> void:
 
 	# 7. 两种资源同一轮到货 —— 这一节要的是「另一批还在飞」这个时机。
 	#    产出现在是直飞左侧带的（见 arrival_spot），现金那批先落，用户那批还在
-	#    从现金列上空横穿时末尾那趟就开跑了（main.gd 的 _cancel_fly 一节写明了
+	#    从现金列上空横穿时末尾那趟就开跑了（on_work_main.gd 的 _cancel_fly 一节写明了
 	#    「_stack_settled 会把没跑完的补间掐掉」，就是说它本来就跑在飞行途中）。
 	#    这一趟要是不知道「用户那批也是本轮要重排的」，就把半空中那几张判成障碍，
 	#    现金那摞躲去隔壁列最南端，余数跟着往南推、尾巴滑出画面
@@ -1333,7 +1333,7 @@ func _t10_arrivals_land_in_band(main: Node, board: Board) -> void:
 ## 用户要凑不出一摞（否则两摞一起挑位置，量的就不是这一条了）。
 ## wait —— 从 _sync_entities 到 _stack_settled 之间等多久：给足就是两批都落定，
 ## 给 SPAWN_FLY_TIME 就是用户那批还有一半在空中（错开总时长是 SPAWN_FLY_SPREAD）
-func _settle_two_res(main: Node, board: Board, state: GameState, center: Vector3,
+func _settle_two_res(main: Node, board: Board, state: OnWorkState, center: Vector3,
 		wait: float, tag: String) -> float:
 	isolate(board, [])
 	await physics_frame
@@ -1343,9 +1343,9 @@ func _settle_two_res(main: Node, board: Board, state: GameState, center: Vector3
 	var n_cash: int = main.PILE_CHUNK + main.PILE_CHUNK / 2 - 1
 	var n_user: int = main.PILE_CHUNK - 2
 	for i in n_cash:
-		state.add_card(GameState.PLAYER, "cash")
+		state.add_card(OnWorkState.PLAYER, "cash")
 	for i in n_user:
-		state.add_card(GameState.PLAYER, "user")
+		state.add_card(OnWorkState.PLAYER, "user")
 	main.layout.begin_arrivals()
 	main._sync_entities(center)
 	await create_timer(minf(wait, main.SPAWN_FLY_SPREAD + main.SPAWN_FLY_TIME + 0.1)).timeout
@@ -1410,7 +1410,7 @@ func _check_on_screen(main: Node, cards: Array, tag: String = "") -> void:
 func _t11_produce_uses_per_card_drop(main: Node, board: Board) -> void:
 	print("--- T11. 产出用每张一声 drop，没有独立音效 ---")
 	check(not Sfx.sounds().has("produce"), "音效表 _sfx.sounds 里没有 produce 这一项")
-	var actions: Dictionary = CardDB.sfx_rules().get("actions", {})
+	var actions: Dictionary = OnWorkCardDB.sfx_rules().get("actions", {})
 	check(not actions.has("produce"), "_sfx.actions 里没有 produce 这个动作")
 	# 产出那个动作必须解到和手放牌落桌一模一样的一声（同 wav 同响度），
 	# 不然「产出听起来就是落桌」这句话在配置那一侧就已经不成立了
@@ -1421,8 +1421,8 @@ func _t11_produce_uses_per_card_drop(main: Node, board: Board) -> void:
 		"produce_land 和 card_drop 同 wav 同响度（实 %s/%s dB 对 %s/%s dB）" % [
 			land.get("sound", ""), land.get("db", 0.0),
 			drop.get("sound", ""), drop.get("db", 0.0)])
-	var src: String = FileAccess.open("res://scenes/main.gd", FileAccess.READ).get_as_text()
-	check(not src.contains('play("produce"'), "main.gd 里没有 produce 的播放调用")
+	var src: String = FileAccess.open("res://scenes/on_work_main.gd", FileAccess.READ).get_as_text()
+	check(not src.contains('play("produce"'), "on_work_main.gd 里没有 produce 的播放调用")
 
 	isolate(board, [])
 	await physics_frame
@@ -1434,7 +1434,7 @@ func _t11_produce_uses_per_card_drop(main: Node, board: Board) -> void:
 	var n := 6
 	var fresh: Array = []
 	for i in n:
-		fresh.append(main.state.add_card(GameState.PLAYER, "cash")["uid"])
+		fresh.append(main.state.add_card(OnWorkState.PLAYER, "cash")["uid"])
 	main.layout.begin_arrivals()
 	main._sync_entities(Vector3(3.0, 0.05, 2.0))
 	await arrivals_landed(main)
@@ -1479,11 +1479,11 @@ func _t11_produce_uses_per_card_drop(main: Node, board: Board) -> void:
 ## 补一句 await settle()：那就把窗口关上了，这一节退化成 T9 的重复
 func _t12_pawn_during_settle_flight(main: Node, board: Board) -> void:
 	print("--- T12. 余数还在飞的时候典当，不把它们按半路上的位置钉死 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	isolate(board, [])
 	await physics_frame
 	# 同 T6：前面几节堆的现金早过了胜利线，winner 一定下来，典当意图会被
-	# IntentApply 的 game_over 护栏挡掉（只放 finalize 过），_stack_arrivals
+	# OnWorkIntentApply 的 game_over 护栏挡掉（只放 finalize 过），_stack_arrivals
 	# 一次都不跑 —— 这一节整段就成了空判据。只摘标记，不动牌
 	state.winner = ""
 	state.win_reason = ""
@@ -1495,7 +1495,7 @@ func _t12_pawn_during_settle_flight(main: Node, board: Board) -> void:
 	for uid in main.entities:
 		known[uid] = true
 	for i in main.PILE_CHUNK / 2:
-		state.add_card(GameState.PLAYER, "cash")
+		state.add_card(OnWorkState.PLAYER, "cash")
 	main._sync_entities()
 	await arrivals_landed(main)
 	main.layout._stack_settled(known)
@@ -1518,17 +1518,17 @@ func _t12_pawn_during_settle_flight(main: Node, board: Board) -> void:
 
 	# 现在典当。_on_dropped_on_pawn → _stack_arrivals → _relift_remainders，
 	# 那一趟会把上面这个余数组重新摆一遍
-	var legend: Dictionary = state.add_card(GameState.PLAYER, "dujiaoshou")
+	var legend: Dictionary = state.add_card(OnWorkState.PLAYER, "dujiaoshou")
 	var le: CardEntity = main._spawn_entity(legend, Vector3(6.5, 0.05, 2.6), true)
 	main.phase = main.PHASE_ACTION
-	main._actor = GameState.PLAYER
-	var cash_b4 := int(state.resource_count(GameState.PLAYER, CardDB.RES_CASH))
+	main._actor = OnWorkState.PLAYER
+	var cash_b4 := int(state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH))
 	await main._on_dropped_on_pawn([le])
 	await settle()
 	# 典当真的成交了吗。**判据的前提**：被 pipe 拒掉（不在行动阶段 / 用户卡会归零）
 	# 的话 _stack_arrivals 一次都不跑，下面那两条查的只是上一节留下的桌面
-	var gained := int(state.resource_count(GameState.PLAYER, CardDB.RES_CASH)) - cash_b4
-	check(gained == CardDB.pawn_value("dujiaoshou"),
+	var gained := int(state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH)) - cash_b4
+	check(gained == OnWorkCardDB.pawn_value("dujiaoshou"),
 		"典当成交了（现金 +%d，+0 就是被 pipe 拒了、_stack_arrivals 一次没跑）"
 			% gained)
 
@@ -1593,7 +1593,7 @@ class SfxRecorder extends Sfx:
 ## （见 _stack_arrivals 的合并分支），组数不涨、张数涨。数张数才是稳的
 func _piled_cards(main: Node, board: Board) -> int:
 	var n := 0
-	for c in main.state.players[GameState.PLAYER]["cards"]:
+	for c in main.state.players[OnWorkState.PLAYER]["cards"]:
 		if not main.entities.has(c["uid"]):
 			continue
 		var e = main.entities[c["uid"]]
@@ -1627,14 +1627,14 @@ func _loose_cash_left(main: Node, board: Board) -> int:
 ## 左侧带里还散着（不在任何摞里）的现金卡实体
 func _loose_cash_entities(main: Node, board: Board) -> Array:
 	var out: Array = []
-	for c in main.state.players[GameState.PLAYER]["cards"]:
+	for c in main.state.players[OnWorkState.PLAYER]["cards"]:
 		if not main.entities.has(c["uid"]):
 			continue
 		var e = main.entities[c["uid"]]
 		if not is_instance_valid(e) or not main.layout._in_settle_zone(e):
 			continue
-		var def: Dictionary = CardDB.get_def(c["def_id"])
-		if def.get("kind") != CardDB.KIND_UNIT or def.get("res") != CardDB.RES_CASH:
+		var def: Dictionary = OnWorkCardDB.get_def(c["def_id"])
+		if def.get("kind") != OnWorkCardDB.KIND_UNIT or def.get("res") != OnWorkCardDB.RES_CASH:
 			continue
 		if not _in_pile(board, e):
 			out.append(e)

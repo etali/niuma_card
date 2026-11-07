@@ -51,11 +51,11 @@ const SEAT_B := "bot"
 
 ## 使用真实快照验证递归结构；协议负责在任何客户端状态被替换之前拒绝坏字段。
 static func _fake_snapshot() -> Dictionary:
-	var state := GameState.new()
+	var state := OnWorkState.new()
 	state.set_seed(7)
 	state.new_game()
 	state.round_num = 7
-	return StateCodec.snapshot(state)
+	return OnWorkStateCodec.snapshot(state)
 
 
 func _initialize() -> void:
@@ -77,11 +77,11 @@ func _t1_every_type_survives_a_roundtrip() -> void:
 	var snap := _fake_snapshot()
 	# 用构造函数造，不是手写字典：这样「构造函数少写一个字段」也在判据里
 	var samples := {
-		Protocol.WORK_ACTION: Protocol.work_action({"op": "resign"}),
-		Protocol.WORK_FRAME: Protocol.work_frame("b64"),
-		Protocol.WORK_SEAT: Protocol.work_seat(SEAT_B, "token", "b64"),
+		Protocol.OFF_WORK_ACTION: Protocol.off_work_action({"op": "resign"}),
+		Protocol.OFF_WORK_FRAME: Protocol.off_work_frame("b64"),
+		Protocol.OFF_WORK_SEAT: Protocol.off_work_seat(SEAT_B, "token", "b64"),
 		Protocol.JOIN: Protocol.join("ab12", "deadbeef", "tok-1"),
-		Protocol.INTENT: Protocol.intent(Intent.buy(SEAT_A, 2)),
+		Protocol.INTENT: Protocol.intent(OnWorkIntent.buy(SEAT_A, 2)),
 		Protocol.DRAG: Protocol.drag(9, Protocol.DRAG_MOVE, [60, 61], 0.25, 0.75),
 		# 两摞而不是一摞：嵌一层的数组过 JSON 之后每个 uid 都是 double，
 		# 而收方拿它们当字典键用（见 Protocol 里 PILES/FOE_PILES 那段）。
@@ -89,13 +89,13 @@ func _t1_every_type_survives_a_roundtrip() -> void:
 		Protocol.PILES: Protocol.piles([[60, 61], [62]]),
 		Protocol.REMATCH: Protocol.rematch(),
 		Protocol.SEATED: Protocol.seated(SEAT_A, SEAT_B, snap, "tok-2"),
-		Protocol.APPLIED: Protocol.applied({ "ok": true, "op": Intent.OP_BUY, "new_uid": 60, "market_idx": 0, "removed_uids": [] }, 3, snap),
+		Protocol.APPLIED: Protocol.applied({ "ok": true, "op": OnWorkIntent.OP_BUY, "new_uid": 60, "market_idx": 0, "removed_uids": [] }, 3, snap),
 		Protocol.REJECTED: Protocol.rejected("short", "现金不足"),
 		Protocol.FOE_DRAG: Protocol.foe_drag(
 			Protocol.drag(9, Protocol.DRAG_PICKUP, [60], 0.5, 0.5)),
 		Protocol.FOE_PILES: Protocol.foe_piles(Protocol.piles([[60, 61], [62]])),
 		# 两摞，理由同 PILES 那条：uid 过 JSON 变 double，而收方拿它们查
-		# main.entities（见 scenes/main.gd 的 on_my_piles）。一摞的样本测不出「只掰了第一摞」
+		# main.entities（见 scenes/on_work_main.gd 的 on_my_piles）。一摞的样本测不出「只掰了第一摞」
 		Protocol.MY_PILES: Protocol.my_piles([[60, 61], [62]]),
 		Protocol.PHASE: Protocol.phase("action", SEAT_B),
 		Protocol.FOE_LEFT: Protocol.foe_left(),
@@ -237,13 +237,13 @@ func _t2_shape_checks_reject_not_crash() -> void:
 		"缺字段这一圈真的跑过（%d 个类型有必填字段）—— " % missing_checked
 		+ "REQUIRED 全空的话上面整圈是空转")
 
-	# snapshot 不是对象：这条要单独判。一路传到 StateCodec.restore 的话，
+	# snapshot 不是对象：这条要单独判。一路传到 OnWorkStateCodec.restore 的话，
 	# 它在 d.get("players", {}) 上把整局清空 —— 空桌子，一条错都不报
 	for t in [Protocol.SEATED, Protocol.REMATCH_START]:
 		var r := Protocol.decode(JSON.stringify({
 			"t": t, "my_seat": SEAT_A, "foe_seat": SEAT_B, "snapshot": "不是对象" }))
 		check(not bool(r.get("ok", true)),
-			"%s 的 snapshot 不是对象要拒 —— 放过去的话 StateCodec.restore "
+			"%s 的 snapshot 不是对象要拒 —— 放过去的话 OnWorkStateCodec.restore "
 				% str(t)
 			+ "会把整局清成空桌子")
 		check(str(r.get("code", "")) == "bad_snapshot",

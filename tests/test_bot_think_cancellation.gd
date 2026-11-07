@@ -13,7 +13,7 @@ func _initialize() -> void:
 	finish()
 
 func _sync_cancel() -> void:
-	var think := BOTThink.new()
+	var think := OnWorkBOTThink.new()
 	var calls := [0]
 	var stopped := [false]
 	var probe := func(): return stopped[0]
@@ -33,7 +33,7 @@ func _sync_cancel() -> void:
 	check(result == false and not think.busy(), "未提供取消探针时仍满足任务必需参数且不遗留线程")
 
 func _long_once() -> void:
-	var t := BOTThink.new()
+	var t := OnWorkBOTThink.new()
 	var calls := [0]
 	var scale := Engine.time_scale
 	Engine.time_scale = 4000
@@ -49,7 +49,7 @@ func _long_once() -> void:
 	check(Engine.get_process_frames()-frames >= 3,"越过旧超时值仍刷新画面")
 	check(not t.busy(),"正常完成收回线程")
 func _cancel() -> void:
-	var t := BOTThink.new()
+	var t := OnWorkBOTThink.new()
 	var frames := Engine.get_process_frames()
 	var start := Time.get_ticks_msec()
 	var result = await t.run(func(probe: Callable = Callable()):
@@ -60,7 +60,7 @@ func _cancel() -> void:
 	check(Time.get_ticks_msec()-start < 1000,"运行中任务能及时取消")
 	check(not t.busy(),"取消后收回线程")
 func _flush() -> void:
-	var t := BOTThink.new()
+	var t := OnWorkBOTThink.new()
 	var results := []
 	_collect(t,results)
 	await process_frame
@@ -71,50 +71,50 @@ func _flush() -> void:
 	check(results == [{}],"flush后旧结果不落地")
 	check(not t.busy(),"flush后线程已收回")
 	t.flush()
-func _collect(t: BOTThink, results: Array) -> void:
+func _collect(t: OnWorkBOTThink, results: Array) -> void:
 	results.append(await t.run(func(probe: Callable = Callable()):
 		while not Cancellation.probe_requested(probe): OS.delay_msec(1)
 		return {"stale":true}
 	,self))
 func _search() -> void:
-	CardDB.ensure_loaded()
-	var state := GameState.new()
+	OnWorkCardDB.ensure_loaded()
+	var state := OnWorkState.new()
 	state.new_game()
 	state.start_round()
-	var cfg := BOTSearch.from_model("bot",0.0)
+	var cfg := OnWorkBOTSearch.from_model("bot",0.0)
 	cfg.parameters["future_rounds"] = 0
-	var normal := BOTTurnPlan.choose_plan(state,GameState.PLAYER,cfg)
+	var normal := OnWorkBOTTurnPlan.choose_plan(state,OnWorkState.PLAYER,cfg)
 	cfg.cancelled_check = func():return false
-	var controlled := BOTTurnPlan.choose_plan(state,GameState.PLAYER,cfg)
+	var controlled := OnWorkBOTTurnPlan.choose_plan(state,OnWorkState.PLAYER,cfg)
 	normal["diagnostics"].erase("elapsed_ms")
 	controlled["diagnostics"].erase("elapsed_ms")
-	check(StateCodec.canon(normal) == StateCodec.canon(controlled),"未取消时动作评分和节点数完全相同")
+	check(OnWorkStateCodec.canon(normal) == OnWorkStateCodec.canon(controlled),"未取消时动作评分和节点数完全相同")
 	var token := Cancellation.new()
 	token.request()
 	cfg.cancelled_check = token.is_cancelled
 	var start := Time.get_ticks_msec()
-	var result := BOTTurnPlan.choose_plan(state,GameState.PLAYER,cfg)
+	var result := OnWorkBOTTurnPlan.choose_plan(state,OnWorkState.PLAYER,cfg)
 	check(Time.get_ticks_msec()-start < 1000,"实际BOT预取消及时结束")
 	check(not result["diagnostics"]["profile"].has("_cancelled"),"运行令牌不写入录像配置")
 	var p := {"_work":[123],"_cancelled":token.is_cancelled}
-	check(not BOTActions.spend(p) and p["_work"][0] == 123,"取消不伪造已消耗节点数")
+	check(not OnWorkBOTActions.spend(p) and p["_work"][0] == 123,"取消不伪造已消耗节点数")
 
 func _actual_running() -> void:
-	var state := GameState.new()
+	var state := OnWorkState.new()
 	state.new_game()
 	state.start_round()
-	var before := StateCodec.canon(StateCodec.snapshot(state))
-	var cfg := BOTSearch.from_model("bot",1.0)
-	var think := BOTThink.new()
+	var before := OnWorkStateCodec.canon(OnWorkStateCodec.snapshot(state))
+	var cfg := OnWorkBOTSearch.from_model("bot",1.0)
+	var think := OnWorkBOTThink.new()
 	var frames := Engine.get_process_frames()
 	var start := Time.get_ticks_msec()
 	var result = await think.run(func(probe: Callable = Callable()):
 		cfg.cancelled_check = probe
-		return BOTTurnPlan.choose_plan(state,GameState.PLAYER,cfg)
+		return OnWorkBOTTurnPlan.choose_plan(state,OnWorkState.PLAYER,cfg)
 	,self,func():return Engine.get_process_frames()-frames >= 3)
 	check(result == {},"运行中实际搜索取消后不返回计划")
 	check(Time.get_ticks_msec()-start < 2000,"运行中实际搜索及时停止")
-	check(before == StateCodec.canon(StateCodec.snapshot(state)),"取消搜索不改变输入局面")
+	check(before == OnWorkStateCodec.canon(OnWorkStateCodec.snapshot(state)),"取消搜索不改变输入局面")
 
 func _allocation_cancel() -> void:
 	var summary := {"cash":10,"users":10,"inventory":{},"cores":[],"mults":{"output_x2":0,"attack_x2":0,"user_fill":0}}
@@ -122,6 +122,6 @@ func _allocation_cancel() -> void:
 	var stats := {}
 	var token := Cancellation.new()
 	token.request()
-	var allocation = preload("res://engine/bot_resource_allocation.gd")
+	var allocation = preload("res://engine/on_work_bot_resource_allocation.gd")
 	allocation.value(summary,[1.0,1.0],true,cache,stats,token.is_cancelled)
 	check(cache.is_empty() and stats.is_empty(),"取消的资源分配不缓存半成品")

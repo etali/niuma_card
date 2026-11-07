@@ -12,7 +12,15 @@ const ComicFx = preload("res://scenes/comic_fx.gd")
 const Materials = preload("res://scenes/effect_materials.gd")
 static var _completed := false
 static var _pending: WeakRef
-var _frames := 0
+enum Sample { CAMERA, BACK, TEAR, RECEIPT, TRACE, OUTLINE, PRODUCTION, BADGE, STAMP, IMPACT, SEAL, LIGHT, UPGRADE, PARTICLES, DONE }
+const FRAMES_BETWEEN_SAMPLES := 4
+var _sample := Sample.CAMERA
+var _world: Node3D
+var _card_ids: Array
+var _pending_art := ""
+var _warm_allowed: Callable
+var _presented := false
+var _frames_since_sample := FRAMES_BETWEEN_SAMPLES
 
 static func prepare(parent: Node) -> SubViewport:
 	if DisplayServer.get_name() == "headless" or _completed:
@@ -21,10 +29,11 @@ static func prepare(parent: Node) -> SubViewport:
 		return _pending.get_ref()
 	var viewport := new()
 	viewport.name = "TableRenderWarmup"
+	viewport._warm_allowed = parent.get_meta("may_warm_table_effects", Callable())
 	viewport.size = Vector2i(32, 32)
 	viewport.own_world_3d = true
 	viewport.transparent_bg = true
-	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	viewport.gui_disable_input = true
 	viewport.process_mode = Node.PROCESS_MODE_ALWAYS
 	_pending = weakref(viewport)
@@ -34,69 +43,90 @@ static func prepare(parent: Node) -> SubViewport:
 	return viewport
 
 func _ready() -> void:
-	_build_samples()
+	_card_ids = OnWorkCardDB.all_cards().keys()
 	RenderingServer.frame_post_draw.connect(_after_draw)
 
-func _build_samples() -> void:
-	# 补货若同时出现多张新插画，逐张同步解码会再次拉长回合切换帧。
-	# 这里只准备当前卡表的静态小图；悬停动画仍按需在后台加载。
-	for id in CardDB.all_cards():
-		if CardArt.illustration_texture(str(id)) == null:
-			CardArt.icon_texture(str(id))
-	var world := Node3D.new()
-	add_child(world)
-	var camera := Camera3D.new()
-	camera.position = Vector3(0, 8, 0)
-	camera.rotation_degrees.x = -90
-	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	camera.size = 10
-	world.add_child(camera)
-	for back in [true, false]:
-		var card := CardEntity.new()
-		card.setup(-1, CardDB.unit_id(CardDB.RES_CASH))
-		card.freeze = true
-		card.collision_layer = 0
-		card.collision_mask = 0
-		card.position = Vector3(-2 if back else 2, 0, 0)
-		world.add_child(card)
-		if back:
-			card.set_face_down(true)
-		else:
-			card.tear_apart()
-	Feedback.receipt(world, "warmup", Vector3(0, 0, -2), "+1", Color.WHITE)
-	Feedback.trace(world, "warmup", Vector3(-2, 0, 2), Vector3(2, 0, 2), Color.WHITE)
-	Feedback.outline(world, "warmup", Vector3.ZERO, Vector2(1.2, 1.6), Color.WHITE)
-	var particles := Motion.play(world, "production", Vector3.ZERO, Color.WHITE, 1) as CPUParticles3D
-	particles.preprocess = 0.05
-	# 牌桌特效的着色器与每种纸片形状都画一次；第一次结算、盖章、受击不再临场编译。
-	ComicFx.badge_pop(world, Vector3(-2, 0, 0), "+1", CardDB.RES_CASH, Color.WHITE)
-	ComicFx.stamp(world, Vector3(2, 0, 0), "章")
-	# 章上的字第一次用到时要离屏排一次；开局先把配置里的词都排好。
-	ComicFx.InkStamp.prewarm(ComicFx.rules().get("stamps", {}).values() + ["作废"])
-	var target := CardEntity.new()
-	target.setup(-2, CardDB.unit_id(CardDB.RES_USER))
-	target.freeze = true
-	target.collision_layer = 0
-	target.collision_mask = 0
-	target.position = Vector3(0, 0, -2)
-	world.add_child(target)
-	target.impact_damage(0.1)
-	target.flash_stamp("章")
-	ComicFx.seal(world, Vector3(0, 0, 2), "封", "章", Color.WHITE)
-	ComicFx.spotlight(world, Vector3.ZERO)
-	Motion.play(world, "upgrade", Vector3.ZERO, Color.WHITE)
-	for shape in Materials.PARTICLE_SHAPES:
-		var sprite := MeshInstance3D.new()
-		var quad := QuadMesh.new()
-		quad.size = Vector2.ONE * 0.3
-		sprite.mesh = quad
-		sprite.material_override = Materials.particles(shape)
-		world.add_child(sprite)
+func _process(_delta: float) -> void:
+	# Let the visible viewport present first. Submit one real shader/effect family
+	# per frame and keep at most one asynchronous illustration load in flight.
+	if not _presented: return
+	if not _pending_art.is_empty() and CardArt.collect_warm_art(_pending_art):
+		_pending_art = ""
+	if _pending_art.is_empty() and not _card_ids.is_empty():
+		_pending_art = CardArt.request_warm_art(str(_card_ids.pop_back()))
+	if _sample == Sample.DONE or _frames_since_sample < FRAMES_BETWEEN_SAMPLES: return
+	if _warm_allowed.is_valid() and not _warm_allowed.call(): return
+	_frames_since_sample = 0
+	render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	match _sample:
+		Sample.CAMERA:
+			_world = Node3D.new()
+			add_child(_world)
+			var camera := Camera3D.new()
+			camera.position = Vector3(0, 8, 0)
+			camera.rotation_degrees.x = -90
+			camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+			camera.size = 10
+			_world.add_child(camera)
+		Sample.BACK:
+			var back := _warm_card(OnWorkCardDB.RES_CASH, Vector3(-2,0,0))
+			back.set_face_down(true)
+		Sample.TEAR:
+			var front := _warm_card(OnWorkCardDB.RES_CASH, Vector3(2,0,0))
+			front.tear_apart()
+		Sample.RECEIPT:
+			Feedback.receipt(_world, "warmup", Vector3(0,0,-2), "+1", Color.WHITE)
+		Sample.TRACE:
+			Feedback.trace(_world, "warmup", Vector3(-2,0,2), Vector3(2,0,2), Color.WHITE)
+		Sample.OUTLINE:
+			Feedback.outline(_world, "warmup", Vector3.ZERO, Vector2(1.2,1.6), Color.WHITE)
+		Sample.PRODUCTION:
+			var particles := Motion.play(_world, "production", Vector3.ZERO, Color.WHITE, 1) as CPUParticles3D
+			particles.preprocess = 0.05
+		Sample.BADGE:
+			ComicFx.badge_pop(_world, Vector3(-2,0,0), "+1", OnWorkCardDB.RES_CASH, Color.WHITE)
+		Sample.STAMP:
+			ComicFx.stamp(_world, Vector3(2,0,0), "章")
+			ComicFx.InkStamp.prewarm(ComicFx.rules().get("stamps", {}).values() + ["作废"])
+		Sample.IMPACT:
+			var target := _warm_card(OnWorkCardDB.RES_USER, Vector3(0,0,-2))
+			target.impact_damage(0.1)
+			target.flash_stamp("章")
+		Sample.SEAL:
+			ComicFx.seal(_world, Vector3(0,0,2), "封", "章", Color.WHITE)
+		Sample.LIGHT:
+			ComicFx.spotlight(_world, Vector3.ZERO)
+		Sample.UPGRADE:
+			Motion.play(_world, "upgrade", Vector3.ZERO, Color.WHITE)
+		Sample.PARTICLES:
+			# All particle shapes share one shader.
+			for shape in Materials.PARTICLE_SHAPES:
+				var sprite := MeshInstance3D.new()
+				var quad := QuadMesh.new()
+				quad.size = Vector2.ONE * 0.3
+				sprite.mesh = quad
+				sprite.material_override = Materials.particles(shape)
+				_world.add_child(sprite)
+	_sample = (_sample + 1) as Sample
+
+func _warm_card(resource_kind: String, at: Vector3) -> CardEntity:
+	var card := CardEntity.new()
+	card.setup(-1, OnWorkCardDB.unit_id(resource_kind))
+	card.freeze = true
+	card.collision_layer = 0
+	card.collision_mask = 0
+	card.position = at
+	_world.add_child(card)
+	return card
 
 func _after_draw() -> void:
-	_frames += 1
-	# 粒子和文字的内部网格可能在首帧末尾才准备好，再绘制一帧后释放。
-	if _frames >= 2:
+	_presented = true
+	_frames_since_sample += 1
+	if _frames_since_sample == 2:
+		# The submitted family gets two draws for late-created meshes/particles.
+		# Leave the following frames to the visible table before the next family.
+		render_target_update_mode = SubViewport.UPDATE_DISABLED
+	if _sample == Sample.DONE and _frames_since_sample >= 2 and _card_ids.is_empty() and _pending_art.is_empty():
 		_completed = true
 		RenderingServer.frame_post_draw.disconnect(_after_draw)
 		queue_free()

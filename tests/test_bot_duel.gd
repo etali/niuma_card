@@ -4,15 +4,15 @@
 
 extends "res://tests/harness.gd"
 
-const Duel := preload("res://tools/bot_duel.gd")
-const Decisions := preload("res://tools/bot_decision_stats.gd")
-const Merge := preload("res://tools/bot_duel_merge.gd")
+const Duel := preload("res://tools/on_work_bot_duel.gd")
+const Decisions := preload("res://tools/on_work_bot_decision_stats.gd")
+const Merge := preload("res://tools/on_work_bot_duel_merge.gd")
 
 func _initialize() -> void:
 	print("=== BOT 成对对打统计 ===")
 	var games: Array = [
-		_game(1, GameState.PLAYER, "A"), _game(1, GameState.BOT, "B"),
-		_game(2, GameState.PLAYER, "A"), _game(2, GameState.BOT, "draw"),
+		_game(1, OnWorkState.PLAYER, "A"), _game(1, OnWorkState.BOT, "B"),
+		_game(2, OnWorkState.PLAYER, "A"), _game(2, OnWorkState.BOT, "draw"),
 	]
 	var summary := Duel.summarize(games)
 	check(summary["a_wins"] == 2 and summary["b_wins"] == 1 and summary["draws"] == 1,
@@ -23,15 +23,15 @@ func _initialize() -> void:
 		"全局得分率把无结果计半分，保留它对结论的影响")
 	check(is_equal_approx(float(summary["draw_rate"]), 0.25), "无结果率单独报告")
 	check(summary["completed_seed_pairs"] == 2, "四场对应两个种子对")
-	check(summary["by_a_seat"][GameState.PLAYER]["A"] == 2
-		and summary["by_a_seat"][GameState.BOT]["A"] == 0, "报告座位偏差")
+	check(summary["by_a_seat"][OnWorkState.PLAYER]["A"] == 2
+		and summary["by_a_seat"][OnWorkState.BOT]["A"] == 0, "报告座位偏差")
 	var interval: Array = summary["a_score_pair_bootstrap_95"]
 	check(interval.size() == 2 and is_equal_approx(float(interval[0]), 0.5)
 		and is_equal_approx(float(interval[1]), 0.75),
 		"bootstrap 重采样整个种子对，两对观测均值是 0.5 和 0.75")
 	check(summary["a_score_pair_bootstrap_95"] == Duel.summarize(games)["a_score_pair_bootstrap_95"],
 		"报告区间可复现")
-	var no_winner := Duel.summarize([_game(7, GameState.PLAYER, "draw"), _game(7, GameState.BOT, "draw")])
+	var no_winner := Duel.summarize([_game(7, OnWorkState.PLAYER, "draw"), _game(7, OnWorkState.BOT, "draw")])
 	check(no_winner["a_decisive_win_rate"] == null, "全是无结果时不捏造分胜负胜率")
 	check(no_winner["a_score_pair_bootstrap_95"].is_empty(), "少于两个种子对不报告区间")
 	check(Duel._valid_label("bot:0") and Duel._valid_label("bot:max")

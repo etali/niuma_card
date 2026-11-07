@@ -7,13 +7,13 @@ extends "res://tests/harness.gd"
 ## 回归测试：重开一局之后的两个 bug + 买到的牌看不见
 ##
 ## 【bug 2】第二局买不了卡、进下一回合崩溃。
-## 根因是一处**引用换了、另一处没换**：`_on_restart` 里 `state = GameState.new()`
-## 换掉了场景层那份状态，但意图管道（`pipe`/`IntentApply`）是在 `_ready` 里
+## 根因是一处**引用换了、另一处没换**：`_on_restart` 里 `state = OnWorkState.new()`
+## 换掉了场景层那份状态，但意图管道（`pipe`/`OnWorkIntentApply`）是在 `_ready` 里
 ## 拿着**上一局那份 state** 建的，重开时没有重建。于是：
-##   - 上一局的 state 里 `winner != ""`，`IntentApply.apply` 那条
+##   - 上一局的 state 里 `winner != ""`，`OnWorkIntentApply.apply` 那条
 ##     「已分胜负后只放 finalize 过」把每一条意图都挡了 → 第二局什么都做不了
 ##   - 崩溃点在结算：`n_combos` 从**旧** state 数（`pipe.applier().production_count()`），
-##     而 `_resolve_combo_visual` 用 `Settle.ordered_production_combos(state)[idx]`
+##     而 `_resolve_combo_visual` 用 `OnWorkSettle.ordered_production_combos(state)[idx]`
 ##     读的是**新** state → 旧局有组合、新局没有时下标越界
 ##
 ## 为什么这两个症状看着毫不相干却是同一个根因：管道是**唯一**的写入口，
@@ -66,7 +66,7 @@ func _initialize() -> void:
 
 func _t1_pipe_follows_state(main: Node) -> void:
 	print("\n--- T1 重开之后管道指向新 state ---")
-	var old_state: GameState = main.state
+	var old_state: OnWorkState = main.state
 	check(main.pipe.applier().state == old_state,
 		"开局时管道和场景层是同一份 state")
 
@@ -83,13 +83,13 @@ func _t1_pipe_follows_state(main: Node) -> void:
 	main._foe_combo_shown = 4
 	# 接一条假连接，把这一局变成「联网局」。这是跨局残留量里最狠的一个：
 	# 「再战一局」只重开**本机**，对手那边还停在他自己的终局面板上
-	# —— 协议里没有 rematch（net/room.gd 的 rematch 投票与重开），没人通知他
+	# —— 协议里没有 rematch（net/on_work_room.gd 的 rematch 投票与重开），没人通知他
 	var fake := FakeNet.new()
 	main.attach_net(fake)
 	check(not main._foe_is_bot(), "重开前对手是远端的人")
 
 	# 直接把上一局判成结束，走真的重开路径
-	old_state.winner = GameState.PLAYER
+	old_state.winner = OnWorkState.PLAYER
 	main._show_game_over()
 	main._on_restart()
 	await physics_frame
@@ -145,8 +145,8 @@ func _t1_pipe_follows_state(main: Node) -> void:
 
 	# 点数池也不许留：上一局攻击阶段装的弹，在第二局第一个攻击阶段
 	# 会让「还没装弹就点得起靶」，那是白拿一轮攻击
-	check(main.pipe.applier().pools(main.my_seat)[CardDB.RES_CASH] == 0
-			and main.pipe.applier().pools(main.my_seat)[CardDB.RES_USER] == 0,
+	check(main.pipe.applier().pools(main.my_seat)[OnWorkCardDB.RES_CASH] == 0
+			and main.pipe.applier().pools(main.my_seat)[OnWorkCardDB.RES_USER] == 0,
 		"新局的点数池是空的")
 
 	# 跨局残留量。判据取「新局的牌里没有一张被租着」而不是「字典是空的」——
@@ -185,7 +185,7 @@ func _t2_second_game_can_buy(main: Node) -> void:
 	# 结算不许越界。判据取「两边数出来的组合数一样」——
 	# 崩溃现场就是这两个数不一致（一个数旧 state、一个数新 state）
 	var n_pipe: int = main.pipe.applier().production_count()
-	var n_scene: int = Settle.ordered_production_combos(main.state).size()
+	var n_scene: int = OnWorkSettle.ordered_production_combos(main.state).size()
 	check(n_pipe == n_scene,
 		"管道和场景层数出同样多的产出组合（%d vs %d）" % [n_pipe, n_scene])
 
@@ -195,12 +195,12 @@ func _try_a_combo(main: Node) -> Dictionary:
 		pass
 	var cash: Array = []
 	for c in main.state.players[main.my_seat]["cards"]:
-		if CardDB.get_def(c["def_id"]).get("res") == CardDB.RES_CASH:
+		if OnWorkCardDB.get_def(c["def_id"]).get("res") == OnWorkCardDB.RES_CASH:
 			cash.append(c["uid"])
 	if cash.size() < 2:
 		return {}
 	return await main.pipe.submit(
-		Intent.create_combo(main.my_seat, cash.slice(0, 2)), main.my_seat)
+		OnWorkIntent.create_combo(main.my_seat, cash.slice(0, 2)), main.my_seat)
 
 # ---------- T3 落点不重合 ----------
 

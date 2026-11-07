@@ -4,7 +4,7 @@
 
 extends "res://tests/harness.gd"
 
-const CardConfigClass = preload("res://engine/card_config.gd")
+const CardConfigClass = preload("res://engine/on_work_card_config.gd")
 
 # 用真实子进程传参，验证 OS 读取、场景开局、重开和联网切回的完整路径。
 func _initialize() -> void:
@@ -63,7 +63,7 @@ func _verify_child(args: Dictionary) -> void:
 	CardConfigClass._selected_path = str(args.get("saved-config", ""))
 	var saved_path := CardConfigClass._selected_path
 	if mode == "invalid":
-		CardDB.load_default()
+		OnWorkCardDB.load_default()
 		var result := CardConfigClass.apply_solo()
 		check(not result.get("ok", true) and not result.get("used_default", false), "错误显式配置不回退")
 		check("指定卡表加载失败" in str(result.get("reason", "")), "错误消息指出指定卡表")
@@ -72,36 +72,36 @@ func _verify_child(args: Dictionary) -> void:
 		var main: Node = await boot_main()
 		if mode == "explicit":
 			var expected := str(args["cards-config"])
-			check(CardDB.loaded_from == expected and CardDB.get_def("yunketang")["price"] == 8,
+			check(OnWorkCardDB.loaded_from == expected and OnWorkCardDB.get_def("yunketang")["price"] == 8,
 				"显式文件覆盖原保存卡表且真实卡面数值正确")
-			check(main.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 23 and CardDB.pawn_value("yunketang") == 9,
+			check(main.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == 23 and OnWorkCardDB.pawn_value("yunketang") == 9,
 				"开局资金和出售价格实际来自指定配置")
-			var card: Dictionary = main.state.add_card(GameState.PLAYER, "yunketang")
-			var sale: Dictionary = main.state.pawn(GameState.PLAYER, [card["uid"]])
-			check(sale.get("ok", false) and main.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 32,
+			var card: Dictionary = main.state.add_card(OnWorkState.PLAYER, "yunketang")
+			var sale: Dictionary = main.state.pawn(OnWorkState.PLAYER, [card["uid"]])
+			check(sale.get("ok", false) and main.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == 32,
 				"实际出售收入使用卡表覆盖")
-			main.state.winner = GameState.PLAYER
+			main.state.winner = OnWorkState.PLAYER
 			main._show_game_over()
 			main._on_restart()
 			await settle()
-			check(CardDB.loaded_from == expected and main.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 23,
+			check(OnWorkCardDB.loaded_from == expected and main.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == 23,
 				"重开单机仍使用本次指定配置")
 			var prepared: Dictionary = main.prepare_network_cards()
-			check(not prepared.get("ok", true) and CardDB.loaded_from == expected,
+			check(not prepared.get("ok", true) and OnWorkCardDB.loaded_from == expected,
 				"自定义卡表局拒绝联网等待，保留当前规则")
-			main.state.winner = GameState.PLAYER
+			main.state.winner = OnWorkState.PLAYER
 			main._show_game_over()
 			main._on_restart()
 			await settle()
-			check(CardDB.loaded_from == expected, "回到单机时恢复本次指定配置")
+			check(OnWorkCardDB.loaded_from == expected, "回到单机时恢复本次指定配置")
 			check(not main.choose_card_config(saved_path).get("ok", true) and not main.clear_card_config().get("ok", true),
 				"指定配置时不允许设置界面静默更改偏好")
 			check(CardConfigClass._selected_path == saved_path, "临时试玩不覆盖原保存选择")
 		elif mode == "saved":
-			check(CardDB.loaded_from == saved_path and CardDB.get_def("yunketang")["price"] == 6,
+			check(OnWorkCardDB.loaded_from == saved_path and OnWorkCardDB.get_def("yunketang")["price"] == 6,
 				"无命令行覆盖时加载保存选择")
 		else:
-			check(CardDB.loaded_from == CardConfigClass.DEFAULT_PATH, "无选择时使用内置默认")
+			check(OnWorkCardDB.loaded_from == CardConfigClass.DEFAULT_PATH, "无选择时使用内置默认")
 		main.queue_free()
 		await process_frame
 	var pref_after := FileAccess.get_file_as_bytes(CardConfigClass.pref_path()) if FileAccess.file_exists(CardConfigClass.pref_path()) else PackedByteArray()

@@ -4,19 +4,19 @@
 
 extends "res://tests/harness.gd"
 
-const Replay = preload("res://engine/replay_session.gd")
-const Snapshot = preload("res://scenes/table_snapshot.gd")
+const Replay = preload("res://engine/on_work_replay_session.gd")
+const Snapshot = preload("res://scenes/on_work_table_snapshot.gd")
 
 func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	BOTSearch.set_pref_strength(0.0)
+	OnWorkBOTSearch.set_pref_strength(0.0)
 	var main := await boot_main()
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	state.combos.clear()
 	state.players[main.foe_seat]["cards"].clear()
-	var threshold := int(CardDB.game_rules()["win_cash"])
+	var threshold := int(OnWorkCardDB.game_rules()["win_cash"])
 	for i in threshold - 5:
 		state.add_card(main.foe_seat, "cash")
 	state.add_card(main.foe_seat, "user")
@@ -36,15 +36,15 @@ func _run() -> void:
 	while state.winner == "" and Time.get_ticks_msec() < deadline:
 		await process_frame
 	check(state.winner == main.foe_seat and main._table_actions.pawn_busy()
-		and main.phase != PhaseMachine.OVER, "胜负已裁决时仍先演完典当，不提前遮住到账过程")
+		and main.phase != OnWorkPhaseMachine.OVER, "胜负已裁决时仍先演完典当，不提前遮住到账过程")
 	if main._table_actions.pawn_busy():
 		await main._table_actions.pawn_finished
 	await process_frame
 	await settle()
 	var expected := threshold + 1
-	check(state.winner == main.foe_seat and state.resource_count(main.foe_seat, CardDB.RES_CASH) == expected,
+	check(state.winner == main.foe_seat and state.resource_count(main.foe_seat, OnWorkCardDB.RES_CASH) == expected,
 		"两张 996 典当后现金从 %d 到 %d，按真实规则获胜" % [threshold - 5, expected])
-	check(main.phase == PhaseMachine.OVER and is_instance_valid(main.game_over_panel),
+	check(main.phase == OnWorkPhaseMachine.OVER and is_instance_valid(main.game_over_panel),
 		"真实 BOT 典当冲线后正常进入结局")
 	_check_cash(main, expected, "实时典当获胜")
 	check(pawned.all(func(uid): return not main.entities.has(uid)), "已典当的卡全部从牌桌撤下")
@@ -74,7 +74,7 @@ func _run() -> void:
 	if not need(loaded.get("ok", false), "缺少新现金位置的旧录像仍能校验并读入"):
 		finish()
 		return
-	main = load("res://scenes/main.tscn").instantiate()
+	main = load("res://scenes/on_work_main.tscn").instantiate()
 	main.replay_session = loaded["session"]
 	root.add_child(main)
 	_booted = main
@@ -89,7 +89,7 @@ func _run() -> void:
 	await settle()
 	check(jumped.get("ok", false), "旧录像直接跳转到获胜步")
 	_check_cash(main, expected, "旧录像直接跳转末态")
-	BOTSearch.restore_defaults()
+	OnWorkBOTSearch.restore_defaults()
 	finish()
 
 func _check_cash(main: Node, expected: int, label: String) -> void:
@@ -105,5 +105,5 @@ func _check_cash(main: Node, expected: int, label: String) -> void:
 				piled += 1
 	check(displayed == expected and piled == expected,
 		"%s：%d 张现金均有实体并归入对手资源摞（实际 %d / %d）" % [label, expected, displayed, piled])
-	check(main.lbl_bot_res.text.contains("%s %d" % [CardDB.res_label(CardDB.RES_CASH), expected])
+	check(main.lbl_bot_res.text.contains("%s %d" % [OnWorkCardDB.res_label(OnWorkCardDB.RES_CASH), expected])
 		and main.hud_bot_card.cash_value.text == str(expected), "%s：两种 HUD 的现金读数与牌桌一致" % label)

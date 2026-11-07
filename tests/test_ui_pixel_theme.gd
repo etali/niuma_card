@@ -39,7 +39,7 @@ func _boot_drawer(dpi: float, logical: Vector2i) -> Node:
 	root.size = Vector2i(roundi(logical.x * dpi), roundi(logical.y * dpi))
 	root.content_scale_size = Vector2i.ZERO
 	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	main.drawer_ui_scale = dpi
 	root.add_child(main)

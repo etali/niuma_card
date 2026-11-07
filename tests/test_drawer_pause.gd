@@ -36,17 +36,17 @@ func _run() -> void:
 	check(before <= paused_at, "暂停起点不早于收起前时钟")
 
 	# 此探针没有切成BOT行动，仍在等待玩家：纯计算可结束，包装协程须等展开。
-	ThinkClock.reset()
+	OnWorkThinkClock.reset()
 	var probe := {"done": false, "returns": 0, "value": null}
 	call_deferred("_probe_think", main, probe)
 	var wait := 0
-	while not ThinkClock.running() and wait < 30:
+	while not OnWorkThinkClock.running() and wait < 30:
 		await process_frame
 		wait += 1
-	check(ThinkClock.running(), "BOT 搜索开始并进入 ThinkClock")
+	check(OnWorkThinkClock.running(), "BOT 搜索开始并进入 OnWorkThinkClock")
 	drawer.collapse_now()
 	await _real_wait(0.22)
-	check(not ThinkClock.running(), "BOT 工作线程完成后 ThinkClock 停表")
+	check(not OnWorkThinkClock.running(), "BOT 工作线程完成后 OnWorkThinkClock 停表")
 	check(not probe.done, "等待玩家期间收起时，线程探针仍遵守暂停")
 	drawer.expand()
 	wait = 0
@@ -55,7 +55,7 @@ func _run() -> void:
 		wait += 1
 	check(probe.done, "展开后 BOT 包装协程恢复")
 	check(probe.returns == 1 and probe.value == 42, "BOT 结果只返回一次且值正确")
-	check(not ThinkClock.running(), "BOT 结果恢复后 ThinkClock 仍已停止")
+	check(not OnWorkThinkClock.running(), "BOT 结果恢复后 OnWorkThinkClock 仍已停止")
 
 	# 真实行动阶段锁不被窗口收放覆盖。
 	main.phase = main.PHASE_ACTION
@@ -86,7 +86,7 @@ func _run() -> void:
 	finish()
 
 func _boot_drawer_main() -> Node:
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	if main.get("force_drawer_layout") != null:
 		main.force_drawer_layout = true
 	var window := root

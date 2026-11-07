@@ -7,7 +7,7 @@ extends Control
 
 ## 右上角选色面板。按 Palette.editable_groups() 分组列出所有可调色项，
 ## 拖一下颜色就通过 Palette.set_color / set_plate_color 写进配置并广播，
-## 主场景收到广播后重刷世界材质和场上每张卡（见 main.gd _refresh_world_palette）。
+## 主场景收到广播后重刷世界材质和场上每张卡（见 on_work_main.gd _refresh_world_palette）。
 ##
 ## 两个必须注意的点：
 ## 1. mouse_filter = STOP。取牌是 board.gd 在 _unhandled_input 里打射线做的，

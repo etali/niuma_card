@@ -1,41 +1,41 @@
 # Copyright (C) 2026 etali (https://github.com/etali)
 # SPDX-License-Identifier: AGPL-3.0-only
 extends "res://tests/harness.gd"
-const Env=preload("res://engine/bot_environment.gd")
-const Plan=preload("res://engine/bot_turn_plan.gd")
-const Flow=preload("res://engine/round_flow.gd")
+const Env=preload("res://engine/on_work_bot_environment.gd")
+const Plan=preload("res://engine/on_work_bot_turn_plan.gd")
+const Flow=preload("res://engine/on_work_round_flow.gd")
 func _initialize()->void:
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	await _test_sequences()
 	_test_baseline_incumbent()
 	_test_marginal_fallback()
 	_test_invalidations()
 	finish()
-func _users(s:GameState,who:String,n:int)->Array:
+func _users(s:OnWorkState,who:String,n:int)->Array:
 	var out:=[]
 	for c in s.players[who].cards:
 		if c.def_id=="user" and not c.get("locked",false):out.append(c.uid)
 	return out.slice(0,n)
-func _state(count:int)->GameState:
-	var s:=GameState.new();s.set_seed(1)
+func _state(count:int)->OnWorkState:
+	var s:=OnWorkState.new();s.set_seed(1)
 	s.players={"bot":{"cards":[]},"player":{"cards":[]}};s.draw_first="bot"
 	for who in ["bot","player"]:
 		for i in 10:s.add_card(who,"cash")
 		for i in 6 if who=="bot" else 10+count:s.add_card(who,"user")
 	var attack:=s.add_card("bot","chaping")
-	check(Env.replay(s,[Intent.create_combo("bot",[attack.uid]+_users(s,"bot",6))]),"三点用户攻击经共享规则成立")
+	check(Env.replay(s,[OnWorkIntent.create_combo("bot",[attack.uid]+_users(s,"bot",6))]),"三点用户攻击经共享规则成立")
 	var padded:=s.add_card("player","xinxijianfang")
-	check(Env.replay(s,[Intent.create_combo("player",[padded.uid]+_users(s,"player",10))]),"茧房真实超配10用户，三击不能拆掉")
+	check(Env.replay(s,[OnWorkIntent.create_combo("player",[padded.uid]+_users(s,"player",10))]),"茧房真实超配10用户，三击不能拆掉")
 	for id in ["yunketang","baoyue","shuabuting","jiaolv","xufei"].slice(0,count):
 		var core:=s.add_card("player",id);var buff:=s.add_card("player","liebian")
-		check(Env.replay(s,[Intent.create_combo("player",[core.uid,buff.uid]+_users(s,"player",1))]),"裂变让另一个生产组只需一用户")
+		check(Env.replay(s,[OnWorkIntent.create_combo("player",[core.uid,buff.uid]+_users(s,"player",1))]),"裂变让另一个生产组只需一用户")
 	return s
 func _test_sequences()->void:
 	for count in [3,4,5]:
 		var initial:=_state(count)
-		var cfg:=BOTSearch.from_model("bot",1.0)
+		var cfg:=OnWorkBOTSearch.from_model("bot",1.0)
 		cfg.apply_override("target_trials",64)
-		var p:=cfg.resolved_parameters();p["_context"]=BOTActions.Context.new()
+		var p:=cfg.resolved_parameters();p["_context"]=OnWorkBOTActions.Context.new()
 		var probe:=Env.copy(initial);var pools:=probe.arm_attacks("bot");var budget:=[64]
 		var searched:=Plan._attack_sequence(probe,"bot",pools,p,budget,3)
 		check(searched.targets.size()==3,"递归返回全部三击，而非只有首击")
@@ -45,14 +45,14 @@ func _test_sequences()->void:
 		check(Plan.settled_score(actual,"bot",p)==searched.score,"实际执行完整续打后所得评分与搜索预测完全一致")
 		check(actual.resource_count("player","cash")== ({3:28,4:32,5:38}[count]),"余点继续拆小生产组，不改打无法拆散的大组")
 		var transported:=Env.copy(initial)
-		var transport:=LocalTransport.new(IntentApply.new(transported))
+		var transport:=OnWorkLocalTransport.new(OnWorkIntentApply.new(transported))
 		var flow=Flow.new(func():return transport)
 		var result:Dictionary=await flow.run_round(Plan.target_picker(cfg))
-		check(result.ok and Env.key(transported)==Env.key(actual),"RoundFlow逐个Intent执行与搜索/无头结算状态一致")
+		check(result.ok and Env.key(transported)==Env.key(actual),"RoundFlow逐个OnWorkIntent执行与搜索/无头结算状态一致")
 func _test_invalidations()->void:
 	for changed in ["state","targets"]:
 		var s:=_state(4);var pools:=s.arm_attacks("bot")
-		var p:=BOTSearch.from_model("bot",1.0).resolved_parameters();p["_context"]=BOTActions.Context.new()
+		var p:=OnWorkBOTSearch.from_model("bot",1.0).resolved_parameters();p["_context"]=OnWorkBOTActions.Context.new()
 		var budget:=[64];var plan:={}
 		var first:=Plan._choose_target(s,"bot",s.affordable_targets("player",pools),pools,p,budget,plan)
 		check(budget[0]==0 and plan.targets.size()==2,"首击之后仍保存已评估的两击，虽试算额度已归零")
@@ -70,9 +70,9 @@ func _test_baseline_incumbent()->void:
 	for count in [4,5]:
 		for trials in [36,64]:
 			var initial:=_state(count)
-			var cfg:=BOTSearch.from_model("bot",1.0)
+			var cfg:=OnWorkBOTSearch.from_model("bot",1.0)
 			cfg.apply_override("target_trials",trials)
-			var p:=cfg.resolved_parameters();p["_context"]=BOTActions.Context.new()
+			var p:=cfg.resolved_parameters();p["_context"]=OnWorkBOTActions.Context.new()
 			var probe:=Env.copy(initial);var pools:=probe.arm_attacks("bot");var budget:=[trials]
 			var baseline:=Plan._attack_baseline(probe,"bot",pools,p,budget)
 			var baseline_used:int=trials-int(budget[0])
@@ -87,32 +87,32 @@ func _test_baseline_incumbent()->void:
 			check(actual.resource_count("player","cash")==({4:32,5:38}[count]),"仍按真实生产规则拆掉有收益的三个小组")
 
 func _test_marginal_fallback()->void:
-	var cfg:=BOTSearch.from_model("bot",1.0)
+	var cfg:=OnWorkBOTSearch.from_model("bot",1.0)
 	cfg.apply_override("target_trials",0)
 	var initial:=_state(5)
 	var pools:=initial.arm_attacks("bot")
-	var before:=StateCodec.canon([Env.key(initial),initial.rng_snapshot(),initial.stats,pools])
+	var before:=OnWorkStateCodec.canon([Env.key(initial),initial.rng_snapshot(),initial.stats,pools])
 	var picked:=Plan.greedy_target(initial,"bot",initial.affordable_targets("player",pools),pools,cfg.resolved_parameters())
 	check(picked.get("leader","")=="xufei","无搜索额度时，首击按可拆组收益排序，而非大组整体产出")
-	check(StateCodec.canon([Env.key(initial),initial.rng_snapshot(),initial.stats,pools])==before,"拆组收益预判不修改状态、随机流、统计或攻击池")
+	check(OnWorkStateCodec.canon([Env.key(initial),initial.rng_snapshot(),initial.stats,pools])==before,"拆组收益预判不修改状态、随机流、统计或攻击池")
 	var actual:=Env.copy(initial);Env.settle(actual,Plan.target_picker(cfg))
 	check(actual.resource_count("player","cash")==38,"0次试算的合法fallback也能拆掉收益最高的三个小组")
-	var saved:Dictionary=CardDB.CARDS["xufei"].duplicate(true)
-	CardDB.CARDS["xufei"]["output_n"]=1
+	var saved:Dictionary=OnWorkCardDB.CARDS["xufei"].duplicate(true)
+	OnWorkCardDB.CARDS["xufei"]["output_n"]=1
 	actual=_state(5);Env.settle(actual,Plan.target_picker(cfg))
 	check(actual.resource_count("player","cash")==33,"修改产出配置后转拆包月，收益判断没有固定卡牌优先级")
-	CardDB.CARDS["xufei"]=saved
-	var old_cost:int=CardDB.GAME["attack_cost_per_card"]
-	CardDB.GAME["attack_cost_per_card"]=2
+	OnWorkCardDB.CARDS["xufei"]=saved
+	var old_cost:int=OnWorkCardDB.GAME["attack_cost_per_card"]
+	OnWorkCardDB.GAME["attack_cost_per_card"]=2
 	actual=_state(5);Env.settle(actual,Plan.target_picker(cfg))
 	check(actual.resource_count("player","cash")==55,"修改攻击成本后，三点攻击只能拆一个最高收益小组")
-	CardDB.GAME["attack_cost_per_card"]=old_cost
+	OnWorkCardDB.GAME["attack_cost_per_card"]=old_cost
 	initial=_state(1);pools=initial.arm_attacks("bot")
 	picked=Plan.greedy_target(initial,"bot",initial.affordable_targets("player",pools),pools,cfg.resolved_parameters())
 	check(picked.get("leader","")=="yunketang","三击拆不掉的大组没有停产收益")
-	var old_need:int=CardDB.CARDS["xinxijianfang"]["recipe_n"]
-	CardDB.CARDS["xinxijianfang"]["recipe_n"]=8
+	var old_need:int=OnWorkCardDB.CARDS["xinxijianfang"]["recipe_n"]
+	OnWorkCardDB.CARDS["xinxijianfang"]["recipe_n"]=8
 	initial=_state(1);pools=initial.arm_attacks("bot")
 	picked=Plan.greedy_target(initial,"bot",initial.affordable_targets("player",pools),pools,cfg.resolved_parameters())
 	check(picked.get("leader","")=="xinxijianfang","修改配方使三击足以拆组后，大组重新获得相应攻击收益")
-	CardDB.CARDS["xinxijianfang"]["recipe_n"]=old_need
+	OnWorkCardDB.CARDS["xinxijianfang"]["recipe_n"]=old_need

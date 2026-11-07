@@ -21,12 +21,12 @@ func _run() -> void:
 	var world := Node3D.new()
 	root.add_child(world)
 	var count := 0
-	for id in CardDB.all_cards():
+	for id in OnWorkCardDB.all_cards():
 		var card := _card(world, str(id), 98000 + count)
 		card.position.x = 10.0 + count * 2.0
 		_check_face(card)
 		count += 1
-	check(count == CardDB.all_cards().size() and count > 0, "当前卡表所有卡种在旧母版缺失时都有卡面")
+	check(count == OnWorkCardDB.all_cards().size() and count > 0, "当前卡表所有卡种在旧母版缺失时都有卡面")
 	_check_shared_geometry(world)
 	_check_palette_and_face_state(world)
 	_check_without_back_art(world)

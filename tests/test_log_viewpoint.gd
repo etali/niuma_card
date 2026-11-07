@@ -9,7 +9,7 @@ extends "res://tests/harness.gd"
 ##
 ## 为什么要有这一条：引擎写战报时如果把「你的公司」直接拼进文本，单机局看不出问题
 ## —— 拼进去的恰好就是对的。联网局才会露：服务器发的是同一份 state_snapshot，
-## 服务器没有视角，同一句「XX 购入卡」在两个客户端要念成不同的公司名（README.md §「3. 文件目录结构」）。
+## 服务器没有视角，同一句「XX 购入卡」在两个客户端要念成不同的公司名（README.md §「文件目录结构」）。
 ##
 ## 所以座位在日志里是**字段**不是子串：条目存 { round, fmt, args }，
 ## args 里的座位写成 { "seat": who }，由 render_entry 按 my_seat 换成公司名。
@@ -22,7 +22,7 @@ extends "res://tests/harness.gd"
 
 ## 扫这些种子。为什么不是 1 个：单局会**整类**漏掉日志。实测种子 1234 那局
 ## 131 条里只有开局/购入/产出/典当四类，「已被拆散」要到种子 10 才首次出现，
-## 「受防御 Buff」要到种子 12。往 settle.gd 注入一处写死的公司名，
+## 「受防御 Buff」要到种子 12。往 on_work_settle.gd 注入一处写死的公司名，
 ## 单种子版本这条根本没红 —— 这个洞是实测出来的，不是猜的
 const SEEDS := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 
@@ -49,11 +49,11 @@ func _test_render_symmetry() -> void:
 	var entry := {
 		"round": 1,
 		"fmt": "%s 购入「%s」，%s 的组合被拆散",
-		"args": [GameState.seat_arg(GameState.PLAYER), "测试卡",
-			GameState.seat_arg(GameState.BOT)],
+		"args": [OnWorkState.seat_arg(OnWorkState.PLAYER), "测试卡",
+			OnWorkState.seat_arg(OnWorkState.BOT)],
 	}
-	var as_player := GameState.render_entry(entry, GameState.PLAYER)
-	var as_bot := GameState.render_entry(entry, GameState.BOT)
+	var as_player := OnWorkState.render_entry(entry, OnWorkState.PLAYER)
+	var as_bot := OnWorkState.render_entry(entry, OnWorkState.BOT)
 
 	check(as_player == "你的公司 购入「测试卡」，对手公司 的组合被拆散",
 		"PLAYER 视角（%s）" % as_player)
@@ -94,12 +94,12 @@ func _test_entry_shape() -> void:
 	#
 	# 找的是**渲染后**的文本而不是 fmt：有些词是从 args 进来的，fmt 里没有。
 	# 「产出」就是这样 —— 生产那句 fmt 是 "⚙ %s「%s」%s%s+%d"，
-	# 「产出」来自 CardDB.res_label()。第一版按 fmt 找，这条就漏报了「缺 产出」
+	# 「产出」来自 OnWorkCardDB.res_label()。第一版按 fmt 找，这条就漏报了「缺 产出」
 	var missing: Array[String] = []
 	for k in LOG_KINDS:
 		var hit := false
 		for e in entries:
-			if k in GameState.entry_text(e):
+			if k in OnWorkState.entry_text(e):
 				hit = true
 				break
 		if not hit:
@@ -129,7 +129,7 @@ func _test_no_baked_names() -> void:
 	var seated := 0
 	for e in entries:
 		for a in e["args"]:
-			if a is Dictionary and a.has(GameState.SEAT_KEY):
+			if a is Dictionary and a.has(OnWorkState.SEAT_KEY):
 				seated += 1
 				break
 	check(seated > 0, "战报里确实在用 seat_arg（%d/%d 条带座位）" % [seated, entries.size()])
@@ -143,13 +143,13 @@ func _test_render_bounds() -> void:
 	var entries := _collect_entries()
 	var bad: Array[String] = []
 	for e in entries:
-		for seat in [GameState.PLAYER, GameState.BOT]:
-			var out := GameState.render_entry(e, seat)
+		for seat in [OnWorkState.PLAYER, OnWorkState.BOT]:
+			var out := OnWorkState.render_entry(e, seat)
 			# 占位符没被吃掉（args 少了会留下 %s）
 			if "%s" in out or "%d" in out:
 				bad.append("[%s] %s ← %s" % [seat, out, e["fmt"]])
 			# 座位字典不该以字典形式漏进文本
-			if GameState.SEAT_KEY in out:
+			if OnWorkState.SEAT_KEY in out:
 				bad.append("[%s] 座位字段漏进文本：%s" % [seat, out])
 	check(entries.size() > 500 and bad.is_empty(),
 		"两个视角都渲染干净（%d 条 ×2 视角，%d 处出错）%s" % [
@@ -160,9 +160,9 @@ func _test_render_bounds() -> void:
 	# 判据不照抄 render_entry 的实现（那样是恒真）
 	var drift: Array[String] = []
 	for e in entries:
-		var sp := GameState.render_entry(e, GameState.PLAYER) \
+		var sp := OnWorkState.render_entry(e, OnWorkState.PLAYER) \
 			.replace("你的公司", "").replace("对手公司", "")
-		var sa := GameState.render_entry(e, GameState.BOT) \
+		var sa := OnWorkState.render_entry(e, OnWorkState.BOT) \
 			.replace("你的公司", "").replace("对手公司", "")
 		if sp != sa:
 			drift.append("%s\n        vs %s" % [sp, sa])
@@ -176,9 +176,9 @@ func _test_render_bounds() -> void:
 ## 与 test_seat_map.gd 第四段同一个思路：行为测试证明现在是对的，
 ## 静态检查保证不会被改回去。公司名是**视角量**，只该出现在场景层
 func _test_static_no_literal() -> void:
-	var files := ["res://engine/game_state.gd", "res://engine/settle.gd",
-		"res://engine/combo_rules.gd", "res://engine/bot_actions.gd",
-		"res://engine/match_simulator.gd"]
+	var files := ["res://engine/on_work_state.gd", "res://engine/on_work_settle.gd",
+		"res://engine/on_work_combo_rules.gd", "res://engine/on_work_bot_actions.gd",
+		"res://engine/on_work_match_simulator.gd"]
 	var bad: Array[String] = []
 	var scanned := 0
 	for path in files:
@@ -211,7 +211,7 @@ func _test_static_no_literal() -> void:
 
 
 ## 跑一批无头对局，收集全部战报条目（不是文本 —— 这里要验的就是条目结构）。
-## 用 MatchSimulator 而不是起场景：这条测的是引擎写日志的方式，与摆放、补间无关，
+## 用 OnWorkMatchSimulator 而不是起场景：这条测的是引擎写日志的方式，与摆放、补间无关，
 ## 无头一局能覆盖买卡 / 典当 / 编组 / 攻击 / 结算全部写日志的路径
 var _cache: Array[Dictionary] = []
 
@@ -219,7 +219,7 @@ func _collect_entries() -> Array[Dictionary]:
 	if not _cache.is_empty():
 		return _cache
 	for sd in SEEDS:
-		var summary := MatchSimulator.run_game(MatchSimulator.ROUNDS_FROM_CONFIG, sd)
+		var summary := OnWorkMatchSimulator.run_game(OnWorkMatchSimulator.ROUNDS_FROM_CONFIG, sd)
 		for e in summary["log"]:
 			_cache.append(e)
 	_cache.append_array(_protected_production_log())
@@ -228,45 +228,45 @@ func _collect_entries() -> Array[Dictionary]:
 
 ## 防御日志在入组当回合就产生，显式夹具避免依赖某个策略恰好买到防御卡。
 func _protected_production_log() -> Array:
-	var s := GameState.new()
-	s.players = {GameState.PLAYER: {"cards": []}, GameState.BOT: {"cards": []}}
+	var s := OnWorkState.new()
+	s.players = {OnWorkState.PLAYER: {"cards": []}, OnWorkState.BOT: {"cards": []}}
 	var core := ""
 	var buff := ""
-	for id in CardDB.all_cards():
-		var d := CardDB.get_def(id)
-		if d.get("kind") == CardDB.KIND_PRODUCT and d.get("recipe_res") == CardDB.RES_USER:
+	for id in OnWorkCardDB.all_cards():
+		var d := OnWorkCardDB.get_def(id)
+		if d.get("kind") == OnWorkCardDB.KIND_PRODUCT and d.get("recipe_res") == OnWorkCardDB.RES_USER:
 			core = id
 		if d.get("buff_type") == "protect_user":
 			buff = id
 	if not need(core != "" and buff != "", "防御日志夹具有生产卡与用户保护卡"):
 		return []
-	var ids: Array = [s.add_card(GameState.PLAYER, core)["uid"], s.add_card(GameState.PLAYER, buff)["uid"]]
-	for i in int(CardDB.get_def(core)["recipe_n"]):
-		ids.append(s.add_card(GameState.PLAYER, CardDB.unit_id(CardDB.RES_USER))["uid"])
-	s.add_card(GameState.PLAYER, CardDB.unit_id(CardDB.RES_CASH))
-	check(s.create_combo(GameState.PLAYER, ids)["ok"], "防御日志夹具合法编组")
-	Settle.produce(s)
+	var ids: Array = [s.add_card(OnWorkState.PLAYER, core)["uid"], s.add_card(OnWorkState.PLAYER, buff)["uid"]]
+	for i in int(OnWorkCardDB.get_def(core)["recipe_n"]):
+		ids.append(s.add_card(OnWorkState.PLAYER, OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER))["uid"])
+	s.add_card(OnWorkState.PLAYER, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
+	check(s.create_combo(OnWorkState.PLAYER, ids)["ok"], "防御日志夹具合法编组")
+	OnWorkSettle.produce(s)
 	return s.log
 
 ## 现金配方攻击才会写装弹日志；用真实编组和付款保证覆盖，不依赖BOT购买偏好。
 func _armed_attack_log() -> Array:
-	var s := GameState.new()
-	s.players = {GameState.PLAYER:{"cards":[]},GameState.BOT:{"cards":[]}}
+	var s := OnWorkState.new()
+	s.players = {OnWorkState.PLAYER:{"cards":[]},OnWorkState.BOT:{"cards":[]}}
 	var core := ""
-	for id in CardDB.all_cards():
-		var d := CardDB.get_def(id)
-		if d.get("kind") == CardDB.KIND_ATTACK and d.get("recipe_res") == CardDB.RES_CASH and int(d.get("recipe_n",0)) > 0:
+	for id in OnWorkCardDB.all_cards():
+		var d := OnWorkCardDB.get_def(id)
+		if d.get("kind") == OnWorkCardDB.KIND_ATTACK and d.get("recipe_res") == OnWorkCardDB.RES_CASH and int(d.get("recipe_n",0)) > 0:
 			core = id
 			break
 	if not need(core != "","装弹日志夹具存在现金配方攻击卡"): return []
-	var ids: Array = [s.add_card(GameState.PLAYER,core).uid]
-	var cost := int(CardDB.get_def(core).recipe_n)
-	for i in cost: ids.append(s.add_card(GameState.PLAYER,CardDB.unit_id(CardDB.RES_CASH)).uid)
-	s.add_card(GameState.PLAYER,CardDB.unit_id(CardDB.RES_CASH))
-	s.add_card(GameState.PLAYER,CardDB.unit_id(CardDB.RES_USER))
-	check(s.create_combo(GameState.PLAYER,ids).ok,"装弹日志夹具合法编组")
-	var before := s.resource_count(GameState.PLAYER,CardDB.RES_CASH)
-	var pool := s.arm_attacks(GameState.PLAYER)
-	check(int(pool.values().reduce(func(a,b):return a+b,0)) > 0 and s.resource_count(GameState.PLAYER,CardDB.RES_CASH)==before-cost,
+	var ids: Array = [s.add_card(OnWorkState.PLAYER,core).uid]
+	var cost := int(OnWorkCardDB.get_def(core).recipe_n)
+	for i in cost: ids.append(s.add_card(OnWorkState.PLAYER,OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH)).uid)
+	s.add_card(OnWorkState.PLAYER,OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
+	s.add_card(OnWorkState.PLAYER,OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER))
+	check(s.create_combo(OnWorkState.PLAYER,ids).ok,"装弹日志夹具合法编组")
+	var before := s.resource_count(OnWorkState.PLAYER,OnWorkCardDB.RES_CASH)
+	var pool := s.arm_attacks(OnWorkState.PLAYER)
+	check(int(pool.values().reduce(func(a,b):return a+b,0)) > 0 and s.resource_count(OnWorkState.PLAYER,OnWorkCardDB.RES_CASH)==before-cost,
 		"实际装弹产生攻击点并扣除配置规定的现金")
 	return s.log

@@ -40,7 +40,16 @@ func anchor(node: Node) -> Vector2:
 	var group: Variant = player.arena.board.group_of(node)
 	if group != null and not group.get("compact", false) and group["cards"].back() != node:
 		at += node.global_basis * Vector3(0, 0.06, -CardEntity.CARD_SIZE.z * 0.4)
+	return world_anchor(at)
+
+func world_anchor(at: Vector3) -> Vector2:
 	return player.arena.camera.unproject_position(at)
+
+func presentation_factor() -> float:
+	return maxf(0.8, player._presentation._responsive_factor())
+
+func source_rect(node: Node) -> Rect2:
+	return node.get_global_rect() if node is Control else Rect2()
 
 func _draw() -> void:
 	if not active() or cue.is_empty() or _idle < 0.5: return
@@ -50,16 +59,17 @@ func _draw() -> void:
 	var end := start
 	var target: Node = cue.get("target")
 	if is_instance_valid(target): end = anchor(target)
-	elif cue.has("target_world"): end = player.arena.camera.unproject_position(cue["target_world"])
-	var factor: float = maxf(0.8, player._presentation._responsive_factor())
+	elif cue.has("target_world"): end = world_anchor(cue["target_world"])
+	var factor := presentation_factor()
 	var color := Palette.semantic("warning")
 	var cycle := fmod(_elapsed, 3.4)
 	var progress := smoothstep(0.55, 2.1, cycle)
 	var hand := start
 	var dragging: bool = cue.get("gesture") == "drag"
 	draw_arc(start, 18 * factor, 0, TAU, 40, Color(color, 0.8), 2 * factor, true)
-	if source is Control:
-		draw_rect(source.get_global_rect().grow(3 * factor), Color(color, 0.8), false, 2 * factor)
+	var bounds := source_rect(source)
+	if bounds.has_area():
+		draw_rect(bounds.grow(3 * factor), Color(color, 0.8), false, 2 * factor)
 	if dragging:
 		draw_dashed_line(start, end, Color(color, 0.45), 2 * factor, 7 * factor, true)
 		draw_arc(end, 23 * factor, 0, TAU, 40, Color(color, 0.8), 2 * factor, true)

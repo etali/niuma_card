@@ -5,7 +5,7 @@
 
 """座位映射的变异检查（一次性核对，不进 run_tests）。
 
-把 main.gd / settle_layout.gd 里的座位引用逐个改回硬编码常量，
+把 on_work_main.gd / settle_layout.gd 里的座位引用逐个改回硬编码常量，
 确认 test_seat_map.gd 每次都能报红。全 MISS 说明判据没被测过。
 """
 import re
@@ -18,15 +18,15 @@ TEST = "tests/test_seat_map.gd"
 
 # (文件, 变异前, 变异后, 说明)
 MUTS = [
-    ("scenes/main.gd", "my_seat", "GameState.PLAYER", "我方座位 → 硬编码 PLAYER"),
-    ("scenes/main.gd", "foe_seat", "GameState.BOT", "对手座位 → 硬编码 BOT"),
-    ("scenes/settle_layout.gd", "_main.my_seat", "GameState.PLAYER", "落点我方 → 硬编码"),
-    ("scenes/settle_layout.gd", "_main.foe_seat", "GameState.BOT", "落点对手 → 硬编码"),
+    ("scenes/on_work_main.gd", "my_seat", "OnWorkState.PLAYER", "我方座位 → 硬编码 PLAYER"),
+    ("scenes/on_work_main.gd", "foe_seat", "OnWorkState.BOT", "对手座位 → 硬编码 BOT"),
+    ("scenes/settle_layout.gd", "_main.my_seat", "OnWorkState.PLAYER", "落点我方 → 硬编码"),
+    ("scenes/settle_layout.gd", "_main.foe_seat", "OnWorkState.BOT", "落点对手 → 硬编码"),
 ]
 
 
 def run_test() -> tuple[int, str]:
-    """跑一遍测试。超时必须有：变异可能让 main.tscn 加载失败，
+    """跑一遍测试。超时必须有：变异可能让 on_work_main.tscn 加载失败，
     测试跑不到 finish() 就永远不 quit（实测挂了 35 分钟）。
     挂住也算 KILLED —— 变异确实被发现了，只是以最难看的方式"""
     try:
@@ -39,7 +39,7 @@ def run_test() -> tuple[int, str]:
 
 ## 不参与变异的行：注释、座位声明、以及 set_seats 自己的赋值。
 ## set_seats 里那两句是**定义** my_seat 的地方，把它改成常量等于删掉这个机制，
-## 而且 `GameState.PLAYER = mine` 是给常量赋值 —— 脚本直接编译不过，
+## 而且 `OnWorkState.PLAYER = mine` 是给常量赋值 —— 脚本直接编译不过，
 ## 测的就不是「漏了一处硬编码」而是「文件坏了」
 SKIP_PREFIX = ("#", "var my_seat", "var foe_seat", "my_seat = mine", "foe_seat = foe")
 

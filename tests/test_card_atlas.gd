@@ -5,14 +5,14 @@
 extends "res://tests/harness.gd"
 
 const Atlas = preload("res://scenes/card_atlas.gd")
-const CardPreview = preload("res://scenes/card_preview.gd")
+const CardPreview = preload("res://scenes/on_work_card_preview.gd")
 
 func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
 	print("=== 卡牌总览与真实升级关系图 ===")
-	CardDB.load_default()
+	OnWorkCardDB.load_default()
 	_check_cards()
 	_check_routes()
 	_check_refresh()
@@ -23,15 +23,15 @@ func _run() -> void:
 func _check_cards() -> void:
 	var entries: Array = Atlas.card_entries()
 	# 张数从卡表读（加了角色专属卡之后是 33）；不只列可购买卡由下面逐张核对 def_id 保证
-	check(entries.size() == CardDB.all_cards().size(), "总览包含当前卡表全部%d张卡，不只列可购买卡" % CardDB.all_cards().size())
+	check(entries.size() == OnWorkCardDB.all_cards().size(), "总览包含当前卡表全部%d张卡，不只列可购买卡" % OnWorkCardDB.all_cards().size())
 	var ids: Array = []
 	var values_match := true
 	for entry: Dictionary in entries:
 		ids.append(entry.def_id)
-		values_match = values_match and int(entry.pawn) == CardDB.pawn_value(str(entry.def_id))
-		values_match = values_match and int(entry.price) == int(CardDB.get_def(str(entry.def_id)).get("price", -1))
+		values_match = values_match and int(entry.pawn) == OnWorkCardDB.pawn_value(str(entry.def_id))
+		values_match = values_match and int(entry.price) == int(OnWorkCardDB.get_def(str(entry.def_id)).get("price", -1))
 	check(ids.has("cash") and ids.has("user") and ids.has("jiaolv") and ids.has("shangshi"), "图鉴包括资源、合成业务和传说")
-	check(values_match, "全部购价和典当价读取实际CardDB，不重复计算公式")
+	check(values_match, "全部购价和典当价读取实际OnWorkCardDB，不重复计算公式")
 
 func _check_routes() -> void:
 	var routes: Dictionary = Atlas.upgrade_routes()
@@ -43,41 +43,41 @@ func _check_routes() -> void:
 		var ids: Array = []
 		ids.resize(int(route.count))
 		ids.fill(str(route.source_id))
-		valid = valid and ComboRules.upgrade_target_for_ids(ids) == str(route.target_id)
-		valid = valid and int(CardDB.get_def(str(route.source_id)).get("tier", 0)) == 1
-		valid = valid and int(CardDB.get_def(str(route.target_id)).get("tier", 0)) == 2
+		valid = valid and OnWorkComboRules.upgrade_target_for_ids(ids) == str(route.target_id)
+		valid = valid and int(OnWorkCardDB.get_def(str(route.source_id)).get("tier", 0)) == 1
+		valid = valid and int(OnWorkCardDB.get_def(str(route.target_id)).get("tier", 0)) == 2
 	check(valid, "普通边逐条通过真实组合判定，来源T1、目标T2")
 	check(not sources.has("chunwan") and routes.no_ordinary.has("chunwan"), "春晚冠名没有虚构的T2路线")
 	check(routes.legends.size() == 3, "传说图按三种真实目标汇聚T1和T2两种路线")
 	var counts := {1: [], 2: []}
 	valid = true
 	for route: Dictionary in routes.legends:
-		valid = valid and route.sources.size() == 2 and int(route.pawn) == CardDB.pawn_value(str(route.target_id))
+		valid = valid and route.sources.size() == 2 and int(route.pawn) == OnWorkCardDB.pawn_value(str(route.target_id))
 		for source: Dictionary in route.sources:
 			counts[int(source.tier)].append(int(source.count))
 			var ids: Array = []
 			for index in int(source.count):
 				ids.append(str(source.card_ids[index % source.card_ids.size()]))
-			valid = valid and ComboRules.upgrade_target_for_ids(ids) == str(route.target_id)
+			valid = valid and OnWorkComboRules.upgrade_target_for_ids(ids) == str(route.target_id)
 			ids.append(str(source.card_ids[0]))
-			valid = valid and ComboRules.upgrade_target_for_ids(ids) != str(route.target_id)
+			valid = valid and OnWorkComboRules.upgrade_target_for_ids(ids) != str(route.target_id)
 	check(valid, "两种传说材料均可异名，精确张数通过引擎，回收值与卡表一致")
 	counts[1].sort()
 	counts[2].sort()
 	check(counts[1] == [4, 6, 8] and counts[2] == [2, 3, 4], "当前配置展示T1的4/6/8与T2的2/3/4张路线")
-	check(ComboRules.upgrade_target_for_ids(["yunketang", "jiaolv"]) == "", "混档材料不会被升级图表示为合法材料")
+	check(OnWorkComboRules.upgrade_target_for_ids(["yunketang", "jiaolv"]) == "", "混档材料不会被升级图表示为合法材料")
 
 func _check_refresh() -> void:
-	var saved_cards := CardDB.CARDS
-	var saved_upgrade := CardDB.UPGRADE
+	var saved_cards := OnWorkCardDB.CARDS
+	var saved_upgrade := OnWorkCardDB.UPGRADE
 	var baseline: Array = Atlas.card_entries()
-	CardDB.CARDS = saved_cards.duplicate(true)
-	CardDB.UPGRADE = saved_upgrade.duplicate(true)
-	CardDB.CARDS.yunketang.name = "新业务名称"
-	CardDB.CARDS.yunketang.price = 19
-	CardDB.CARDS.yunketang.recipe_n = 21
-	CardDB.CARDS.dujiaoshou.pawn = 47
-	for route: Dictionary in CardDB.UPGRADE.routes:
+	OnWorkCardDB.CARDS = saved_cards.duplicate(true)
+	OnWorkCardDB.UPGRADE = saved_upgrade.duplicate(true)
+	OnWorkCardDB.CARDS.yunketang.name = "新业务名称"
+	OnWorkCardDB.CARDS.yunketang.price = 19
+	OnWorkCardDB.CARDS.yunketang.recipe_n = 21
+	OnWorkCardDB.CARDS.dujiaoshou.pawn = 47
+	for route: Dictionary in OnWorkCardDB.UPGRADE.routes:
 		if int(route.get("tier", 0)) == 1 and str(route.get("key", "")) == "dup_key":
 			route.per = 3
 	var updated: Array = Atlas.card_entries()
@@ -93,8 +93,8 @@ func _check_refresh() -> void:
 		if int(source.tier) == 1 and int(source.count) == 6:
 			new_count = true
 	check(new_count and int(unicorn.pawn) == 47, "改T1折算规则和传说典当值后关系图同步更新")
-	CardDB.CARDS = saved_cards
-	CardDB.UPGRADE = saved_upgrade
+	OnWorkCardDB.CARDS = saved_cards
+	OnWorkCardDB.UPGRADE = saved_upgrade
 	check(Atlas.card_entries() == baseline, "恢复卡表后总览无旧配置残留")
 
 func _check_layout(viewport_size: Vector2i) -> void:
@@ -111,7 +111,7 @@ func _check_layout(viewport_size: Vector2i) -> void:
 	for _frame in 4:
 		await process_frame
 	var context := "%dx%d" % [viewport_size.x, viewport_size.y]
-	check(atlas._grid.get_child_count() == CardDB.all_cards().size(), context + "：所有卡牌实际存在于可滚动网格")
+	check(atlas._grid.get_child_count() == OnWorkCardDB.all_cards().size(), context + "：所有卡牌实际存在于可滚动网格")
 	check(atlas._grid.columns >= 1 and atlas._scroll.size.x <= float(viewport_size.x), context + "：图鉴不撑大外部窗口")
 	check(atlas._grid.columns == 1 if viewport_size.x < 420 else atlas._grid.columns >= 3, context + "：网格随可用宽度折列，小屏仍保持字号")
 	var initial_header_y: float = atlas._header.global_position.y
@@ -129,12 +129,12 @@ func _check_layout(viewport_size: Vector2i) -> void:
 			var real_card: CardEntity = preview.card
 			if real_card != null and real_card.get_script() == exact_card_script \
 					and real_card.def_id == str(tile.get_meta("def_id")) \
-					and real_card.label.text == CardDB.card_name(real_card.def_id) \
+					and real_card.label.text == OnWorkCardDB.card_name(real_card.def_id) \
 					and real_card._plate != null and real_card._icon != null \
 					and real_card.freeze and not real_card.draggable \
 					and real_card.collision_layer == 0 and real_card.collision_mask == 0:
 				card_count += 1
-	check(card_count == CardDB.all_cards().size(), context + "：全部卡片由冻结的正式CardEntity绘制完整卡面，不是另画的插画缩略图")
+	check(card_count == OnWorkCardDB.all_cards().size(), context + "：全部卡片由冻结的正式CardEntity绘制完整卡面，不是另画的插画缩略图")
 	var cloud: Control = atlas._tiles.yunketang.find_child("CardPreview_yunketang", true, false)
 	check(cloud.tooltip_text == descriptions.hover_desc_text("yunketang"), context + "：独立图鉴的效果提醒复用Board原文")
 	descriptions.free()
@@ -156,7 +156,7 @@ func _check_layout(viewport_size: Vector2i) -> void:
 	var expected_products := 0
 	var only_products := true
 	for tile: Control in atlas._grid.get_children():
-		var product := str(CardDB.get_def(str(tile.get_meta("def_id"))).get("kind", "")) == CardDB.KIND_PRODUCT
+		var product := str(OnWorkCardDB.get_def(str(tile.get_meta("def_id"))).get("kind", "")) == OnWorkCardDB.KIND_PRODUCT
 		if product:
 			expected_products += 1
 		if tile.visible:
@@ -171,7 +171,7 @@ func _check_layout(viewport_size: Vector2i) -> void:
 	click.pressed = true
 	cloud.gui_input.emit(click)
 	await process_frame
-	check(atlas._grid.visible and atlas._grid.get_child_count() == CardDB.all_cards().size() \
+	check(atlas._grid.visible and atlas._grid.get_child_count() == OnWorkCardDB.all_cards().size() \
 		and cloud.mouse_default_cursor_shape == Control.CURSOR_ARROW and not cloud.has_signal("activated"),
 		context + "：点击卡片不切页、不展开详情，也没有可点击手型暗示")
 	var old_card: WeakRef = weakref(cloud.card)
@@ -202,7 +202,7 @@ func _check_layout(viewport_size: Vector2i) -> void:
 		stacks_valid = stacks_valid and row != null and ids == shown_ids
 		if row != null:
 			var route: Dictionary = row.get_meta("route")
-			stacks_valid = stacks_valid and ComboRules.upgrade_target_for_ids(ids) == str(route.target_id)
+			stacks_valid = stacks_valid and OnWorkComboRules.upgrade_target_for_ids(ids) == str(route.target_id)
 	check(stacks_valid and map_previews.size() == expected_previews \
 		and map_previews.all(func(preview: Control): return preview.card is CardEntity), \
 		context + "：图中每摞实际卡牌与精确张数一致，经真实规则可合成箭头所指产物")

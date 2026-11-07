@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 extends SceneTree
 
-const Scoring = preload("res://tools/balance/scoring.gd")
-const EvalReport = preload("res://tools/eval_report.gd")
+const Scoring = preload("res://tools/balance/on_work_scoring.gd")
+const EvalReport = preload("res://tools/on_work_eval_report.gd")
 var failed := 0
 var passed := 0
 
@@ -14,7 +14,7 @@ func check(ok: bool, label: String) -> void:
 		printerr("FAIL: ",label)
 
 func _initialize() -> void:
-	CardDB.load_from("res://data/on_work_cards.json")
+	OnWorkCardDB.load_from("res://data/on_work_cards.json")
 	_test_limits()
 	_test_accumulation()
 	print("incremental balance: %d 通过 / %d 失败" % [passed,failed])

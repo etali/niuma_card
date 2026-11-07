@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image
 from hover_source_art import native_icon_path
 
-from render_hover_batch01 import install, rect_mask, ROOT
+from on_work_render_hover_batch01 import install, rect_mask, ROOT
 from render_hover_common import OUT
 
 CARDS = ('touliu','xinxijianfang','baiyibutie','liulianghe','jiaolv','shanzhai',

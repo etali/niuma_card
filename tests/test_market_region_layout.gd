@@ -30,7 +30,7 @@ func _boot(drawer: bool) -> Node:
 	root.size = Vector2i(1920, 1200)
 	root.content_scale_size = Vector2i.ZERO
 	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = drawer
 	root.add_child(main)
 	main.sfx.set_muted(true)
@@ -41,7 +41,7 @@ func _boot(drawer: bool) -> Node:
 
 func _check_scene(main: Node, drawer: bool) -> void:
 	var mode := "抽屉" if drawer else "横屏"
-	var count: int = CardDB.game_rules()["market_size"]
+	var count: int = OnWorkCardDB.game_rules()["market_size"]
 	var market: MeshInstance3D = main.get_node_or_null("TableSurface_market")
 	var foe: MeshInstance3D = main.get_node_or_null("FoeZoneTray")
 	var player: MeshInstance3D = main.get_node_or_null("PlayerZoneTray")

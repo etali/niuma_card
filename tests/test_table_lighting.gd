@@ -46,6 +46,11 @@ func _run() -> void:
 	lone.hide()
 	check(TableLighting.contact_footprints(board.cards).size() == 1, "隐藏卡不留下幽灵阴影")
 	lone.show()
+	lone._visual.hide()
+	check(lone.is_visible_in_tree(), "只隐藏卡面时真实卡牌仍留在牌桌")
+	check(TableLighting.contact_footprints(board.cards).size() == 1, "隐藏卡面子树不留下空卡形阴影")
+	lone._visual.show()
+	check(TableLighting.contact_footprints(board.cards).size() == 2, "卡面重新露出时恢复对应阴影")
 	lone._visual_retired = true
 	check(TableLighting.contact_footprints(board.cards).size() == 1, "退场卡不会保留完整卡片形状的影")
 	var lighting := TableLighting.new()
@@ -61,5 +66,13 @@ func _run() -> void:
 	var mesh := lighting._multimesh
 	lighting._process(0.0)
 	check(lighting._multimesh == mesh, "静止帧复用网格，不重建绘制节点")
+	lone._visual_retired = false
+	lighting._process(0.0)
+	lone._visual.hide()
+	lighting._process(0.0)
+	check(lighting._multimesh.visible_instance_count == 1, "位置不变而卡面隐藏时也刷新阴影实例")
+	lone._visual.show()
+	lighting._process(0.0)
+	check(lighting._multimesh.visible_instance_count == 2, "位置不变而卡面恢复时重新提交阴影实例")
 	scene.free()
 	finish()

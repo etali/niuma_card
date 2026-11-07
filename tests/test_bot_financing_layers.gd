@@ -1,24 +1,24 @@
 # Copyright (C) 2026 etali (https://github.com/etali)
 # SPDX-License-Identifier: AGPL-3.0-only
 extends "res://tests/harness.gd"
-const Actions=preload("res://engine/bot_actions.gd")
-const Env=preload("res://engine/bot_environment.gd")
-const Cap=preload("res://engine/bot_capabilities.gd")
-const Plan=preload("res://engine/bot_turn_plan.gd")
+const Actions=preload("res://engine/on_work_bot_actions.gd")
+const Env=preload("res://engine/on_work_bot_environment.gd")
+const Cap=preload("res://engine/on_work_bot_capabilities.gd")
+const Plan=preload("res://engine/on_work_bot_turn_plan.gd")
 func profile(mode:int,budget:int)->Dictionary:
-	var p:=BOTSearch.from_model("bot",1.0).resolved_parameters()
+	var p:=OnWorkBOTSearch.from_model("bot",1.0).resolved_parameters()
 	p.merge({"financing_mode":mode,"generation_budget":budget,"buy_beam":16,"build_beam":16,"plans":16},true)
-	p["_work"]=[budget];p["_context"]=BOTActions.Context.new()
+	p["_work"]=[budget];p["_context"]=OnWorkBOTActions.Context.new()
 	return p
 func keys(nodes:Array)->Dictionary:
 	var out:={}
 	for node in nodes:out[Cap.signature(node.state)]=true
 	return out
 func _initialize()->void:
-	CardDB.load_default()
+	OnWorkCardDB.load_default()
 	var fixture:Dictionary=JSON.parse_string(FileAccess.get_file_as_string("res://tests/fixtures/bot_financing_layers.json"))
-	var state:=GameState.new();StateCodec.restore(state,fixture.state)
-	var before:=StateCodec.state_hash(state)
+	var state:=OnWorkState.new();OnWorkStateCodec.restore(state,fixture.state)
+	var before:=OnWorkStateCodec.state_hash(state)
 	var lower_profile:=profile(1,2048)
 	var lower:=Actions.generate_with_status(state,"bot",lower_profile)
 	check(lower.complete,"有限低融资层已完整生成，作为高融资层必须保留的真实对照")
@@ -51,7 +51,7 @@ func _initialize()->void:
 		var settled:=Env.copy(matched.state);Env.settle(settled,Plan._target_policy(p))
 		check(settled.winner=="bot" and settled.resource_count("player","cash")==0 and Plan.settled_score(settled,"player",p)==-1000000.0,"保留回应按真实规则结算为当前致死，而非静态预测或加分偏好")
 	check(generated.nodes.all(func(n):return Env.replay(Env.copy(state),n.intents)),"逐级并集所有动作完整合法，无UID或融资前缀错配")
-	check(StateCodec.state_hash(state)==before,"逐级候选生成不修改真实起点")
+	check(OnWorkStateCodec.state_hash(state)==before,"逐级候选生成不修改真实起点")
 	var reply_profile:=profile(2,2048)
 	reply_profile.merge({"replies":16,"reply_generation_budget":2048},true)
 	var resolved:=Plan.resolve_current(state,"player",reply_profile)

@@ -35,7 +35,7 @@ func _initialize() -> void:
 		file.store_string(content)
 		file.close()
 		var value := {"valid": {"items": [1.0]}} if content.begins_with('{"valid"') else {}
-		check(UIConfig.read_json(path) == value and BOTConfig.read_json(path) == value
+		check(UIConfig.read_json(path) == value and OnWorkBOTConfig.read_json(path) == value
 			and Palette.read_json(path) == value, "三种可选设置对有效、损坏或非字典 JSON 使用相同降级：%s" % content)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	check(ConfigData.read_dictionary(path).is_empty(), "不存在的可选设置正常回退")

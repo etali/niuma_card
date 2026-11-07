@@ -29,9 +29,9 @@ func _run() -> void:
 	main = await boot_drawer(Vector2i(1280, 800), 1.0, true)
 	if not need(main != null, "原牌桌启动成功"): return
 	main.drawer_presentation._learning_invitation.hide()
-	var original_state: GameState = main.state
+	var original_state: OnWorkState = main.state
 	var original_cards: Array = main.board.cards.duplicate()
-	var original_snapshot := StateCodec.snapshot(original_state)
+	var original_snapshot := OnWorkStateCodec.snapshot(original_state)
 	main._flush_record_view()
 	var original_tape: Dictionary = main.tape.to_dict().duplicate(true)
 
@@ -53,7 +53,7 @@ func _run() -> void:
 		watching = false
 		main.drawer_presentation.finish_tutorial(false)
 		await create_timer(2.5).timeout
-		check(main.state == original_state and StateCodec.snapshot(main.state) == original_snapshot
+		check(main.state == original_state and OnWorkStateCodec.snapshot(main.state) == original_snapshot
 			and main.board.cards == original_cards and main.tape.to_dict() == original_tape,
 			"飞入途中退出后原局状态、卡实体及录像不受旧结算污染")
 		check(final_events.is_empty() and _all_freed(abandoned), "退出取消旧产出与回调，教学实体全部释放")
@@ -66,19 +66,19 @@ func _run() -> void:
 		var borrowed_arena := arena
 		watching = false
 		check(main.drawer_presentation.start_tutorial("growth"), "产出飞行中可以切换课程")
-		var next_state: GameState = arena.session.state
-		var next_snapshot := StateCodec.snapshot(next_state)
+		var next_state: OnWorkState = arena.session.state
+		var next_snapshot := OnWorkStateCodec.snapshot(next_state)
 		var next_cards: Array = arena.entities.values().duplicate()
 		await create_timer(2.5).timeout
 		check(arena == borrowed_arena and arena.session.course_id == "growth"
 			and arena.session.current_step().get("id") == "growth.buy"
-			and arena.session.state == next_state and StateCodec.snapshot(next_state) == next_snapshot
+			and arena.session.state == next_state and OnWorkStateCodec.snapshot(next_state) == next_snapshot
 			and arena.entities.values() == next_cards,
 			"切课复用原Arena，旧动画不会重新生成卡牌或自动推进新课程")
 		check(final_events.is_empty() and _all_freed(abandoned) and not arena.operation_pending,
 			"切课释放旧飞行卡且不发晚到accepted，不遗留输入锁")
 		main.drawer_presentation.finish_tutorial(false)
-		check(main.state == original_state and StateCodec.snapshot(main.state) == original_snapshot
+		check(main.state == original_state and OnWorkStateCodec.snapshot(main.state) == original_snapshot
 			and main.tape.to_dict() == original_tape, "切课再退出仍恢复原对局与录像")
 	await dispose_drawer(main)
 	finish()
@@ -87,27 +87,27 @@ func _growth_alternative() -> void:
 	if not await _prepare("growth", "growth.buy", {}): return
 	var choices: Array = arena.market_cards.filter(func(card): return card.def_id == "pinshaoshao")
 	if not need(choices.size() == 1, "扩大生意的真实市场提供拼少少"): return
-	var price := int(CardDB.get_def("pinshaoshao")["price"])
-	var recipe := int(CardDB.get_def("pinshaoshao")["recipe_n"])
-	var cash_before: int = arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH)
+	var price := int(OnWorkCardDB.get_def("pinshaoshao")["price"])
+	var recipe := int(OnWorkCardDB.get_def("pinshaoshao")["recipe_n"])
+	var cash_before: int = arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH)
 	final_events.clear()
 	# 从Arena正式购买入口支付实际现金卡，不能只调用Session.buy绕过操作审查。
 	arena._purchase(_owned_cards("cash"), choices[0])
 	await _finish_step("growth.buy", "growth.groups")
 	var advanced := await _wait_step("growth.groups")
 	if not need(advanced and _owned_cards("pinshaoshao").size() == 1
-		and arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == cash_before - price,
+		and arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == cash_before - price,
 		"购买拼少少真实扣除4现金，保留业务，直接进入双业务配牌"): return
 	check(final_events.size() == 1 and final_events[0].result.get("expected", false)
 		and not final_events[0].result.get("rolled_back", false) and _owned_cards("ditui").is_empty(),
 		"满足增加用户目标的替代业务被接受，不回滚成示例地推扫码")
 	var instruction := str(arena.session.current_step().get("instruction"))
-	check(instruction.contains(CardDB.card_name("pinshaoshao"))
+	check(instruction.contains(OnWorkCardDB.card_name("pinshaoshao"))
 		and instruction.replace("\u2060", "").replace(" ", "").contains(str(recipe) + "张现金"),
 		"配牌说明跟随买到的拼少少，显示真实3现金配方")
 	var income: CardEntity = _owned_cards("yunketang")[0]
 	var growth: CardEntity = _owned_cards("pinshaoshao")[0]
-	var users: Array = _owned_cards("user").slice(0, int(CardDB.get_def("yunketang")["recipe_n"]))
+	var users: Array = _owned_cards("user").slice(0, int(OnWorkCardDB.get_def("yunketang")["recipe_n"]))
 	var cash: Array = _owned_cards("cash").slice(0, recipe)
 	final_events.clear()
 	_apply_checked_groups(income, [
@@ -362,21 +362,21 @@ func _automatic_step(course: String, step_id: String) -> bool:
 func _finish_step(step_id: String, next_step: String) -> void:
 	if _automatic_step(arena.session.course_id, step_id):
 		if not need(await _wait_step(next_step), step_id + "：操作及演出结束直接进入" + next_step): return
-		var snapshot := StateCodec.snapshot(arena.state)
+		var snapshot := OnWorkStateCodec.snapshot(arena.state)
 		var cards: Array = arena.entities.values().duplicate()
 		await create_timer(0.8).timeout
 		check(not player._awaiting_result and arena.session.current_step()["id"] == next_step
-			and StateCodec.snapshot(arena.state) == snapshot and arena.entities.values() == cards,
+			and OnWorkStateCodec.snapshot(arena.state) == snapshot and arena.entities.values() == cards,
 			step_id + "：只衔接一次，空闲保留新目标和真实牌桌，不再自行跳步")
 		return
 	for attempt in 200:
 		if player._awaiting_result and not arena.operation_pending: break
 		await create_timer(0.02).timeout
-	var snapshot := StateCodec.snapshot(arena.state)
+	var snapshot := OnWorkStateCodec.snapshot(arena.state)
 	var cards: Array = arena.entities.values().duplicate()
 	await create_timer(0.8).timeout
 	check(player._awaiting_result and arena.session.current_step().get("id") == step_id
-		and StateCodec.snapshot(arena.state) == snapshot and arena.entities.values() == cards,
+		and OnWorkStateCodec.snapshot(arena.state) == snapshot and arena.entities.values() == cards,
 		step_id + "：演出结束后结果和牌实体保留，必须点击继续")
 	await relayout_drawer(main)
 	await tap_drawer_control(player.find_child("ContinueBasics", true, false) if player._checkpoint() else player._bubble)

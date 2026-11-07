@@ -13,7 +13,7 @@ func _run() -> void:
 		root.size = Vector2i(roundi(1280 * dpi), roundi(800 * dpi))
 		root.content_scale_size = Vector2i.ZERO
 		root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-		var main: Node = load("res://scenes/main.tscn").instantiate()
+		var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 		main.force_drawer_layout = true
 		main.drawer_ui_scale = dpi
 		root.add_child(main)
@@ -63,7 +63,7 @@ func _run() -> void:
 		long_card.is_market = true
 		view.show_card_detail(long_card, Vector2(5, 150))
 		check(view._detail_facts.get_child(0).text == "购买"
-			and view._detail_facts.get_child(1).text == "%d 资金" % int(CardDB.get_def(long_card.def_id).price),
+			and view._detail_facts.get_child(1).text == "%d 资金" % int(OnWorkCardDB.get_def(long_card.def_id).price),
 			"%s同名卡切到市场时显示实际购买价格" % prefix)
 		long_card.is_market = false
 		view.show_card_detail(long_card, Vector2(5, 150))

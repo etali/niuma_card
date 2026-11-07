@@ -59,11 +59,11 @@ class PageSessions:
                 return False
             # Lock admission on both engines; a concurrent submit either already
             # owns a job (keep serving) or will see closing and cannot start.
-            with server.app.lock, server.lock:
-                if server.app.jobs or any(job['meta']['status'] == 'running' for job in server.jobs.values()):
+            with server.on_work_workbench.lock, server.lock:
+                if server.on_work_workbench.jobs or any(job['meta']['status'] == 'running' for job in server.jobs.values()):
                     return False
                 if not self.ended.is_set():
-                    server.app.closing = server.closing = True
+                    server.on_work_workbench.closing = server.closing = True
                     self.ended.set()
                     threading.Thread(target=server.shutdown, daemon=True).start()
             return True

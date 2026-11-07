@@ -6,7 +6,7 @@ extends "res://tests/harness.gd"
 
 ## 市场由可购买的卡与最右侧设施组成同一行；设施占一个完整卡位。
 ## 判据只约束可见几何：等距、居中、不相叠和跨度，不依赖旧柜台尺寸。
-const Main = preload("res://scenes/main.gd")
+const Main = preload("res://scenes/on_work_main.gd")
 const Regions = preload("res://scenes/table_regions.gd")
 
 func _initialize() -> void:
@@ -14,7 +14,7 @@ func _initialize() -> void:
 	check(is_equal_approx(Main.market_gap(6), 2.6), "6张可购卡加设施仍有2.6间距")
 	check(is_equal_approx(Main.market_gap(8), 2.3), "8张可购卡加设施均匀分配18.4中心跨度")
 	var counts: Array[int] = [1, 6, 8, 10, 12]
-	var current: int = CardDB.game_rules()["market_size"]
+	var current: int = OnWorkCardDB.game_rules()["market_size"]
 	if current not in counts:
 		counts.append(current)
 	for drawer in [false, true]:

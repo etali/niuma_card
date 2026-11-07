@@ -4,10 +4,10 @@
 
 extends "res://tests/harness.gd"
 
-## `BOTThink` 的判据：**真的跑在别的线程上**，而且主线程在等的时候没停。
+## `OnWorkBOTThink` 的判据：**真的跑在别的线程上**，而且主线程在等的时候没停。
 ##
-## 为什么单开一份文件：`BOTThink` 之前一条判据都没有。
-## 场景侧那批测试（`test_bot_panel` 等）走的是 `main.gd` 的钩子，
+## 为什么单开一份文件：`OnWorkBOTThink` 之前一条判据都没有。
+## 场景侧那批测试（`test_bot_panel` 等）走的是 `on_work_main.gd` 的钩子，
 ## 而钩子那一路只验「意图落地了」——线程起没起来它看不出来：
 ## `run()` 在 `tree == null` 时**退回同步算**，返回值一模一样。
 ## 也就是说不盯线程 ID 的话，整条线程分支可以从头到尾没执行过，测试照样全绿。
@@ -22,7 +22,7 @@ var _main_id := 0
 
 
 func _initialize() -> void:
-	print("=== BOTThink 线程测试 ===")
+	print("=== OnWorkBOTThink 线程测试 ===")
 	_main_id = OS.get_thread_caller_id()
 	check(_main_id == OS.get_main_thread_id(), "测试自己跑在主线程上（后面拿它当基准）")
 
@@ -40,7 +40,7 @@ func _initialize() -> void:
 ## 这是这份文件存在的理由：把 `tree` 传进去之后，`job` 里读到的
 ## thread caller id 必须**不等于**主线程那个。相等就说明走了同步退化那一路
 func _t_runs_off_thread() -> void:
-	var t := BOTThink.new()
+	var t := OnWorkBOTThink.new()
 	var main_id := _main_id
 	var got: Variant = await t.run(func() -> Variant:
 		return {"tid": OS.get_thread_caller_id(), "val": 6 * 7}
@@ -63,7 +63,7 @@ func _t_runs_off_thread() -> void:
 ## 同步算结果也对，只是画面卡住。所以让 job 忙等到某个墙钟，
 ## 期间数主线程走了多少帧：同步的话一帧都走不了（主线程正堵在 job 里面）
 func _t_main_keeps_ticking() -> void:
-	var t := BOTThink.new()
+	var t := OnWorkBOTThink.new()
 	# 忙等 0.25 秒。不用 OS.delay_msec 是因为它可能被优化/让出，
 	# 这里要的是「线程确实占着 CPU 一段时间」这个事实
 	var busy_job := func() -> Variant:
@@ -103,7 +103,7 @@ func _t_main_keeps_ticking() -> void:
 ## 判据是反过来的：这一路 job 必须**就在主线程上**跑。
 ## 这条和第一条合起来才说明「两条路都还在」，缺一条都会让另一条的绿失去意义
 func _t_no_tree_falls_back_sync() -> void:
-	var t := BOTThink.new()
+	var t := OnWorkBOTThink.new()
 	var main_id := _main_id
 	var got: Variant = await t.run(func() -> Variant:
 		return OS.get_thread_caller_id()
@@ -152,7 +152,7 @@ func _t_no_tree_falls_back_sync() -> void:
 ## 正是这个类要防的「Thread must be disposed」。
 ## 今天两处调用是前后脚的，撞不上；将来加第二个 BOT 座位时它才是唯一的防线
 func _t_reentrant_gate() -> void:
-	var t := BOTThink.new()
+	var t := OnWorkBOTThink.new()
 	# 两份任务都报自己的起止墙钟。下面靠这两段区间判「闸门有没有串行化」——
 	# 只看返回值的话，闸门拆掉之后两个线程并排跑，返回值照旧各自正确
 	var slow := func() -> Variant:
@@ -193,7 +193,7 @@ func _t_reentrant_gate() -> void:
 	# 闸门的判据本体：两段不许重叠 —— 第二份必须在第一份收工**之后**才开始算。
 	#
 	# 为什么不是「有没有漏 Thread」：线程句柄现在是各自的 local（见
-	# `BOTThink._release`），闸门拆了也各自 join 得掉，`busy()` 照旧是假。
+	# `OnWorkBOTThink._release`），闸门拆了也各自 join 得掉，`busy()` 照旧是假。
 	# 也就是说拿漏没漏当判据的话，把 `while _thread != null` 改成 `while false`
 	# 是抓不住的 —— 那时候真坏的是**两条线程并排跑**：满档一次 1.7 秒、
 	# 两份一起就是两个核在烧，而 `_thread`/`_box` 两格只认得最后进来那个,
@@ -210,11 +210,11 @@ func _t_reentrant_gate() -> void:
 var _first_box: Array = []
 var _queued_box: Array = []
 
-func _stash_queued(t: BOTThink, job: Callable, cancelled: Callable) -> void:
+func _stash_queued(t: OnWorkBOTThink, job: Callable, cancelled: Callable) -> void:
 	_queued_box.append(await t.run(job, self, cancelled))
 
 func _t_cancel_queued_job() -> void:
-	var t := BOTThink.new()
+	var t := OnWorkBOTThink.new()
 	_first_box.clear()
 	_queued_box.clear()
 	_stash_first.call_deferred(t, func() -> Variant:
@@ -244,16 +244,16 @@ func _t_cancel_queued_job() -> void:
 ## 替 `_t_reentrant_gate` 去 await 第一份任务，结果丢进 `_first_box`。
 ##
 ## 单独一个方法是为了能被 `call_deferred` 点名 —— 见调用处的说明
-func _stash_first(t: BOTThink, job: Callable) -> void:
+func _stash_first(t: OnWorkBOTThink, job: Callable) -> void:
 	var r: Variant = await t.run(job, self)
 	_first_box.append(r)
 
 
 ## 五、flush() 可以重复调，且空手调不炸。
 ##
-## `main.gd` 的 `_exit_tree` 调它，而 `_exit_tree` 在换局/退出时可能走到不止一次
+## `on_work_main.gd` 的 `_exit_tree` 调它，而 `_exit_tree` 在换局/退出时可能走到不止一次
 func _t_flush_is_idempotent() -> void:
-	var t := BOTThink.new()
+	var t := OnWorkBOTThink.new()
 	t.flush()
 	check(not t.busy(), "没起过线程也能 flush（不炸）")
 	var _r: Variant = await t.run(func() -> Variant: return 1, self)

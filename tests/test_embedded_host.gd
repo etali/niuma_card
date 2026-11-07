@@ -36,7 +36,7 @@ var _host: EmbeddedHost = null
 
 func _initialize() -> void:
 	print("=== 进程内服务器测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	await _t1_start()
 	await _t2_self_connect()
 	await _t3_restart()
@@ -68,7 +68,7 @@ func _t1_start() -> void:
 ## 这一条是「开房间」那个按钮的全部内容：起服务器 → 照它报的地址连回来 → 入座。
 ##
 ## 桌面版主机侧走的就是这条路 —— **和客户端侧同一条**
-## （NetTransport → net/server.gd → net/room.gd），
+## （NetTransport → net/server.gd → net/on_work_room.gd），
 ## 主机不因为「服务器在自己进程里」而少走任何一步。
 ## 少了这条判据，「开房间」可能在起了服务器之后根本没连上，
 ## 而画面上显示的是「等对手进来」—— 一个永远等不到的等待

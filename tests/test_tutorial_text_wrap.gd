@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 extends "res://tests/support/drawer_fixture.gd"
 
-const Session = preload("res://engine/tutorial_session.gd")
+const Session = preload("res://engine/on_work_tutorial_session.gd")
 var _punctuation := RegEx.new()
 var _quantities := RegEx.new()
 

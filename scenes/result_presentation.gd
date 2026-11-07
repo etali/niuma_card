@@ -30,7 +30,7 @@ const LOSE_TAUNTS: Array[String] = [
 	"输了。要不试试先把配方凑齐再说？",
 ]
 
-static func create(parent: Node, state: GameState, my_seat: String, sfx: Sfx,
+static func create(parent: Node, state: OnWorkState, my_seat: String, sfx: Sfx,
 		action: Callable, action_text := "再战一局", compact := true, auto_dismiss := false,
 		finale: Dictionary = {}) -> Dictionary:
 	var canvas := CanvasLayer.new()
@@ -161,58 +161,58 @@ static func create(parent: Node, state: GameState, my_seat: String, sfx: Sfx,
 
 ## 正式对局的终局演出内容：胜因、印章字、本局数据与输家的「差一点」。
 ## stats 为 TableActions.match_stats() 的结果；记不全时为空，只显示终局读数。
-static func finale_for(state: GameState, my_seat: String, stats: Dictionary = {}) -> Dictionary:
+static func finale_for(state: OnWorkState, my_seat: String, stats: Dictionary = {}) -> Dictionary:
 	if state == null or state.winner == "":
 		return {}
 	var won := state.winner == my_seat
 	var kind := victory_kind(state)
 	var config := ComicFx.rules()
 	var lines: Array[String] = ["第 %d 回合收官 · %s %d · %s %d" % [state.round_num,
-		CardDB.res_label(CardDB.RES_CASH), state.resource_count(my_seat, CardDB.RES_CASH),
-		CardDB.res_label(CardDB.RES_USER), state.resource_count(my_seat, CardDB.RES_USER)]]
+		OnWorkCardDB.res_label(OnWorkCardDB.RES_CASH), state.resource_count(my_seat, OnWorkCardDB.RES_CASH),
+		OnWorkCardDB.res_label(OnWorkCardDB.RES_USER), state.resource_count(my_seat, OnWorkCardDB.RES_USER)]]
 	if not stats.is_empty():
 		var mine: Dictionary = stats.get(my_seat, {})
 		lines.append("本局产出 %s +%d · %s +%d · 撕掉对手 %d 张牌" % [
-			CardDB.res_label(CardDB.RES_CASH), int(mine.get(CardDB.RES_CASH, 0)),
-			CardDB.res_label(CardDB.RES_USER), int(mine.get(CardDB.RES_USER, 0)), int(mine.get("torn", 0))])
+			OnWorkCardDB.res_label(OnWorkCardDB.RES_CASH), int(mine.get(OnWorkCardDB.RES_CASH, 0)),
+			OnWorkCardDB.res_label(OnWorkCardDB.RES_USER), int(mine.get(OnWorkCardDB.RES_USER, 0)), int(mine.get("torn", 0))])
 	return {"kind": kind, "won": won,
 		"stamp": ComicFx.stamp_text(("win_" + kind) if won else "lose", config),
 		"stats": "\n".join(lines), "hint": "" if won else near_miss(state, my_seat)}
 
-## 胜因按终局读数判，与 GameState.check_victory 的先后一致：先看冲线，再看清零。
-static func victory_kind(state: GameState) -> String:
+## 胜因按终局读数判，与 OnWorkState.check_victory 的先后一致：先看冲线，再看清零。
+static func victory_kind(state: OnWorkState) -> String:
 	if state == null or state.winner == "":
 		return ""
 	var loser := _other_seat(state, state.winner)
-	if state.resource_count(state.winner, CardDB.RES_CASH) >= int(CardDB.game_rules()["win_cash"]):
+	if state.resource_count(state.winner, OnWorkCardDB.RES_CASH) >= int(OnWorkCardDB.game_rules()["win_cash"]):
 		return "listing"
-	if state.resource_count(loser, CardDB.RES_CASH) <= 0:
+	if state.resource_count(loser, OnWorkCardDB.RES_CASH) <= 0:
 		return "bankrupt"
-	if state.resource_count(loser, CardDB.RES_USER) <= 0:
+	if state.resource_count(loser, OnWorkCardDB.RES_USER) <= 0:
 		return "exodus"
 	return "resign"
 
 ## 输家离哪条胜利路线最近：自己差多少冲线、对手还剩多少钱或用户，取数字最小的一条。
-static func near_miss(state: GameState, my_seat: String) -> String:
+static func near_miss(state: OnWorkState, my_seat: String) -> String:
 	var foe := _other_seat(state, my_seat)
 	var options: Array = []
-	var gap := int(CardDB.game_rules()["win_cash"]) - state.resource_count(my_seat, CardDB.RES_CASH)
+	var gap := int(OnWorkCardDB.game_rules()["win_cash"]) - state.resource_count(my_seat, OnWorkCardDB.RES_CASH)
 	if gap > 0:
-		options.append([gap, "差 %d %s就上市了。" % [gap, CardDB.res_label(CardDB.RES_CASH)]])
-	for res in [CardDB.RES_CASH, CardDB.RES_USER]:
+		options.append([gap, "差 %d %s就上市了。" % [gap, OnWorkCardDB.res_label(OnWorkCardDB.RES_CASH)]])
+	for res in [OnWorkCardDB.RES_CASH, OnWorkCardDB.RES_USER]:
 		var left := state.resource_count(foe, res)
 		if left > 0:
-			options.append([left, "对手只剩 %d %s。" % [left, CardDB.res_label(res)]])
+			options.append([left, "对手只剩 %d %s。" % [left, OnWorkCardDB.res_label(res)]])
 	if options.is_empty():
 		return ""
 	options.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) < int(b[0]))
 	return str(options[0][1])
 
-static func _other_seat(state: GameState, seat: String) -> String:
+static func _other_seat(state: OnWorkState, seat: String) -> String:
 	for key in state.players:
 		if str(key) != seat:
 			return str(key)
-	return GameState.BOT if seat == GameState.PLAYER else GameState.PLAYER
+	return OnWorkState.BOT if seat == OnWorkState.PLAYER else OnWorkState.PLAYER
 
 ## 业务方建好附加按钮后统一挂载；教程只指定演出结束后的续课动作。
 static func present(result: Dictionary, presentation: Node, completed := Callable()) -> void:

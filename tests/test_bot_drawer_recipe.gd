@@ -42,7 +42,7 @@ func _check_layout(drawer: bool) -> void:
 	main._respawn_all()
 	await settle()
 	var core: CardEntity = main.entities[63]
-	var need := int(CardDB.get_def("ditui")["recipe_n"])
+	var need := int(OnWorkCardDB.get_def("ditui")["recipe_n"])
 	check(core.recipe_progress_text() == "0/%d" % need, "%s：闲置核心初始为0/N" % context)
 	var result: Dictionary = main.state.create_combo(main.foe_seat, [63, 43, 44, 45])
 	if not need(bool(result.get("ok", false)), "%s：录像地推+3现金组合合法" % context):
@@ -63,7 +63,7 @@ func _check_layout(drawer: bool) -> void:
 	check(core.recipe_progress_text() == "1/%d" % need,
 		"%s：对手半成品收拢摞显示1/N" % context)
 	_check_completed(core, false, context + "：半成品")
-	check(core.effect_mult() == CardDB.buff_mult("output_x2"),
+	check(core.effect_mult() == OnWorkCardDB.buff_mult("output_x2"),
 		"%s：半成品中996也同步更新产出倍数" % context)
 	# 改为摊开同一摞，再补足配方。普通牌桌的另一条摆放路径也必须写数字。
 	main.on_foe_piles({"piles": [{"uids": [63, 43, 44, 45, 64], "compact": false}]})
@@ -83,7 +83,7 @@ func _check_layout(drawer: bool) -> void:
 	_check_completed(core, false, context + "：离组")
 	# 裂变填配方和玩家侧共用规则，不能只按原料张数显示1/N。
 	var user_core: CardEntity = main.entities[65]
-	var user_need := int(CardDB.get_def("shuabuting")["recipe_n"])
+	var user_need := int(OnWorkCardDB.get_def("shuabuting")["recipe_n"])
 	main.on_foe_piles({"piles": [{"uids": [65, 66, 67], "compact": true}]})
 	check(user_core.recipe_progress_text() == "%d/%d" % [user_need, user_need],
 		"%s：一张用户+裂变按真实规则显示完整配方" % context)

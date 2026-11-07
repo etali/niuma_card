@@ -30,7 +30,7 @@ class MascotPose extends TextureRect:
 
 	func set_pose(value: String) -> void:
 		pose = value
-		figure = null if pose == "idle" else CardArt.res_icon_texture(CardDB.RES_USER)
+		figure = null if pose == "idle" else CardArt.res_icon_texture(OnWorkCardDB.RES_USER)
 		texture = load("res://assets/art/app_icon.png") if pose == "idle" or figure == null else null
 		set_process(pose != "idle")
 		queue_redraw()

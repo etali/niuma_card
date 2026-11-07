@@ -23,13 +23,13 @@ func _initialize() -> void:
 	for g in main.board.groups:
 		if g["cards"].is_empty():
 			continue
-		var def := CardDB.get_def(g["cards"][0].def_id)
-		if def.get("kind") != CardDB.KIND_UNIT:
+		var def := OnWorkCardDB.get_def(g["cards"][0].def_id)
+		if def.get("kind") != OnWorkCardDB.KIND_UNIT:
 			continue
 		var at: Vector3 = main.board.rest_origin(g)
-		if def.get("res") == CardDB.RES_CASH:
+		if def.get("res") == OnWorkCardDB.RES_CASH:
 			cash_origins.append(at.x)
-		elif def.get("res") == CardDB.RES_USER:
+		elif def.get("res") == OnWorkCardDB.RES_USER:
 			user_origins.append(at.x)
 	check(not cash_origins.is_empty() and not user_origins.is_empty(),
 		"开局现金/用户资源都生成了独立牌组")

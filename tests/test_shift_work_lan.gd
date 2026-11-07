@@ -2,7 +2,7 @@
 extends "res://tests/harness.gd"
 
 var host: Node
-var visitor: WorkTransport
+var visitor: OffWorkTransport
 
 func _initialize() -> void:
 	_run.call_deferred()
@@ -33,7 +33,7 @@ func _run() -> void:
 		return
 	paused = true
 	var frozen_solo_time: float = off.state.time
-	visitor = WorkTransport.new(off.lan._host.url(), "WORK")
+	visitor = OffWorkTransport.new(off.lan._host.url(), "WORK")
 	visitor.balance_hash = JSON.stringify(off.state.config.balance_document()).sha256_text()
 	visitor.connect_to_server()
 	if not need(await net_until([visitor], func(): return visitor.has_dealt_state()), "前台暂停时后台的下班房主仍可完成握手并发牌"):

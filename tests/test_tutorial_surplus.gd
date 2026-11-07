@@ -4,7 +4,7 @@
 
 extends "res://tests/support/drawer_fixture.gd"
 
-const Snapshot = preload("res://scenes/table_snapshot.gd")
+const Snapshot = preload("res://scenes/on_work_table_snapshot.gd")
 var main: Node
 var player: Control
 var arena: Node3D
@@ -109,11 +109,11 @@ func _buff_material_first() -> void:
 	check(_accepted() and group != null and group["cards"].has(buff)
 		and group["cards"].filter(func(card): return card.def_id == "cash").size() == 8,
 		"8现金与降价促销整摞进入地推扫码，目标仍等待真实完成行动")
-	var preview: GameState = arena.session._preview_state()
+	var preview: OnWorkState = arena.session._preview_state()
 	var protected := {}
 	for combo in preview.combos:
-		if combo["owner"] == GameState.PLAYER and combo["eval"].get("leader") == "ditui":
-			protected = preview.protected_uids(GameState.PLAYER, combo, CardDB.RES_CASH)
+		if combo["owner"] == OnWorkState.PLAYER and combo["eval"].get("leader") == "ditui":
+			protected = preview.protected_uids(OnWorkState.PLAYER, combo, OnWorkCardDB.RES_CASH)
 	var event_start: int = arena.session.events.size()
 	results.clear()
 	var point: Vector2 = main.btn_pass.get_global_rect().get_center()
@@ -129,13 +129,13 @@ func _buff_material_first() -> void:
 	for attempt in 600:
 		if not results.is_empty(): break
 		await create_timer(0.02).timeout
-	var hits: Array = arena.session.events.slice(event_start).filter(func(event): return event.get("op") == Intent.OP_ATTACK)
-	var attack_n := int(CardDB.get_def("zuokong")["attack_n"])
-	var spare_hits := hits.filter(func(hit): return hit["seat"] == GameState.BOT and hit["target"]["kind"] == "spare" and hit["removed"].size() == 1 and not protected.has(hit["removed"][0]))
+	var hits: Array = arena.session.events.slice(event_start).filter(func(event): return event.get("op") == OnWorkIntent.OP_ATTACK)
+	var attack_n := int(OnWorkCardDB.get_def("zuokong")["attack_n"])
+	var spare_hits := hits.filter(func(hit): return hit["seat"] == OnWorkState.BOT and hit["target"]["kind"] == "spare" and hit["removed"].size() == 1 and not protected.has(hit["removed"][0]))
 	check(_accepted() and hits.size() == attack_n and spare_hits.size() == attack_n,
 		"点击原完成按钮后只有BOT攻击组内富余现金，没有我方自攻或目标回滚")
-	check(protected.size() == 2 and arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 8 - attack_n - 2
-		and arena.state.resource_count(GameState.PLAYER, CardDB.RES_USER) == 8 + int(CardDB.get_def("ditui")["output_n"]),
+	check(protected.size() == 2 and arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == 8 - attack_n - 2
+		and arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_USER) == 8 + int(OnWorkCardDB.get_def("ditui")["output_n"]),
 		"真实先备料路径保住2张配方现金，地推扫码付款后照常产用户")
 
 func _restore() -> void:

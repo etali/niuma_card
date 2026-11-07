@@ -82,8 +82,8 @@ func _run() -> void:
 		var e: CardEntity = layout.entities[rec["uid"]]
 		if not is_instance_valid(e):
 			continue
-		var def := CardDB.get_def(rec["def_id"])
-		if def.get("kind") != CardDB.KIND_UNIT:
+		var def := OnWorkCardDB.get_def(rec["def_id"])
+		if def.get("kind") != OnWorkCardDB.KIND_UNIT:
 			continue
 		var at := e.global_position
 		player_ok = player_ok and at.x >= -9.5 and at.x <= 9.5 and at.z >= 2.05 and at.z <= 4.8

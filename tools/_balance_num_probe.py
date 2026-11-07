@@ -17,10 +17,10 @@ import re
 import sys
 import tempfile
 
-import check_balance_numbers as checker
+import on_work_check_balance_numbers as checker
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-INPUTS = ("data/on_work_cards.json", "data/on_work_bot.json", "engine/bot_turn_strategy.gd",
+INPUTS = ("data/on_work_cards.json", "data/on_work_bot.json", "engine/on_work_bot_turn_strategy.gd",
           "balance.md", "README.md", "bot.md")
 
 
@@ -84,7 +84,7 @@ def card_row(key, action):
 
 def schema_argument(key, index, value):
     def edit(root):
-        target = root / "engine/bot_turn_strategy.gd"
+        target = root / "engine/on_work_bot_turn_strategy.gd"
         source = target.read_text()
         pattern = r'^(\s*)_(int|float)\(("%s",.*)\),\s*$' % re.escape(key)
         matches = list(re.finditer(pattern, source, re.MULTILINE))
@@ -123,7 +123,7 @@ def probes(snapshot):
          "yunketang 未引用派生典当函数"),
         ("未注册的配置键", bot(("search", "bot", "unknown_knob"), 1), "包含未注册参数：unknown_knob"),
     ]
-    schema = checker.read_parameter_schema(snapshot["engine/bot_turn_strategy.gd"])
+    schema = checker.read_parameter_schema(snapshot["engine/on_work_bot_turn_strategy.gd"])
     settings = json.loads(snapshot["data/on_work_bot.json"])["search"]["bot"]
     for key, spec in schema.items():
         raw = settings.get(key, spec["strength_points"])
@@ -169,9 +169,9 @@ def probes(snapshot):
          "search.bot.upgrade_weight 配置无效：未对齐步长"),
         ("整数参数小数", bot(("search", "bot", "samples"), [1.5, 3]),
          "search.bot.samples 配置无效：整数参数不能含小数"),
-        ("规格非法kind", replace_text("engine/bot_turn_strategy.gd", '"kind":"float"', '"kind":"text"'),
+        ("规格非法kind", replace_text("engine/on_work_bot_turn_strategy.gd", '"kind":"float"', '"kind":"text"'),
          "参数规格 engine_horizon 的 kind 与声明 helper 不匹配"),
-        ("规格非法步长", replace_text("engine/bot_turn_strategy.gd", '"step":0.01', '"step":0'),
+        ("规格非法步长", replace_text("engine/on_work_bot_turn_strategy.gd", '"step":0.01', '"step":0'),
          "参数规格 engine_horizon 的边界或步长无效"),
         ("规格默认值越界", schema_argument("engine_horizon", 5, 11),
          "参数规格 engine_horizon 的默认值/端点无效：超出范围"),
@@ -270,7 +270,7 @@ def main():
             return value + 1 if isinstance(value, (int, float)) and not isinstance(value, bool) else value
         varied = shift_numbers(json.loads(snapshot["data/on_work_cards.json"]))
         (root / "data/on_work_cards.json").write_text(json.dumps(varied, ensure_ascii=False))
-        errors, _, _ = checker.check_card_table.validate(root)
+        errors, _, _ = checker.on_work_check_card_table.validate(root)
         if errors:
             failures.append("全卡表数字扰动后符号引用不应失效：" + "；".join(errors))
         # 恢复只发生在临时副本，证明多个负例没有给后续用例遗留状态。

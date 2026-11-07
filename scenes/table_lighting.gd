@@ -43,6 +43,7 @@ void fragment() {
 }
 """
 
+static var _contact_material: ShaderMaterial
 var _board: Board
 var _instances: MultiMeshInstance3D
 var _multimesh: MultiMesh
@@ -65,15 +66,16 @@ func bind(board: Board) -> void:
 	plane.size = Vector2.ONE
 	_multimesh.mesh = plane
 	_instances.multimesh = _multimesh
-	var shader := Shader.new()
-	shader.code = SHADOW_SHADER
-	var material := ShaderMaterial.new()
-	material.shader = shader
-	material.render_priority = -32
-	_instances.material_override = material
+	if _contact_material == null:
+		var shader := Shader.new()
+		shader.code = SHADOW_SHADER
+		_contact_material = ShaderMaterial.new()
+		_contact_material.shader = shader
+		_contact_material.render_priority = -32
+	_instances.material_override = _contact_material
 	# 牌的位置补间/物理已经跑完再取坐标，拖牌时阴影不会落后一帧。
 	process_priority = 80
-	_process(0.0)
+	refresh()
 
 ## 同一物理列里的重叠卡只投一次影；用实际位置而不是规则组，玩家/BOT/
 ## 联网拖动和飞入动画都走同一条路径。每列按 z 排序，分开的两摞不会被
@@ -88,6 +90,10 @@ static func _contact_positions(cards: Array) -> PackedVector3Array:
 		var card := value as CardEntity
 		if not is_instance_valid(card) or card.is_queued_for_deletion() \
 				or not card.is_visible_in_tree() or card._visual_retired:
+			continue
+		# Covered stack layers retain their physical/picking identity. Only the
+		# printed visual casts a contact shadow, including during table rebuilds.
+		if card._visual != null and not card._visual.is_visible_in_tree():
 			continue
 		var pos := card.global_position
 		if card._visual != null:
@@ -160,6 +166,11 @@ func _prepare_new_cards() -> void:
 		card.tree_exiting.connect(_forget_card.bind(id), CONNECT_ONE_SHOT)
 
 func _process(_delta: float) -> void:
+	refresh()
+
+## Rebuilding a paused table must replace its old GPU shadows before the
+## pause is restored; there may be no later process frame for this node.
+func refresh() -> void:
 	if not is_instance_valid(_board) or _multimesh == null:
 		return
 	# Compatibility 下保留光源原有的 shadow pass，桌面受光/原色才一致；

@@ -4,7 +4,7 @@
 
 extends "res://tests/harness.gd"
 
-## 拖拽广播测试 —— 对手把牌拎起来，我这边看得见吗（scenes/main.gd 的拖拽广播与租约处理）
+## 拖拽广播测试 —— 对手把牌拎起来，我这边看得见吗（scenes/on_work_main.gd 的拖拽广播与租约处理）
 ##
 ## 这一整条通道原先只在 tests/test_net_socket.gd 的 T6 里测过**中段**
 ## （客户端发 drag → 服务器转成 foe_drag → 另一个客户端收到）。两头都没有观察点：
@@ -14,7 +14,7 @@ extends "res://tests/harness.gd"
 ## 这个文件钉的是两头：
 ##   T1 归一化坐标的算术（唯一有算术的一步，算错就是牌画到别人半区去了）
 ##   T2 回环：发送端排的字段直接喂给接收端，u/v 写反当场对不上
-##   T3 租约挡住布局（不挡就是牌抽搐，scenes/main.gd 的拖拽广播与租约处理）
+##   T3 租约挡住布局（不挡就是牌抽搐，scenes/on_work_main.gd 的拖拽广播与租约处理）
 ##   T4 乱序帧丢掉、cancel 收回租约
 ##   T5 超时（对方拖着牌掉线，没有它牌永远浮在半空）
 ##   T6 发送端：拎起来发一帧 pickup，拖着的时候节流发 move，松手发 cancel

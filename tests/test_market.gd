@@ -11,43 +11,43 @@ func _initialize() -> void:
 	print("=== M3 经济循环测试 ===")
 	var main: Node = await boot_main()
 
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	check(state != null, "引擎状态已装配")
-	check(main.market_cards.size() == CardDB.game_rules()["market_size"],
-		"公共区 %d 张实体卡就位" % CardDB.game_rules()["market_size"])
+	check(main.market_cards.size() == OnWorkCardDB.game_rules()["market_size"],
+		"公共区 %d 张实体卡就位" % OnWorkCardDB.game_rules()["market_size"])
 
-	var p_cash := state.resource_count(GameState.PLAYER, CardDB.RES_CASH)
-	var p_user := state.resource_count(GameState.PLAYER, CardDB.RES_USER)
+	var p_cash := state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH)
+	var p_user := state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_USER)
 	print("       玩家初始：资金 %d 用户 %d" % [p_cash, p_user])
 	# 数从配置读，不写死：被测的是「开局到账、之后没有回合配给」，不是那两个数字
 	# （曾经把两个数直接写在断言里，rebalance 一调 start_cash 就一直是红的）
-	var rules: Dictionary = CardDB.game_rules()
+	var rules: Dictionary = OnWorkCardDB.game_rules()
 	check(p_cash == int(rules["start_cash"]) and p_user == int(rules["start_user"]),
 		"初始资源到账（资金%d 用户%d，无回合配给）" % [
 			int(rules["start_cash"]), int(rules["start_user"])])
 
 	var def_id: String = state.market[0]
-	var price: int = CardDB.get_def(def_id).get("price", 0)
+	var price: int = OnWorkCardDB.get_def(def_id).get("price", 0)
 	var market_before: int = state.market.size()
 	var r: Dictionary = await main._try_buy(0)
-	check(r["ok"], "购买「%s」成功（标价%d）" % [CardDB.card_name(def_id), price])
+	check(r["ok"], "购买「%s」成功（标价%d）" % [OnWorkCardDB.card_name(def_id), price])
 	check(state.market.size() == market_before - 1, "公共区减少一张")
-	check(state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == p_cash - price,
+	check(state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == p_cash - price,
 		"支付现金 %d → %d" % [p_cash, p_cash - price])
-	check(main.market_cards.size() == CardDB.game_rules()["market_size"] - 1, "公共区实体同步减少")
+	check(main.market_cards.size() == OnWorkCardDB.game_rules()["market_size"] - 1, "公共区实体同步减少")
 	check(main.entities.has(r.get("new_uid", -1)), "购入卡实体已映射")
 
 	# 走一遍 BOT 采购再推回合，为的是让下面几条判据落在「两边都动过」的局面上。
 	# 买没买成不判：BOT 手上钱不够就该什么都不买，两种结果都合法。
-	# 直接驱动 BOTAgent 的买卡段（原先调的 main._bot_buy_once 已经不在仓里了，
-	# 决策次序整段搬去了 engine/bot_agent.gd）：next_step 一步一步走，
+	# 直接驱动 OnWorkBOTAgent 的买卡段（原先调的 main._bot_buy_once 已经不在仓里了，
+	# 决策次序整段搬去了 engine/on_work_bot_agent.gd）：next_step 一步一步走，
 	# 走到 STEP_BUY_DONE 就是「不买了」
-	var buy_agent := BOTAgent.new(main.pipe, main.foe_seat, BOTSearch.from_strength(0.0))
+	var buy_agent := OnWorkBOTAgent.new(main.pipe, main.foe_seat, OnWorkBOTSearch.from_strength(0.0))
 	while true:
 		var st := buy_agent.next_step()
 		# STEP_DONE 也要出来：典当冲线定了 winner 的话根本走不到买卡那步，
 		# 只等 STEP_BUY_DONE 就死循环了
-		if st == BOTAgent.STEP_BUY_DONE or st == BOTAgent.STEP_DONE:
+		if st == OnWorkBOTAgent.STEP_BUY_DONE or st == OnWorkBOTAgent.STEP_DONE:
 			break
 
 	var round_before: int = state.round_num
@@ -55,9 +55,9 @@ func _initialize() -> void:
 	for i in 10:
 		await physics_frame
 	check(state.round_num == round_before + 1, "回合数 +1")
-	check(state.market.size() == CardDB.game_rules()["market_size"],
-		"新公共区 %d 张" % CardDB.game_rules()["market_size"])
-	check(main.market_cards.size() == CardDB.game_rules()["market_size"], "新公共区实体就位")
+	check(state.market.size() == OnWorkCardDB.game_rules()["market_size"],
+		"新公共区 %d 张" % OnWorkCardDB.game_rules()["market_size"])
+	check(main.market_cards.size() == OnWorkCardDB.game_rules()["market_size"], "新公共区实体就位")
 	check(str(round_before + 1) in main.lbl_round.text, "HUD 更新：%s" % main.lbl_round.text)
 
 	# 换货架要把旧卡从 board.cards 里注销掉。漏注销**不崩也不报错** ——
@@ -73,7 +73,7 @@ func _initialize() -> void:
 
 	# 悬停说明只留效果一句：卡名在标题带上、标价在牌外价签上、进度在 D 位墨团上，
 	# 提示框再抄一遍就是让玩家读三处相同信息
-	var d_shua: Dictionary = CardDB.get_def("shuabuting")
+	var d_shua: Dictionary = OnWorkCardDB.get_def("shuabuting")
 	var hint: String = main.board.hover_desc_text("shuabuting")
 	print("       刷不停说明：%s" % hint)
 	check("用户" in hint and "资金" in hint, "说明含配方资源与产出资源")
@@ -81,37 +81,37 @@ func _initialize() -> void:
 	var progress := "0/%d" % int(d_shua["recipe_n"])
 	check(not "配方进度" in hint and not progress in hint,
 		"说明不含配方进度（%s 已在 D 位墨团）" % progress)
-	check(not CardDB.card_name("shuabuting") in hint, "说明不含卡名（已在标题带）")
+	check(not OnWorkCardDB.card_name("shuabuting") in hint, "说明不含卡名（已在标题带）")
 
-	# 计量名 vs 卡名（CardDB.card_label / CardDB.res_label：「现金 = 1 份资金」）：
+	# 计量名 vs 卡名（OnWorkCardDB.card_label / OnWorkCardDB.res_label：「现金 = 1 份资金」）：
 	# 配方里躺的是现金卡 → 配方段说「现金×N」；每回合产出涨的是资金总量 →
 	# 产出段说「资金+N」。悬停一律用计量名的话，同一个配方在悬停里叫「资金×N」、
 	# 在「配方不足」的报错里叫「现金×N」，玩家得自己猜是同一回事
-	var shua_out := "%s+%d" % [CardDB.res_label(str(d_shua["output_res"])), int(d_shua["output_n"])]
+	var shua_out := "%s+%d" % [OnWorkCardDB.res_label(str(d_shua["output_res"])), int(d_shua["output_n"])]
 	check(shua_out in hint, "每回合产出段用计量名（%s）" % shua_out)
 	# 必须挑一张配方是现金的生产卡：刷不停的配方是用户，
 	# 而用户的计量名和卡名同字（都叫「用户」），拿它量不出两者换着用的差别
-	# 数量从 CardDB 取，不硬写：这几条量的是「配方段说卡名、产出段说计量名」这条规范，
+	# 数量从 OnWorkCardDB 取，不硬写：这几条量的是「配方段说卡名、产出段说计量名」这条规范，
 	# 数值是谁不影响规范成不成立。硬写的话每轮调数值都要来改一遍，
 	# 而红的原因和规范无关，久了就会被当成噪音顺手改掉
-	var d_prod: Dictionary = CardDB.get_def("waimai")
+	var d_prod: Dictionary = OnWorkCardDB.get_def("waimai")
 	var hint_prod: String = main.board.hover_desc_text("waimai")
 	print("       外卖补贴说明：%s" % hint_prod.replace("\n", " / "))
 	var want_recipe := "现金×%d" % int(d_prod["recipe_n"])
 	check(want_recipe in hint_prod, "生产卡配方段用卡名（外卖补贴：%s）" % want_recipe)
 	var want_out := "用户+%d" % int(d_prod["output_n"])
 	check(want_out in hint_prod, "生产卡产出段用计量名（%s）" % want_out)
-	var d_atk: Dictionary = CardDB.get_def("butie")
+	var d_atk: Dictionary = OnWorkCardDB.get_def("butie")
 	var hint_cash: String = main.board.hover_desc_text("butie")
 	print("       补贴大战说明：%s" % hint_cash.replace("\n", " / "))
 	var want_pay := "现金×%d" % int(d_atk["recipe_n"])
 	check(want_pay in hint_cash, "补贴大战配方段：%s（卡名，跟配方不足的报错一致）" % want_pay)
 	# 攻击段：卡名 + ×N。补贴大战本轮从打现金改成打用户，所以币种也从卡表取
-	var want_atk := "移除对方%s×%d" % [CardDB.card_name(d_atk["attack_res"]), int(d_atk["attack_n"])]
+	var want_atk := "移除对方%s×%d" % [OnWorkCardDB.card_name(d_atk["attack_res"]), int(d_atk["attack_n"])]
 	check(want_atk in hint_cash, "攻击段用卡名：移除的是牌不是计量（%s）" % want_atk)
 	check("资金装弹时花掉" in hint_cash, "攻击说明补充资金消耗时机，避免把现金配方理解为持续保留")
 	# 报错和悬停必须念同一个词
-	var miss: String = ComboRules.evaluate([{ "uid": 0, "def_id": "butie" }]).get("reason", "")
+	var miss: String = OnWorkComboRules.evaluate([{ "uid": 0, "def_id": "butie" }]).get("reason", "")
 	print("       配方不足报错：%s" % miss)
 	check(want_pay in miss, "配方不足的报错也说「%s」，与悬停同词" % want_pay)
 	var buff_hint: String = main.board.hover_desc_text("tuisong")

@@ -15,7 +15,7 @@ extends "res://tests/harness.gd"
 ##     还没收手的那些摞在引擎里根本不存在
 ##   - 留下的那一位也不发：他的 main._push_piles 是**比指纹去重**的，
 ##     分组没变就一条都不发 —— 而「对手重连了」在他那边不改变任何分组
-## 两头都不发，那份数据就只剩服务器还有可能留着 —— 于是 NetRoom.piles
+## 两头都不发，那份数据就只剩服务器还有可能留着 —— 于是 OnWorkRoom.piles
 ## 记一笔，_on_join 给重连进来的人回放两份（MY_PILES + FOE_PILES）。
 ##
 ## 和另外几条 net 判据的分工：
@@ -26,7 +26,7 @@ extends "res://tests/harness.gd"
 ##   - **这一条**         ：断开再进来时，**摞**回不回到原样
 ##
 ## 变异提示（tools/mutate_check.py 登记的那几条打在这里）：
-##   1. NetRoom.handle_piles 把「记一笔」挪到 foe == 0 之后 → T3 红
+##   1. OnWorkRoom.handle_piles 把「记一笔」挪到 foe == 0 之后 → T3 红
 ##      （对手不在场时的声明没记上，而那正是最要紧的那一刻）
 ##   2. _on_join 不发 my_piles → T1 红（重连的人拿不回自己那些摞）
 ##   3. _on_join 不发 foe_piles → T2 红（拿不到对手那些摞）
@@ -36,12 +36,12 @@ extends "res://tests/harness.gd"
 ##   7. main.on_my_piles 不更新 _piles_fp → T7 红（恢复了但留下那位看不到）
 
 const PORT_BASE := 47380
-const A := GameState.PLAYER
-const B := GameState.BOT
+const A := OnWorkState.PLAYER
+const B := OnWorkState.BOT
 
 func _initialize() -> void:
 	print("=== 重连恢复摆放测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	await _t1_my_piles_come_back()
 	await _t2_foe_piles_come_back()
 	await _t3_declared_while_he_was_away()
@@ -53,7 +53,7 @@ func _initialize() -> void:
 	finish()
 
 # ---------- 服务器 / 客户端（与 test_net_piles 同法，端口段错开） ----------
-func _server_room() -> NetRoom:
+func _server_room() -> OnWorkRoom:
 	for code in _srv.rooms:
 		return _srv.rooms[code]
 	return null
@@ -86,7 +86,7 @@ func _uids_of(seat: String, n: int) -> Array:
 func _uid_sets(msg: Dictionary) -> Array:
 	var out: Array = []
 	for p in (msg.get("piles", []) as Array):
-		var us: Array = Intent.ints((p as Dictionary).get("uids", []))
+		var us: Array = OnWorkIntent.ints((p as Dictionary).get("uids", []))
 		us.sort()
 		out.append(us)
 	return out
@@ -127,7 +127,7 @@ func _t1_my_piles_come_back() -> void:
 		check(false, "服务器记下了他那两摞（实为 %d 摞）" % room.piles_of(b.my_seat).size())
 		await _close_all([a, b])
 		return
-	check(true, "服务器把他声明的摞记了下来（NetRoom.piles）")
+	check(true, "服务器把他声明的摞记了下来（OnWorkRoom.piles）")
 
 	var token := b.resume_token
 	if not need(token != "", "他手里有重连令牌"):
@@ -166,7 +166,7 @@ func _t1_my_piles_come_back() -> void:
 	# 而收拢/摆在哪都是玩家亲手做的动作（同 test_net_piles T6/T7）
 	var by_uids := {}
 	for p in (got[-1].get("piles", []) as Array):
-		var us: Array = Intent.ints((p as Dictionary).get("uids", []))
+		var us: Array = OnWorkIntent.ints((p as Dictionary).get("uids", []))
 		us.sort()
 		by_uids[str(us)] = p
 	var p1: Dictionary = by_uids.get(str(want1), {})
@@ -297,7 +297,7 @@ func _t3_declared_while_he_was_away() -> void:
 			% sets.size())
 	var p0: Dictionary = {}
 	for p in (got[-1].get("piles", []) as Array):
-		var us: Array = Intent.ints((p as Dictionary).get("uids", []))
+		var us: Array = OnWorkIntent.ints((p as Dictionary).get("uids", []))
 		if us.has(int(his[0])):
 			p0 = p
 	check(absf(float(p0.get("u", -1.0)) - 0.75) < 0.02,
@@ -351,8 +351,8 @@ func _my_cash(main: Node, n: int) -> Array:
 	for c in main.state.players[main.my_seat]["cards"]:
 		if out.size() >= n:
 			break
-		var d: Dictionary = CardDB.get_def(c["def_id"])
-		if d.get("kind") != CardDB.KIND_UNIT or d.get("res") != CardDB.RES_CASH:
+		var d: Dictionary = OnWorkCardDB.get_def(c["def_id"])
+		if d.get("kind") != OnWorkCardDB.KIND_UNIT or d.get("res") != OnWorkCardDB.RES_CASH:
 			continue
 		if main.entities.has(c["uid"]) and is_instance_valid(main.entities[c["uid"]]):
 			out.append(main.entities[c["uid"]])
@@ -363,9 +363,9 @@ func _my_cash(main: Node, n: int) -> Array:
 func _smallest_producer() -> String:
 	var out := ""
 	var best := 999
-	for id in CardDB.all_cards():
-		var d: Dictionary = CardDB.get_def(id)
-		if d.get("kind") != CardDB.KIND_PRODUCT:
+	for id in OnWorkCardDB.all_cards():
+		var d: Dictionary = OnWorkCardDB.get_def(id)
+		if d.get("kind") != OnWorkCardDB.KIND_PRODUCT:
 			continue
 		var n := int(d.get("recipe_n", 0))
 		if n >= 1 and n < best:
@@ -419,7 +419,7 @@ func _decl_of(main: Node, want: Array) -> Dictionary:
 	var sorted_want := want.duplicate()
 	sorted_want.sort()
 	for rec in main.my_pile_lists():
-		var us: Array = Intent.ints((rec as Dictionary).get("uids", []))
+		var us: Array = OnWorkIntent.ints((rec as Dictionary).get("uids", []))
 		us.sort()
 		if us == sorted_want:
 			return rec
@@ -543,17 +543,17 @@ func _t6_combo_wins_over_replay() -> void:
 	var a: NetTransport = trio[1]
 	var b: NetTransport = trio[2]
 
-	# 一份能过 ComboRules 的料：配方最小的生产卡 + 它要的单位卡。
-	# 光几张现金卡编不成组合（create_combo 走 ComboRules.evaluate，
+	# 一份能过 OnWorkComboRules 的料：配方最小的生产卡 + 它要的单位卡。
+	# 光几张现金卡编不成组合（create_combo 走 OnWorkComboRules.evaluate，
 	# 没核心卡直接 invalid）—— 那样这一条测的就成了「编组失败时怎样」
 	var core_id := _smallest_producer()
 	if not need(core_id != "", "找得到一张生产卡"):
 		main.queue_free()
 		await _close_all([a, b])
 		return
-	var cd: Dictionary = CardDB.get_def(core_id)
+	var cd: Dictionary = OnWorkCardDB.get_def(core_id)
 	var uids: Array = [int(main.state.add_card(main.my_seat, core_id)["uid"])]
-	var unit := "cash" if str(cd.get("recipe_res")) == CardDB.RES_CASH else "user"
+	var unit := "cash" if str(cd.get("recipe_res")) == OnWorkCardDB.RES_CASH else "user"
 	for i in int(cd.get("recipe_n", 0)):
 		uids.append(int(main.state.add_card(main.my_seat, unit)["uid"]))
 	main._sync_entities()

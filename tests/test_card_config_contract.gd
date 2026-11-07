@@ -4,8 +4,8 @@
 
 extends "res://tests/harness.gd"
 
-const Config = preload("res://engine/card_config.gd")
-const Logic = preload("res://tools/balance/logic.gd")
+const Config = preload("res://engine/on_work_card_config.gd")
+const Logic = preload("res://tools/balance/on_work_logic.gd")
 
 func _initialize() -> void:
 	var base: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(Config.DEFAULT_PATH))
@@ -33,12 +33,12 @@ func _initialize() -> void:
 	Config._loaded = true
 	Config._selected_path = path
 	check(Config.apply_solo().get("ok", false), "合法选择可以应用")
-	var original_hash := StateCodec.table_hash()
+	var original_hash := OnWorkStateCodec.table_hash()
 	var invalid := base.duplicate(true)
 	invalid["_game"]["win_cash"] = 999
 	_write(path, invalid)
 	check(not Config.apply_solo().get("ok", true), "选择后被外部修改的非法卡表仍被拒绝")
-	check(StateCodec.table_hash() == original_hash, "拒绝重载不会污染正在使用的规则")
+	check(OnWorkStateCodec.table_hash() == original_hash, "拒绝重载不会污染正在使用的规则")
 	Config._selected_path = ""
 	Config.apply_default()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))

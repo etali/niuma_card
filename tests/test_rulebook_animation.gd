@@ -4,13 +4,13 @@
 
 extends "res://tests/harness.gd"
 
-const Demos = preload("res://scenes/rulebook_demo_data.gd")
+const Demos = preload("res://scenes/on_work_rulebook_demo_data.gd")
 
 func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	for section in ["victory", "purchase", "combos", "attack", "pawn", "buffs"]:
 		var examples := Demos.examples(section)
 		check(not examples.is_empty(), "%s有可选动画例子" % section)
@@ -19,19 +19,19 @@ func _run() -> void:
 			if example.has("effect"):
 				check(example["effect"]["valid"], "%s演示使用有效的真实组合" % example["title"])
 	check(Demos.examples("victory").size() == 6, "分别演示三种获胜与三种失败")
-	var original: Dictionary = CardDB.CARDS["yunketang"].duplicate(true)
-	CardDB.CARDS["yunketang"]["recipe_n"] = 17
-	CardDB.CARDS["yunketang"]["output_n"] = 31
+	var original: Dictionary = OnWorkCardDB.CARDS["yunketang"].duplicate(true)
+	OnWorkCardDB.CARDS["yunketang"]["recipe_n"] = 17
+	OnWorkCardDB.CARDS["yunketang"]["output_n"] = 31
 	var found := false
 	for example in Demos.examples("combos"):
 		if example["mode"] == "production" and example["inputs"][0]["id"] == "yunketang":
 			found = example["inputs"][1]["count"] == 17 and example["output"]["count"] == 31
 	check(found, "动画的材料与产出数字随配置变化")
-	CardDB.CARDS["yunketang"] = original
+	OnWorkCardDB.CARDS["yunketang"] = original
 	root.size = Vector2i(1280, 800)
 	root.content_scale_size = Vector2i.ZERO
 	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	root.add_child(main)
 	_booted = main
@@ -56,13 +56,13 @@ func _run() -> void:
 			"每张演示卡都是正式CardEntity而非另画的Control")
 		check(cards[0]._plate.material_override.shader == load(CardEntity.PLATE_SHADER),
 			"演示卡使用对局原有卡面Shader")
-		var state_hash := StateCodec.state_hash(main.state)
+		var state_hash := OnWorkStateCodec.state_hash(main.state)
 		demo.set_playing(true)
 		demo._process(1.0)
 		check(demo._stage.phase == 1 and demo._caption.text != first, "第%d章真实编组推进且解说同步" % section)
 		demo._process(1.3)
 		check(demo._stage.phase >= 2, "第%d章真实裁决与动画已启动" % section)
-		check(StateCodec.state_hash(main.state) == state_hash, "演示不改变真实牌局")
+		check(OnWorkStateCodec.state_hash(main.state) == state_hash, "演示不改变真实牌局")
 		demo.select_example(0)
 		check(demo.progress == 0 and demo.playing, "重播创建独立初始牌桌")
 		demo._play.pressed.emit()
@@ -88,7 +88,7 @@ func _run() -> void:
 			var label: Label = upgrade_demo._comparisons.get_child(i)
 			check(label.text.contains(variant["material_label"]) and label.text.contains("×%d" % variant["count"]),
 				"动画路线标签展示当前材料种类和精确张数")
-			if CardDB.get_def(variant["target_id"]).get("kind") == CardDB.KIND_LEGEND:
+			if OnWorkCardDB.get_def(variant["target_id"]).get("kind") == OnWorkCardDB.KIND_LEGEND:
 				check(label.text.contains("同档") and label.text.contains("可异名"), "动画传说路线不再要求同名材料")
 		break
 	book.select_section(0)

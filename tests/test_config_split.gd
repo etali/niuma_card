@@ -22,11 +22,11 @@ func _initialize() -> void:
 	check(not bot.has("behavior") and bot.has("simulation") and bot.has("search"),
 		"BOT 配置只保存当前搜索和模拟参数")
 
-	CardDB.reset()
-	check(CardDB.load_from(CardDB.BUILTIN_PATH), "拆分后内置卡表可加载")
-	check(CardDB.sim_rules() == bot["simulation"], "模拟器参数逐键等于磁盘配置")
-	check(CardDB.sfx_rules() == ui["sfx"], "音效动作和文件逐键等于 UI 配置")
-	check(CardDB.res_label("cash") == ui["resource_labels"]["cash"], "资源名从 UI 配置进入牌面")
+	OnWorkCardDB.reset()
+	check(OnWorkCardDB.load_from(OnWorkCardDB.BUILTIN_PATH), "拆分后内置卡表可加载")
+	check(OnWorkCardDB.sim_rules() == bot["simulation"], "模拟器参数逐键等于磁盘配置")
+	check(OnWorkCardDB.sfx_rules() == ui["sfx"], "音效动作和文件逐键等于 UI 配置")
+	check(OnWorkCardDB.res_label("cash") == ui["resource_labels"]["cash"], "资源名从 UI 配置进入牌面")
 	check(Palette.DEFAULTS == ui["palette"], "配色兜底直接取 UI 配置，代码无第二份色板")
 
 	var editable_slots: Array = []
@@ -43,22 +43,22 @@ func _initialize() -> void:
 		"sfx": {"actions": {"card_pickup": {"db": -13.0}}}})
 	_write(BOT_TEMP, {"simulation": {"max_rounds": 9}, "search": {"default_strength": 0.2}})
 	var prior_ui := UIConfig._source
-	var prior_bot := BOTConfig._source
+	var prior_bot := OnWorkBOTConfig._source
 	var prior_palette := Palette._cfg.duplicate(true)
 	var prior_loaded := Palette._loaded
-	CardDB.reset()
+	OnWorkCardDB.reset()
 	UIConfig._source = UI_TEMP
-	BOTConfig._source = BOT_TEMP
-	check(CardDB.load_from(CardDB.BUILTIN_PATH), "不改 cards.json 也能加载外置 UI 和 BOT")
+	OnWorkBOTConfig._source = BOT_TEMP
+	check(OnWorkCardDB.load_from(OnWorkCardDB.BUILTIN_PATH), "不改 cards.json 也能加载外置 UI 和 BOT")
 	check(UIConfig.read_defaults()["window_fraction"] == 0.85
 		and UIConfig.read_defaults()["perspective_angle"] == ui["defaults"]["perspective_angle"],
 		"外置 UI 默认覆盖，未提供的角度继承内置配置")
-	check(CardDB.res_label("cash") == "测试资金" and CardDB.res_label("user") == ui["resource_labels"]["user"],
+	check(OnWorkCardDB.res_label("cash") == "测试资金" and OnWorkCardDB.res_label("user") == ui["resource_labels"]["user"],
 		"外置资源名称支持逐键覆盖")
-	var pickup: Dictionary = CardDB.sfx_rules()["actions"]["card_pickup"]
+	var pickup: Dictionary = OnWorkCardDB.sfx_rules()["actions"]["card_pickup"]
 	check(pickup["db"] == -13.0 and pickup["sound"] == ui["sfx"]["actions"]["card_pickup"]["sound"],
 		"外置音量覆盖仍保留原音效映射")
-	check(CardDB.sim_rules()["max_rounds"] == 9 and BOTSearch.default_strength() == 0.2,
+	check(OnWorkCardDB.sim_rules()["max_rounds"] == 9 and OnWorkBOTSearch.default_strength() == 0.2,
 		"外置 BOT 的模拟上限和搜索默认值实际生效")
 	Palette._loaded = false
 	var user_hud: Dictionary = Palette.read_json(Palette.user_path()).get("hud", {})
@@ -70,42 +70,42 @@ func _initialize() -> void:
 		"配置返回深拷贝，调用方不会污染后续默认色")
 
 	# 旧策略段被忽略，规则指纹不因策略参数变化；其他历史展示覆盖仍可加载。
-	var rules_hash := StateCodec.table_hash()
+	var rules_hash := OnWorkStateCodec.table_hash()
 	var legacy := cards.duplicate(true)
 	legacy["_bot"] = {"seat_value": 16.0}
 	legacy["_sim"] = {"max_rounds": 11}
 	_write(CARDS_TEMP, legacy)
-	check(CardDB.load_from(CARDS_TEMP), "旧单文件配置继续可加载")
-	check(CardDB.sim_rules()["max_rounds"] == 11, "旧模拟上限仍可覆盖")
-	check(StateCodec.table_hash() == rules_hash, "旧 _bot 和模拟参数不改变游戏规则指纹")
+	check(OnWorkCardDB.load_from(CARDS_TEMP), "旧单文件配置继续可加载")
+	check(OnWorkCardDB.sim_rules()["max_rounds"] == 11, "旧模拟上限仍可覆盖")
+	check(OnWorkStateCodec.table_hash() == rules_hash, "旧 _bot 和模拟参数不改变游戏规则指纹")
 	legacy["_game"]["res_labels"] = {"cash": "旧资源名称"}
 	legacy["_sfx"] = {"actions": {"card_pickup": {"db": -17.0}}}
 	_write(CARDS_TEMP, legacy)
-	check(CardDB.load_from(CARDS_TEMP), "旧展示覆盖仍可加载")
-	check(CardDB.res_label("cash") == "旧资源名称" and CardDB.sfx_rules()["actions"]["card_pickup"]["db"] == -17.0,
+	check(OnWorkCardDB.load_from(CARDS_TEMP), "旧展示覆盖仍可加载")
+	check(OnWorkCardDB.res_label("cash") == "旧资源名称" and OnWorkCardDB.sfx_rules()["actions"]["card_pickup"]["db"] == -17.0,
 		"旧资源名和音效覆盖仍然有效")
-	check(CardDB.sfx_rules()["actions"]["card_pickup"]["sound"] == pickup["sound"],
+	check(OnWorkCardDB.sfx_rules()["actions"]["card_pickup"]["sound"] == pickup["sound"],
 		"旧格式局部音效覆盖也不会抹掉同一动作的 sound")
 
 	_write(BOT_TEMP, {"simulation": {"max_rounds": 13}})
 	_write(UI_TEMP, {"resource_labels": {"cash": "重载资金"}})
-	CardDB.reset()
+	OnWorkCardDB.reset()
 	UIConfig._source = UI_TEMP
-	BOTConfig._source = BOT_TEMP
-	CardDB.ensure_loaded()
-	check(CardDB.sim_rules()["max_rounds"] == 13 and CardDB.res_label("cash") == "重载资金",
-		"CardDB.reset 重读修改后的独立配置，不会继续使用旧缓存")
+	OnWorkBOTConfig._source = BOT_TEMP
+	OnWorkCardDB.ensure_loaded()
+	check(OnWorkCardDB.sim_rules()["max_rounds"] == 13 and OnWorkCardDB.res_label("cash") == "重载资金",
+		"OnWorkCardDB.reset 重读修改后的独立配置，不会继续使用旧缓存")
 
 	UIConfig._source = prior_ui
-	BOTConfig._source = prior_bot
+	OnWorkBOTConfig._source = prior_bot
 	Palette._cfg = prior_palette
 	Palette._loaded = prior_loaded
 	for path in [UI_TEMP, BOT_TEMP, CARDS_TEMP]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	UIConfig.reset_cache()
-	BOTConfig.reset_cache()
-	CardDB.reset()
-	CardDB.ensure_loaded()
+	OnWorkBOTConfig.reset_cache()
+	OnWorkCardDB.reset()
+	OnWorkCardDB.ensure_loaded()
 	finish()
 
 func _json(path: String) -> Dictionary:

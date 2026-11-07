@@ -16,15 +16,15 @@ func _initialize() -> void:
 	main._respawn_all()
 	await create_timer(0.5).timeout
 
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	var board: Board = main.board
-	var price: int = CardDB.get_def(state.market[0]).get("price", 1)
-	var cash0: int = state.resource_count(GameState.PLAYER, CardDB.RES_CASH)
-	print("       公共区[0] = %s，标价 %d；玩家现金 %d" % [CardDB.card_name(state.market[0]), price, cash0])
+	var price: int = OnWorkCardDB.get_def(state.market[0]).get("price", 1)
+	var cash0: int = state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH)
+	print("       公共区[0] = %s，标价 %d；玩家现金 %d" % [OnWorkCardDB.card_name(state.market[0]), price, cash0])
 
 	# --- 堆叠购买：拖 price+2 张现金到公共区卡上 ---
 	var dragged: Array = []
-	for c in state.players[GameState.PLAYER]["cards"]:
+	for c in state.players[OnWorkState.PLAYER]["cards"]:
 		if c["def_id"] == "cash" and dragged.size() < price + 2:
 			dragged.append(main.entities[c["uid"]])
 	check(dragged.size() == price + 2, "备好 %d 张现金" % (price + 2))
@@ -37,8 +37,8 @@ func _initialize() -> void:
 	for i in 10:
 		await physics_frame
 
-	check(state.market.size() == CardDB.game_rules()["market_size"] - 1, "公共区减少一张")
-	check(state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == cash0 - price,
+	check(state.market.size() == OnWorkCardDB.game_rules()["market_size"] - 1, "公共区减少一张")
+	check(state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == cash0 - price,
 		"只扣标价现金 %d → %d" % [cash0, cash0 - price])
 	check(main.entities.has(market_card.uid) and not market_card.is_market and market_card.draggable,
 		"买到的卡已归玩家且恢复可拖动")
@@ -61,12 +61,12 @@ func _initialize() -> void:
 	# 挑最便宜的一张，保证买得起且有多付的余量
 	var t_idx := 0
 	for i in state.market.size():
-		if CardDB.get_def(state.market[i]).get("price", 99) \
-			< CardDB.get_def(state.market[t_idx]).get("price", 99):
+		if OnWorkCardDB.get_def(state.market[i]).get("price", 99) \
+			< OnWorkCardDB.get_def(state.market[t_idx]).get("price", 99):
 			t_idx = i
-	var price3: int = CardDB.get_def(state.market[t_idx]).get("price", 1)
+	var price3: int = OnWorkCardDB.get_def(state.market[t_idx]).get("price", 1)
 	var pile: Array = []
-	for c in state.players[GameState.PLAYER]["cards"]:
+	for c in state.players[OnWorkState.PLAYER]["cards"]:
 		if c["def_id"] == "cash" and pile.size() < price3 + 3:
 			pile.append(main.entities[c["uid"]])
 	# 从已有现金摞中取出这一手付款，重新摆成收拢摞。
@@ -92,13 +92,13 @@ func _initialize() -> void:
 		var tp := target.global_position
 		for c in board._drag_cards:
 			c.global_position = Vector3(tp.x, Board.DRAG_HEIGHT, tp.z)
-		var cash_b: int = state.resource_count(GameState.PLAYER, CardDB.RES_CASH)
+		var cash_b: int = state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH)
 		board._end_drag()
 		check(board.last_drag_compact, "购买时把收拢态交给接收方（last_drag_compact）")
 		await create_timer(0.5).timeout
 		for i in 10:
 			await physics_frame
-		check(state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == cash_b - price3,
+		check(state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == cash_b - price3,
 			"扣掉标价 %d 现金（%d → %d）" % [price3, cash_b, cash_b - price3])
 		# 多付的 3 张：退回后仍是收拢的一摞
 		var rest: Array = []
@@ -127,7 +127,7 @@ func _initialize() -> void:
 	# --- 非现金支付被拒 ---
 	var market_before: int = state.market.size()
 	var user_card: CardEntity = null
-	for c in state.players[GameState.PLAYER]["cards"]:
+	for c in state.players[OnWorkState.PLAYER]["cards"]:
 		if c["def_id"] == "user":
 			user_card = main.entities[c["uid"]]
 			break
@@ -136,10 +136,10 @@ func _initialize() -> void:
 	check(state.market.size() == market_before, "用户卡支付被拒，公共区不变")
 
 	# --- 现金不足被拒 ---
-	var price2: int = CardDB.get_def(state.market[0]).get("price", 1)
+	var price2: int = OnWorkCardDB.get_def(state.market[0]).get("price", 1)
 	if price2 >= 2:
 		var one_cash: Array = []
-		for c in state.players[GameState.PLAYER]["cards"]:
+		for c in state.players[OnWorkState.PLAYER]["cards"]:
 			if c["def_id"] == "cash":
 				one_cash.append(main.entities[c["uid"]])
 				break
@@ -148,7 +148,7 @@ func _initialize() -> void:
 		check(state.market.size() == market_before, "现金不足被拒（1/%d）" % price2)
 
 	# --- 配方进度由牌面承担：拖拽途中没有浮动提示 ---
-	var prod: Dictionary = state.add_card(GameState.PLAYER, "shuabuting")
+	var prod: Dictionary = state.add_card(OnWorkState.PLAYER, "shuabuting")
 	var e_prod: CardEntity = main._spawn_entity(prod, Vector3(-6, 0.3, 4.5), true)
 	await physics_frame
 	check(is_instance_valid(e_prod), "核心卡照常落桌（提示删除不影响生成）")

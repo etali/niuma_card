@@ -9,13 +9,13 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-import check_balance_numbers as checker
+import on_work_check_balance_numbers as checker
 
 
 class BalanceNumbersTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / "engine/bot_turn_strategy.gd").read_text()
+        cls.source = (ROOT / "engine/on_work_bot_turn_strategy.gd").read_text()
 
     def test_constant_values_in_targets_and_defaults(self):
         schema = checker.read_parameter_schema(self.source)

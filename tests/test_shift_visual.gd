@@ -20,6 +20,8 @@ func _run() -> void:
 	while current_scene == null or not current_scene.has_method("switch_mode"):
 		await process_frame
 	var host := current_scene
+	while not is_instance_valid(host.sign) or host.display.texture == null:
+		await process_frame
 	var drawer: DrawerWindow = host.tables[0].drawer_window
 	drawer.pin()
 	while not drawer.is_pinned() or not drawer.is_expanded() or drawer.is_transitioning() or drawer._warming:

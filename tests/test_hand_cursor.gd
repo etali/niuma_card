@@ -314,7 +314,7 @@ func _pointer_event(at: Vector2, button := -1) -> void:
 ## TableHands 若排在 Board 之前，读到的是上一帧的牌位，手会落后一帧。
 func _test_real_table_same_frame() -> void:
 	root.size = Vector2i(1600, 900)
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	main.drawer_ui_scale = 1.0
 	root.add_child(main)

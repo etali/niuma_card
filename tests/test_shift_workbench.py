@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from tools.balance.realtime import ConfigConflict, Lab, config_id, report_summary
+from tools.balance.off_work_workbench import ConfigConflict, OffWorkWorkbench, config_id, report_summary
 from tools.balance.storage import atomic_json, read_json
 
 GODOT = shutil.which(os.environ.get('GODOT', 'godot')) or '/Applications/Godot.app/Contents/MacOS/Godot'
@@ -32,7 +32,7 @@ class WorkbenchTiming(unittest.TestCase):
             progress = {'games': 0, 'simulated_seconds': 60, 'elapsed_seconds': .5,
                         'current_match': {'number': 1, 'seconds': 60}}
             atomic_json(job['folder'] / 'progress.json', {'completed': 0, 'total': 2, 'summary': progress})
-            Lab._refresh_progress(job)
+            OffWorkWorkbench._refresh_progress(job)
             self.assertEqual(job['meta']['summary'], progress)
 
         complete = {'games': 2, 'matches': [{'seconds': 1.25}, {'seconds': 4.5}]}
@@ -115,7 +115,7 @@ class ShiftWorkbench(unittest.TestCase):
                         'source':'manual', 'created_at':'2026-09-01T00:00:00+00:00'}
             path = folder/'configs'/(old_id + '.json')
             atomic_json(path, snapshot)
-            with Lab(GODOT, 0, handler=BaseHTTPRequestHandler, store=folder) as lab:
+            with OffWorkWorkbench(GODOT, 0, handler=BaseHTTPRequestHandler, store=folder) as lab:
                 try:
                     submitted = lab.start_job({'kind':'balance', 'cards':read_json(ROOT/'data/off_work_cards.json'),
                                                'a':old, 'a_name':'从脚本载入', 'pairs':1, 'seed':16, 'max_seconds':1})
@@ -157,7 +157,7 @@ class ShiftWorkbench(unittest.TestCase):
             def entry(r):
                 return {'id': r['id'], 'created_at': r['created_at'], 'updated_at': r['created_at'], 'source': 'manual'}
             atomic_json(store/'catalog.json', {'cards': {'旧卡表': entry(old), '待修复': entry(repair)}, 'bot': {}})
-            with Lab(GODOT, 0, handler=BaseHTTPRequestHandler, store=store) as lab:
+            with OffWorkWorkbench(GODOT, 0, handler=BaseHTTPRequestHandler, store=store) as lab:
                 listed = lab.library_info()
                 self.assertEqual([r['id'] for r in listed['cards']], [target['id']])
                 self.assertEqual(lab.library_info(old['id'])['data'], clean)
@@ -165,7 +165,7 @@ class ShiftWorkbench(unittest.TestCase):
                 self.assertEqual(read_json(store/'configs'/(target['id']+'.json')), target)
                 self.assertEqual(read_json(store/'catalog.json')['cards']['待修复']['id'], repair['id'])
             write(repair)
-            with Lab(GODOT, 0, handler=BaseHTTPRequestHandler, store=store) as lab:
+            with OffWorkWorkbench(GODOT, 0, handler=BaseHTTPRequestHandler, store=store) as lab:
                 listed = lab.library_info()
                 self.assertFalse(listed['warnings'])
                 self.assertEqual({r['name'] for r in listed['cards']}, {'旧卡表', '待修复'})
@@ -257,7 +257,7 @@ class ShiftWorkbench(unittest.TestCase):
                     self.assertNotIn('ai', library)
                     self.assertEqual(api('/off-work/api/library/'+old_key)['kind'], 'bot')
                     for mode in ('bot','ai','balance'):
-                        command = [sys.executable, str(ROOT/'tools/balance/work_cli.py'), '--url', url,
+                        command = [sys.executable, str(ROOT/'tools/balance/off_work_cli.py'), '--url', url,
                                    '--kind', mode, '--cards', str(ROOT/'data/off_work_cards.json'), '--name','默认卡表',
                                    '--seed','42','--pairs','1','--max-seconds','2']
                         if mode == 'ai':
@@ -275,6 +275,17 @@ class ShiftWorkbench(unittest.TestCase):
                         self.assertEqual(result['simulated_seconds'], 4.0)
                         self.assertGreater(result['elapsed_seconds'], 0)
                         self.assertTrue(result['simulator_fingerprint'])
+                        metrics = result['balance_metrics']
+                        self.assertEqual(metrics['version'], 2)
+                        self.assertIsNone(metrics['first_player_win_rate']['value'])  # both legs hit the time limit
+                        self.assertEqual(metrics['card_acquisitions']['observed_games'], 2)
+                        for key in ('upgrades_per_minute', 'tool_generations_per_minute', 'interferences_per_minute'):
+                            self.assertEqual(metrics[key]['denominator'], 2)
+                        detail = api('/off-work/api/jobs/' + result['id'])
+                        self.assertEqual(detail['result']['balance_metrics'], metrics)
+                        history = api('/off-work/api/history?kind=' + mode)['items']
+                        self.assertEqual(next(j['summary']['balance_metrics'] for j in history if j['id'] == result['id']),
+                                         metrics)
                         if mode == 'balance':
                             self.assertEqual(result['configs']['a'], result['configs']['b'])
                         else:

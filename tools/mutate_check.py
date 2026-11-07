@@ -20,7 +20,7 @@
   3. 变异没打在想改的地方 —— 锚点撞了名，replace 改的是另一处（下面 SKIP
      那一关会挡住），或者重构之后锚点失配（tools/check_mut_residue.py 管这个）。
 
-判据不限于 .gd：run_tests.sh 里那五个 python 检查（check_card_table 那些）
+判据不限于 .gd：run_tests.sh 里那五个 python 检查（on_work_check_card_table 那些）
 也能当裁判，按扩展名分派，见 _cmd_for。它们盯的是「文档和配置飘了」这一类
 **没有任何 .gd 判据会红**的坏法 —— 那种变异下全套测试照旧全绿。
 """
@@ -41,19 +41,19 @@ os.environ.setdefault("TEST_SPEED", "5")
 # (文件, 原文, 改成, 期望报警的断言关键字[, 指定跑哪个测试])
 # 第 5 项省略时按 TEST_FOR 取该文件的默认测试
 MUTATIONS = [
-    ("engine/game_state.gd",
-     'if resource_count(who, CardDB.RES_CASH) - price <= 0:',
+    ("engine/on_work_state.gd",
+     'if resource_count(who, OnWorkCardDB.RES_CASH) - price <= 0:',
      'if false:',
      "付完会归零"),
-    ("engine/game_state.gd",
-     'if resource_count(who, CardDB.RES_CASH) - price <= 0:',
-     'if resource_count(who, CardDB.RES_CASH) - price < 0:',
+    ("engine/on_work_state.gd",
+     'if resource_count(who, OnWorkCardDB.RES_CASH) - price <= 0:',
+     'if resource_count(who, OnWorkCardDB.RES_CASH) - price < 0:',
      "付完会归零"),
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '\t\t\t\treturn { "ok": false, "code": "not_cash", "reason": "请用现金卡支付" }',
      '\t\t\t\tpass',
      "not_cash"),
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '\tvar removed: Array = pay.slice(0, price)',
      '\tvar removed: Array = pay',
      "多付的 2 张不吃"),
@@ -61,12 +61,12 @@ MUTATIONS = [
     # 原先这里钉的是「代码兜底值偏离 cards.json」（18/8 vs 20/10 那种静默偏移），
     # 但那道判据只能证明两份一样、拦不住第二份存在 —— 而调平衡的人改的是配置那份。
     # 现在钉结构：把字面量表加回来就报红
-    ("engine/card_db.gd",
+    ("engine/on_work_card_db.gd",
      'const SECTION_GAME := "_game"',
      'const DEFAULT_GAME := {"start_cash": 18}\nconst SECTION_GAME := "_game"',
      "没有字面量默认值表"),
     # 兜底不从内置配置补：外置配置缺一个键就读出 null → 静默变 0
-    ("engine/card_db.gd",
+    ("engine/on_work_card_db.gd",
      '\tvar defaults := _builtin_section(key)',
      '\tvar defaults := {}',
      "整段回退内置配置"),
@@ -75,7 +75,7 @@ MUTATIONS = [
     # 原先写的是「每个键都有人读」—— 那条判据扫的是源码里有没有键名（静态文本），
     # 跟运行时怎么合并不在一条路上，所以这条变异一直报 MISS 且失败 0 条：
     # 不是判据太松，是压根没有观察点（2026-09-01 补上判据后才真的红）
-    ("engine/card_db.gd",
+    ("engine/on_work_card_db.gd",
      '\t\tif typeof(meta[k]) == TYPE_DICTIONARY and typeof(out.get(k)) == TYPE_DICTIONARY:',
      '\t\tif false:',
      "逐键补齐"),
@@ -87,29 +87,29 @@ MUTATIONS = [
     # 可调 attack_n 不受旧卡表的首回合斩上限约束。改合法配置不应报错；
     # 要破坏的是引擎是否正确应用倍率和单卡成本，判据走真实攻击池/结算。
     # 无 Buff 也翻倍：覆盖「倍率只作用于带攻击 Buff 的组合」这半边。
-    ("engine/combo_rules.gd",
-     '\t\t\tresult["attack_n"] = ldef["attack_n"] * (CardDB.buff_mult("attack_x2") if attack_x2 else 1)',
-     '\t\t\tresult["attack_n"] = ldef["attack_n"] * CardDB.buff_mult("attack_x2")',
+    ("engine/on_work_combo_rules.gd",
+     '\t\t\tresult["attack_n"] = ldef["attack_n"] * (OnWorkCardDB.buff_mult("attack_x2") if attack_x2 else 1)',
+     '\t\t\tresult["attack_n"] = ldef["attack_n"] * OnWorkCardDB.buff_mult("attack_x2")',
      "攻击池等于配置点数乘倍率", "tests/test_simulator.gd"),
     # 单卡成本退回写死 1：成本为 3 的夹具会多打牌，真实移除数量必须报错。
-    ("engine/game_state.gd",
-     '\tvar per_card := int(CardDB.game_rules()["attack_cost_per_card"])',
+    ("engine/on_work_state.gd",
+     '\tvar per_card := int(OnWorkCardDB.game_rules()["attack_cost_per_card"])',
      '\tvar per_card := 1',
      "余点不足一张不继续攻击", "tests/test_simulator.gd"),
     # 回合上限退回写死：模拟器从此量的不是配置里那个回合数
-    ("engine/match_simulator.gd",
-     '\t\tmax_rounds = int(CardDB.sim_rules()["max_rounds"])',
+    ("engine/on_work_match_simulator.gd",
+     '\t\tmax_rounds = int(OnWorkCardDB.sim_rules()["max_rounds"])',
      '\t\tmax_rounds = 80',
      "_sim 段的每个键都有人读"),
     # 防御膜的 res 从 buff_type 反解：反解错了两张卡会说同一种资源
     ("scenes/board.gd",
-     'CardDB.card_label(bt.trim_prefix("protect_"))',
-     'CardDB.card_label(CardDB.RES_USER)',
+     'OnWorkCardDB.card_label(bt.trim_prefix("protect_"))',
+     'OnWorkCardDB.card_label(OnWorkCardDB.RES_USER)',
      "降价补贴说的是现金", "tests/test_hover_desc.gd"),
     # 计量名/卡名分工：把配方段换回计量名，悬停就又和报错不同词了
     ("scenes/board.gd",
-     'CardDB.card_label(def["recipe_res"]), int(def["recipe_n"]),\n\t\t\t\tCardDB.res_label(def["output_res"])',
-     'CardDB.res_label(def["recipe_res"]), int(def["recipe_n"]),\n\t\t\t\tCardDB.res_label(def["output_res"])',
+     'OnWorkCardDB.card_label(def["recipe_res"]), int(def["recipe_n"]),\n\t\t\t\tCardDB.res_label(def["output_res"])',
+     'OnWorkCardDB.res_label(def["recipe_res"]), int(def["recipe_n"]),\n\t\t\t\tCardDB.res_label(def["output_res"])',
      "生产卡配方段用卡名"),
     ("scenes/board.gd",
      '\t\t\t\tCardDB.res_label(def["output_res"]), int(def["output_n"]),',
@@ -165,7 +165,7 @@ MUTATIONS = [
      '\treturn maxf(desk.table_y, maxf(top, 0.5))',
      "身下空了就落回桌面"),
 
-    # ---- 摆放那一层（scenes/settle_layout.gd，从 main.gd 切出来的）----
+    # ---- 摆放那一层（scenes/settle_layout.gd，从 on_work_main.gd 切出来的）----
     # 「只管刚出现的这几张」的判据没了：整片玩家的卡都被当成新到货重排一遍
     ("scenes/settle_layout.gd",
      '\t\tif known.has(c["uid"]) or not entities.has(c["uid"]):',
@@ -197,8 +197,8 @@ MUTATIONS = [
      "离购牌区不比玩家近", "tests/test_bot_pile.gd"),
     # 闲置摞的席位不再镜像玩家侧：现金摞跑到杂项那个位置，两边对不上
     ("scenes/settle_layout.gd",
-     '\t\tif key.begins_with("bot_cash"):\n\t\t\tx = _bot_resource_anchor(CardDB.RES_CASH).x',
-     '\t\tif false:\n\t\t\tx = _bot_resource_anchor(CardDB.RES_CASH).x',
+     '\t\tif key.begins_with("bot_cash"):\n\t\t\tx = _bot_resource_anchor(OnWorkCardDB.RES_CASH).x',
+     '\t\tif false:\n\t\t\tx = _bot_resource_anchor(OnWorkCardDB.RES_CASH).x',
      "摞对着玩家的", "tests/test_bot_pile.gd"),
     # 侧边清单的高度回去扫实时坐标：开局那批牌正从头顶飞过，清单被顶到半空
     ("scenes/board.gd",
@@ -217,7 +217,7 @@ MUTATIONS = [
     # ---- 重开一局：连接不许活过重开 ----
     # 连接活过重开 —— 新局第一个对手回合停在 _await_foe_action 里等一条
     # 永远不来的 action_done。不报错、不崩，就是再也不动了
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\tif _net != null:\n\t\t# 先摘信号再 close',
      '\tif false:\n\t\t# 先摘信号再 close',
      "不再往上一局那条连接上发", "tests/test_restart_bugs.gd"),
@@ -226,13 +226,13 @@ MUTATIONS = [
     # 锚点只取 set_foe_remote 那一行（文件里唯一一处）：它上面那几行会变 ——
     # 后来插进来的 stop_local_host() 和它的注释就把带 `_net = null` 的旧锚点弄失配了，
     # 而失配的表现是这条变异静默不打（check_mut_residue.py 的「原文不在」管这个）
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\tset_foe_remote(false)',
      '\tpass',
      "重开退回单机局", "tests/test_restart_bugs.gd"),
     # 只清 _net、忘了摘信号：上一局那条连接还能往新局的桌面上塞拖拽帧，
     # 新局的牌会被一个「这一局根本没拖过牌的对手」租走
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\tif net.foe_drag.is_connected(on_foe_drag):\n'
      '\t\tnet.foe_drag.disconnect(on_foe_drag)',
      '\tpass',
@@ -585,7 +585,7 @@ MUTATIONS = [
     #
     # 落点选在 `_clash_at` 而不是任何一套「告诉它障碍在哪」的机制上（2026-09-01 改）。
     # 原先那条改的是 `_free_spot(anchor, who, _arr_claimed)` 的参数，报了个查无实据的
-    # MISS —— 实测**全套 52 文件 3541 断言全绿**。换成去掉 main.gd 里飞入那行
+    # MISS —— 实测**全套 52 文件 3541 断言全绿**。换成去掉 on_work_main.gd 里飞入那行
     # `set_meta("dest_pos", to_pos)`，**照样全绿**。
     # 两次都绿是因为这条不变量有两道**互为冗余**的防线：
     #   - `_arr_claimed`：本次结算已许诺出去的落点（BOT 那批走这条）
@@ -681,7 +681,7 @@ MUTATIONS = [
      "BOT 的列数和玩家一样", "tests/test_bot_pile.gd"),
     # ---- 产出音效：每张牌落地各响一声 drop ----
     # 落地不响：产出就成了没有声音的事
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\ttw.parallel().tween_callback(func() -> void: sfx.play("produce_land")) \\\n\t\t.set_delay(stagger + SPAWN_FLY_TIME)',
      '\tpass',
      "声 drop", "tests/test_arrivals.gd"),
@@ -701,16 +701,16 @@ MUTATIONS = [
     # ---- 产出起飞是错开的，不是整批同时弹出去 ----
     # 错开时长归零 = 十四张一起起飞，也就是那个「整批跳过去」的老毛病
     # （T9 上面那段写了它的来历）。这条本来没人盯着：判据在，变异表里缺
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      'const SPAWN_FLY_SPREAD := 0.3',
      'const SPAWN_FLY_SPREAD := 0.0',
      "起飞是错开的", "tests/test_arrivals.gd"),
-    # ---- 回合编排收口后的三个共用原语（engine/game_state.gd）----
-    # 这三个没有任何测试直接点名，全靠 Settle/模拟器 间接走到。收口把 11+5+2 处
+    # ---- 回合编排收口后的三个共用原语（engine/on_work_state.gd）----
+    # 这三个没有任何测试直接点名，全靠 OnWorkSettle/模拟器 间接走到。收口把 11+5+2 处
     # 重复合成一处，好处是改一处全跟着变，坏处是错一处也全跟着错 —— 所以每个都得
     # 有变异盯着，否则「就一份实现」反倒成了没人验的单点
     # 打自己：攻击该扣对方的卡
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      'static func opponent(who: String) -> String:\n\treturn PLAYER if who == BOT else BOT',
      'static func opponent(who: String) -> String:\n\treturn who',
      # 关键字挑不带数字、也不带定价口径的那半句：原先写「外卖核心 4 一减到底」，
@@ -722,7 +722,7 @@ MUTATIONS = [
      # 而那句文案里既没有数字也没有定价口径，改口径改配方量都碰不到它
      "立即获胜"),
     # 两方都用先手身份行动 → 后手那一方整局没动过（BOT 组不出任何组合）
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '\tvar first := action_first()\n\treturn [first, opponent(first)]',
      '\tvar first := action_first()\n\treturn [first, first]',
      # 同上：别把「两边」写进关键字。核心改成 1 点/张之后，
@@ -731,85 +731,85 @@ MUTATIONS = [
     # 不筛点数：点不起的靶也照样报上去
     # 关键字盯测试6：余点作废那一条从测试1挪过去了（弹药规则下测试1的牌桌
     # 留不出「1 点无处可去」的局面，见 tests/test_engine.gd 的头注释）
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '\t\tif target_affordable(t, pools):\n\t\t\tout.append(t)',
      '\t\tout.append(t)',
      "玩家现金池一个可点目标都没有"),
     # 典当自杀护栏拆掉：能把最后一个用户当掉（=当场判负）
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '\tif pawn_would_zero_user(who, uids):\n\t\treturn { "ok": false, "reason": REASON_PAWN_ZERO_USER }',
      '\tpass',
      "当掉最后一个用户被引擎拦下", "tests/test_pawn.gd"),
     # 护栏改成「归零才拦」（差一错位：resource_count - lost < 0 而不是 <= 0）
-    ("engine/game_state.gd",
-     '\treturn resource_count(who, CardDB.RES_USER) - pawn_users_lost(who, uids) <= 0',
-     '\treturn resource_count(who, CardDB.RES_USER) - pawn_users_lost(who, uids) < 0',
+    ("engine/on_work_state.gd",
+     '\treturn resource_count(who, OnWorkCardDB.RES_USER) - pawn_users_lost(who, uids) <= 0',
+     '\treturn resource_count(who, OnWorkCardDB.RES_USER) - pawn_users_lost(who, uids) < 0',
      "当掉最后一个用户被引擎拦下", "tests/test_pawn.gd"),
     # ---- 裂变鬼才补满（balance.md §「Buff 卡」）----
     # 门槛从 1 张抬到 2 张：大配方立刻退回旧翻倍手感
-    ("engine/combo_rules.gd",
+    ("engine/on_work_combo_rules.gd",
      '\tif user_n < 1:\n\t\treturn false',
      '\tif user_n < 2:\n\t\treturn false',
      "带裂变时 1 张用户就补满", "tests/test_fission_fill.gd"),
     # 不看有没有裂变：任意用户配方组自动补满（凭空产出）
-    ("engine/combo_rules.gd",
+    ("engine/on_work_combo_rules.gd",
      '\tif not user_fill:\n\t\treturn false',
      '\tpass',
      "不带裂变时 1 张用户凑不出", "tests/test_fission_fill.gd"),
     # 不看配方资源：裂变顺手把现金配方也补满
-    ("engine/combo_rules.gd",
-     '\tif ldef["recipe_res"] != CardDB.RES_USER:\n\t\treturn false',
+    ("engine/on_work_combo_rules.gd",
+     '\tif ldef["recipe_res"] != OnWorkCardDB.RES_USER:\n\t\treturn false',
      '\tpass',
      "现金配方里混用户卡 + 裂变 → 仍不成立", "tests/test_fission_fill.gd"),
     # 本来就够的组也标补满：balance.md §「Buff 卡」 的防御失效判定会连坐到正常凑满的组
-    ("engine/combo_rules.gd",
+    ("engine/on_work_combo_rules.gd",
      '\treturn user_n < int(ldef["recipe_n"])',
      '\treturn true',
      "别连坐防御 Buff 失效判定", "tests/test_fission_fill.gd"),
-    # ---- 弹药自付 + 防御入组立即保护（README.md §「2.6 组合与结算」 / balance.md §「Buff 卡」）----
+    # ---- 弹药自付 + 防御入组立即保护（README.md §「组合与结算」 / balance.md §「Buff 卡」）----
     # 装弹不扣款：攻击组合白拿弹药
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '\tfor u in pay:\n\t\tremove_card(who, u)\n\tlog_fmt("⚔ %s「%s」装弹',
      '\tfor u in pay:\n\t\tpass\n\tlog_fmt("⚔ %s「%s」装弹',
      "arm_attacks 扣掉配方那", "tests/test_ammo_arming.gd"),
     # 弹药自尽护栏放宽成「负数才拦」：掏空自己也能开一炮
-    ("engine/game_state.gd",
-     '\tvar suicide := resource_count(who, CardDB.RES_CASH) - need <= 0',
-     '\tvar suicide := resource_count(who, CardDB.RES_CASH) - need < 0',
+    ("engine/on_work_state.gd",
+     '\tvar suicide := resource_count(who, OnWorkCardDB.RES_CASH) - need <= 0',
+     '\tvar suicide := resource_count(who, OnWorkCardDB.RES_CASH) - need < 0',
      "装弹被护栏拦下，0 点", "tests/test_ammo_arming.gd"),
     # 重引入装机前提：新牌不再写 armed_round，首次入组便失去即时保护。
-    ("engine/game_state.gd",
-     '\treturn def.get("kind") == CardDB.KIND_BUFF and str(def.get("buff_type", "")) in [',
-     '\treturn c.has("armed_round") and def.get("kind") == CardDB.KIND_BUFF and str(def.get("buff_type", "")) in [',
+    ("engine/on_work_state.gd",
+     '\treturn def.get("kind") == OnWorkCardDB.KIND_BUFF and str(def.get("buff_type", "")) in [',
+     '\treturn c.has("armed_round") and def.get("kind") == OnWorkCardDB.KIND_BUFF and str(def.get("buff_type", "")) in [',
      "编组当回合", "tests/test_ammo_arming.gd"),
     # 把持续保护改成只在第一回合有效：下一回合与重注册都丢掉保护。
-    ("engine/game_state.gd",
-     '\treturn def.get("kind") == CardDB.KIND_BUFF and str(def.get("buff_type", "")) in [',
-     '\treturn round_num == 1 and def.get("kind") == CardDB.KIND_BUFF and str(def.get("buff_type", "")) in [',
+    ("engine/on_work_state.gd",
+     '\treturn def.get("kind") == OnWorkCardDB.KIND_BUFF and str(def.get("buff_type", "")) in [',
+     '\treturn round_num == 1 and def.get("kind") == OnWorkCardDB.KIND_BUFF and str(def.get("buff_type", "")) in [',
      "下一回合仍有", "tests/test_ammo_arming.gd"),
     # 生产配方不扣款：现金配方白吃
-    ("engine/settle.gd",
+    ("engine/on_work_settle.gd",
      '\tfor u in pay:\n\t\tstate.remove_card(owner, u)',
      '\tfor u in pay:\n\t\tpass',
      "张现金被吃掉", "tests/test_ammo_arming.gd"),
     # HUD 不挂归零预警：屏幕上只剩「资金 10（本回合待付 10）」，读起来像刚好
     # 付得起，而结算时它一分钱都产不出。**这就是报障时玩家看到的那个读数**
-    ("scenes/main.gd",
-     '\t\tif state.resource_count(my_seat, CardDB.RES_CASH) \\\n'
+    ("scenes/on_work_main.gd",
+     '\t\tif state.resource_count(my_seat, OnWorkCardDB.RES_CASH) \\\n'
      '\t\t\t\t+ state.pending_cash_income(my_seat, piles) - due <= 0:\n'
      '\t\t\tcash_txt += "⚠ 付完归零，整组会作废"',
      '\t\tpass',
      "挂归零预警", "tests/test_consume_hud.gd"),
     # 归零护栏放宽一格：付到正好 0 也放行 —— 而现金归零就是败北条件，
     # 于是「产出到账」和「当场判负」同一次结算里一起发生
-    ("engine/settle.gd",
-     '\tif state.resource_count(owner, CardDB.RES_CASH) - need <= 0:',
-     '\tif state.resource_count(owner, CardDB.RES_CASH) - need < 0:',
+    ("engine/on_work_settle.gd",
+     '\tif state.resource_count(owner, OnWorkCardDB.RES_CASH) - need <= 0:',
+     '\tif state.resource_count(owner, OnWorkCardDB.RES_CASH) - need < 0:',
      "会让资金归零", "tests/test_recipe_pay_order.gd"),
     # 结算不分拨：进账的组合和付款的组合按编组次序混着结。
     # 同样两摞牌，只因为玩家先摞了哪一摞，一摞活一摞废 ——
     # 且**只在混摞时现形**，单摞的判据一条都不红
-    ("engine/settle.gd",
+    ("engine/on_work_settle.gd",
      '\t\tfor pays_cash in [false, true]:\n'
      '\t\t\tfor combo in state.combos:\n'
      '\t\t\t\tif combo["owner"] != owner or combo["eval"].get("type") == "attack":\n'
@@ -822,8 +822,8 @@ MUTATIONS = [
      '\t\t\tout.append(combo)',
      "编组次序不再决定生死", "tests/test_recipe_pay_order.gd"),
     # 用户配方也填 recipe_pay_n：席位被当成成本（组里没现金 → 整组付不起）
-    ("engine/combo_rules.gd",
-     '\t\tif ldef["recipe_res"] == CardDB.RES_CASH:\n\t\t\tresult["recipe_pay_n"] = int(ldef["recipe_n"])',
+    ("engine/on_work_combo_rules.gd",
+     '\t\tif ldef["recipe_res"] == OnWorkCardDB.RES_CASH:\n\t\t\tresult["recipe_pay_n"] = int(ldef["recipe_n"])',
      '\t\tresult["recipe_pay_n"] = int(ldef["recipe_n"])',
      "用户配方不该触发付款失败", "tests/test_ammo_arming.gd"),
     # 数据/代码漂移：buff_type 退回 V1.0 的 user_x2。三处消费方一处都不认，
@@ -836,23 +836,23 @@ MUTATIONS = [
     # 996（output_x2）翻倍 —— 全套测试原先一条都没碰过这条规则。
     # 只对现金线生效：**这正是用户报障的形状**（「996 没让用户数产出翻倍」）。
     # 产现金的核心 5 张、产用户的 4 张，实现一旦按 output_res 分岔，先坏的是用户线
-    ("engine/combo_rules.gd",
-     '\t\t\tresult["output_n"] = ldef["output_n"] * (CardDB.buff_mult("output_x2") if output_x2 else 1)',
-     '\t\t\tresult["output_n"] = ldef["output_n"] * (CardDB.buff_mult("output_x2") if output_x2 and ldef["output_res"] == CardDB.RES_CASH else 1)',
+    ("engine/on_work_combo_rules.gd",
+     '\t\t\tresult["output_n"] = ldef["output_n"] * (OnWorkCardDB.buff_mult("output_x2") if output_x2 else 1)',
+     '\t\t\tresult["output_n"] = ldef["output_n"] * (OnWorkCardDB.buff_mult("output_x2") if output_x2 and ldef["output_res"] == OnWorkCardDB.RES_CASH else 1)',
      # 关键词停在插值之前：判据那行是「带 996 产出翻 %d 倍」，倍数取自
      # `_game.buff_mult.output_x2`。写成「产出翻倍」会跨过 %d，
      # 运行时精确子串必不命中 —— 变异明明红了 33 条却报 MISS（实测过一次）
      "带 996 产出翻", "tests/test_buff_output_x2.gd"),
     # 结算按卡面值发牌而不是按组合快照：规则层和编组层照样绿，
     # 到账张数却少一半（eval 是对的，发牌绕过了它）
-    ("engine/settle.gd",
+    ("engine/on_work_settle.gd",
      '\t\t\tfor i in eval["output_n"]:',
-     '\t\t\tfor i in CardDB.get_def(eval["leader"])["output_n"]:',
+     '\t\t\tfor i in OnWorkCardDB.get_def(eval["leader"])["output_n"]:',
      "到账", "tests/test_buff_output_x2.gd"),
     # 卡面 C 位不跟组翻倍：玩家在结算之前读不到翻倍生效了。
     # 三条各堵一处：规则不报倍数 / Board 不推 / 离组不还原
-    ("engine/combo_rules.gd",
-     '\t\t\t"output_x2": out["output"] = CardDB.buff_mult(bt)',
+    ("engine/on_work_combo_rules.gd",
+     '\t\t\t"output_x2": out["output"] = OnWorkCardDB.buff_mult(bt)',
      '\t\t\t"output_x2": pass',
      "卡面", "tests/test_effect_badge_mult.gd"),
     ("scenes/board.gd",
@@ -865,8 +865,8 @@ MUTATIONS = [
      "退回", "tests/test_effect_badge_mult.gd"),
     # 两条乘数串台：产出卡吃 attack_x2 / 攻击卡吃 output_x2
     ("scenes/board.gd",
-     '\t\telif k == CardDB.KIND_ATTACK:\n\t\t\tc.set_effect_mult(int(mult["attack"]))',
-     '\t\telif k == CardDB.KIND_ATTACK:\n\t\t\tc.set_effect_mult(int(mult["output"]))',
+     '\t\telif k == OnWorkCardDB.KIND_ATTACK:\n\t\t\tc.set_effect_mult(int(mult["attack"]))',
+     '\t\telif k == OnWorkCardDB.KIND_ATTACK:\n\t\t\tc.set_effect_mult(int(mult["output"]))',
      "攻击量", "tests/test_effect_badge_mult.gd"),
     # 卡面倍数算了但没乘上去
     ("scenes/card.gd",
@@ -874,61 +874,61 @@ MUTATIONS = [
      '\t_effect_label.text = _effect_mark + str(_effect_base_n)',
      "卡面", "tests/test_effect_badge_mult.gd"),
 
-    # ============ 联网：两条路径必须同态（README.md §「3. 文件目录结构」）============
+    # ============ 联网：两条路径必须同态（README.md §「文件目录结构」）============
     # 这一段的目标不是「网络能跑」，是**不分叉**：单机局和联网局走同一条意图
     # 管道，末态哈希必须相等。分叉的形态一律是静默的 —— 规则在一条路上修了，
     # 另一条上漏了，没人报错，只有一局打出来不一样。
-    # 第 5 项都写全了：net/、engine/phase_machine.gd、engine/state_codec.gd
+    # 第 5 项都写全了：net/、engine/on_work_phase_machine.gd、engine/on_work_state_codec.gd
     # 都不在 TEST_FOR 里，省略就会退到 test_engine.gd（跑得过，等于没测）
 
-    # 结算次序：finalize 提到 produce 之前。Settle.run 和 Transport.run_round
+    # 结算次序：finalize 提到 produce 之前。OnWorkSettle.run 和 Transport.run_round
     # 都是「先产出再收尾」，房间要是反过来，产出卡就赶不上这一轮收尾
-    ("net/room.gd",
+    ("net/on_work_room.gd",
      '''	if state.winner == "":
 		var n: int = applier.production_count()
 		for i in n:
-			var r: Dictionary = applier.apply(Intent.produce(i))
+			var r: Dictionary = applier.apply(OnWorkIntent.produce(i))
 			out.append(_applied(r))
-	var fin: Dictionary = applier.apply(Intent.finalize())
+	var fin: Dictionary = applier.apply(OnWorkIntent.finalize())
 	out.append(_applied(fin))''',
-     '''	var fin: Dictionary = applier.apply(Intent.finalize())
+     '''	var fin: Dictionary = applier.apply(OnWorkIntent.finalize())
 	out.append(_applied(fin))
 	if state.winner == "":
 		var n: int = applier.production_count()
 		for i in n:
-			var r: Dictionary = applier.apply(Intent.produce(i))
+			var r: Dictionary = applier.apply(OnWorkIntent.produce(i))
 			out.append(_applied(r))''',
      "含攻击+产出的一整回合", "tests/test_net_parity.gd"),
     # 房间不发 next_round：联网局卡在第一回合，而单机局进了第二回合
-    ("net/room.gd",
-     '''	var nr: Dictionary = applier.apply(Intent.next_round())
+    ("net/on_work_room.gd",
+     '''	var nr: Dictionary = applier.apply(OnWorkIntent.next_round())
 	out.append(_applied(nr))''',
      '''	var nr: Dictionary = { "ok": true }
 	out.append(_applied(nr))''',
      "第二回合起点一致", "tests/test_net_parity.gd"),
-    # 次序闸门不判「轮不轮到你」。PhaseMachine 管次序、IntentApply 管规则，
+    # 次序闸门不判「轮不轮到你」。OnWorkPhaseMachine 管次序、OnWorkIntentApply 管规则，
     # 这一条塌了，谁都能在对手回合里行动，而规则层看不出毛病
-    ("engine/phase_machine.gd",
+    ("engine/on_work_phase_machine.gd",
      '''	if seat != actor:
-		return Intent.err("not_your_turn", "现在轮到 %s 行动" % actor)''',
+		return OnWorkIntent.err("not_your_turn", "现在轮到 %s 行动" % actor)''',
      '''	if false:
-		return Intent.err("not_your_turn", "现在轮到 %s 行动" % actor)''',
+		return OnWorkIntent.err("not_your_turn", "现在轮到 %s 行动" % actor)''',
      "对方回合不能买卡", "tests/test_net_parity.gd"),
     # 落地不带 from_seat：意图里的 seat 字段就成了「谁都能填」的自述，
     # 一条连接可以替对手出牌
-    ("net/room.gd",
+    ("net/on_work_room.gd",
      "	var r: Dictionary = applier.apply(it, seat)",
      "	var r: Dictionary = applier.apply(it)",
      "冒充座位被拒", "tests/test_net_parity.gd"),
     # 快照丢掉旧 armed_round：破坏历史快照字段往返；当前即时保护不依赖此字段。
-    ("engine/state_codec.gd",
+    ("engine/on_work_state_codec.gd",
      '''	if c.has("armed_round"):
 		out["armed_round"] = int(c["armed_round"])''',
      "	pass",
      "armed_round 跟着快照走", "tests/test_net_parity.gd"),
     # 还原不接随机流位置：重连之后两边刷出不同的公共区 —— 状态是
     # f(种子, 意图序列)，随机流的**位置**也是状态的一部分
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '''	if d.has("state"):
 		_rng.state = int(str(d["state"]))''',
      '''	if false:
@@ -937,7 +937,7 @@ MUTATIONS = [
     # 哈希不排键序：字典键序在 GDScript 里按插入顺序，经引擎组装的状态和
     # 经 JSON 还原的状态键序不同 —— 于是「同一个状态」永远哈希不等，
     # 整套同态判据从此只会报假分叉
-    ("engine/state_codec.gd",
+    ("engine/on_work_state_codec.gd",
      '''			var keys: Array = (v as Dictionary).keys()
 			keys.sort_custom(func(a, b): return str(a) < str(b))''',
      '''			var keys: Array = (v as Dictionary).keys()''',
@@ -945,16 +945,16 @@ MUTATIONS = [
     # 装弹不给 seq 编号：广播序号跳号，客户端没法判「我是不是漏了一条」
     # （原先这条改的是「装弹那一步不给 seq 编号」。seq 自增后来被收进 _applied，
     #  锚点改成「装弹不广播」—— 同一个后果：客户端漏掉一条，序号跟着跳）
-    ("net/room.gd",
-     '''	var r: Dictionary = applier.apply(Intent.arm_attacks(phase.actor))
+    ("net/on_work_room.gd",
+     '''	var r: Dictionary = applier.apply(OnWorkIntent.arm_attacks(phase.actor))
 	out.append(_applied(r))''',
-     '''	var r: Dictionary = applier.apply(Intent.arm_attacks(phase.actor))''',
+     '''	var r: Dictionary = applier.apply(OnWorkIntent.arm_attacks(phase.actor))''',
      # 判据不是「连号」而是「广播流里有 arm_attacks」：漏播时 seq 自增也跟着
      # 不发生（两件事都在 _applied 里），剩下那些照旧连号 —— 连号对漏播是瞎的
      "广播流里有房间自己驱动的 arm_attacks", "tests/test_net_replay.gd"),
     # 房间在转发之外偷偷动了状态：重放（裸引擎，同种子同意图）就追不上。
     # 这一条钉的是「网络层只搬意图，不改规则」
-    ("net/room.gd",
+    ("net/on_work_room.gd",
      '''	var out: Array = [_applied(r)]
 	out.append_array(_advance(seat, op))''',
      '''	var out: Array = [_applied(r)]
@@ -966,19 +966,19 @@ MUTATIONS = [
     # 不然经 JSON 还原的状态永远哈希不等），GDScript 里 3 == 3.0 也是真，
     # find_card 照样找得到 —— 它要潜到「拿 uid 当字典键」的地方才炸。
     # 所以判据是 test_net_replay 的 T6，直接判 typeof == TYPE_INT
-    ("engine/intent.gd",
+    ("engine/on_work_intent.gd",
      '''static func ints(a) -> Array:''',
      '''static func ints(a) -> Array:
 	return a as Array''',
      "uids 全是 int", "tests/test_net_replay.gd"),
-    ("engine/intent.gd",
+    ("engine/on_work_intent.gd",
      '''		out["uids"] = ints(d["uids"])''',
      '''		out["uids"] = d["uids"] as Array''',
      "pawn 的 uids 是 int", "tests/test_net_replay.gd"),
     # 哈希把数组也排序：卡序就不参与哈希了。可卡序是玩法 ——
     # 付款取 pay.slice(0, price)、护盾名额取前 N 个 uid，
     # 两台机器上卡序不同就是两局不同的牌
-    ("engine/state_codec.gd",
+    ("engine/on_work_state_codec.gd",
      '''		TYPE_ARRAY:
 			var items: Array = []
 			for e in v:
@@ -993,14 +993,14 @@ MUTATIONS = [
      "换了卡序哈希就变", "tests/test_net_replay.gd"),
 
     # ---------------- 真 WebSocket：net/net_transport.gd 整个文件 ----------------
-    # 上面那批是**无端口**的（直接喂 NetRoom.handle_intent），碰不到传输层。
+    # 上面那批是**无端口**的（直接喂 OnWorkRoom.handle_intent），碰不到传输层。
     # 这一批全由 tests/test_net_socket.gd 抓 —— 它真开一个端口。
     # 九条都实跑确认过红（mutation-hint-must-be-run）。
     # 其中两条最初是 MISS，补了观察点才红，那两处各自注明。
 
     # 握手不发 join：连上了但服务器不知道你要进哪个房间，永远等不到 seated
     ("net/net_transport.gd",
-     '''				_send(Protocol.join(room, StateCodec.table_hash(), resume_token))''',
+     '''				_send(Protocol.join(room, OnWorkStateCodec.table_hash(), resume_token))''',
      '''				pass''',
      "双方都入座了", "tests/test_net_socket.gd"),
     # _next_frame 不 poll：submit 挂在这个循环上，唤醒它的回音只有 poll 才收得到。
@@ -1037,7 +1037,7 @@ MUTATIONS = [
     # （这条的锚点跟着 _on_applied → _inbox/_drain/_apply 的拆分搬过一次。
     #  判的还是同一件事：回音要按座位认，不然对手那条被当成自己的吞掉）
     ("net/net_transport.gd",
-     '''	if _pending and str(r.get("seat", "")) == my_seat and Intent.is_client_op(str(r.get("op", ""))):''',
+     '''	if _pending and str(r.get("seat", "")) == my_seat and OnWorkIntent.is_client_op(str(r.get("op", ""))):''',
      '''	if _pending:''',
      "submit 拿回来的是自己那条", "tests/test_net_socket.gd"),
     # 拒连不带原因：客户端只知道「连不上」。而「卡表不一致」和「端口写错了」
@@ -1063,32 +1063,32 @@ MUTATIONS = [
      "截过的原因塞得进关闭帧", "tests/test_net_socket.gd"),
     # 结果里的 uid 不掰回 int：JSON 的数字全是 double。60 == 60.0 为真、
     # find_card 照样找得到、末态哈希也不变 —— 它只炸在拿 uid 当字典键的地方。
-    # main.gd 的 _commit_buy 是 entities.has(u)，拖拽买是 paid.has(c.uid)：
+    # on_work_main.gd 的 _commit_buy 是 entities.has(u)，拖拽买是 paid.has(c.uid)：
     # 联网局里付掉的现金卡不被吸走、还被当成多付的退回来，单机局完全正常
     ("net/protocol.gd",
      '''			out["result"] = restore_uids(d["result"])''',
      '''			out["result"] = d["result"]''',
      "整个结果里没有 float uid", "tests/test_net_socket.gd"),
 
-    # ==== 联网：对手侧画面只能来自 pipe.applied（README.md §「3. 文件目录结构」）====
+    # ==== 联网：对手侧画面只能来自 pipe.applied（README.md §「文件目录结构」）====
     # 改造前，对手侧的每一张卡都是**驱动对手的那段代码**顺手画的（_bot_buy_once 自己
     # spawn、_bot_pawn_relief 自己飞走）。联网局里对手是人，没有那段代码在跑 ——
     # 对手侧就什么都不画，而且不报错。这一段钉的是「画面只认落地结果」。
     # 登记之前这 11 条**全是 MISS**：32 个测试文件里没有一个观察对手侧的画面，
     # 把渲染整段删掉也全绿（memory: green-mutation-means-no-observer）。
-    # 第 5 项都写全了：scenes/main.gd 在 TEST_FOR 里指向 test_arrivals.gd，
+    # 第 5 项都写全了：scenes/on_work_main.gd 在 TEST_FOR 里指向 test_arrivals.gd，
     # 省略就会去跑一个根本不看对手画面的测试（跑得过，等于没测）
 
     # 总闸：不连 applied，对手侧一张卡都不画
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	pipe.applied.connect(_on_intent_applied)''',
      '''	pass''',
      "对手买的卡出现在场上", "tests/test_foe_render.gd"),
     # 买：新卡不落地、付掉的现金不撤、公共区那一格不摘
-    ("scenes/main.gd",
-     '''		Intent.OP_BUY:
+    ("scenes/on_work_main.gd",
+     '''		OnWorkIntent.OP_BUY:
 			_render_foe_buy(r)''',
-     '''		Intent.OP_BUY:
+     '''		OnWorkIntent.OP_BUY:
 			pass''',
      "新卡的 uid 进了 entities", "tests/test_foe_render.gd"),
     # 落位这一条**没有登记变异**，理由记在这儿免得下次有人再试一遍：
@@ -1101,41 +1101,41 @@ MUTATIONS = [
     # test_foe_render 里那条「落在他那半边」是端到端的回归护栏，
     # 不是某一处实现的判据。别为它编一条 MISS 挂在表上
     # 典当：卡从状态里没了，场上还摆着
-    ("scenes/main.gd",
-     '''		Intent.OP_PAWN:
+    ("scenes/on_work_main.gd",
+     '''		OnWorkIntent.OP_PAWN:
 			_render_foe_pawn(r)''',
-     '''		Intent.OP_PAWN:
+     '''		OnWorkIntent.OP_PAWN:
 			pass''',
      "对手典当掉的卡从场上消失", "tests/test_foe_render.gd"),
     # 编组：对手区的卡不收拢成摞
-    ("scenes/main.gd",
-     '''		Intent.OP_COMBO:
+    ("scenes/on_work_main.gd",
+     '''		OnWorkIntent.OP_COMBO:
 			_render_foe_combo(r)''',
-     '''		Intent.OP_COMBO:
+     '''		OnWorkIntent.OP_COMBO:
 			pass''',
      "对手编的组收拢成摞", "tests/test_foe_render.gd"),
     # 攻击：被打掉的卡留在场上
-    ("scenes/main.gd",
-     '''		Intent.OP_ATTACK:
+    ("scenes/on_work_main.gd",
+     '''		OnWorkIntent.OP_ATTACK:
 			_render_foe_attack(r)''',
-     '''		Intent.OP_ATTACK:
+     '''		OnWorkIntent.OP_ATTACK:
 			pass''',
      "对手打掉的卡从场上消失", "tests/test_foe_render.gd"),
     # 座位过滤失效：我自己那条也被当对手的画。后果是**在信号回调里出脚本错误**
     # （拿我的 uid 去 find_card(foe_seat, …) 得空字典），而回调里的脚本错误不会
     # 让调用方失败 —— 所以判据落在 is_foe_client_op 本身，不落在它的副作用上
-    ("scenes/main.gd",
-     '''	return str(r.get("seat", "")) == foe_seat and Intent.is_client_op(str(r.get("op", "")))''',
+    ("scenes/on_work_main.gd",
+     '''	return str(r.get("seat", "")) == foe_seat and OnWorkIntent.is_client_op(str(r.get("op", "")))''',
      '''	return true''',
      "我自己的 buy **不**归对手侧渲染管", "tests/test_foe_render.gd"),
     # 不分客户端操作：produce 的 seat 就是组合主人，可能正是对手 ——
     # 结算演出（_resolve_combo_visual）已经在演了，再画一遍是双份
-    ("scenes/main.gd",
-     '''	return str(r.get("seat", "")) == foe_seat and Intent.is_client_op(str(r.get("op", "")))''',
+    ("scenes/on_work_main.gd",
+     '''	return str(r.get("seat", "")) == foe_seat and OnWorkIntent.is_client_op(str(r.get("op", "")))''',
      '''	return str(r.get("seat", "")) == foe_seat''',
      "produce 不归对手侧渲染管", "tests/test_foe_render.gd"),
     # 判定接反：只画自己的，对手侧全空
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	if not is_foe_client_op(r):
 		return''',
      '''	if is_foe_client_op(r):
@@ -1146,38 +1146,38 @@ MUTATIONS = [
     # 对手侧只有「驱动那段代码顺手画的」才看得见
     # （锚点只取 if 那一行：录像功能在 emit 之间插了 landed_intent，
     #   把两行连在一起锚会成孤儿。这里要判的是「成功了就公告」这件事本身）
-    ("engine/intent_apply.gd",
+    ("engine/on_work_intent_apply.gd",
      '''	if r.get("ok", false):''',
      '''	if false:''',
      "BOT 内部直接落地的编组也画得出来", "tests/test_foe_render.gd"),
     # 去重失效：submit 成功的那条已经被 _on_landed 广播过了（landed 同步发），
     # 再 _publish 一遍表现层就收两遍 —— 公共区被摘两格、seq 也多涨一个
-    ("engine/local_transport.gd",
+    ("engine/on_work_local_transport.gd",
      '''	if r.has("seq"):
 		return r''',
      '''	if false:
 		return r''',
      "公共区那一格被摘掉", "tests/test_foe_render.gd"),
     # 阶段名不再转引：一边 "attacking" 一边 "attack"，界面永远等不到自己的回合
-    ("scenes/main.gd",
-     '''const PHASE_ATTACK := PhaseMachine.ATTACK''',
+    ("scenes/on_work_main.gd",
+     '''const PHASE_ATTACK := OnWorkPhaseMachine.ATTACK''',
      '''const PHASE_ATTACK := "attacking"''',
      "是同一个值", "tests/test_foe_render.gd"),
 
-    # ======== 联网：拖拽广播 + 租约（scenes/main.gd 的拖拽广播与租约处理）========
+    # ======== 联网：拖拽广播 + 租约（scenes/on_work_main.gd 的拖拽广播与租约处理）========
     # 转发那一段（客户端 drag → 服务器 → 对手 foe_drag）test_net_socket 的 T6
     # 早就测过，但**两头都没有观察点**：没人调 send_drag，foe_drag 也没有听众。
     # 「转发通了而一张牌都不动」在改造前是全绿的。这一段钉的是两头。
-    # 第 5 项都写全了：scenes/main.gd / scenes/board.gd / scenes/settle_layout.gd
+    # 第 5 项都写全了：scenes/on_work_main.gd / scenes/board.gd / scenes/settle_layout.gd
     # 在 TEST_FOR 里都不指向这个文件，省略就会去跑不看拖拽的测试
     # 发送端总闸：不连 board.drag_broadcast，对手侧一帧都收不到
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	board.drag_broadcast.connect(_on_drag_broadcast)''',
      '''	pass''',
      "拎起来这一下发到了 net 层", "tests/test_foe_drag.gd"),
     # attach_net 漏掉哪一件都不报错，症状各不相同（见那个函数的注释）：
     # 只设 _net → 对手看得到我拖牌，我看不到他的
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	if not net.foe_drag.is_connected(on_foe_drag):
 		net.foe_drag.connect(on_foe_drag)''',
      '''	pass''',
@@ -1185,79 +1185,79 @@ MUTATIONS = [
      # 绕过这条连接，改坏了它们照样全绿
      "net 层那个信号真的接到了 on_foe_drag 上", "tests/test_foe_drag.gd"),
     # 只连信号不设 _net → 反过来：我看得到他的，他看不到我的
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''func attach_net(net: NetTransport) -> void:
 	_net = net''',
      '''func attach_net(net: NetTransport) -> void:
 	pass''',
      "拎起来这一下发到了 net 层", "tests/test_foe_drag.gd"),
     # 忘了 set_foe_remote → 本地还在驱动 BOT 替对手行动（两边各打一局）
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	_net = net
 	set_foe_remote(true)''',
      '''	_net = net''',
      "本地不再驱动对手", "tests/test_foe_drag.gd"),
     # 松手那一帧不往下发：对手侧的牌要等满 2 秒超时才落下
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	_net.send_drag(p["phase"], p["uids"], p["u"], p["v"])''',
      '''	if p["phase"] != Protocol.DRAG_CANCEL:
 		_net.send_drag(p["phase"], p["uids"], p["u"], p["v"])''',
      "松手这一下也发到了 net 层", "tests/test_foe_drag.gd"),
     # 发送端字段写反：u/v 互换。两侧都不报错，症状是对手屏幕上我的牌沿错的轴跑
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	return { "phase": phase_name, "uids": uids, "u": uv.x, "v": uv.y }''',
      '''	return { "phase": phase_name, "uids": uids, "u": uv.y, "v": uv.x }''',
      "拖到左边 → u<0.5", "tests/test_foe_drag.gd"),
     # 归一化 z 用了近侧的区间：牌画到我这半边来（-0.6 那种落在购牌区上）
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''		lerpf(DRAG_FAR_Z.x, DRAG_FAR_Z.y, clampf(v, 0.0, 1.0)))''',
      '''		lerpf(DRAG_NEAR_Z.x, DRAG_NEAR_Z.y, clampf(v, 0.0, 1.0)))''',
      "不落在我这半边", "tests/test_foe_drag.gd"),
     # v 接反：对手往前推，我看到的是往后退
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''		lerpf(DRAG_FAR_Z.x, DRAG_FAR_Z.y, clampf(v, 0.0, 1.0)))''',
      '''		lerpf(DRAG_FAR_Z.y, DRAG_FAR_Z.x, clampf(v, 0.0, 1.0)))''',
      "v 越大越靠近购牌区", "tests/test_foe_drag.gd"),
     # 不钳制：拖过购牌区时发出 v<0，对手那边的牌飞出桌面
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''		clampf(inverse_lerp(DRAG_NEAR_Z.x, DRAG_NEAR_Z.y, at.z), 0.0, 1.0))''',
      '''		inverse_lerp(DRAG_NEAR_Z.x, DRAG_NEAR_Z.y, at.z))''',
      "v 被钳在 [0,1]", "tests/test_foe_drag.gd"),
     # 收不到 pickup：租约不建，布局照旧抢着摆牌（牌抽搐）
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''		Protocol.DRAG_PICKUP:
 			_lease_foe_cards(msg.get("uids", []))''',
      '''		Protocol.DRAG_PICKUP:
 			pass''',
      "收到 pickup 之后这张牌归网络驱动", "tests/test_foe_drag.gd"),
     # 收不到 move：牌停在拎起来那一帧的位置，对手怎么拖都不动
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''		Protocol.DRAG_MOVE:
 			_move_foe_drag(msg)''',
      '''		Protocol.DRAG_MOVE:
 			pass''',
      "第 20 帧摆到位", "tests/test_foe_drag.gd"),
     # 乱序帧不丢：晚到的旧帧把牌拽回去，看着是抽搐
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	if ph == Protocol.DRAG_MOVE and seq <= _drag_lease_seq:''',
      '''	if false:''',
      "迟到的第 15 帧被丢掉了", "tests/test_foe_drag.gd"),
     # 把 cancel 也拦在 seq 判定里：seq 落后的 cancel 被丢掉，牌永远浮在半空
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	if ph == Protocol.DRAG_MOVE and seq <= _drag_lease_seq:''',
      '''	if seq <= _drag_lease_seq:''',
      "seq 落后的 cancel 也收", "tests/test_foe_drag.gd"),
     # 收不到 cancel：同上
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''		Protocol.DRAG_CANCEL:
 			_release_drag_lease()''',
      '''		Protocol.DRAG_CANCEL:
 			pass''',
      "cancel 之后租约收回", "tests/test_foe_drag.gd"),
     # 松手不交还布局：牌浮在 DRAG_HEIGHT 上，谁都不摆它。
-    # 锚点带上前一行 —— 'layout._layout_bot_idle()' 在 main.gd 里有 7 处，
+    # 锚点带上前一行 —— 'layout._layout_bot_idle()' 在 on_work_main.gd 里有 7 处，
     # 光这一行会去改第一处（见 SKIP 那一关）
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	_drag_lease_t = 0.0
 	# 交还给布局：牌现在浮在 DRAG_HEIGHT 上，得有人把它们摆回去。
 	# 对手买/典当那几张牌可能已经不在场上了，_layout_bot_idle 只摆还在的
@@ -1265,19 +1265,19 @@ MUTATIONS = [
      '''	_drag_lease_t = 0.0''',
      "松手之后布局把牌摆回去了", "tests/test_foe_drag.gd"),
     # 倾斜不清：那几张牌斜着躺在摞里
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''			e.rotation_degrees = Vector3(0, e.rotation_degrees.y, 0)
 	_drag_lease.clear()''',
      '''			pass
 	_drag_lease.clear()''',
      "歪着拎的倾斜清掉了", "tests/test_foe_drag.gd"),
     # 超时不接：对方拖着牌掉线，牌永远浮在半空
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	_tick_drag_lease(delta)''',
      '''	pass''',
      "租约自己到期", "tests/test_foe_drag.gd"),
     # 超时判反：对手拖一下牌就被抢回去
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	if _drag_lease_t >= DRAG_LEASE_TIMEOUT:''',
      '''	if true:''',
      "才过 0.05s，租约还在", "tests/test_foe_drag.gd"),
@@ -1322,7 +1322,7 @@ MUTATIONS = [
     # 漏掉这句 → 界面读新 state（画面全对），而每一条输入都写进上一局那份
     # （上一局 winner 不为空，apply 那条「已分胜负后只放 finalize」全挡了）。
     # 症状是「第二局买不了卡」+ 结算越界崩溃，两个症状同一个根因
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	# 换 state 就必须重建管道 —— 漏掉这句的后果见 _rebuild_pipe 的注释：
 	# 第二局什么都做不了，而且不报错
 	_rebuild_pipe()''',
@@ -1330,9 +1330,9 @@ MUTATIONS = [
      "管道的 applier 指向新 state", "tests/test_restart_bugs.gd"),
     # 只重建管道、忘了换 state 的反向错（写成拿旧 state 建）：
     # 这次是界面和输入都指着上一局，胜负标记还在，同样一动不能动
-    ("scenes/main.gd",
-     '''	pipe = LocalTransport.new(IntentApply.new(state))''',
-     '''	pipe = LocalTransport.new(IntentApply.new(GameState.new()))''',
+    ("scenes/on_work_main.gd",
+     '''	pipe = OnWorkLocalTransport.new(OnWorkIntentApply.new(state))''',
+     '''	pipe = OnWorkLocalTransport.new(OnWorkIntentApply.new(OnWorkState.new()))''',
      "第二局买得成", "tests/test_restart_bugs.gd"),
 
     # ---- 买到的牌不可见：落点搜索 ----
@@ -1360,17 +1360,17 @@ MUTATIONS = [
      "飞起来之后那个点算占住了", "tests/test_restart_bugs.gd"),
     # 起飞时不宣告归宿：_rest_pos 那边再对也没有东西可读
     #
-    # 锚点原先连着函数签名一起写（为了在 main.gd 里唯一）。bug「组合卡有时候
+    # 锚点原先连着函数签名一起写（为了在 on_work_main.gd 里唯一）。bug「组合卡有时候
     # 会消失」的修复往签名和这一句之间插了 _cancel_fly(card)，锚点当场失配 ——
     # tools/check_mut_residue.py 报的就是这个。改成只锚 set_meta 那一句：
-    # 它在 main.gd 里本来就只有一处，不必再靠签名凑唯一性
-    ("scenes/main.gd",
+    # 它在 on_work_main.gd 里本来就只有一处，不必再靠签名凑唯一性
+    ("scenes/on_work_main.gd",
      '	card.set_meta("dest_pos", target)',
      '	pass',
      "飞行中挂着 dest_pos", "tests/test_restart_bugs.gd"),
     # 落地不撤归宿：此后避让一直绕开一个其实已经有人的点，
     # 两份记录并存就有机会不一致
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	tw.tween_callback(func() -> void: _clear_dest(card))''',
      '''	pass''',
      "落地之后 dest_pos 撤掉了", "tests/test_restart_bugs.gd"),
@@ -1381,12 +1381,12 @@ MUTATIONS = [
     # 实测症状：`--host --port=N` + `--server=...` 两个无头进程配对，
     # 两边各刷 8 条 Lambda capture freed + 8 条 SCRIPT ERROR ——
     # 而 harness 只数断言、只 grep [FAIL]，那一跑照样「全绿」
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	var tw := create_tween().bind_node(e) \\
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)''',
      '''	var tw := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)''',
      "卡被收掉之后那条补间跟着失效了", "tests/test_restart_bugs.gd"),
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	var tw := create_tween().bind_node(card)
 	tw.tween_interval(delay)''',
      '''	var tw := create_tween()
@@ -1396,46 +1396,46 @@ MUTATIONS = [
     # ---- 跨局残留量：和 bug 2 同一个形状（某个成员活过了重开）----
     # 租约记的是 uid，而 uid 跨局重用：不清的话新局有几张牌被布局绕开，
     # 直到 2 秒超时才放回去，期间还弹一句「对手那边没动静」
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	_drag_lease.clear()
 	_drag_lease_t = 0.0
 	_foe_action_done = false''',
      '''	_foe_action_done = false''',
      "没有牌背着上一局的拖拽租约", "tests/test_restart_bugs.gd"),
     # 「对方行动完了」活到下一局 → 新局对手的第一个行动阶段一帧就过去
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	_foe_action_done = false
 	_foe_combo_shown = 0''',
      '''	_foe_combo_shown = 0''',
      "action_done 没活到新局", "tests/test_restart_bugs.gd"),
     # pickup 也受 seq 水位管 → 换一条新连接（seq 从 1 重发）时第一帧就被丢掉，
     # 一个租约都建不起来。水位是每次拎牌重置的，靠的就是这条豁免
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	if ph == Protocol.DRAG_MOVE and seq <= _drag_lease_seq:''',
      '''	if ph in [Protocol.DRAG_MOVE, Protocol.DRAG_PICKUP] and seq <= _drag_lease_seq:''',
      "新连接的低 seq 没被上一条连接的水位丢掉", "tests/test_foe_drag.gd"),
 
     # ======== 联网：快照的节拍与裁决器的池子（net/protocol.gd）========
     # 上面那几段钉的是「转发通了」「画面画得出」。这一段钉的是它们之上的两件事：
-    #   1. 池子不在 GameState 上（它是裁决器的成员），StateCodec 看不见它
+    #   1. 池子不在 OnWorkState 上（它是裁决器的成员），OnWorkStateCodec 看不见它
     #   2. 每条广播都带**全量**快照，而一整段结算是一口气推完的 ——
     #      收到就合上的话客户端的状态会跑在演出前面一整段
     # 两条都只在**真联网**里出现：单机局没有快照这一步。
     # 四条都实跑确认过红（mutation-hint-must-be-run）。
-    # 第 5 项都写全了：net/ 和 engine/intent_apply.gd 在 TEST_FOR 里都不指向
+    # 第 5 项都写全了：net/ 和 engine/on_work_intent_apply.gd 在 TEST_FOR 里都不指向
     # 这个文件，省略就会去跑一个根本不联网的测试（跑得过，等于没测）
 
     # 还原不清空：服务器 next_round 清掉的那份在客户端留着 ——
     # 下一回合客户端以为自己已经装过弹了（armed 判的就是「有没有条目」），
     # 于是那一回合的装弹被当成重复装弹拦掉，攻击阶段一个点数都没有
-    ("engine/intent_apply.gd",
+    ("engine/on_work_intent_apply.gd",
      '''func pools_restore(d: Dictionary) -> void:
 	_pools.clear()''',
      '''func pools_restore(d: Dictionary) -> void:''',
      "next_round 之后客户端也没装弹", "tests/test_net_client.gd"),
     # 快照不带池子：状态全对、画面全对，而客户端的 pool_empty() 一上来就是真 ——
     # **攻击回合被整段跳过，一条错都不报**（_await_foe_attack 就是循环判它）
-    ("net/room.gd",
+    ("net/on_work_room.gd",
      '''	snap["pools"] = applier.pools_snapshot()''',
      '''	pass''',
      "装弹后客户端的池子跟服务器一样", "tests/test_net_client.gd"),
@@ -1444,10 +1444,10 @@ MUTATIONS = [
     # _resolve_combo_visual(0) 去取第 0 组时 state.combos 已被 finalize 清空，
     # 下标越界，崩在结算演出的第一行。而服务器那边一切正常
     ("net/net_transport.gd",
-     '''		if not Intent.is_client_op(op):
+     '''		if not OnWorkIntent.is_client_op(op):
 			return
 		_inbox.pop_front()''',
-     '''		if not Intent.is_client_op(op):
+     '''		if not OnWorkIntent.is_client_op(op):
 			pass
 		_inbox.pop_front()''',
      "一段结算全到齐也不会把状态推过第 0 组", "tests/test_net_client.gd"),
@@ -1455,7 +1455,7 @@ MUTATIONS = [
     # 重连之后状态里组合还在、桌上却是散牌，而且下一次 _register_player_combos
     # 会把它们当成没编过、重发 create_combo 被引擎以「卡已在别的组合里」拒掉。
     # 症状是「重连之后我的组合没了，重编也编不上」，一条错都不报
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	_restore_my_combo_groups()''',
      '''	pass''',
      "重画之后我的组合还在桌上", "tests/test_net_client.gd"),
@@ -1474,7 +1474,7 @@ MUTATIONS = [
     # 只中止**出错的那个函数**，_respawn_all 抛错之后 _draw_net_table
     # 和 begin_net_game 都继续跑完了（输入照样锁上）。
     # 看得见的差别在提示语上：走错了分支，说的是「等服务器发牌」而不是「等对手」
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	if not _net_dealt():''',
      '''	if false:''',
      "提示语说了在等对手", "tests/test_net_client.gd"),
@@ -1483,7 +1483,7 @@ MUTATIONS = [
     # 原先这个 if 在 _draw_net_table 和 _swap_transport 里各有一份，锚点得多带
     # 两行注释才唯一（不唯一会 SKIP，而 SKIP 长得不像失败）。两处已合并成
     # _attach_net_state_signals，锚点因此天然唯一，且这一条同时盖住两条路
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	if not net.connected.is_connected(_on_net_seated):
 		net.connected.connect(_on_net_seated)''',
      '''	if false:
@@ -1492,7 +1492,7 @@ MUTATIONS = [
     # 进联网局不复位「桌子摆了没有」：它从单机局带着 true 进来
     # （开局 _sync_round → _respawn_all 置的），于是 _on_net_seated 一进门就返回。
     # 症状和上一条一样是空桌，但原因在**另一个文件都不用改**的一行上
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	_net_table_drawn = false
 	_draw_net_table()''',
      '''	_draw_net_table()''',
@@ -1500,39 +1500,39 @@ MUTATIONS = [
     # 等人的时候不说话：不崩了，但玩家那一侧和崩掉时**看到的是同一个画面**
     # （一张空桌 + 没有提示）。「不崩」和「说了在等人」是两条判据，
     # 少了后一条的话「静默等待」这个真症状溜过去
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''		_show_message("已入座（%s），等对手进同一个房间码……%s"
 			% [_seat_name(my_seat), extra], Color(0.7, 0.9, 1.0))''',
      '''		pass''',
      "提示语说了在等对手", "tests/test_net_client.gd"),
 
-    # ======== 可见度：消耗演出 / HUD 拆分（scenes/main.gd 的 _resolve_combo_visual / _update_hud）========
+    # ======== 可见度：消耗演出 / HUD 拆分（scenes/on_work_main.gd 的 _resolve_combo_visual / _update_hud）========
     # 这一段和上面每一段都不同：**规则一条没动**。动的全是「玩家看不看得见」。
     # 于是每条变异的后果都是「屏幕上那行字没了 / 写错了」，而引擎末态一模一样 ——
     # 末态哈希、资源读数、战报一个都抓不到。观察点只能是屏幕上那行字本身。
     # 每条都实跑确认过红（memory: mutation-hint-must-be-run）。
     # 牌摞级提示（「装机中」）那一层已整层撤掉，这里原先守着它的 11 条一并注销 ——
     # 留着只会次次 SKIP（锚点找不到），而 SKIP 和「测过了」在总数上分不出来。
-    # 第 5 项都写全了：scenes/main.gd → test_arrivals、
-    # engine/game_state.gd → test_engine，两个默认都不看这些字（跑得过，等于没测）
+    # 第 5 项都写全了：scenes/on_work_main.gd → test_arrivals、
+    # engine/on_work_state.gd → test_engine，两个默认都不看这些字（跑得过，等于没测）
 
-    # --- scenes/main.gd 的 HUD 与面板实现 HUD 拆分 ---
+    # --- scenes/on_work_main.gd 的 HUD 与面板实现 HUD 拆分 ---
     # 待付按**卡面** recipe_n 取，不按 eval 的 recipe_pay_n：用户配方的摞
-    # 一分钱不付（席位是永久的，README.md §「2.6 组合与结算」），而它的 recipe_n 也是 7 ——
+    # 一分钱不付（席位是永久的，README.md §「组合与结算」），而它的 recipe_n 也是 7 ——
     # 屏幕上就成了「本回合待付 7」而那一摞压根不掏钱。玩家照它留钱，留错了。
     # 现金摞的判据抓不到这个：现金配方两个数恰好相等
-    # （同一个形状在 settle.gd 上也登记过一条：「按卡面值发牌而不是按组合快照」）
+    # （同一个形状在 on_work_settle.gd 上也登记过一条：「按卡面值发牌而不是按组合快照」）
     #
     # 登记时先试过 `if not bool(eval["valid"]): continue` → **等价变异**：
     # evaluate 只在 valid 分支里填 recipe_pay_n，不成立时它本来就是 0
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '''		total += int((pe["eval"] as Dictionary).get("recipe_pay_n", 0))''',
-     '''		total += int(CardDB.get_def(
+     '''		total += int(OnWorkCardDB.get_def(
 		str((pe["eval"] as Dictionary)["leader"])).get("recipe_n", 0))''',
      "用户配方的摞待付 0", "tests/test_consume_hud.gd"),
     # 在岗按「摞里有几张用户」数，不按席位额度：一摞 7 张用户而配方只要 4 张时，
     # 富余那 3 张被记成在岗 —— 闲置读数把最该警报的情形算成了健康
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '''		on_duty += mini(seats, have)''',
      '''		on_duty += have''',
      "富余不算", "tests/test_consume_hud.gd"),
@@ -1541,13 +1541,13 @@ MUTATIONS = [
     # 锚点只取 append 那一行，不要连 `if due > 0:` 一起取：那个 if 的身子不止一行
     # （后面还嵌着「付完归零」那条 ⚠），把头两行换成外层缩进的 `pass` 会把剩下的
     # 身子孤零零留在里层缩进上，变异体直接编译不过 —— 报 BROKE，等于这条没测到
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''		cash_txt += "（本回合待付 %d）" % due''',
      '''		pass''',
      "HUD 写出「本回合待付", "tests/test_consume_hud.gd"),
     # 在岗/闲置括号跟着待付一起「0 就藏」：闲置 0 是这条读数唯一的好消息，
     # 藏掉的话玩家分不清「全部在岗」和「这个读数根本没算」
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	user_txt += "（在岗 %d / 闲置 %d）" % [int(dep["on_duty"]), int(dep["idle"])]''',
      '''	if int(dep["on_duty"]) > 0:
 		user_txt += "（在岗 %d / 闲置 %d）" % [int(dep["on_duty"]), int(dep["idle"])]''',
@@ -1556,8 +1556,8 @@ MUTATIONS = [
     # 名单不筛现金卡：吸走的是组里前 N 张（可能是核心卡、用户卡），
     # 而引擎扣款走的是同一个函数 —— 两处一起错，动画和扣款仍然一致，
     # 于是**只有卡面看得出来**：屏幕上飞走一张核心卡
-    ("engine/game_state.gd",
-     '''		if def.get("kind") == CardDB.KIND_UNIT and def.get("res") == CardDB.RES_CASH:
+    ("engine/on_work_state.gd",
+     '''		if def.get("kind") == OnWorkCardDB.KIND_UNIT and def.get("res") == OnWorkCardDB.RES_CASH:
 			out.append(u)
 	return out''',
      '''		out.append(u)
@@ -1565,18 +1565,18 @@ MUTATIONS = [
      "名单里全是这一组内的现金卡", "tests/test_consume_hud.gd"),
     # 消耗退回「固定等一个数」：该吃的牌照样吃，坏的只是节奏 ——
     # 一次付 N 张读作一团糊掉的东西，外加每组白挂的那点空场
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	return TEAR_STAGGER * float(count - 1) + SUCK_TIME''',
      '''	return SUCK_TIME''',
      "张数多了要等得久一点", "tests/test_consume_hud.gd"),
     # 错开的系数和攻击那边不一致：两套演出看着就是两个快慢
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	return TEAR_STAGGER * float(count - 1) + SUCK_TIME''',
      '''	return TEAR_STAGGER * float(count - 1) * 0.5 + SUCK_TIME''',
      "错开的系数和攻击一致", "tests/test_consume_hud.gd"),
     # 兜底路径把摘登记也一起延迟：牌在错开的那几十毫秒里还留在 board.cards，
     # 点得到、射线打得着、理牌还会把它排进摞 —— 而引擎里它已经不存在了
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''				var e: CardEntity = entities[uid]
 				board.drop_card(e)
 				_delayed_flyout_torn(e, Vector3(0, 0, 1.0),''',
@@ -1587,21 +1587,21 @@ MUTATIONS = [
     # 错开还没轮到的那几张会被连补间带卡一起清掉（见 _tears_drained）
     # 锚点改过一次：起飞时刻改成排在 _tear_slot_ms 那条公用队上之后，
     # 这里不再是「现在 + dur」而是「队尾那张起飞的时刻 + TEAR_TIME」
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''		_tear_slot_ms = slot
 		_tear_until_ms = maxi(_tear_until_ms,
 			slot - int(TEAR_STAGGER * 1000.0) + int(TEAR_TIME * 1000.0))''',
      '''		_tear_slot_ms = slot''',
      "这一批登记进了 _tear_until_ms", "tests/test_consume_hud.gd"),
-    # --- 14. 再来一局（net/room.gd 的 rematch 投票与重开）---
+    # --- 14. 再来一局（net/on_work_room.gd 的 rematch 投票与重开）---
     # 这一段每一条漏做的症状都**不报错**，所以判据全部落在「后果」上而不是字段值上。
-    # 第 5 项都写明测试文件：net/ 和 engine/game_state.gd 的默认测试
+    # 第 5 项都写明测试文件：net/ 和 engine/on_work_state.gd 的默认测试
     # 分别是 test_engine / test_simulator，都跑得过 —— 省略等于没测
     #
-    # winner 不清：IntentApply._decide 和 PhaseMachine.check 开头那两道
+    # winner 不清：OnWorkIntentApply._decide 和 OnWorkPhaseMachine.check 开头那两道
     # game_over 护栏会把新局的**每一条**意图静默拒掉。
     # 桌子摆得好好的、按钮亮着、日志干净，就是一步也走不了
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '''	round_num = 1
 	winner = ""
 	win_reason = ""''',
@@ -1610,37 +1610,37 @@ MUTATIONS = [
      "第二局能走意图", "tests/test_rematch.gd"),
     # 组合不清：上一局的组合带着**上一局的 uid** 进新局，而 uid 是重新发号的 ——
     # 结算时按 uid 找卡，找到的是另外几张
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '''	combos.clear()
 	market.clear()''',
      '''	market.clear()''',
      "第二局组合表是空的", "tests/test_rematch.gd"),
     # 顺手把 _uid 也清了：新局的卡和上一局撞号。撞号在联网局里是静默的错 ——
     # 拖拽租约、攻击目标、保护名单全按 uid 认卡
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '''	round_num = 1
 	winner = ""''',
      '''	round_num = 1
 	_uid = 0
 	winner = ""''',
      "uid 接着发号", "tests/test_rematch.gd"),
-    # 弹药池不清：它跟着 applier 活着，StateCodec 看不见它
+    # 弹药池不清：它跟着 applier 活着，OnWorkStateCodec 看不见它
     # （memory: adjudicator-state-not-in-codec）。新局第一次装弹撞 already_armed，
     # 那一方整个攻击阶段静默跳过
-    ("net/room.gd",
+    ("net/on_work_room.gd",
      '''	applier.pools_restore({})
-	state.new_game(GameState.opponent(state.draw_first))''',
-     '''	state.new_game(GameState.opponent(state.draw_first))''',
+	state.new_game(OnWorkState.opponent(state.draw_first))''',
+     '''	state.new_game(OnWorkState.opponent(state.draw_first))''',
      "新局双方都没装弹", "tests/test_rematch.gd"),
     # 先手不轮换：房间里先进来的人坐 PLAYER，而 draw_first 默认就是 PLAYER ——
     # 同一个人局局先抽，那是一局定终身的不对称
-    ("net/room.gd",
-     '''	state.new_game(GameState.opponent(state.draw_first))''',
+    ("net/on_work_room.gd",
+     '''	state.new_game(OnWorkState.opponent(state.draw_first))''',
      '''	state.new_game(state.draw_first)''',
      "先手在局间轮换", "tests/test_rematch.gd"),
     # 局中也能投票 = 任何一方随时能掀桌，而它长得像个正常操作（一条空消息）。
     # 「什么时候能投」必须由服务器判，不由客户端的按钮可见性判
-    ("net/room.gd",
+    ("net/on_work_room.gd",
      '''	if state.winner == "":
 		return [_to(peer, Protocol.rejected("not_over", "这一局还没结束"))]''',
      '''	if false:
@@ -1649,7 +1649,7 @@ MUTATIONS = [
     # 掉线不撤票：这一票记在座位上而不是人身上。投了票的人走掉之后，
     # 另一位一点就直接开新局 —— 而他等的那个人不在了，新局第一个对手回合
     # 停在等一条永远不来的 action_done
-    ("net/room.gd",
+    ("net/on_work_room.gd",
      '''		rematch_votes.erase(s)''',
      '''		pass''',
      "掉线撤票", "tests/test_rematch.gd"),
@@ -1770,12 +1770,12 @@ MUTATIONS = [
      "重开落在同一个端口", "tests/test_embedded_host.gd"),
     # main._process 不 poll 本机服务器：对手 socket 连上了、握手完不成，
     # 他那边说「服务器没让我入座」，而**我这边一切正常** —— 最难查的一类
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "	if _host != null:\n		_host.poll()",
      "	if false:\n		_host.poll()",
      "对手连进来入座了", "tests/test_join_panel.gd"),
     # 退回单机不收服务器：它占着端口，下次开房顺延，报出的地址就变了
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "	stop_local_host()\n	set_foe_remote(false)",
      "	set_foe_remote(false)",
      "退回单机局把服务器也收了", "tests/test_join_panel.gd"),
@@ -1803,12 +1803,12 @@ MUTATIONS = [
     # 第一份写着「等对手进来」，第二份连不上，两边都不报错
     #
     # 无视 want_port：在 DEFAULT_PORT 上开
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "		want_port if want_port > 0 else EmbeddedHost.DEFAULT_PORT,",
      "		EmbeddedHost.DEFAULT_PORT,",
      "开在**要的那个端口**上", "tests/test_join_panel.gd"),
     # 指定端口也顺延：占用时「成功」开在 N+1，而对手手里那个数是 N
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "		1 if want_port > 0 else EmbeddedHost.PORT_TRIES)",
      "		EmbeddedHost.PORT_TRIES)",
      "端口被占就当场报错", "tests/test_join_panel.gd"),
@@ -1819,11 +1819,11 @@ MUTATIONS = [
      "--port= 一路传到了服务器", "tests/test_join_panel.gd"),
 
     # --- 20. 攻击阶段换手：点数花光那一支也得报 attack_done ---
-    # 联机时换手只认 attack_done（net/room.gd::_advance），可「该谁攻」是场景那一层
+    # 联机时换手只认 attack_done（net/on_work_room.gd::_advance），可「该谁攻」是场景那一层
     # 算出来的。三个出口里少报一个，服务器就一直停在「等我点选」，两边一起卡到超时 ——
     # 这一条断的正是当初卡死的那个出口
-    ("scenes/main.gd",
-     "		await pipe.submit(Intent.attack_done(my_seat), my_seat)\n		attack_turn_finished.emit()",
+    ("scenes/on_work_main.gd",
+     "		await pipe.submit(OnWorkIntent.attack_done(my_seat), my_seat)\n		attack_turn_finished.emit()",
      "		attack_turn_finished.emit()",
      "服务器不再停在 A 的攻击回合上", "tests/test_net_attack_flow.gd"),
 
@@ -1833,14 +1833,14 @@ MUTATIONS = [
     # 然后弹回资源摞
     #
     # 指纹永远相等：摞完不发，对手那边一直是开局那份
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "	var fp := _piles_fingerprint(groups)\n	if fp == _piles_fp:",
      "	var fp := _piles_fingerprint(groups)\n	if true:",
      "开局那份分组先发了出去", "tests/test_net_piles.gd"),
     # uid 不掰成 int：JSON 那头全是 double，{60: x}.has(60.0) 是 false，
     # 于是名单收到了却一张也对不上
     ("net/protocol.gd",
-     '			uids = Intent.ints(d.get("uids", []))',
+     '			uids = OnWorkIntent.ints(d.get("uids", []))',
      '			uids = d.get("uids", [])',
      "收到的 uid 都是 int 而不是 float", "tests/test_net_piles.gd"),
     # 声明摞不从资源摞里摘出去：同一张牌摆两回，后摆的赢 —— 就是「弹回资源堆」
@@ -1861,14 +1861,14 @@ MUTATIONS = [
     # 判据是**直接问指纹**的那一条（T6 开头），不是「收拢之后发了一条」——
     # 后者遮得住：位置也在同一条指纹里，而收拢会顺带把中点挪了，
     # 于是这一位漏了照旧发得出去，只是发的理由错了
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '			"c" if bool((g as Dictionary).get("compact", false)) else "s",',
      '			"s",',
      "指纹看得见收拢这一位", "tests/test_net_piles.gd"),
     # 发出去的那份不带 compact：对手只知道哪几张一摞，不知道摞成什么样。
     # 连指纹一起废掉 —— 指纹是拿 my_pile_lists() 的输出算的（_push_piles），
     # 这里把 compact 钉死，指纹也就永远看不见那一位
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '		var rec := { "uids": uids, "compact": bool(g.get("compact", false)) }',
      '		var rec := { "uids": uids, "compact": false }',
      "广播里那一摞报的是收拢", "tests/test_net_piles.gd"),
@@ -1879,13 +1879,13 @@ MUTATIONS = [
     #
     # 发送端不带位置：收方没有位置可用，只能退回现算格子。
     # 报的是 _until 超时那条（广播里始终等不到带位置的那一摞）
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '			rec["u"] = uv.x\n			rec["v"] = uv.y',
      '			pass',
      "摞好之后广播里带上了位置", "tests/test_net_piles.gd"),
     # 指纹不看位置：整摞搬到别处时名单和形态都没变，指纹和上一份相同 ——
     # 一条都不发。和 compact 那条是同一个形状的漏（挪了对面看不见）
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '			_uv_bucket(g as Dictionary),',
      '			"-",',
      "挪到右边之后又播了一条", "tests/test_net_piles.gd"),
@@ -1987,7 +1987,7 @@ MUTATIONS = [
      "他回来之后提示摘掉了", "tests/test_foe_offline.gd"),
     # 22c. 掉线期间照样能打他的牌。服务器会照常裁决 ——
     # 他回来时拿的是结果快照，牌少了一批，中间那段演出一眼没看见
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''	if _foe_gone():
 		_foe_offline_block("打他的牌")
 		return''',
@@ -2002,7 +2002,7 @@ MUTATIONS = [
     # 锚点带上 `_show_message("对手断开`：那两行在 `_on_foe_left_drag` 和
     # 主机接管（24h 那条改的地方）各有一份，只写两行会撞两处、整条被 SKIP。
     # 24h 靠第三行 `_show_waiting_as_host` 区分，这条靠 _show_message 区分
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '	_foe_online = false\n	_show_foe_offline_notice(true)\n'
      '	_show_message("对手断开',
      '	_foe_online = false\n	_show_message("对手断开',
@@ -2012,56 +2012,56 @@ MUTATIONS = [
     # 23a. CLIENT_OPS 漏登记。那张表决定「客户端发得动这条吗」，
     # 漏了服务器按 not_client_op 拒掉 —— 而我这边的面板是自己弹的，
     # 症状是「我看到我认输了，他那边还在等我行动」，两边各看一局
-    ("engine/intent.gd",
+    ("engine/on_work_intent.gd",
      "	OP_ACTION_DONE, OP_RESIGN]",
      "	OP_ACTION_DONE]",
      "认输是客户端操作", "tests/test_resign.gd"),
     # 23b. 判成认输的那个赢。点了认输反而赢了 —— 这按钮就成了必胜键
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      "	winner = opponent(who)\n	# 这里**故意**没写成",
      "	winner = who\n	# 这里**故意**没写成",
      "认输的是**输**的那个", "tests/test_resign.gd"),
-    # 23c. 去掉 PhaseMachine 那道豁免。认输就成了「一种行动」：
+    # 23c. 去掉 OnWorkPhaseMachine 那道豁免。认输就成了「一种行动」：
     # 只在我的行动阶段、只在我还没收手时认得了。对手行动时（最想认的时候）
     # 撞 not_your_turn。这条是实跑才发现的 —— 光看 CLIENT_OPS 是通的
-    ("engine/phase_machine.gd",
-     "	if op == Intent.OP_RESIGN:\n		return {}",
+    ("engine/on_work_phase_machine.gd",
+     "	if op == OnWorkIntent.OP_RESIGN:\n		return {}",
      "	if false:\n		return {}",
      "他那条认输走通了", "tests/test_resign.gd"),
     # 23d. 第一下就认。认输没有撤回，而这按钮和联网入口同在左下角、
     # 同样 150×44 —— 手滑一次整局没了
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "	if not _resign_armed:\n		_resign_armed = true",
      "	if false:\n		_resign_armed = true",
      "第一下不认输", "tests/test_resign.gd"),
     # 23e. 对手侧那个分支没了。他认输、服务器落地、我这份快照也跟着变成终局，
     # 但屏幕上什么都不发生：输入还开着，而我发出去的每条意图都被 game_over 拒掉。
     # 玩家看到的是「牌能拖，但一步也走不了，也没人告诉我为什么」
-    ("scenes/main.gd",
-     "		Intent.OP_RESIGN:\n			_render_foe_resign()",
-     "		Intent.OP_RESIGN:\n			pass",
+    ("scenes/on_work_main.gd",
+     "		OnWorkIntent.OP_RESIGN:\n			_render_foe_resign()",
+     "		OnWorkIntent.OP_RESIGN:\n			pass",
      "他认输之后我这边的结算界面自己弹出来了", "tests/test_resign.gd"),
     # 23f. 战报硬编成一句话（不带座位参数）。认输不动任何资源，
     # 前后两行之间看不出发生过什么 —— 这一行是复盘时唯一的线索，
     # 而硬编的话认输的人自己看到的也是「对手认输了」
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '	log_fmt("🏳 %s 认输了", [seat_arg(who)])',
      '	log_msg("🏳 对手认输了")',
      "那一行带着座位参数", "tests/test_resign.gd"),
     # 23g. win_reason 写成带视角的。它是裸字符串，state_codec 原样传给对端
-    # （state_codec.gd 的 `snapshot()` 存、`restore()` 读，两边都只是搬），
+    # （on_work_state_codec.gd 的 `snapshot()` 存、`restore()` 读，两边都只是搬），
     # 谁都不会再翻译它一次 ——
     # 赢的那位在终局面板上读到的是「你认输了」
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '	win_reason = "这局是认输结束的。',
      '	win_reason = "你认输了。这局是认输结束的。',
      "win_reason 视角中立", "tests/test_resign.gd"),
 
-    # --- 24. 主机易位：开房那一位走了，剩下的这位接管（scenes/main.gd 的 _take_over_host） ---
+    # --- 24. 主机易位：开房那一位走了，剩下的这位接管（scenes/on_work_main.gd 的 _take_over_host） ---
     # 24a. adopt 不推 `_done`。`_done` 不在快照里（它是从 (phase, actor) 推的），
     # 不推的话接管出来的房认为「谁都还没收手」——
     # 症状是先手在同一个行动阶段里又能动一次
-    ("engine/phase_machine.gd",
+    ("engine/on_work_phase_machine.gd",
      "		if order.size() == 2 and who == str(order[1]):\n			_done[str(order[0])] = true",
      "		if false:\n			_done[str(order[0])] = true",
      "先手那格标着收过手了", "tests/test_host_takeover.gd"),
@@ -2069,40 +2069,40 @@ MUTATIONS = [
     # 并且把 actor 拨回先手 —— 玩家看到的是「接管之后先手在同一个行动阶段里
     # 又动了一次」。和 24a 同一个改动、不同的判据：前者判「标记对不对」，
     # 这一条判「错了会怎样」，而后者才是玩家真正看到的东西
-    ("engine/phase_machine.gd",
+    ("engine/on_work_phase_machine.gd",
      "	if (p == ACTION or p == ATTACK) and who != \"\":",
      "	if false:",
      "后手一收手这个行动阶段就结束了", "tests/test_host_takeover.gd"),
-    # 24b. 池子没搬。pools 挂在 IntentApply 上而不是 GameState 上，
-    # 所以它不在 StateCodec.snapshot 的覆盖范围里，得单独搬一次。
+    # 24b. 池子没搬。pools 挂在 OnWorkIntentApply 上而不是 OnWorkState 上，
+    # 所以它不在 OnWorkStateCodec.snapshot 的覆盖范围里，得单独搬一次。
     # 漏了不报错：接管出来的房池子是空的，整段攻击当场跳过
-    ("net/room.gd",
+    ("net/on_work_room.gd",
      '	applier.pools_restore(snap.get("pools", {}))',
      "	pass",
      "池子搬过来了", "tests/test_host_takeover.gd"),
-    # 24c. 建了 PhaseMachine 就用（构造那一下会 reset_for_round）。
+    # 24c. 建了 OnWorkPhaseMachine 就用（构造那一下会 reset_for_round）。
     # 打到一半的攻击回合退回行动阶段从头再来，而弹药已经花掉了
-    ("net/room.gd",
-     "	phase = PhaseMachine.new(state)\n	phase.adopt(phase_name, actor_seat)",
-     "	phase = PhaseMachine.new(state)",
+    ("net/on_work_room.gd",
+     "	phase = OnWorkPhaseMachine.new(state)\n	phase.adopt(phase_name, actor_seat)",
+     "	phase = OnWorkPhaseMachine.new(state)",
      "阶段按住在真实那一步上", "tests/test_host_takeover.gd"),
-    # 24c2. PhaseMachine.adopt 自己走 reset_for_round 那条路（看着像是
+    # 24c2. OnWorkPhaseMachine.adopt 自己走 reset_for_round 那条路（看着像是
     # 「初始化一个阶段机」该做的事）。走了的话不管传什么进来都会回到
     # 「行动阶段 + 先手先动」—— 打到一半的攻击回合从头再打一遍，
     # 而弹药已经花掉了。这一条钉的是 T1 的 p5，和 24c 不在同一层
-    ("engine/phase_machine.gd",
+    ("engine/on_work_phase_machine.gd",
      "func adopt(p: String, who: String) -> void:\n	phase = p\n	actor = who",
      "func adopt(p: String, who: String) -> void:\n	reset_for_round()\n	phase = p\n	actor = who\n	phase = ACTION\n	actor = state.action_order()[0]",
      "接管没把回合退回开头", "tests/test_host_takeover.gd"),
     # 24d. 令牌不种。接管的人拿旧令牌连自己开的房，seat_peer 走不到 resumed 支，
     # 于是按空位顺序发座 —— 坐错位的话两个人的牌当场对调
     # （快照里的牌是按座位名存的）
-    ("net/room.gd",
+    ("net/on_work_room.gd",
      "	if my_seat != \"\" and my_token != \"\" and tokens.has(my_seat):\n		tokens[my_seat] = my_token",
      "	if false:\n		tokens[my_seat] = my_token",
      "接管者原来那串令牌种进去了", "tests/test_host_takeover.gd"),
     # 24e. 进已开局的房不补 phase。阶段既不在 seated 的载荷里也不在快照里
-    # （它是 PhaseMachine 的量），不补的话这一位的 _phase 是空串 ——
+    # （它是 OnWorkPhaseMachine 的量），不补的话这一位的 _phase 是空串 ——
     # 连上了、牌摆好了、一步都走不了，一条错都不报
     ("net/server.gd",
      "	if not fresh and room.started():\n		_send_one(from, Protocol.phase(room.phase.phase, room.phase.actor))",
@@ -2127,13 +2127,13 @@ MUTATIONS = [
     # 「摘信号 + 关旧连接」这两行在 _clear_old_session_for_reconnect 里
     # 一模一样地出现了第二次（那条走的是「从面板重新进来」），
     # 光那两行的话锚点匹配 2 处，整条被 SKIP 掉
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "	_detach_net_signals(old)\n	old.close()\n\n	var net := NetTransport.new(_host.url(), room_code)",
      "	old.close()\n\n	var net := NetTransport.new(_host.url(), room_code)",
      "旧连接的 disconnected 也摘了", "tests/test_host_takeover.gd"),
     # 24h. 接管完不标对手不在线。提示挂不上，而 _foe_gone() 那道门也开着 ——
     # 玩家对着一个已经不在的人照样打得动牌，服务器照常裁决
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "	_foe_online = false\n	_show_foe_offline_notice(true)\n	_show_waiting_as_host(room_code)",
      "	_show_waiting_as_host(room_code)",
      "标成了对手不在线", "tests/test_host_takeover.gd"),
@@ -2141,7 +2141,7 @@ MUTATIONS = [
     # （bad_version / table_mismatch / room_full / bad_room）也会去接管，
     # 而那四种意味着对面服务器活着并且明确说了「不让你进」：
     # 玩家看到的是「被拒 → 自己开了一间房」，对手照新地址连过来撞上同一个原因
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "	return code in TAKEOVER_CODES \\",
      "	return true \\",
      "断线之后输入锁上了", "tests/test_net_client.gd"),
@@ -2149,7 +2149,7 @@ MUTATIONS = [
     # 它一路走到 _draw_net_table → _respawn_all → _fly_from，那是**重摆桌子**：
     # 局面一个字节都没变，而玩家看到所有牌当场跳到新的随机位置,
     # 读出来的意思是「这一局被重置了」
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "	_swap_transport(net)\n	# 阶段可能**还没开过**",
      "	_swap_transport(net)\n	_respawn_all()\n	# 阶段可能**还没开过**",
      "牌一张都没跳位", "tests/test_host_takeover.gd"),
@@ -2157,7 +2157,7 @@ MUTATIONS = [
     # 此后没有任何人会去开它：新连接的 seated 撞在 _on_net_seated 开头
     # 那道「桌子摆过就不再摆」上，而 _on_net_phase 是一次性的、
     # 服务器又不会为一个已入座的人再广播一次
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '	if not _net_phase_seen and keep_phase != "":\n		_on_net_phase(keep_phase, keep_actor)',
      "	pass",
      "接管之后阶段自己补开了", "tests/test_host_takeover.gd"),
@@ -2166,7 +2166,7 @@ MUTATIONS = [
     # （get_close_code() == -1）盖了两件事：连上过再断（主机真走了）、
     # 和压根没连上（地址打错）。后者去接管的话，玩家自己开一间房自己坐着，
     # 而对手拿着他手上那个错地址永远连不过来 —— 而且一条错都不报
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "	return code in TAKEOVER_CODES \\\n		and _net != null and _net.ever_open \\",
      "	return code in TAKEOVER_CODES \\\n		and _net != null \\",
      "装上了这条连接", "tests/test_rematch.gd"),
@@ -2189,7 +2189,7 @@ MUTATIONS = [
     #
     # 25a. 服务器不记摞。这是整条链的源头：不记的话回放无从谈起，
     # 而两端都不报错 —— 症状就是重连之后摆放没恢复
-    ("net/room.gd",
+    ("net/on_work_room.gd",
      '	piles[seat] = Protocol.pile_lists(msg.get("piles", []))',
      "	pass",
      # 关键字取**报警那条**的文案，不能取它下面那句 check(true, ...) 的
@@ -2200,12 +2200,12 @@ MUTATIONS = [
     # 该有的次序）。对手不在场时的声明全部丢掉 —— 而那正是最要紧的那一刻：
     # 他掉线了，我还在挪我的摞。恢复出来的是**更早**那一份，
     # 症状和完全没恢复只差一点点，更难查
-    ("net/room.gd",
+    ("net/on_work_room.gd",
      '''	piles[seat] = Protocol.pile_lists(msg.get("piles", []))
-	var foe := int(occupants.get(GameState.opponent(seat), 0))
+	var foe := int(occupants.get(OnWorkState.opponent(seat), 0))
 	if foe == 0:
 		return []''',
-     '''	var foe := int(occupants.get(GameState.opponent(seat), 0))
+     '''	var foe := int(occupants.get(OnWorkState.opponent(seat), 0))
 	if foe == 0:
 		return []
 	piles[seat] = Protocol.pile_lists(msg.get("piles", []))''',
@@ -2225,7 +2225,7 @@ MUTATIONS = [
      "服务器回放了**对手**那些摞", "tests/test_net_resume_piles.gd"),
     # 25e. 新局不清记着的摞。上一局那些 uid 一个都不在场上了，
     # 双方在新局一开始各收到一份全是查不着的 uid 的回放
-    ("net/room.gd",
+    ("net/on_work_room.gd",
      "	game_num += 1\n	piles.clear()",
      "	game_num += 1",
      "新局把记着的摞清了", "tests/test_net_resume_piles.gd"),
@@ -2239,7 +2239,7 @@ MUTATIONS = [
     # 25g. 收方把「中点」直接当「起点」用（不退半个跨度）。my_pile_lists 报的
     # 锚点是整摞 z 向的中点，而 _layout_group 要的是起点 ——
     # 每摞往南偏半个摞长，长摞还会被 clamp 按在近边上
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "			at.z -= Board.z_span(ng) / 2.0",
      "			pass",
      "纵向回到原处", "tests/test_net_resume_piles.gd"),
@@ -2247,14 +2247,14 @@ MUTATIONS = [
     # 回放到达那一刻桌上的摞几乎全是理牌刚摞出来的（_respawn_all 末尾），
     # 于是我声明的资源卡一张都过不去、cs 恒不足 2 张 ——
     # 这个函数整个变成空转，而症状和压根没有回放**一模一样**
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "			if in_combo.has(u):\n				continue",
      "			if board.group_of(entities[u]) != null:\n				continue",
      "回放进来之后那一摞立回来了", "tests/test_net_resume_piles.gd"),
     # 25i. 恢复完顺手理一次牌（看着像是「摆完该收口」）。_tidy_player_idle
     # 头一件事就是解散纯资源摞，而我声明的摞十有八九正是那个 ——
     # 刚立起来的摞当场被拆掉，等于这条回放没生效
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "		_piles_fp = _piles_fingerprint(my_pile_lists())",
      "		_piles_fp = _piles_fingerprint(my_pile_lists())\n		layout._tidy_player_idle()",
      "回放进来之后那一摞立回来了", "tests/test_net_resume_piles.gd"),
@@ -2264,7 +2264,7 @@ MUTATIONS = [
     # 换成 pass 而不是直接删：那一句是 `if restored > 0:` 底下**唯一**的语句，
     # 删掉剩一段注释，变异体连编译都过不去（GDScript 要求 if 后面有缩进块），
     # 报表上是 BROKE —— 什么都没测到
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "		_piles_fp = _piles_fingerprint(my_pile_lists())\n		# **不能**在这儿理牌",
      "		pass\n		# **不能**在这儿理牌",
      # 关键字取「不白发广播」那条而不是「基准对齐了实况」那条：两条都会红，
@@ -2273,13 +2273,13 @@ MUTATIONS = [
      "回放照原样立起来之后不白发广播", "tests/test_net_resume_piles.gd"),
     # 25k. 反方向：把基准清空。下一帧无条件发一条，内容和服务器手里那份
     # 一模一样 —— 一条纯冗余的广播
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '		_piles_fp = _piles_fingerprint(my_pile_lists())\n		# **不能**在这儿理牌',
      '		_piles_fp = ""\n		# **不能**在这儿理牌',
      "基准不是空串", "tests/test_net_resume_piles.gd"),
     # 25l. 摘牌那一步删掉（回放的牌还挂在理牌摞里就编新组）。一张牌同时
     # 属于两个组，两个组各自重排它 —— 牌在两处之间来回跳
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "		for c in cs:\n			board._detach_from_group(c)",
      "		pass",
      "没有牌同时属于两个组", "tests/test_net_resume_piles.gd"),
@@ -2378,14 +2378,14 @@ MUTATIONS = [
      "	var dec: Dictionary = Protocol.decode(text)",
      "还在说话的那一位没被牵连", "tests/test_net_liveness.gd"),
 
-    # ---- 27. 断线之后那道「回去的路」（scenes/main.gd 的 _offer_reconnect） ----
+    # ---- 27. 断线之后那道「回去的路」（scenes/on_work_main.gd 的 _offer_reconnect） ----
     # 这一组盖的是**入口的可达性**，不是网络。它的错法一律静默：
     # 屏幕上少一个按钮、或者多一个按钮，没有哪一种会报错
     #
     # 27a. 门不看「曾经连上过」。压根没连上过的连接也给开门 ——
     # 而那种情形下联网面板本来就在屏幕上，于是局中那个入口被顶亮。
     # 这是真踩过的回归：它把 test_rematch 那条「联网入口没被放回来」顶红
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "	if _net != null and _net.ever_open:",
      "	if _net != null:",
      "入口照旧藏着", "tests/test_reconnect_door.gd"),
@@ -2393,14 +2393,14 @@ MUTATIONS = [
     # 而他多半也不记得那四个字符（是对手报给他的），于是这道门等于没开
     # 锚点带上下一行：`_reconnect_room = room` 单独一条会撞上
     # _show_waiting_as_host 里的 `_reconnect_room = room_code`（它含前者做子串）
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "	_reconnect_room = room\n	_reconnect_hint = hint",
      '	_reconnect_room = ""\n	_reconnect_hint = hint',
      "房间码替他填好了", "tests/test_reconnect_door.gd"),
     # 27c. 状态都存对了，就是没把按钮亮出来。最像「修好了」的一种坏法：
     # _reconnect_room / _reconnect_hint 全对，面板进去了也确实填好 ——
     # 只是玩家**进不去那个面板**，因为按钮还是藏着的
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "	_reconnect_share = share\n	if btn_net:\n		btn_net.visible = true",
      "	_reconnect_share = share\n	if btn_net:\n		btn_net.visible = false",
      "联网入口回来了", "tests/test_reconnect_door.gd"),
@@ -2410,14 +2410,14 @@ MUTATIONS = [
     # 回来那位手上就只剩一个房间码 —— 密码是对的，连不上的是地址。
     # 锚点带上后面那行 `if where`：`var where := _host_where_text()`
     # 在 _show_waiting_as_host 里还有一处，只改牌子这一处
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '	var where := _host_where_text()\n	if where != "":',
      '	var where := ""\n	if where != "":',
      "牌子上有端口", "tests/test_reconnect_door.gd"),
     # 27e. 描边写死回 5。带地址时字号收到 30，而 30 × 12% = 3.6 ——
     # 越线就成空心字（见 _setup_pawnshop 那条）。
     # 这一条的坏法是「字在那儿但读不出来」，比没有更难查
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "	lb.outline_size = maxi(1, int(lb.font_size * 0.1))",
      "	lb.outline_size = 5",
      "描边没超字号", "tests/test_reconnect_door.gd"),
@@ -2489,7 +2489,7 @@ MUTATIONS = [
     # 为什么不直接写成「没令牌就不给座」：那样连**开局第一次入座**都砸了
     # （谁的第一条连接都没有令牌），测试在 _seated_scene 那一步就红，
     # 判据压根到不了 —— 实测 MISS，报的是 5 条「双方都入座了（a= b=）」
-    ("net/room.gd",
+    ("net/on_work_room.gd",
      "	var s := free_seat()\n	if s == \"\":",
      '	var s := "" if started() else free_seat()\n	if s == "":',
      "空令牌的新连接", "tests/test_host_takeover.gd"),
@@ -2500,19 +2500,19 @@ MUTATIONS = [
     # 组合都是齐整的，闸门恒真，删掉整行照旧全绿（231/0）。补了
     # `_t2b_broken_combo_cannot_fire`（抽掉配方里一张料再看池子）才判得动。
     # 这正是 MISS 的第 2 类：不是判据松，是那个量没有读者
-    ("engine/combo_rules.gd",
-     '	result["attack_n"] = ldef["attack_n"] * (CardDB.buff_mult("attack_x2") if attack_x2 else 1)',
+    ("engine/on_work_combo_rules.gd",
+     '	result["attack_n"] = ldef["attack_n"] * (OnWorkCardDB.buff_mult("attack_x2") if attack_x2 else 1)',
      '	result["attack_n"] = ldef["attack_n"]',
      "热搜让山寨攻击", "tests/test_all_combos.gd"),                    # 29a：红 4 条
-    ("engine/combo_rules.gd",
-     '		if ldef["recipe_res"] == CardDB.RES_CASH:\n			result["recipe_pay_n"] = int(ldef["recipe_n"])',
+    ("engine/on_work_combo_rules.gd",
+     '		if ldef["recipe_res"] == OnWorkCardDB.RES_CASH:\n			result["recipe_pay_n"] = int(ldef["recipe_n"])',
      '		result["recipe_pay_n"] = int(ldef["recipe_n"])',
      "用户配方是席位", "tests/test_all_combos.gd"),                    # 29b：红 14 条
-    ("engine/settle.gd",
+    ("engine/on_work_settle.gd",
      "			_consume_upgrade_materials(state, combo, eval)",
      "			pass",
      "源卡被吃掉", "tests/test_all_combos.gd"),                        # 29c：红 10 条
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      "		if not combo_intact(who, combo):\n			continue\n",
      "",
      "拆散后点数池归零", "tests/test_all_combos.gd"),                  # 29d：红 2 条
@@ -2530,7 +2530,7 @@ MUTATIONS = [
     # ——「组合后的用户牌打不掉」和「一个组合消耗不完应当能继续打其他组合」
     # ——出自同一个门槛，所以两半各钉一条变异：
     # 31a 把定价改回整体靶，31b 把「已破的组不再是首选」这条闸门去掉
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '			for u in core:\n'
      '				out.append({\n'
      '					"kind": "combo", "uids": [u], "cost": per_card,\n',
@@ -2542,15 +2542,15 @@ MUTATIONS = [
     # 撕牌本身两边一直共用 _tear_out，差的是外面那层节拍 ——
     # 所以两条变异钉的都是节拍，不是撕牌
     # 32a：BOT 不再按摞攒（batch 键作废）→ 回到一条意图一拍，7 张 6.3 秒
-    # （锚点跟着 GameState.target_batch 的收口改过一次：batch 名原先在这里
+    # （锚点跟着 OnWorkState.target_batch 的收口改过一次：batch 名原先在这里
     # 手写 str(target.get(...))，「一次只打一个组合」把这句读法收进了引擎）
-    ("scenes/main.gd",
-     '\t\tvar batch := GameState.target_batch(target)',
+    ("scenes/on_work_main.gd",
+     '\t\tvar batch := OnWorkState.target_batch(target)',
      '\t\tvar batch := ""',
      # 实跑：BOT 侧 14 声（1 声命中×7 批 + 7 声逐张）、两边差 5396ms
      "耗时相差", "tests/test_attack_dbl.gd"),          # 32a：红 2 条
     # 32b：起飞时刻不再排在公用队上 → 分次进来的 N 张同时撕开，读作一团
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\tvar slot := maxi(_tear_slot_ms, now)\n'
      '\tvar i := 0',
      '\tvar slot := now\n'
@@ -2572,7 +2572,7 @@ MUTATIONS = [
     # 33. 「把一堆资源拖到组合卡上，组合卡有时候会消失」。两条补间登记表
     # 各写一次 CardEntity.position，谁也掐不掉谁 —— 两条变异各断一头
     # 33a：main 那侧的补间不登记 → board 编组时无从知道这张牌还在飞
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\tcard.set_meta("fly_tw", tw)\n\treturn tw',
      '\treturn tw',
      "起飞时登记了补间", "tests/test_merge.gd"),        # 33a：红 2 条
@@ -2589,22 +2589,22 @@ MUTATIONS = [
      '	if cancel_anim.is_valid() and is_instance_valid(c):',
      '	if false:',
      "按到补间终点", "tests/test_merge.gd"),            # 33b：红 3 条
-    # 34. 「选中一个组合就得把它打完」（GameState.ATTACK_LOCK）。三条变异
+    # 34. 「选中一个组合就得把它打完」（OnWorkState.ATTACK_LOCK）。三条变异
     # 分别断掉这条规则的三个关节：记锁、按锁收窄候选面、只有组合才上锁
     # 34a：打了不记 → 下一下又是满桌可选，3 点拆着打两个组
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '	if batch_locks(target):\n		pools[ATTACK_LOCK] = target_batch(target)',
      '	if false:\n		pools[ATTACK_LOCK] = target_batch(target)',
      "池子里记下了", "tests/test_engine.gd"),           # 34a：红 13 条
     # 34b：锁还记着，但候选面不收窄 —— 选靶的人照旧看见满桌，
     # 挑中别组时 apply_attack 那道护栏把它拦下，攻击阶段当场断在「点选失败」
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '	var lock := attack_lock(pools)\n	if lock == "":\n		return out',
      '	var lock := attack_lock(pools)\n	if true:\n		return out',
      "候选面收窄到", "tests/test_engine.gd"),           # 34b：红 3 条
     # 34c：散卡也上锁 → 「先削一张散卡、再拿余点拆组合」这条一直允许的打法
     # 被顺手禁掉了。规则管的是组合，不是散卡堆
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '	return str(target.get("kind", "")) in ["combo", "spare"]',
      '	return true',
      "散卡不上锁", "tests/test_engine.gd"),             # 34c：红 2 条
@@ -2613,14 +2613,14 @@ MUTATIONS = [
     # 此时 finalize 已清空 locked 和 combos，那张刚立过功的攻击卡在
     # _pawn_candidate 眼里就是废牌。三条变异断掉这条修复的三个关节
     # 35a：不记开火回合 → 后面全都无从判断
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '		if charge:\n			_mark_fired(who, combo)',
      '		if charge:\n			pass',
      # 实跑：红 2 条（夹具那条 + 判据那条）
      "真实开火后", "tests/test_audit_fixes.gd"),           # 35a：红 2 条
     # 35c：保护窗口收成「只保护本回合」→ 正好漏掉出事的那一回合。
     # bug 现场是**下一**回合被卖，`<= 1` 那个 1 就是这个跨度
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '	return round_num - int(c["fired_round"]) <= 1',
      '	return round_num - int(c["fired_round"]) <= 0',
      "标记跨结算保留到下一回合", "tests/test_audit_fixes.gd"),        # 35c：红 1 条
@@ -2629,7 +2629,7 @@ MUTATIONS = [
     # 漏 unregister_card 不崩也不报错（遍历点都有 is_instance_valid 挡着），
     # 症状只在数组长度上看得见。原先 _next_round 自己抄了一份清理、独独漏了这句，
     # 合并成 _clear_market 之后一处管两条路
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '''		if is_instance_valid(c):
 			board.unregister_card(c)
 			c.queue_free()''',
@@ -2675,7 +2675,7 @@ MUTATIONS = [
     # 37e：代码不再按路线的 per 折算，写死成一张顶一张。
     # 配置里 per 还是 2，代码当 1 用 —— 这是「配置写了、代码不听」那一类，
     # 而它不报错，只是传说卡那几档静默合不出来
-    ("engine/combo_rules.gd",
+    ("engine/on_work_combo_rules.gd",
      '		var want_n: int = n / per',
      '		var want_n: int = n',
      "直达", "tests/test_dup_upgrade.gd"),
@@ -2684,13 +2684,13 @@ MUTATIONS = [
     # 少了这道闸门「山寨×4」也会合出传说卡。
     # 闸门现在是路线表上的 kind 那一维，所以变异下在「代码不再看 kind」上 ——
     # 配置照旧写着 product，代码谁都放进来（and 短路，r["kind"] 不会被求值）
-    ("engine/combo_rules.gd",
+    ("engine/on_work_combo_rules.gd",
      '		if r.has("kind") and str(r["kind"]) != str(src.get("kind", "")):',
      '		if false and str(r["kind"]) != str(src.get("kind", "")):',
      "没有升级路线", "tests/test_dup_upgrade.gd"),
     # 37f：档位闸门去掉 → T2 也去试 T1 那条 per=2 的路线。
     # tier 那一维和 kind 是两回事，各自守一条
-    ("engine/combo_rules.gd",
+    ("engine/on_work_combo_rules.gd",
      '		if r.has("tier") and int(r["tier"]) != int(src.get("tier", 0)):',
      '		if false and int(r["tier"]) != int(src.get("tier", 0)):',
      "直达", "tests/test_dup_upgrade.gd"),
@@ -2735,22 +2735,22 @@ MUTATIONS = [
     # 上界原本 = dup_t2 最高档×2；砍到 5 之后最高那两档试不出来，
     # 「同名×N/N/N → 传说卡」那一行就少了尾档
     ("scenes/board.gd",
-     '	for n in range(2, CardDB.max_upgrade_n() + 1):',
+     '	for n in range(2, OnWorkCardDB.max_upgrade_n() + 1):',
      '	for n in range(2, 5):',
      "直达传说卡的", "tests/test_hover_desc.gd"),
 
-    # --- 40. 座位映射：场景层念 my_seat，不许退回硬编 GameState.PLAYER ---
+    # --- 40. 座位映射：场景层念 my_seat，不许退回硬编 OnWorkState.PLAYER ---
     # 补的：test_seat_map 原先零覆盖。它是全仓唯一一条把座位对调着跑的判据
     # （其余全跑 my_seat=PLAYER），所以这类退化**只有它抓得住** ——
     # 换句话说，没有变异守着它，就等于没人验证过「它还抓得住」
     ("scenes/settle_layout.gd",
      '	var is_near: bool = who == _main.my_seat',
-     '	var is_near: bool = who == GameState.PLAYER',
+     '	var is_near: bool = who == OnWorkState.PLAYER',
      "落在近侧", "tests/test_seat_map.gd"),
     # 40 的第二条：理牌收集错座位 —— 玩家侧的理牌锚点上摞的成了对手的散卡。
     # 判据挂 test_tidy 而不是 test_seat_map：后者压根不触发 _tidy_player_idle
     # （实测挂过去 MISS，且是「失败 0 条」——不是关键词不对，是那份判据没走到这条路）。
-    # 替换值也故意不写 `GameState.PLAYER`：写了会被 test_seat_map 里那条
+    # 替换值也故意不写 `OnWorkState.PLAYER`：写了会被 test_seat_map 里那条
     # **静态扫源码**的判据（「场景层无硬编码座位」）抓住，于是变异只验到扫描器、
     # 验不到摆位。写 foe_seat 两头都绕开，逼它靠牌摆错位置暴露
     ("scenes/settle_layout.gd",
@@ -2799,7 +2799,7 @@ MUTATIONS = [
     # 配置里 per 还是 2、代码当 1 用 —— 「配置写了、代码不听」那一类，
     # 不报任何错，只是传说卡那几档静默合不出来。
     # 和 37e 是同一处改动、不同判据：这条盯的是新那份从配置推期望值的判据
-    ("engine/combo_rules.gd",
+    ("engine/on_work_combo_rules.gd",
      '		var want_n: int = n / per',
      '		var want_n: int = n',
      "各档都对上 dup_key 侧同一张", "tests/test_config_complete.gd"),
@@ -2813,9 +2813,9 @@ MUTATIONS = [
      "播出来是配置那一档", "tests/test_config_complete.gd"),
 
     # --- 46. 典当折价率得是唯一那一份 ---
-    # 这个数原先有四份：CardDB.pawn_value 里两处、两个 python 检查各一处，
+    # 这个数原先有四份：OnWorkCardDB.pawn_value 里两处、两个 python 检查各一处，
     # 外加 balance.md 三句散文和 README 一句里的「÷2」。抽成 `_game.pawn_rate` 之后
-    # 分工是：代码不听配置 → test_pawn 红；散文没跟着改 → check_balance_numbers 红
+    # 分工是：代码不听配置 → test_pawn 红；散文没跟着改 → on_work_check_balance_numbers 红
     #
     # 46a：代码不按配置那个率折（写死成另一个数）。
     #
@@ -2823,18 +2823,18 @@ MUTATIONS = [
     # 三条实测全 MISS —— memory 里那两种空判的第一种，「换的值恰好合法」。
     # 写死本身要等到有人调配置才发作，而那一刻这条判据就红了（见 46d）。
     # 所以这里改成 3.0：配置说 2.0、代码用 3.0，当场就是「代码不听配置」
-    ("engine/card_db.gd",
+    ("engine/on_work_card_db.gd",
      '		return maxi(1, roundi(price / pawn_rate()))',
      '		return maxi(1, roundi(price / 3.0))',
      "= round(标价/", "tests/test_pawn.gd"),
     # 46b：材料购价那一路不听配置。和 46a 是两条独立的路
     #（可购卡走标价、T2 走材料购价），各自能单独坏掉
-    ("engine/card_db.gd",
+    ("engine/on_work_card_db.gd",
      '		return maxi(1, roundi(int(get_def(from_id)["price"]) * dup_n / pawn_rate()))',
      '		return maxi(1, roundi(int(get_def(from_id)["price"]) * dup_n / 3.0))',
      "成本回收", "tests/test_pawn.gd"),
     # 46c：用户卡那个价钱不听配置
-    ("engine/card_db.gd",
+    ("engine/on_work_card_db.gd",
      '		return pawn_user() if def.get("res") == RES_USER else 0',
      '		return 2 if def.get("res") == RES_USER else 0',
      "一张换这么些现金", "tests/test_pawn.gd"),
@@ -2845,10 +2845,10 @@ MUTATIONS = [
     ("data/on_work_cards.json",
      '    "pawn_rate": 2.0,',
      '    "pawn_rate": 3.0,',
-     "T2 的折价率", "tools/check_balance_numbers.py"),
+     "T2 的折价率", "tools/on_work_check_balance_numbers.py"),
 
-    # --- 47. README.md §「2.5 购买与典当」里 **典当行** 那段的六个配置事实 ---
-    # 这段原先零覆盖：check_card_table 的 docstring 说它守「README 的回收价列」，
+    # --- 47. README.md §「购买与典当」里 **典当行** 那段的六个配置事实 ---
+    # 这段原先零覆盖：on_work_check_card_table 的 docstring 说它守「README 的回收价列」，
     # 而它只读 balance.md（那句已改）。于是 README 这句话里的用户卡价钱、
     # 折价率两处、T2 张数、三张传说卡的价钱，六个数全是手抄的、谁也不查
     #
@@ -2856,7 +2856,7 @@ MUTATIONS = [
     ("data/on_work_cards.json",
      '    "pawn_user": 1\n  },',
      '    "pawn_user": 2\n  },',
-     "用户卡的价钱", "tools/check_balance_numbers.py"),
+     "用户卡的价钱", "tools/on_work_check_balance_numbers.py"),
     # 47b：某张传说卡的回收价调了。逐张比而不是合成一个片段，
     # 所以报得出来是**哪一张**漂了
     # 锚在 flavor 那行 + pawn 两行上：`"pawn": 70` 单独一句撞两处
@@ -2864,7 +2864,7 @@ MUTATIONS = [
     ("data/on_work_cards.json",
      '    "flavor": "上至八十下至八岁，人手一个",\n    "pawn": 70',
      '    "flavor": "上至八十下至八岁，人手一个",\n    "pawn": 65',
-     "的回收价", "tools/check_balance_numbers.py"),
+     "的回收价", "tools/on_work_check_balance_numbers.py"),
     # 47c：README 那段被改写，锚点从此命中 0 行。
     # 这一路和「数字对不上」是两种失败：锚点失配意味着这条判据**静默失效**，
     # 六个数一个都不再有人看，比抄错一个数更危险（见文件头「锚点怎么定」）
@@ -2872,12 +2872,12 @@ MUTATIONS = [
     ("README.md",
      '**典当行**',
      '**典当铺**',
-     "锚点「", "tools/check_balance_numbers.py"),
+     "锚点「", "tools/on_work_check_balance_numbers.py"),
 
     # ---- 48 新文件里播声音，动作名拼错 ----
     #
     # 盯的是 test_config_complete T3 的**扒取范围**。那条判据原先只读三份
-    # （main/board/card）写死的名单，而眼下只有 main.gd 真在播 —— 名单是防以后的，
+    # （main/board/card）写死的名单，而眼下只有 on_work_main.gd 真在播 —— 名单是防以后的，
     # 可它防不住「以后」落在名单外。改成枚举 scenes/ 整个目录之后这条才成立。
     #
     # 为什么不能靠 Sfx.action() 里那句 push_error 兜：**实测它印的是 `ERROR:`**，
@@ -2891,7 +2891,7 @@ MUTATIONS = [
     # 而这条要验的坏法本身是**新增**一处调用。
     #
     # 那句 play 必须**真的编译得过**：直接写 `sfx.play(...)` 是
-    # `Parse Error: Identifier "sfx" not declared`（sfx 是 main.gd 的成员），
+    # `Parse Error: Identifier "sfx" not declared`（sfx 是 on_work_main.gd 的成员），
     # 报 BROKE 而不是抓住 —— 判据只把这些文件当文本读，可 Godot 启动时
     # 会把带 class_name 的脚本全解析一遍。所以声明一个真的 Sfx 局部变量，
     # 留在 null 分支里不执行：要验的是「源码里有这么一处调用」，不是它跑起来
@@ -2911,7 +2911,7 @@ MUTATIONS = [
     # 于是把范围记进 _scanned、在 T3 外面拿目录列表对账，这条才有人接
     ("tests/test_config_complete.gd",
      '	for rel in _scene_scripts():',
-     '	for rel in ["res://scenes/main.gd"]:',
+     '	for rel in ["res://scenes/on_work_main.gd"]:',
      "scenes/ 下每一份 .gd 都扒过了", "tests/test_config_complete.gd"),
 
     # ---- 49 行号引用重新爬回来 ----
@@ -2922,13 +2922,13 @@ MUTATIONS = [
     # 所以那边加了 SELFTEST 夹具，49b/49c 验的就是夹具真的在拦
     #
     # 49a：有人在文档里写回一处行号引用 —— 这是这份检查的正业。
-    # 落点选那句已经改成函数名的（原先三处都拿行号指 combo_rules.gd，
+    # 落点选那句已经改成函数名的（原先三处都拿行号指 on_work_combo_rules.gd，
     # 指的还是 `evaluate()` 上一行，从写下那天起就偏一行）
     # **这一轮换过文件**：原落点在 balance.md 已删的那节里，那句诊断现在在
     # README「一个用户值多少钱」那段。锚点得带上后面那句才唯一
     ("README.md",
-     '`engine/combo_rules.gd` 的 `evaluate()`（用户没有消耗出口）',
-     '`engine/combo_rules.gd:140`（用户没有消耗出口）',
+     '`engine/on_work_combo_rules.gd` 的 `evaluate()`（用户没有消耗出口）',
+     '`engine/on_work_combo_rules.gd:140`（用户没有消耗出口）',
      # 关键字取「写了行号引用」而不是表头那句「不许写行号引用」：
      # 捕获判定只看 `  - ` 那些失败行，表头不在其中（第一次登记就是这么 MISS 的）
      "写了行号引用", "tools/check_no_line_refs.py"),
@@ -2958,7 +2958,7 @@ MUTATIONS = [
     #
     # 50a：克制丢掉 was_intact —— 打同一个已破组的第 2、3 张核心都各记一次，
     # 同一个组的失效会被重复计数
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      "\t\t\tvoided = broke and was_intact",
      "\t\t\tvoided = broke",
      "组早就破了，不该再刷一次爽点", "tests/test_engine.gd"),
@@ -2966,13 +2966,13 @@ MUTATIONS = [
     # 登记时这一条**先活下来过**：当时只测了 kind=spare（走的是另一个 match 分支，
     # 那支里 voided 恒为 false），漏了「打核心但富余顶上」这一例。
     # 补上那一例才咬住 —— 空洞的绿比红更难发现
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      "\t\t\tvoided = broke and was_intact",
      "\t\t\tvoided = was_intact",
      "富余料顶上、配方没破", "tests/test_engine.gd"),
     # 50c：成型丢掉「只认生产组合」—— 升级组合的 protect_quota 是 0、核心天然为空，
     # 每次升级都会记成一次成型，即使从未出现受保护的生产组合
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '''		if combo["owner"] != who or combo["eval"].get("type") != "production":
 			continue''',
      '''		if combo["owner"] != who:
@@ -2982,7 +2982,7 @@ MUTATIONS = [
      "只认生产组合", "tests/test_engine.gd"),
     # 50d：成型丢掉「核心点得到就不算」—— 什么生产组都算成型，
     # 「无解」这个词整个失去意义
-    ("engine/game_state.gd",
+    ("engine/on_work_state.gd",
      '''			if vulnerable.has(u):
 				sealed = false
 				break''',
@@ -2992,27 +2992,27 @@ MUTATIONS = [
      "的核心露在外面", "tests/test_engine.gd"),
     # 51j：档位没接到搜索上 —— `run_rounds` 收下 cfgs 就扔了。
     # 这条针对的是**空洞的绿**：强度那一串判据量的都是「参数对象长什么样」，
-    # 参数被忽略的话它们全绿，而 `tools/eval.sh 500 0 max` 会印出
+    # 参数被忽略的话它们全绿，而 `tools/on_work_eval.sh 500 0 max` 会印出
     # 一个规规矩矩的 50% 胜率
     #
     # 锚点带上后一行才唯一：`continue_from_attack` 抽出 `_loop_rounds` 之后，
     # 这一句在这个文件里有两处（`run_rounds` 的循环 和 `_loop_rounds`）。
-    # 打的是 `run_rounds` 那一处 —— 那是 `tools/eval.sh` 走的入口
+    # 打的是 `run_rounds` 那一处 —— 那是 `tools/on_work_eval.sh` 走的入口
     #
     # 关键字盯的是**第 1 回合的快照**那条，不是终局哈希那条。这条曾经 MISS 过：
-    # 选靶纳入搜索之后 `run_rounds` 里的 `Settle.run(state, cfgs)` 也读 cfgs，
+    # 选靶纳入搜索之后 `run_rounds` 里的 `OnWorkSettle.run(state, cfgs)` 也读 cfgs，
     # 于是把行动阶段的 cfg 摘掉、终局照旧变，判据绿着。
-    # 修法是把观察点挪到 `Settle.run` 还没跑过的那一刻
-    ("engine/match_simulator.gd",
+    # 修法是把观察点挪到 `OnWorkSettle.run` 还没跑过的那一刻
+    ("engine/on_work_match_simulator.gd",
      '\t\t\taction_phase(state, who, cfgs.get(who))\n\t\tif not before_settle.is_null():',
      '\t\t\taction_phase(state, who)\n\t\tif not before_settle.is_null():',
      "改变第 1 回合的行动结果", "tests/test_bot_search.gd"),
-    # 51t：`Settle.run` 不把 picker 穿下去。选靶于是永远是那份四档权重表 ——
+    # 51t：`OnWorkSettle.run` 不把 picker 穿下去。选靶于是永远是那份四档权重表 ——
     # 这**正是改造前的状态**：`attack_phase` 的 `target_picker` 参数早就在，
     # 只是无头这条路上没有调用方给得出一个会搜索的 picker。
     # 判据不能只看「参数存在」，得看那一条实参真的算出了 picker
-    ("engine/settle.gd",
-     '\tattack_phase(state, order[0], BOTPlan.target_picker(cfgs.get(order[0])))',
+    ("engine/on_work_settle.gd",
+     '\tattack_phase(state, order[0], OnWorkBOTPlan.target_picker(cfgs.get(order[0])))',
      '\tattack_phase(state, order[0])',
      "满档的选靶真的在搜索", "tests/test_bot_search.gd"),
 
@@ -3023,22 +3023,22 @@ MUTATIONS = [
     # 它们全绿。那正是 net/ 那一层踩过的坑（测试全绿而玩家点不到）
     #
     # 52a：面板不挂上去。第 2 条要的那个 tab 于是根本不存在，
-    # 而 BOTSearch 的判据一条不少地全过
-    ("scenes/main.gd",
+    # 而 OnWorkBOTSearch 的判据一条不少地全过
+    ("scenes/on_work_main.gd",
      '\tvar aip := BOTPanel.new()\n\taip.above = pal\n\tcanvas.add_child(aip)',
      '\tvar aip := BOTPanel.new()\n\taip.above = pal',
      "面板在场景树里", "tests/test_bot_panel.gd"),
     # 52b：`above` 不赋值 —— 面板改去贴屏幕顶边，和配色面板叠在一起。
     # 这条钉的是「贴在配色下方」那个位置要求（第 2 条：结构类似于配色 tab）
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\taip.above = pal\n\tcanvas.add_child(aip)',
      '\tcanvas.add_child(aip)',
      "BOT 面板在配色面板下方", "tests/test_bot_panel.gd"),
-    # 52c：`main.gd` 移除新搜索前读取当前设置的接线，重规划继续沿用阶段开始时的值。
+    # 52c：`on_work_main.gd` 移除新搜索前读取当前设置的接线，重规划继续沿用阶段开始时的值。
     # 面板拖得动、摘要照变，但下一次决策没有采用新参数。
-    # 参数层判据全绿（它们直接调 prefs()，不经过 main.gd）
-    ("scenes/main.gd",
-     '\tagent.config_provider = BOTSearch.prefs',
+    # 参数层判据全绿（它们直接调 prefs()，不经过 on_work_main.gd）
+    ("scenes/on_work_main.gd",
+     '\tagent.config_provider = OnWorkBOTSearch.prefs',
      '\tagent.config_provider = Callable()',
      "场景层读玩家偏好", "tests/test_bot_live_parameters.gd"),
     # 52d：`_syncing` 护栏破掉。回填每一行会触发 toggled / value_changed，
@@ -3054,7 +3054,7 @@ MUTATIONS = [
     #
     # 锚点搬过一次：双工那一步在这两行之间插进了 `agent.think = _think_off_thread`，
     # 原先那份「构造 + await」的连写从此不相邻。现在只钉 await 那一行
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\tagent.think = _think_off_thread\n\tawait agent.run_action_phase(_bot_beat)',
      '\tagent.think = _think_off_thread',
      "真的经管道落了意图", "tests/test_bot_panel.gd"),
@@ -3075,26 +3075,26 @@ MUTATIONS = [
     # 不标出来的话「滑块在 0 但 BOT 在搜索」看着像 bug ——
     # 玩家会去查代码，而代码是对的
     ("scenes/bot_panel.gd",
-     '\tvar star := "*" if BOTSearch.has_overrides() else ""',
+     '\tvar star := "*" if OnWorkBOTSearch.has_overrides() else ""',
      '\tvar star := ""',
      "读数带星号", "tests/test_bot_panel.gd"),
     # 52g：拖滑块就落盘。BOT 参数只在本次运行中生效，不应再生成偏好文件。
     # 直接注入写盘，避免依赖已经移除的 save() API 导致变异仅被语法检查拦住。
     ("scenes/bot_panel.gd",
      '\tBOTSearch.set_pref_strength(v)   # 会清掉逐项覆盖：拖滑块 = 整档换掉',
-     '\tBOTSearch.set_pref_strength(v)\n\tvar stale := FileAccess.open(BOTSearch.USER_PATH, FileAccess.WRITE)\n\tstale.store_string(JSON.stringify({"strength": v}))\n\tstale.close()',
+     '\tBOTSearch.set_pref_strength(v)\n\tvar stale := FileAccess.open(OnWorkBOTSearch.USER_PATH, FileAccess.WRITE)\n\tstale.store_string(JSON.stringify({"strength": v}))\n\tstale.close()',
      "拖滑块不落盘", "tests/test_bot_panel.gd"),
     # 52h：跟随失效 —— 改成记一个常量偏移。配色面板一展开，两块面板就叠在一起
     ("scenes/bot_panel.gd",
      '\t\ttop = above.offset_bottom + GAP',
      '\t\ttop = 56.0 + GAP',
      "跟着下移", "tests/test_bot_panel.gd"),
-    # 52i：档位按钮的 tooltip 念错档。面板和 `tools/eval.sh` 认的是同一批档位名
+    # 52i：档位按钮的 tooltip 念错档。面板和 `tools/on_work_eval.sh` 认的是同一批档位名
     # （bot_panel.gd `_build_presets` 那条注释），说明念错的话玩家照着报告调不出同一个 BOT
     #
     # tooltip 直接读取该预设的实际强度，不能写死成其他档位。
     ("scenes/bot_panel.gd",
-     '\t\tb.tooltip_text = "强度 %.2f" % float(BOTSearch.PRESETS[key])',
+     '\t\tb.tooltip_text = "强度 %.2f" % float(OnWorkBOTSearch.PRESETS[key])',
      '\t\tb.tooltip_text = "强度 %.2f" % 0.5',
      "悬停说明念的是它真会设的强度", "tests/test_bot_panel.gd"),
     # 52j：展开之后压根不重算高度，面板还是折叠时那么高 ——
@@ -3113,24 +3113,24 @@ MUTATIONS = [
      '\t_toggle.text = "收起" if _body.visible else "展开"',
      "当帧就自洽", "tests/test_bot_panel.gd"),
 
-    # ---------- 53：牌局录像（engine/tape.gd + 场景层的接线） ----------
+    # ---------- 53：牌局录像（engine/on_work_tape.gd + 场景层的接线） ----------
     # 53a：不报意图只报结果。录像录的就是 landed_intent —— 不发它，
     # 磁带永远是 0 步，而存出来的文件形状完全正常（看着像「这一局什么都没发生」）
-    ("engine/intent_apply.gd",
+    ("engine/on_work_intent_apply.gd",
      '\t\tlanded_intent.emit(dec["intent"], from_seat)',
      '\t\tpass',
      "这一步进了录像", "tests/test_tape.gd"),
     # 53b：报的是**入参**而不是规范化后的那份。入参可能是一段 JSON 文本
     # （联网那条路就是），也可能是一份 uid 全是 double 的字典 ——
     # 前者进了磁带就不是 Dictionary 了，读磁带的代码全得先猜类型
-    ("engine/intent_apply.gd",
+    ("engine/on_work_intent_apply.gd",
      '\t\tlanded_intent.emit(dec["intent"], from_seat)',
      '\t\tlanded_intent.emit(intent if intent is Dictionary else {}, from_seat)',
      "录进去的都是规范化后的字典", "tests/test_tape.gd"),
     # 53c：先报结果再报意图。landed 的回调里还能再落地一条意图
     # （BOT 那几条就是），于是子意图排在父意图**前面** ——
     # 重放时子意图先跑，它依赖的那张卡还没出现
-    ("engine/intent_apply.gd",
+    ("engine/on_work_intent_apply.gd",
      '\t\tlanded_intent.emit(dec["intent"], from_seat)\n\t\tlanded.emit(r)',
      '\t\tlanded.emit(r)\n\t\tlanded_intent.emit(dec["intent"], from_seat)',
      "父意图（买）排在子意图（典当）前面", "tests/test_tape.gd"),
@@ -3140,7 +3140,7 @@ MUTATIONS = [
     # `seat`，`from_seat` 只管冒充校验，而那道闸门头一个条件就是
     # `from_seat != ""` —— 抹平之后整道闸门被跳过，客户端那几条全都放行。
     # 所以 T1 里专门有一条逐步比来路的判据（memory: vacuous-mutation-two-flavors）
-    ("engine/tape.gd",
+    ("engine/on_work_tape.gd",
      '\t\t"from": from_seat,',
      '\t\t"from": "",',
      "每一步的来路座位都录对了", "tests/test_tape.gd"),
@@ -3148,93 +3148,93 @@ MUTATIONS = [
     # 重放永远「一致」，定位能力整个没了。
     # 注意抓住它的是 T5（拿磁带上的哈希和停在那一步的状态对）而不是 T1 的末态判据：
     # 末态那条比的是「重放结果 vs 现场状态」，一个字段都没读磁带
-    ("engine/tape.gd",
-     '\t\t"hash": StateCodec.state_hash(_applier.state),',
+    ("engine/on_work_tape.gd",
+     '\t\t"hash": OnWorkStateCodec.state_hash(_applier.state),',
      '\t\t"hash": "",',
      "逐步停都停得准", "tests/test_tape.gd"),
     # 53f：每一步存的是**上一步**的哈希（差一步）。这一份磁带看着一切正常 ——
     # 每步都有值、步数也对、末态也对（末态那条比的是重放结果不是磁带），
     # 只有「停在第 k 步」时才露出来：报出来的分叉步号一律差一
-    ("engine/tape.gd",
-     '\t\t"hash": StateCodec.state_hash(_applier.state),',
+    ("engine/on_work_tape.gd",
+     '\t\t"hash": OnWorkStateCodec.state_hash(_applier.state),',
      '\t\t"hash": str((steps[-1] as Dictionary)["hash"]) if not steps.is_empty() else "",',
      "逐步停都停得准", "tests/test_tape.gd"),
-    # 53g：开局快照不存池子。攻击点数池在裁决器身上，既不在 GameState 里
+    # 53g：开局快照不存池子。攻击点数池在裁决器身上，既不在 OnWorkState 里
     # 也不在 state_hash 里 —— 从攻击回合中途存的那份重放时
     # 「还没装弹」当场拒掉第一步（联网那边踩过同一个坑）
-    ("engine/tape.gd",
+    ("engine/on_work_tape.gd",
      '\thead_pools = applier.pools_snapshot()',
      '\thead_pools = {}',
      "带着池子重放得动", "tests/test_tape.gd"),
     # 53h：head 存的不是「此刻」而是一局的开头（只存种子重开一份）。
     # 中途开始录的那份就此追不上：种子是起点，而录的这一刻已经抽过几十个随机数
-    ("engine/tape.gd",
-     '\thead = StateCodec.snapshot(applier.state)',
-     '\tvar _fresh := GameState.new()\n'
+    ("engine/on_work_tape.gd",
+     '\thead = OnWorkStateCodec.snapshot(applier.state)',
+     '\tvar _fresh := OnWorkState.new()\n'
      '\t_fresh.rng_restore(applier.state.rng_snapshot())\n'
      '\t_fresh.new_game()\n'
-     '\thead = StateCodec.snapshot(_fresh)',
+     '\thead = OnWorkStateCodec.snapshot(_fresh)',
      "零步重放 = 开录那一刻的状态", "tests/test_tape.gd"),
     # 53i：重放不还原开局快照，从 new_game 现开一局。
     # 从开局录的那份**照样绿**（那时两者恰好一样），只有中途录的才红 ——
     # memory: vacuous-mutation-two-flavors 的第一种（换的值恰好合法）
-    ("engine/tape.gd",
+    ("engine/on_work_tape.gd",
      '\tStateCodec.restore(s, t.head)',
      '\ts.new_game()',
      "中途录的这一份重放末态也逐字相同", "tests/test_tape.gd"),
     # 53j：upto 不裁。要「停在第 k 步」时一路跑到底 ——
     # 报出第 k 步不对之后就再也读不到 k-1 那一刻的局面了
-    ("engine/tape.gd",
+    ("engine/on_work_tape.gd",
      '\tvar n: int = t.steps.size() if upto < 0 else mini(upto, t.steps.size())',
      '\tvar n: int = t.steps.size()',
      "逐步停都停得准", "tests/test_tape.gd"),
     # 53k：分叉了不报，接着往下跑。「末态不一致」这句话没有排查价值 ——
     # 分叉可能发生在三百步之前，而这个功能存在的理由正是答「哪儿开始不一致」
-    ("engine/tape.gd",
+    ("engine/on_work_tape.gd",
      '\t\tif want != "" and want != got:',
      '\t\tif false:',
      "报的是状态分叉", "tests/test_tape.gd"),
     # 53l：落不了地也接着跑。后面那些必然连锁失败，
     # 报出来的第一处就不是真正的那一处了
-    ("engine/tape.gd",
+    ("engine/on_work_tape.gd",
      '\t\tif not r.get("ok", false):',
      '\t\tif false:',
      "报的是第 3 步落不了地", "tests/test_tape.gd"),
     # 53m：版本对不上也尽力解析。格式不符时重放出来的分叉是假的，
     # 比读不出来更费时间
-    ("engine/tape.gd",
+    ("engine/on_work_tape.gd",
      '\tif v != VERSION:',
      '\tif false:',
      "版本对不上的录像被拒了", "tests/test_tape.gd"),
-    # 53n：读磁带时不过 Intent.from_dict（照抄 JSON 读出来的那份）。
+    # 53n：读磁带时不过 OnWorkIntent.from_dict（照抄 JSON 读出来的那份）。
     # uid 全是 double —— 重放本身不会错（apply 内部还要再规范化一次），
     # 错的是所有**读磁带**的代码：目录、按 uid 找那一步、界面上标「哪张卡出问题」
-    ("engine/tape.gd",
+    ("engine/on_work_tape.gd",
      '\t\t\t"intent": dec["intent"],',
      '\t\t\t"intent": ((e as Dictionary)["intent"] as Dictionary).duplicate(true),',
      "读回来的 uid 都是整数", "tests/test_tape.gd"),
     # 53o：场景层不开录（等玩家按键才开始）。按下才录会把最有用的那种 bug
     # 排除在外：玩家看到不对劲的时候，导致它的那几步已经过去了
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\ttape.start(pipe.applier(), "界面局")',
      '\tpass',
      "开局就在录了", "tests/test_tape.gd"),
     # 53p：重开一局不重新指向新的裁决器。录像还连在**上一局**那份上，
     # 于是新局一步都录不到 —— 而界面上一点表现都没有，
     # 存出来的文件也完全正常（只是短得离谱）
-    ("scenes/main.gd",
-     '\tpipe = LocalTransport.new(IntentApply.new(state))',
-     '\tif pipe == null:\n\t\tpipe = LocalTransport.new(IntentApply.new(state))',
+    ("scenes/on_work_main.gd",
+     '\tpipe = OnWorkLocalTransport.new(OnWorkIntentApply.new(state))',
+     '\tif pipe == null:\n\t\tpipe = OnWorkLocalTransport.new(OnWorkIntentApply.new(state))',
      "重开一局换了裁决器", "tests/test_tape.gd"),
     # 54a：存录像按钮不挂到画面上（回到「只有 F5」那一版）。
     # 上面 53a-53p 一条都不会红 —— 它们走 tape.save() 和 pipe，
     # 谁也不看画面上有没有这颗按钮。用户就是在这一步找不到入口的
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\tbtn_save.pressed.connect(_save_replay)\n\tcanvas.add_child(btn_save)',
      '\tbtn_save.pressed.connect(_save_replay)',
      "存录像按钮在场景树里", "tests/test_tape.gd"),
     # 54b：按钮在画面上但没接线。比 54a 更坏：看得见、点得着、什么也不发生
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\tbtn_save.pressed.connect(_save_replay)\n\tcanvas.add_child(btn_save)',
      '\tcanvas.add_child(btn_save)',
      "点一下真存出一份", "tests/test_tape.gd"),
@@ -3275,20 +3275,20 @@ MUTATIONS = [
     # 55a：左上角资源面板改成吃鼠标。取牌是 board.gd 在 _unhandled_input 里打射线
     # 做的，Control 吃掉的事件到不了那儿 —— 而这块面板盖的正是对手牌区的投影。
     # 症状是「屏幕左上角那几张牌点不动」，画面上没有任何东西暗示那儿有层玻璃
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\tpc.mouse_filter = Control.MOUSE_FILTER_IGNORE',
      '\tpc.mouse_filter = Control.MOUSE_FILTER_STOP',
      "面板不吃鼠标事件", "tests/test_copyable_info.gd"),
     # 55b：底改成实心。半透明是要求的一部分（用户原话「半透明的tab」）——
     # 实心那块把底下对手的明牌挡死，而看得见对手阵型是玩法的一部分
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\tsb.bg_color = Color(0.08, 0.09, 0.12, 0.55)',
      '\tsb.bg_color = Color(0.08, 0.09, 0.12, 1.0)',
      "底是半透明的", "tests/test_copyable_info.gd"),
     # 55c：录像路径退回那条会淡出的提示。这一条钉的就是用户那句原话
     # 「当前保存路径的提示是直接渲染到画面，这个不合适」—— 改回去之后
     # 一切看着正常，只是路径 2.6 秒后消失、而且从来选不中
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\tsave_notice.show_saved(abs_path, tape.size())',
      '\t_show_message("录像已存：%s" % abs_path, Color(0.7, 1, 0.7))',
      "存完之后面板立起来了", "tests/test_copyable_info.gd"),
@@ -3311,7 +3311,7 @@ MUTATIONS = [
      "选得中 —— 用户那句", "tests/test_copyable_info.gd"),
     # 55g：接管之后不把地址存给面板。面板打得开、房间码也填好了，
     # 就是没有那行地址 —— 而那行是这次改动唯一要交付的东西
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\t_reconnect_share = where',
      '\t_reconnect_share = ""',
      "存下来的分享地址里有端口", "tests/test_copyable_info.gd"),
@@ -3341,21 +3341,21 @@ MUTATIONS = [
     # 56a：提示不再进记录 —— 回到用户报的原样的**后半**。屏幕上那句还在,
     # 但前后脚来的两条里第一条永久找不回来了。
     # 这一条最像「已经修好了」：开局那句照旧看得见，只有翻记录时才发现是空的
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "\tif msg_log:\n\t\tmsg_log.append(",
      "\tif false and msg_log:\n\t\tmsg_log.append(",
      "被顶掉的第一句还在记录里", "tests/test_no_vanishing.gd"),
     # 56b：alpha 推回 0 —— 「补间删了但 alpha 忘了推回来」那个坏法的原样。
     # text 是对的、父子关系是对的、记录也是对的，只有屏幕上是空白。
     # T1 里单独钉 modulate.a 就是为了这一条
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\tlbl_msg.add_theme_color_override("font_color", color)',
      '\tlbl_msg.add_theme_color_override("font_color", color)\n\tlbl_msg.modulate.a = 0.0',
      "而且**看得见**：alpha 还是 1", "tests/test_no_vanishing.gd"),
     # 56c：提示条改成吃鼠标事件。常驻 + STOP 凑一起才是真的坑 ——
     # 它盖住的那块地方**永久**点不到牌（board.gd 打射线取牌）。
     # 从前只盖 2.6 秒，所以这条是「不淡出」这个改动新引进来的风险
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "\tlbl_msg.mouse_filter = Control.MOUSE_FILTER_IGNORE",
      "\tlbl_msg.mouse_filter = Control.MOUSE_FILTER_STOP",
      "不吃鼠标事件", "tests/test_no_vanishing.gd"),
@@ -3366,7 +3366,7 @@ MUTATIONS = [
     # 横跨两行，只注掉头一行会留下一个没人要的续行（`Expected statement,
     # found "Indent"`），变异体压根编译不过 —— 那种「红」是我写坏了，
     # 不是判据抓到了
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\t\t\t_show_message("认输取消了（等太久）。真要认输就再点一次",',
      '\t\t\t_show_message("",',
      "而且不是清空", "tests/test_no_vanishing.gd"),
@@ -3451,17 +3451,17 @@ MUTATIONS = [
      "录像目录就是 ~/.niumapai_record", "tests/test_no_vanishing.gd"),
     # 56p：存的时候不建目录。第一次存必然失败（目录还不存在），
     # 而失败那条路是报「存不下来」+ 目标目录 —— 玩家看到的是功能坏了
-    ("engine/tape.gd",
+    ("engine/on_work_tape.gd",
      "\tif not DirAccess.dir_exists_absolute(dir):\n\t\tDirAccess.make_dir_recursive_absolute(dir)",
      "\tif false:\n\t\tDirAccess.make_dir_recursive_absolute(dir)",
      "目录不存在也存得下来", "tests/test_no_vanishing.gd"),
     # 57a：整条线程分支失效 —— 每次都走同步退化那一路。
     #
     # 这条是 test_bot_think.gd 存在的理由：**返回值一模一样**，
-    # 所有既有判据（场景侧那批走 main.gd 钩子的）照旧全绿，
+    # 所有既有判据（场景侧那批走 on_work_main.gd 钩子的）照旧全绿，
     # 唯一的症状是满档那 1.7 秒里画面冻住。
     # 加这份文件之前，线程分支可以从头到尾没执行过而没人知道
-    ("engine/bot_think.gd",
+    ("engine/on_work_bot_think.gd",
      "\tif tree == null:\n\t\treturn job.call()",
      "\tif true:\n\t\treturn job.call()",
      "job 跑在工作线程上", "tests/test_bot_think.gd"),
@@ -3469,7 +3469,7 @@ MUTATIONS = [
     # 两个调用方共用 `_box`：第二个进闸门时那一格里还是第一份的结果,
     # 于是它的 `while box.is_empty()` 一进来就成立，**领走第一份的结果**
     # 就返回了——自己那份反而被扔掉。两个 BOT 座位同时开口就是「A 座拿到 B 座的计划」
-    ("engine/bot_think.gd",
+    ("engine/on_work_bot_think.gd",
      "\tvar box: Array = []\n\tvar th := Thread.new()",
      "\tvar box: Array = _box\n\tvar th := Thread.new()",
      "第二份任务算出了自己的结果", "tests/test_bot_think.gd"),
@@ -3479,38 +3479,38 @@ MUTATIONS = [
     # 抓它的判据是**两段区间不重叠**，不是「有没有漏 Thread」：
     # 线程句柄是各自的 local，闸门拆了也各自 join 得掉，busy() 照旧是假。
     # 拿漏没漏当判据这条就是 MISS（判据没有观察点那一类）
-    ("engine/bot_think.gd",
+    ("engine/on_work_bot_think.gd",
      "\twhile _thread != null:",
      "\twhile false:",
      "闸门把两份串起来了", "tests/test_bot_think.gd"),
     # 58a：秒表没装在 BOT 那条路上。顶部从不显示当前搜索计时，
-    # 而 ThinkClock 自己的那些判据（start/stop 对不对）照旧全绿
-    ("scenes/main.gd",
-     "\tThinkClock.start(ThinkClock.SRC_BOT)\n\t_update_thinking_hint()",
+    # 而 OnWorkThinkClock 自己的那些判据（start/stop 对不对）照旧全绿
+    ("scenes/on_work_main.gd",
+     "\tThinkClock.start(OnWorkThinkClock.SRC_BOT)\n\t_update_thinking_hint()",
      "\t_update_thinking_hint()",
      "计时器记下了", "tests/test_think_clock.gd"),
     # 58b：搜索之前就停表。次数仍正确，但每次记录接近零，漏掉了实际搜索。
-    ("scenes/main.gd",
-     "\tThinkClock.start(ThinkClock.SRC_BOT)\n\t_update_thinking_hint()",
-     "\tThinkClock.start(ThinkClock.SRC_BOT)\n\tThinkClock.stop()\n\t_update_thinking_hint()",
+    ("scenes/on_work_main.gd",
+     "\tThinkClock.start(OnWorkThinkClock.SRC_BOT)\n\t_update_thinking_hint()",
+     "\tThinkClock.start(OnWorkThinkClock.SRC_BOT)\n\tThinkClock.stop()\n\t_update_thinking_hint()",
      "记下的时长真裹住了搜索", "tests/test_think_clock.gd"),
     # 58c：联网局也念「BOT」。对面是个人，管他叫 BOT 是错的；
     # 而且联网那一路量到的含网络往返，说法本来就不该和本地 BOT 一样
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      '\t\tvar prefix := (" · " if drawer_presentation else "\\n") + "对手思考中… "',
      '\t\tvar prefix := (" · " if drawer_presentation else "\\n") + "BOT思考中… "',
      "念「对手」而**不**念 BOT", "tests/test_think_clock.gd"),
     # 58d：念的还是估值。这是「换了行、没换数据源」那个坏法 ——
     # 实测计数器若被改成固定数字，便不会随实际计算时间变化。
     # 屏幕上看不出区别（都是「1.8 秒」），只有换台机器才会发现它不动
-    ("engine/think_clock.gd",
+    ("engine/on_work_think_clock.gd",
      "\tvar ms := Time.get_ticks_msec() - _t0",
      "\tvar ms := 1788",
      "停表之后 last_ms 是真花掉的时间", "tests/test_think_clock.gd"),
     # 58e：换局不清。上一局的趟数和平均被算进新一局，
     # 而联网局和单机局量的还不是同一件事（一个含网络往返、一个是纯搜索），
     # 混在一个平均值里那个数没有意义
-    ("scenes/main.gd",
+    ("scenes/on_work_main.gd",
      "\tThinkClock.reset()\n\t# 撕牌的截止时刻一局一次性",
      "\t# 撕牌的截止时刻一局一次性",
      "把上一局的趟数和读数清了", "tests/test_think_clock.gd"),
@@ -3518,17 +3518,17 @@ MUTATIONS = [
 
 # 哪条变异该由哪个测试抓（默认 test_engine）
 TEST_FOR = {
-    "engine/bot_search.gd": "tests/test_bot_search.gd",
-    "engine/bot_agent.gd": "tests/test_bot_search.gd",
+    "engine/on_work_bot_search.gd": "tests/test_bot_search.gd",
+    "engine/on_work_bot_agent.gd": "tests/test_bot_search.gd",
     "engine/pile_solver.gd": "tests/test_pile_solver.gd",
     "scenes/settle_layout.gd": "tests/test_arrivals.gd",
     "scenes/board.gd": "tests/test_market.gd",
-    "scenes/main.gd": "tests/test_arrivals.gd",
-    "engine/card_db.gd": "tests/test_simulator.gd",
+    "scenes/on_work_main.gd": "tests/test_arrivals.gd",
+    "engine/on_work_card_db.gd": "tests/test_simulator.gd",
     "data/on_work_cards.json": "tests/test_simulator.gd",
     "data/on_work_bot.json": "tests/test_simulator.gd",
     "data/ui.json": "tests/test_config_complete.gd",
-    "engine/match_simulator.gd": "tests/test_simulator.gd",
+    "engine/on_work_match_simulator.gd": "tests/test_simulator.gd",
 }
 
 
@@ -3536,7 +3536,7 @@ TEST_FOR = {
 ## （运行时错误，不是编译错误），脚本就永远走不到 harness 的 finish() ——
 ## 而 quit() 只在那里。Godot 的主循环于是一直在帧间 nanosleep 转下去，
 ## 没有超时的话 subprocess.run 无限期等，整批跟着停在那一条上。
-## 实测撞过一次：card_db.gd 的 `defaults := _builtin_section(key)` 改成 `{}` 之后，
+## 实测撞过一次：on_work_card_db.gd 的 `defaults := _builtin_section(key)` 改成 `{}` 之后，
 ## test_simulator 那条「整段回退内置配置」在对空字典取键处崩掉，Godot 转了 11 分钟，
 ## 只烧了 10 秒 CPU（1.3% 占用 —— 空转的样子和「在算大题」完全不同）。
 ##
@@ -3550,7 +3550,7 @@ def _cmd_for(path):
     """判据文件该怎么跑。按扩展名分派。
 
     为什么要分派：run_tests.sh 里除了 .gd 测试，还有六个 python 检查
-    （check_card_table / check_balance_numbers / check_shell_utf8 /
+    （on_work_check_card_table / on_work_check_balance_numbers / check_shell_utf8 /
     check_launch_script / check_doc_refs / check_no_line_refs）。它们盯的是
     「文档和配置飘了」这类**没有任何 .gd 判据会红**的坏法 —— 拿 Godot 去跑 .py
     只会当场报错，于是这些从加进 run_tests.sh 那天起就在变异表射程之外
@@ -3569,7 +3569,7 @@ def _fail_lines(out, path):
     """输出里哪些行是「某一条判据红了」。
 
     .gd 走 harness 的 `[FAIL]` 前缀；python 检查印的是 `  - <说法>`
-    （见 check_balance_numbers.main 的收尾）—— 两种前缀都得认，
+    （见 on_work_check_balance_numbers.main 的收尾）—— 两种前缀都得认，
     不然 python 那侧登记进来永远是 MISS
     """
     mark = _FAIL_MARK[".py" if path.endswith(".py") else ".gd"]
@@ -3704,7 +3704,7 @@ def check_anchors():
 
     实测三条从加进表那天起就是死的（2026-09-01 查出）：
     `combo_spread_step` 和 `declared_spread_step` 最后两行逐字相同，撞掉两条；
-    `scenes/main.gd` 22d 那两行在掉线和主机接管两处各有一份。
+    `scenes/on_work_main.gd` 22d 那两行在掉线和主机接管两处各有一份。
     前两条和那个新函数同在提交 9166689 里进来 —— 加的时候就撞了，一直没人发现。
 
     只查一次的原因：`replace(old, new, 1)` 换第一处。撞名时它去改了另一个调用点，
@@ -3793,7 +3793,7 @@ def main():
         # 锚点撞了名的时候它去改了另一个调用点，那里没人看，于是报 MISS。
         # 这是第三种 MISS，修法和另两种都不一样（另两种见文件头）：
         # 不是判据太松、也不是没有观察点，是**变异根本没打在想改的地方**。
-        # 实测：'layout._layout_bot_idle()' 在 scenes/main.gd 里有 7 处，
+        # 实测：'layout._layout_bot_idle()' 在 scenes/on_work_main.gd 里有 7 处，
         # 登记的那条一直在改第 2 处，报表上是一条查无实据的 MISS
         hits = src.count(old)
         if hits > 1:

@@ -5,11 +5,11 @@
 class_name NetServer
 extends RefCounted
 
-## 专服的**壳**：认连接、搬字节、按房间码分流；游戏裁决交给 NetRoom。
+## 专服的**壳**：认连接、搬字节、按房间码分流；游戏裁决交给 OnWorkRoom。
 ##
-## 这个文件里没有一条游戏规则 —— 规则在 engine/，房间逻辑在 net/room.gd。
+## 这个文件里没有一条游戏规则 —— 规则在 engine/，房间逻辑在 net/on_work_room.gd。
 ##
-## 为什么从 tools/pvp_server.gd 里拆出来（和当初把 room.gd 拆出来是同一个理由）：
+## 为什么从 tools/pvp_server.gd 里拆出来（和当初把 on_work_room.gd 拆出来是同一个理由）：
 ## 那个文件 `extends SceneTree`，而**一个测试自己就是 SceneTree** ——
 ## 一个进程里装不下两个。于是「真开一个端口，两个 NetTransport 连上去」
 ## 这条判据就无法直接写进 tests/test_net_socket.gd。
@@ -23,10 +23,10 @@ extends RefCounted
 var fixed_seed := 0
 var verbose := false
 var port := 0
-var work_config: WorkConfig
+var off_work_config: OffWorkConfig
 var _last_poll := 0
 
-var rooms: Dictionary = {}           ## room code -> NetRoom
+var rooms: Dictionary = {}           ## room code -> OnWorkRoom
 var peer_room: Dictionary = {}       ## peer id -> room code
 
 ## peer id -> 最后一次收到他消息的时刻（毫秒）。判活用，见 _sweep_silent
@@ -34,7 +34,7 @@ var peer_seen: Dictionary = {}
 
 ## 一个连接多久没声音就把他踢下线（判活，见 Protocol.PING）。
 ##
-## 为什么服务器这一侧也要判：座位是**服务器**在记的（NetRoom.occupants）。
+## 为什么服务器这一侧也要判：座位是**服务器**在记的（OnWorkRoom.occupants）。
 ## 对手的网络断了（不是进程走了）时那条 socket 停在 STATE_OPEN，
 ## 服务器不知道他没了 —— 于是
 ##   - 留下的那一位收不到 foe_left：他看到的是「对手忽然不动了」
@@ -70,12 +70,12 @@ func _init(seed_value := 0, verbose_net := false) -> void:
 ## 开端口。返回 { ok: true, port } 或 { ok: false, code, reason }
 func start(listen_port: int) -> Dictionary:
 	# 专服无条件使用内置默认卡表，不能继承桌面端的单机自定义配置。
-	if work_config != null:
-		_peer.outbound_buffer_size = WorkRoom.SOCKET_BUFFER
-		_table_hash = JSON.stringify(work_config.balance_document()).sha256_text()
+	if off_work_config != null:
+		_peer.outbound_buffer_size = OffWorkRoom.SOCKET_BUFFER
+		_table_hash = JSON.stringify(off_work_config.balance_document()).sha256_text()
 	else:
-		CardDB.load_default()
-		_table_hash = StateCodec.table_hash()
+		OnWorkCardDB.load_default()
+		_table_hash = OnWorkStateCodec.table_hash()
 	_last_poll = Time.get_ticks_usec()
 	_peer.peer_connected.connect(_on_peer_connected)
 	_peer.peer_disconnected.connect(_on_peer_disconnected)
@@ -97,9 +97,9 @@ func table_hash() -> String:
 ## 是怎么把「读得早一帧」误当成「写得早一帧」的
 func poll() -> void:
 	var now := Time.get_ticks_usec()
-	if work_config != null:
+	if off_work_config != null:
 		var delta := minf((now - _last_poll) / 1000000.0, 0.25)
-		for room: WorkRoom in rooms.values():
+		for room: OffWorkRoom in rooms.values():
 			_flush(room, room.advance(delta))
 	_last_poll = now
 	_peer.poll()
@@ -137,7 +137,7 @@ func stop() -> void:
 func room_count() -> int:
 	return rooms.size()
 
-## 先把一间**打到一半**的房摆好，再等人连进来（主机易位，scenes/main.gd 的 _take_over_host）。
+## 先把一间**打到一半**的房摆好，再等人连进来（主机易位，scenes/on_work_main.gd 的 _take_over_host）。
 ##
 ## 必须在任何人 join 之前调：_on_join 见房间不存在就现开一间新的（空局），
 ## 那一位于是拿到一手新牌，而他屏幕上还是上一局的桌子。
@@ -145,8 +145,8 @@ func room_count() -> int:
 ## 房间码原样用 —— 用户那句「保持密码不变」说的就是这个：
 ## 对手手里那串码不用改，他重连时填的还是原来那个
 func adopt_room(code: String, snap: Dictionary, phase_name: String,
-		actor_seat: String, my_seat: String, my_token: String) -> NetRoom:
-	var room := NetRoom.new(code, fixed_seed)
+		actor_seat: String, my_seat: String, my_token: String) -> OnWorkRoom:
+	var room := OnWorkRoom.new(code, fixed_seed)
 	room.adopt(snap, phase_name, actor_seat, my_seat, my_token)
 	rooms[code] = room
 	_log("接管房间 %s（%s / %s 行动）" % [code, phase_name, actor_seat])
@@ -170,7 +170,7 @@ func _on_peer_disconnected(id: int) -> void:
 	# 重连令牌已把座位交给新连接，旧连接此时退出不代表任何玩家离线。
 	if seat == "":
 		return
-	# 房间**不删**（scenes/main.gd 的 _offer_reconnect / _on_net_down：没有隐藏信息，重连很便宜）。
+	# 房间**不删**（scenes/on_work_main.gd 的 _offer_reconnect / _on_net_down：没有隐藏信息，重连很便宜）。
 	# 只有两边都走了才回收 —— 否则一方刷新页面就把局面弄丢了
 	if room.empty():
 		rooms.erase(code)
@@ -198,12 +198,12 @@ func _on_text(from: int, text: String) -> void:
 	# 一整屏 ping/pong，而那正是出问题时要去读的地方
 	if t != Protocol.PING:
 		_log("← %d %s" % [from, Protocol.brief(msg)])
-	if (work_config == null and t == Protocol.WORK_ACTION) or (
-			work_config != null and t in [Protocol.DRAG, Protocol.PILES, Protocol.INTENT]):
+	if (off_work_config == null and t == Protocol.OFF_WORK_ACTION) or (
+			off_work_config != null and t in [Protocol.DRAG, Protocol.PILES, Protocol.INTENT]):
 		_send_one(from, Protocol.rejected("wrong_game", "此房间使用另一种玩法"))
 		return
 	match t:
-		Protocol.WORK_ACTION:
+		Protocol.OFF_WORK_ACTION:
 			_dispatch(from, func(r): return r.handle_action(from, msg.action))
 		Protocol.PING:
 			# 原样回一条。**不看他进没进房间**（不走 _dispatch）：
@@ -236,14 +236,14 @@ func _on_join(from: int, msg: Dictionary) -> void:
 			"协议版本不一致（服务器 v%d，你 v%d），换同一个版本的客户端" % [
 				Protocol.VERSION, int(msg.get("version", 0))])
 		return
-	# 比较 StateCodec.table_hash() 生成的完整规则指纹，不一致就拒连：
+	# 比较 OnWorkStateCodec.table_hash() 生成的完整规则指纹，不一致就拒连：
 	# 一份旧 cards.json 落在可执行文件旁边，两个人会玩不同价格的同一个游戏，
 	# 而且不报错。所以宁可拒连
-	if msg.get("game", "on") != ("off" if work_config != null else "on"):
+	if msg.get("game", "on") != ("off" if off_work_config != null else "on"):
 		_kick(from, Protocol.CLOSE_TABLE_MISMATCH, "玩法不同，请两边都切到同一个班次再联机")
 		return
 	var theirs := str(msg.get("table_hash", ""))
-	if (work_config != null or theirs != "") and theirs != _table_hash:
+	if (off_work_config != null or theirs != "") and theirs != _table_hash:
 		_kick(from, Protocol.CLOSE_TABLE_MISMATCH,
 			"卡表不一致（服务器 %s，你 %s）：cards.json 不是同一份" % [
 				_table_hash.substr(0, 8), theirs.substr(0, 8)])
@@ -265,11 +265,11 @@ func _on_join(from: int, msg: Dictionary) -> void:
 			_send_one(from, Protocol.rejected("no_seat", "此连接的座位已由重连连接接替"))
 			return
 		_send_one(from, existing.seated_msg(own_seat))
-		if existing.started() and work_config == null:
+		if existing.started() and off_work_config == null:
 			_send_one(from, existing.phase_msg())
 		return
 	if not rooms.has(code):
-		rooms[code] = WorkRoom.new(code, fixed_seed, work_config) if work_config != null else NetRoom.new(code, fixed_seed)
+		rooms[code] = OffWorkRoom.new(code, fixed_seed, off_work_config) if off_work_config != null else OnWorkRoom.new(code, fixed_seed)
 		_log("现开房间 %s" % code)
 	var room = rooms[code]
 	var r: Dictionary = room.seat_peer(from, str(msg.get("resume_token", "")))
@@ -302,15 +302,15 @@ func _on_join(from: int, msg: Dictionary) -> void:
 	# 进了一间**已经开着局**的房：补一条 phase。
 	#
 	# seated 里没有阶段（Protocol.SEATED 的载荷是 my_seat/foe_seat/snapshot/token），
-	# 而快照里也没有 —— 阶段是 PhaseMachine 的量，不是 GameState 的字段。
+	# 而快照里也没有 —— 阶段是 OnWorkPhaseMachine 的量，不是 OnWorkState 的字段。
 	# 于是不补的话这一位的 _phase 是**空串**：他不知道现在该谁动，
 	# 场景层那些 `phase != PHASE_ACTION` 的门全部关着，症状是
 	# 「连上了、牌也摆好了，但一步都走不了，也不报错」
 	#
 	# 这条补的是两种人：重连回来的（原先就漏，只是没有自动重连的入口所以碰不上）、
-	# 和主机易位之后连进来的那位（scenes/main.gd 的 _take_over_host —— 那间房是 adopt 出来的，
+	# 和主机易位之后连进来的那位（scenes/on_work_main.gd 的 _take_over_host —— 那间房是 adopt 出来的，
 	# 对他来说 fresh 恒为 false，phase 只能从这里来）
-	if not fresh and room.started() and work_config == null:
+	if not fresh and room.started() and off_work_config == null:
 		_send_one(from, room.phase_msg())
 		# 摞分组回放（见 Protocol.MY_PILES）。**两份都要**，各修一半症状：
 		#   my_piles  —— 他自己还没收手的那些摞。摞是纯表现，快照里没有，
@@ -322,14 +322,14 @@ func _on_join(from: int, msg: Dictionary) -> void:
 		var mine: Array = room.piles_of(seat)
 		if not mine.is_empty():
 			_send_one(from, Protocol.my_piles(mine))
-		var foe_of_his: Array = room.piles_of(GameState.opponent(seat))
+		var foe_of_his: Array = room.piles_of(OnWorkState.opponent(seat))
 		if not foe_of_his.is_empty():
 			_send_one(from, Protocol.foe_piles(Protocol.piles(foe_of_his)))
 	if fresh:
 		# 开局：两边都要拿到同一份初始快照 + 第一个阶段
 		for p in room.peers():
 			_send_one(p, room.seated_msg(room.seat_of(p)))
-		if work_config != null: return
+		if off_work_config != null: return
 		_send_to(room.peers(), room.phase_msg())
 		_log("房间 %s 开局，先手 %s" % [code, room.phase.actor])
 

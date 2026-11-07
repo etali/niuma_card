@@ -312,7 +312,7 @@ func _a8_click_compact_valid(main: Node, board: Board) -> void:
 	print("--- A8. 点一下摞好的凑满组合，整摞不挪窝也不重响 ---")
 	# 地推扫码凑满 = 核心 1 张 + 配方那几张现金（make_stack 的 n 含核心卡）。
 	# 张数从卡表取：这一节量的是「点一下整摞不挪窝」，配方几张无关
-	var stack_n := int(CardDB.get_def("ditui")["recipe_n"]) + 1
+	var stack_n := int(OnWorkCardDB.get_def("ditui")["recipe_n"]) + 1
 	var members := make_stack(main, board, 9650, "ditui", stack_n)
 	var g: Dictionary = board.make_group(members.duplicate(), false, false)
 	board.groups.append(g)
@@ -443,23 +443,23 @@ func _a5_triple_click(main: Node, board: Board) -> void:
 ## 回退路径是「点 BOT 组合摞」的唯一通路，它挑错靶就等于整个功能挑错靶
 func _b1_pile_target_prefers_combo(main: Node) -> void:
 	print("--- B1. 点组合摞优先取配方核心（能废整组），不是不影响配方的富余卡 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# BOT 编一个「云课堂 + 用户×(配方量+2)」：核心占配方量、余下的是富余，
 	# 一律按 attack_cost_per_card 计价。摞内两种靶同时存在，
 	# 才分得出「先给能废组的那张」这条优先级
-	var per_card := int(CardDB.game_rules()["attack_cost_per_card"])
-	var need := int(CardDB.get_def("yunketang")["recipe_n"])
+	var per_card := int(OnWorkCardDB.game_rules()["attack_cost_per_card"])
+	var need := int(OnWorkCardDB.get_def("yunketang")["recipe_n"])
 	var feed := need + 2
-	var prod: Dictionary = state.add_card(GameState.BOT, "yunketang")
+	var prod: Dictionary = state.add_card(OnWorkState.BOT, "yunketang")
 	main._spawn_entity(prod, Vector3(0, 0.05, -3.6), false)
 	var uids: Array = [prod["uid"]]
 	var n := 0
-	for c in state.players[GameState.BOT]["cards"]:
+	for c in state.players[OnWorkState.BOT]["cards"]:
 		if c["def_id"] == "user" and n < feed:
 			uids.append(c["uid"])
 			n += 1
 	check(n == feed, "凑到 %d 张用户卡（%d）" % [feed, n])
-	var r: Dictionary = state.create_combo(GameState.BOT, uids)
+	var r: Dictionary = state.create_combo(OnWorkState.BOT, uids)
 	check(r["ok"], "BOT 组合成立")
 	main.layout._layout_bot_zone()
 	await create_timer(0.45).timeout
@@ -468,7 +468,7 @@ func _b1_pile_target_prefers_combo(main: Node) -> void:
 
 	# 摞内同时存在 combo 靶和 spare 靶
 	var kinds := {}
-	for t in state.attack_targets(GameState.BOT):
+	for t in state.attack_targets(OnWorkState.BOT):
 		var inside := false
 		for u in t["uids"]:
 			if uids.has(u):
@@ -552,10 +552,10 @@ func _b2_drop_card_closes_gap(main: Node, board: Board) -> void:
 
 func _b3_relayout_after_attack(main: Node) -> void:
 	print("--- B3. 点掉一张配方核心后 BOT 区重排、侧边张数跟上 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	var combo: Dictionary = {}
 	for c in state.combos:
-		if c["owner"] == GameState.BOT and c["eval"].get("leader", "") == "yunketang":
+		if c["owner"] == OnWorkState.BOT and c["eval"].get("leader", "") == "yunketang":
 			combo = c
 			break
 	check(not combo.is_empty(), "找到 B1 建的那个 BOT 组合（云课堂）")
@@ -565,7 +565,7 @@ func _b3_relayout_after_attack(main: Node) -> void:
 	var before: int = main.layout._bot_pile_uids.get(pile_key, []).size()
 
 	var target := {}
-	for t in state.attack_targets(GameState.BOT):
+	for t in state.attack_targets(OnWorkState.BOT):
 		if t["kind"] == "combo" and combo["uids"].has(t["uids"][0]):
 			target = t
 			break
@@ -573,7 +573,7 @@ func _b3_relayout_after_attack(main: Node) -> void:
 	if target.is_empty():
 		return
 	var cost := int(target["cost"])
-	var user_before := int(state.resource_count(GameState.BOT, CardDB.RES_USER))
+	var user_before := int(state.resource_count(OnWorkState.BOT, OnWorkCardDB.RES_USER))
 
 	# 走玩家的真实入口：攻击模式下点摞顶那张。
 	# 摞顶按 core_first_order 是产物卡，它自己不是合法靶 → 落到 _pile_target_by_key
@@ -585,7 +585,7 @@ func _b3_relayout_after_attack(main: Node) -> void:
 	await create_timer(0.45).timeout
 	for i in 4:
 		await physics_frame
-	var removed_n := user_before - int(state.resource_count(GameState.BOT, CardDB.RES_USER))
+	var removed_n := user_before - int(state.resource_count(OnWorkState.BOT, OnWorkCardDB.RES_USER))
 	# 核心按 attack_cost_per_card 逐张计价，所以一下点掉一张。cost 现取不写死：
 	# 这一节量的是「点完之后桌面重排跟不跟得上」，不是定价
 	check(removed_n == cost,
@@ -605,7 +605,7 @@ func _b3_relayout_after_attack(main: Node) -> void:
 	check(after == before - cost,
 		"摞内张数从 %d 降到 %d（实际 %d）" % [before, before - cost, after])
 	var loose: Array = []
-	for c in state.players[GameState.BOT]["cards"]:
+	for c in state.players[OnWorkState.BOT]["cards"]:
 		if not main.layout._bot_pile_of_uid.has(c["uid"]):
 			loose.append(str(c["uid"]))
 	check(loose.is_empty(), "重排后 BOT 每张牌都在某个摞里（游离 %s）" % [
@@ -621,11 +621,11 @@ func _b3_relayout_after_attack(main: Node) -> void:
 ## 只 refresh_group 刷标签，从头到尾没人把层号排紧
 func _b4_player_group_closes_gap(main: Node, board: Board) -> void:
 	print("--- B4. BOT 打掉玩家摞里的几张，剩下的立刻合上空档 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	var members: Array = []
 	var uids: Array = []
 	for i in 5:
-		var c: Dictionary = state.add_card(GameState.PLAYER, "user")
+		var c: Dictionary = state.add_card(OnWorkState.PLAYER, "user")
 		uids.append(c["uid"])
 		members.append(main._spawn_entity(c, Vector3(-6.0, 0.05, 4.0), true))
 	isolate(board, members)
@@ -669,24 +669,24 @@ func _b4_player_group_closes_gap(main: Node, board: Board) -> void:
 ## 摞在玩家眼里是一个整体（收拢之后张数只在侧边写着），点一下就该点这一摞
 func _b5_idle_pile_drains(main: Node) -> void:
 	print("--- B5. 点闲置摞：一次点掉点数够得着的所有张 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# 清空 BOT 手牌和组合，只留一摞干净的现金，摞里张数才数得准
-	state.players[GameState.BOT]["cards"].clear()
-	state.combos = state.combos.filter(func(c): return c["owner"] != GameState.BOT)
+	state.players[OnWorkState.BOT]["cards"].clear()
+	state.combos = state.combos.filter(func(c): return c["owner"] != OnWorkState.BOT)
 	main._sync_entities()   # 把上面清掉的那些实体一并收走（不在 state 里的都飞出）
-	# 留一张用户卡吊着命：清零即胜是**每扣一张就判**的（engine/settle.gd 的攻击循环、
-	# IntentApply._attack 都是），BOT 只有现金 = 用户已经是 0 = 这局在点之前就赢了，
+	# 留一张用户卡吊着命：清零即胜是**每扣一张就判**的（engine/on_work_settle.gd 的攻击循环、
+	# OnWorkIntentApply._attack 都是），BOT 只有现金 = 用户已经是 0 = 这局在点之前就赢了，
 	# 那样第一下扣完就 game_over，后面几下全被判无效，测不到「一次点掉一摞」
-	state.add_card(GameState.BOT, "user")
+	state.add_card(OnWorkState.BOT, "user")
 	# 摞多大、给几点，是这一节自己的规模：点数只够啃掉一部分，
 	# 剩下的那几张用来判「重排跟不跟得上」。张数按 attack_cost_per_card 折算
-	var per_card := int(CardDB.game_rules()["attack_cost_per_card"])
+	var per_card := int(OnWorkCardDB.game_rules()["attack_cost_per_card"])
 	var kill := 5
 	var pile_n := kill + 2
 	var pool := kill * per_card
 	var uids: Array = []
 	for i in pile_n:
-		uids.append(int(state.add_card(GameState.BOT, "cash")["uid"]))
+		uids.append(int(state.add_card(OnWorkState.BOT, "cash")["uid"]))
 	main._sync_entities()
 	main.layout._layout_bot_zone()
 	await settle()
@@ -702,7 +702,7 @@ func _b5_idle_pile_drains(main: Node) -> void:
 
 	# 摞顶自己就是一份点数的合法靶 —— 这正是旧实现只扣一张的原因
 	var direct := {}
-	for t in state.attack_targets(GameState.BOT):
+	for t in state.attack_targets(OnWorkState.BOT):
 		if t["uids"].has(top_uid):
 			direct = t
 			break
@@ -724,7 +724,7 @@ func _b5_idle_pile_drains(main: Node) -> void:
 	await settle()
 	check(fins[0] <= 1, "attack_turn_finished 只发了一次（实际 %d）" % fins[0])
 	main.attack_turn_finished.disconnect(fin_cb)
-	var left := int(state.resource_count(GameState.BOT, CardDB.RES_CASH))
+	var left := int(state.resource_count(OnWorkState.BOT, OnWorkCardDB.RES_CASH))
 	check(left == pile_n - kill, "点一下扣掉 %d 张（%d 点花光），摞里剩 %d 张（实际剩 %d）" % [
 		kill, pool, pile_n - kill, left])
 	check(int(main._attack_pools["cash"]) == 0,
@@ -733,7 +733,7 @@ func _b5_idle_pile_drains(main: Node) -> void:
 	# 扫到最后一个就会读成它（1 张）
 	var key2: Variant = null
 	for u in uids:
-		if not state.find_card(GameState.BOT, u).is_empty():
+		if not state.find_card(OnWorkState.BOT, u).is_empty():
 			key2 = main.layout._bot_pile_of_uid.get(u, null)
 			break
 	check(key2 != null and int(main.layout._bot_pile_uids[key2].size()) == pile_n - kill,
@@ -748,14 +748,14 @@ func _b5_idle_pile_drains(main: Node) -> void:
 ## 不在任何摞里的散卡在玩家眼里就是一张，点它只该扣它自己
 func _b6_loose_card_one_click(main: Node) -> void:
 	print("--- B6. 摞外散卡：点数再多也只扣它自己一张 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# 自己摆干净的局：判据数的是「BOT 还剩几张用户卡」，接着上一条的残留就数不准。
 	# 留一张现金吊命（清零即胜是每扣一张就判的，见 B5 那条注释）
-	state.players[GameState.BOT]["cards"].clear()
-	state.combos = state.combos.filter(func(c): return c["owner"] != GameState.BOT)
-	state.add_card(GameState.BOT, "cash")
-	var a: int = int(state.add_card(GameState.BOT, "user")["uid"])
-	var b: int = int(state.add_card(GameState.BOT, "user")["uid"])
+	state.players[OnWorkState.BOT]["cards"].clear()
+	state.combos = state.combos.filter(func(c): return c["owner"] != OnWorkState.BOT)
+	state.add_card(OnWorkState.BOT, "cash")
+	var a: int = int(state.add_card(OnWorkState.BOT, "user")["uid"])
+	var b: int = int(state.add_card(OnWorkState.BOT, "user")["uid"])
 	main._sync_entities()
 	# 故意不 _layout_bot_zone：这两张就不登记在任何摞里，正是「摞外散卡」
 	main.layout._bot_pile_of_uid.erase(a)
@@ -765,13 +765,13 @@ func _b6_loose_card_one_click(main: Node) -> void:
 	main.phase = main.PHASE_ATTACK
 	main.board.attack_mode = true
 	# 点数给到远超一张的量：花不完才说明「点一张只扣一张」
-	var per_card := int(CardDB.game_rules()["attack_cost_per_card"])
+	var per_card := int(OnWorkCardDB.game_rules()["attack_cost_per_card"])
 	var pool := per_card * 9
 	main.pipe.applier().seed_pool_for_test(main.my_seat, 0, pool)
 	await main._on_attack_clicked(main.entities[a])
 	await settle()
-	check(int(state.resource_count(GameState.BOT, CardDB.RES_USER)) == 1,
-		"只扣了 1 张（剩 %d）" % int(state.resource_count(GameState.BOT, CardDB.RES_USER)))
+	check(int(state.resource_count(OnWorkState.BOT, OnWorkCardDB.RES_USER)) == 1,
+		"只扣了 1 张（剩 %d）" % int(state.resource_count(OnWorkState.BOT, OnWorkCardDB.RES_USER)))
 	check(int(main._attack_pools["user"]) == pool - per_card,
 		"只花 %d 点（剩 %d）" % [per_card, int(main._attack_pools["user"])])
 	main.board.attack_mode = false
@@ -781,18 +781,18 @@ func _b6_loose_card_one_click(main: Node) -> void:
 
 func _b7_pile_partial_then_stop(main: Node) -> void:
 	print("--- B7. 点数只够一部分：扣掉够得着的，剩下的留着，不报「点数不够」---")
-	var state: GameState = main.state
-	state.players[GameState.BOT]["cards"].clear()
-	state.combos = state.combos.filter(func(c): return c["owner"] != GameState.BOT)
+	var state: OnWorkState = main.state
+	state.players[OnWorkState.BOT]["cards"].clear()
+	state.combos = state.combos.filter(func(c): return c["owner"] != OnWorkState.BOT)
 	for u in main.entities.keys():
-		if state.find_card(GameState.BOT, u).is_empty() and main.layout._bot_pile_of_uid.has(u):
+		if state.find_card(OnWorkState.BOT, u).is_empty() and main.layout._bot_pile_of_uid.has(u):
 			main.layout._bot_pile_of_uid.erase(u)
-	state.add_card(GameState.BOT, "user")   # 吊命，见 B5 那条注释
+	state.add_card(OnWorkState.BOT, "user")   # 吊命，见 B5 那条注释
 	# 摆几张现金是判据自己的规模：这一节量的是「点得起 / 点不起」的分界，
 	# 只要多于下面那一点点数就够（点掉一张之后还剩得下）
 	var n_cash := 4
 	for i in n_cash:
-		state.add_card(GameState.BOT, "cash")
+		state.add_card(OnWorkState.BOT, "cash")
 	main._sync_entities()
 	main.layout._layout_bot_zone()
 	await settle()
@@ -807,25 +807,25 @@ func _b7_pile_partial_then_stop(main: Node) -> void:
 	main.phase = main.PHASE_ATTACK
 	main.board.attack_mode = true
 	# 给「刚好点掉一张」的点数：一张的价钱是 `_game.attack_cost_per_card`
-	var per_card := int(CardDB.game_rules()["attack_cost_per_card"])
+	var per_card := int(OnWorkCardDB.game_rules()["attack_cost_per_card"])
 	main.pipe.applier().seed_pool_for_test(main.my_seat, per_card, 0)
 	await main._on_attack_clicked(main.entities[main.layout._bot_pile_uids[key][0]])
 	await settle()
-	check(int(state.resource_count(GameState.BOT, CardDB.RES_CASH)) == n_cash - 1,
+	check(int(state.resource_count(OnWorkState.BOT, OnWorkCardDB.RES_CASH)) == n_cash - 1,
 		"%d 点扣 1 张（剩 %d，应为 %d）" % [
-			per_card, int(state.resource_count(GameState.BOT, CardDB.RES_CASH)), n_cash - 1])
+			per_card, int(state.resource_count(OnWorkState.BOT, OnWorkCardDB.RES_CASH)), n_cash - 1])
 
 	# 池子空了再点：这一下才该是「点不起」，且一张都不许扣。
 	# 还得给个说法 —— 一摞点不动又不吭声，玩家只会以为点击没被收到，
 	# 接着一直点下去（摞收拢之后张数只在侧边写着，看不出扣没扣）
-	var before := int(state.resource_count(GameState.BOT, CardDB.RES_CASH))
+	var before := int(state.resource_count(OnWorkState.BOT, OnWorkCardDB.RES_CASH))
 	main.pipe.applier().seed_pool_for_test(main.my_seat, 0, 0)
 	main.lbl_msg.text = ""
 	await main._on_attack_clicked(main.entities[main.layout._bot_pile_uids[key][0]])
 	await settle()
-	check(int(state.resource_count(GameState.BOT, CardDB.RES_CASH)) == before,
+	check(int(state.resource_count(OnWorkState.BOT, OnWorkCardDB.RES_CASH)) == before,
 		"0 点点这一摞：一张都没扣（%d → %d）" % [
-			before, int(state.resource_count(GameState.BOT, CardDB.RES_CASH))])
+			before, int(state.resource_count(OnWorkState.BOT, OnWorkCardDB.RES_CASH))])
 	check(main.lbl_msg.text != "", "点不动这一摞会给提示，不是静默（提示「%s」）" % main.lbl_msg.text)
 	main.board.attack_mode = false
 
@@ -897,7 +897,7 @@ func _b8_tear_is_symmetric() -> void:
 	print("    玩家点对手：命中音 %d 声，爆花 %d 朵，%d ms" % [a["atk"], a["burst"], a["ms"]])
 	print("    BOT 点玩家：  命中音 %d 声，爆花 %d 朵，%d ms" % [b["atk"], b["burst"], b["ms"]])
 	# 撕几张 = 靶摞的席位数（点数正好配满），从卡表推
-	var seats := int(CardDB.get_def("shuabuting")["recipe_n"])
+	var seats := int(OnWorkCardDB.get_def("shuabuting")["recipe_n"])
 	check(a["torn"] == seats and b["torn"] == seats,
 		"两边都啃掉 %d 张（A %d / B %d）" % [seats, a["torn"], b["torn"]])
 	# 这一节按「响了几声同一个 wav」来数，前提是命中和逐张真共用一个 wav。
@@ -919,15 +919,15 @@ func _tear_one_side(mine: bool) -> Dictionary:
 	var fake := CountingSfx.new()
 	main.add_child(fake)
 	main.sfx = fake
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	var victim: String = main.foe_seat if mine else main.my_seat
 	var attacker: String = main.my_seat if mine else main.foe_seat
 
 	# 靶摞的席位数 = 核心卡的配方量，点数按 `_game.attack_cost_per_card` 折算成
 	# 「刚好啃光这一摞」。两个数都读配置：这一节量的是演出对称，不是某个张数
-	var core_def: Dictionary = CardDB.get_def("shuabuting")
+	var core_def: Dictionary = OnWorkCardDB.get_def("shuabuting")
 	var seats := int(core_def["recipe_n"])
-	var per_card := int(CardDB.game_rules()["attack_cost_per_card"])
+	var per_card := int(OnWorkCardDB.game_rules()["attack_cost_per_card"])
 	var uids: Array = [int(state.add_card(victim, "shuabuting", true)["uid"])]
 	for i in seats:
 		uids.append(int(state.add_card(victim, "user", true)["uid"]))
@@ -981,7 +981,7 @@ func _n_particles(main: Node) -> int:
 
 # ---------- B9. 同批七张同时撕，不增加七次动画 ----------
 func _b9_stagger_across_calls() -> void:
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	root.add_child(main)
 	_booted = main

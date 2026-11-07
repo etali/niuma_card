@@ -11,7 +11,7 @@ extends "res://tests/harness.gd"
 func _initialize() -> void:
 	print("=== 理牌功能测试 ===\n")
 	var main: Node = await boot_main()
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	var board: Board = main.board
 
 	# --- 1. 玩家理牌：散落现金/用户各自成摞（开局 _sync_round 已自动整理一次） ---
@@ -23,9 +23,9 @@ func _initialize() -> void:
 	var cash_x := {}
 	var user_x := {}
 	var in_zone := true
-	for c in state.players[GameState.PLAYER]["cards"]:
-		var def: Dictionary = CardDB.get_def(c["def_id"])
-		if def.get("kind") != CardDB.KIND_UNIT:
+	for c in state.players[OnWorkState.PLAYER]["cards"]:
+		var def: Dictionary = OnWorkCardDB.get_def(c["def_id"])
+		if def.get("kind") != OnWorkCardDB.KIND_UNIT:
 			continue
 		var e: CardEntity = main.entities[c["uid"]]
 		var p: Vector3 = e.position
@@ -45,9 +45,9 @@ func _initialize() -> void:
 	var pitch: float = main.layout.PLAYER_PILE_COL_PITCH
 	# 两侧同一套算法，锚点各取自己那个常量
 	for side in [
-		{"res": CardDB.RES_CASH, "n": int(CardDB.game_rules()["start_cash"]),
+		{"res": OnWorkCardDB.RES_CASH, "n": int(OnWorkCardDB.game_rules()["start_cash"]),
 			"x0": main.layout.PLAYER_PILE_CASH_ANCHOR.x, "at": cash_x},
-		{"res": CardDB.RES_USER, "n": int(CardDB.game_rules()["start_user"]),
+		{"res": OnWorkCardDB.RES_USER, "n": int(OnWorkCardDB.game_rules()["start_user"]),
 			"x0": main.layout.PLAYER_PILE_USER_ANCHOR.x, "at": user_x},
 	]:
 		var want: Array = col_split(int(side["n"]), per)
@@ -55,11 +55,11 @@ func _initialize() -> void:
 		for i in want.size():
 			got.append(int(side["at"].get("%.1f" % (side["x0"] + float(i) * pitch), 0)))
 		check(got == want, "%s %d 张分 %d 摞：%s（x 从 %.1f 起、节距 %.1f，实际 %s）" % [
-			CardDB.res_label(side["res"]), side["n"], want.size(), str(want),
+			OnWorkCardDB.res_label(side["res"]), side["n"], want.size(), str(want),
 			side["x0"], pitch, str(got)])
 	# 理牌后必须是真实分组：拖动任意一张能整摞带走
 	var cash_pile_grouped := false
-	for c in state.players[GameState.PLAYER]["cards"]:
+	for c in state.players[OnWorkState.PLAYER]["cards"]:
 		if c["def_id"] != "cash":
 			continue
 		var e: CardEntity = main.entities[c["uid"]]
@@ -70,11 +70,11 @@ func _initialize() -> void:
 		"现金摞是真实分组（board.group_of 命中且组内 %d 张，可整摞拖动）" % per)
 	# 摞内向 +z 排，首张完整卡面应落在视觉托盘内而非市场缓冲带
 	var min_user_z := 99.0
-	for c in state.players[GameState.PLAYER]["cards"]:
+	for c in state.players[OnWorkState.PLAYER]["cards"]:
 		if c["def_id"] == "user":
 			min_user_z = minf(min_user_z, main.entities[c["uid"]].position.z)
 	var visual_zone: Rect2 = main.TableRegions.zone_rect(true, false,
-		int(CardDB.game_rules()["market_size"]))
+		int(OnWorkCardDB.game_rules()["market_size"]))
 	var user_north: float = min_user_z - CardEntity.CARD_SIZE.z * 0.5
 	check(user_north >= visual_zone.position.y - 0.01,
 		"用户初始牌面北缘 %.2f 在托盘北界 %.2f 内（完整卡面避开市场缓冲带）" % [
@@ -82,12 +82,12 @@ func _initialize() -> void:
 
 	# --- 2. 已编组的组合不被理牌移动 ---
 	var core_id := "shuabuting"
-	var seats: int = int(CardDB.get_def(core_id)["recipe_n"])
+	var seats: int = int(OnWorkCardDB.get_def(core_id)["recipe_n"])
 	var core: CardEntity = main._spawn_entity(
-		state.add_card(GameState.PLAYER, core_id), Vector3(0, 0.3, 3.0), true)
+		state.add_card(OnWorkState.PLAYER, core_id), Vector3(0, 0.3, 3.0), true)
 	var users: Array = [core]
 	for k in seats:
-		var uc: Dictionary = state.add_card(GameState.PLAYER, "user")
+		var uc: Dictionary = state.add_card(OnWorkState.PLAYER, "user")
 		users.append(main._spawn_entity(uc, Vector3(0.3, 0.3, 3.0), true))
 	var g := { "cards": users, "label": null }
 	board.groups.append(g)
@@ -119,8 +119,8 @@ func _initialize() -> void:
 	# 「在网格上」由 idle_x_hist 按列格筛（锚点 + 整数格 × pitch）：编了组的停在组合
 	# 位置、x 不落在格上（实测 0.0），进不来；上面那条「不被理牌移动」正好钉住
 	# 它们没挪窝，所以正常情况下这个直方图里只有散牌
-	var idle_want: Array = col_split(int(CardDB.game_rules()["start_user"]), per)
-	var idle_at: Dictionary = idle_x_hist(main, CardDB.RES_USER,
+	var idle_want: Array = col_split(int(OnWorkCardDB.game_rules()["start_user"]), per)
+	var idle_at: Dictionary = idle_x_hist(main, OnWorkCardDB.RES_USER,
 		main.layout.PLAYER_PILE_USER_ANCHOR.x, pitch)
 	var idle_got: Array = []
 	for i in idle_want.size():
@@ -136,17 +136,17 @@ func _initialize() -> void:
 			idle_want.size(), idle_at.size(), str(idle_at)])
 
 	# --- 3. BOT 长组合：分列摊开（列数按预算算）、不横着出格、不越进购牌区 ---
-	var a_core: Dictionary = state.add_card(GameState.BOT, core_id)
+	var a_core: Dictionary = state.add_card(OnWorkState.BOT, core_id)
 	var a_e: CardEntity = main._spawn_entity(a_core, Vector3(0, 0.05, -3.6), false)
 	var a_users: Array = []
 	for k in seats:
-		var uc: Dictionary = state.add_card(GameState.BOT, "user")
+		var uc: Dictionary = state.add_card(OnWorkState.BOT, "user")
 		a_users.append(main._spawn_entity(uc, Vector3(0, 0.05, -3.6), false))
 	var combo_uids: Array = [a_core["uid"]]
 	for e in a_users:
 		combo_uids.append(e.uid)
-	var r: Dictionary = state.create_combo(GameState.BOT, combo_uids)
-	check(r["ok"], "BOT「%s+用户×%d」编组成立" % [CardDB.card_name(core_id), seats])
+	var r: Dictionary = state.create_combo(OnWorkState.BOT, combo_uids)
+	check(r["ok"], "BOT「%s+用户×%d」编组成立" % [OnWorkCardDB.card_name(core_id), seats])
 	main.layout._layout_bot_zone()
 	await create_timer(0.6).timeout
 	for i in 5:
@@ -199,12 +199,12 @@ func _initialize() -> void:
 ## 实测原先一趟重排里有 5 对牌的最小 y 差落到 0.003~0.020
 func _check_flight_clearance(main: Node) -> void:
 	print("--- 理牌飞行途中不穿模 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# 造一摞厚的现金：越厚，从摞顶出发的那张要下降越多，也就越容易在半路
 	# 蹭到别人。二十来张是一局打到中盘的常态
 	var thick: Array = []
 	for i in 20:
-		var c: Dictionary = state.add_card(GameState.BOT, "cash")
+		var c: Dictionary = state.add_card(OnWorkState.BOT, "cash")
 		thick.append(main._spawn_entity(c, Vector3(-7.0 + float(i) * 0.05, 3.0, -6.5), false))
 	main.layout._layout_bot_idle()
 	await bot_moves_landed(main)
@@ -392,26 +392,26 @@ func _check_flight_clearance(main: Node) -> void:
 	check(core_id != "", "卡表里有一张吃「封了顶那一摞」的核心卡（没有的话这一节量不到重合）")
 	if core_id == "":
 		return
-	var p2: Dictionary = state.add_card(GameState.BOT, core_id)
+	var p2: Dictionary = state.add_card(OnWorkState.BOT, core_id)
 	# 出生点得挑一片**真空着**的地方，不能写死一个坐标：叠在别的牌上出生的话
 	# 出发时 y 差就是 0，量出来的越线是判据自己造的（实测在 x=11 上就撞上了
 	# 摊开的现金片 —— BOT_SPREAD_MAX_X 是 12.4，那一片能长到那儿）
 	var born: Vector3 = _empty_spot(main)
 	check(born != Vector3.INF, "给新卡找到了一块空地出生（找不到就说明桌面被铺满了）")
 	main._spawn_entity(p2, born, false)
-	var zk_def: Dictionary = CardDB.get_def(core_id)
+	var zk_def: Dictionary = OnWorkCardDB.get_def(core_id)
 	var zk_n := int(zk_def["recipe_n"])
 	# 同上一节：喂的资源按卡表的 recipe_res 取，不写死币种
-	var zk_unit := CardDB.unit_id(str(zk_def["recipe_res"]))
+	var zk_unit := OnWorkCardDB.unit_id(str(zk_def["recipe_res"]))
 	var locked := {}
 	for combo in state.combos:
 		for u in combo["uids"]:
 			locked[u] = true
 	var uids2: Array = [p2["uid"]]
-	for c in state.players[GameState.BOT]["cards"]:
+	for c in state.players[OnWorkState.BOT]["cards"]:
 		if c["def_id"] == zk_unit and uids2.size() <= zk_n and not locked.has(c["uid"]):
 			uids2.append(c["uid"])
-	check(state.create_combo(GameState.BOT, uids2).get("ok", false),
+	check(state.create_combo(OnWorkState.BOT, uids2).get("ok", false),
 		"又编一个组合（%s，BOT 区多一摞 → 前行重新居中，这才是真在动的那一趟）" % core_id)
 	# 这一趟**出发前**谁在摞底那一堆重合牌里，得在 _layout_bot_idle 清登记表之前问。
 	# 这趟刚拿走 3 张现金编了组合，后面的牌整体往下挪 3 级，原来重合的那几张
@@ -658,15 +658,15 @@ func _core_pulling_capped_pile(main: Node) -> String:
 		if int(main.layout._bot_pile_uids[key].size()) <= cap:
 			continue
 		if str(key).begins_with("bot_cash"):
-			capped.append(CardDB.RES_CASH)
+			capped.append(OnWorkCardDB.RES_CASH)
 		elif str(key).begins_with("bot_user"):
-			capped.append(CardDB.RES_USER)
+			capped.append(OnWorkCardDB.RES_USER)
 	# 配方最小的先挑：拿走的张数越少，剩下那一摞越可能还超着 cap
 	# （拿到不足 cap 的话重合整个消失，判据同样恒假）
 	var best := ""
 	var best_n := 0
-	for def_id in CardDB.all_cards():
-		var d: Dictionary = CardDB.get_def(def_id)
+	for def_id in OnWorkCardDB.all_cards():
+		var d: Dictionary = OnWorkCardDB.get_def(def_id)
 		if not d.has("recipe_res") or not d.has("recipe_n"):
 			continue
 		if not capped.has(str(d["recipe_res"])):
@@ -790,7 +790,7 @@ func col_split(n: int, per: int) -> Array:
 ## 第 1 节和第 2 节量的是同一件事（摞按列摊开），只是第 2 节多了「要排除编了组的」
 func idle_x_hist(main: Node, res: String, anchor_x: float, pitch: float) -> Dictionary:
 	var at := {}
-	for c in main.state.players[GameState.PLAYER]["cards"]:
+	for c in main.state.players[OnWorkState.PLAYER]["cards"]:
 		if c["def_id"] != res:
 			continue
 		if not main.entities.has(c["uid"]):

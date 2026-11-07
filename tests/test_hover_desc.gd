@@ -10,7 +10,7 @@ extends "res://tests/harness.gd"
 
 func _initialize() -> void:
 	print("=== 悬停说明测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	var board := Board.new()
 	root.add_child(board)
 	# 等节点真进树：_initialize 里刚 add_child 的节点还没入树，
@@ -25,8 +25,8 @@ func _initialize() -> void:
 	var leaked: Array = []
 	var tier_codes: Array = []
 
-	for def_id in CardDB.all_cards().keys():
-		var def: Dictionary = CardDB.get_def(def_id)
+	for def_id in OnWorkCardDB.all_cards().keys():
+		var def: Dictionary = OnWorkCardDB.get_def(def_id)
 		var t: String = board.hover_desc_text(def_id)
 		if t == "":
 			missing.append(def_id)
@@ -37,7 +37,7 @@ func _initialize() -> void:
 		# 单位卡跳过卡名这一条：现金/用户卡的卡名就是资源名，
 		# 说明里写「配方材料：用户」是在说资源种类，不是在重复卡名
 		var repeats_name: bool = str(def["name"]) in t \
-			and def.get("kind", "") != CardDB.KIND_UNIT
+			and def.get("kind", "") != OnWorkCardDB.KIND_UNIT
 		if repeats_name or "标价" in t or "配方进度" in t:
 			leaked.append(def_id)
 		for line in t.split("\n"):
@@ -121,46 +121,46 @@ func _initialize() -> void:
 	# 合成提示区分普通同名升级与任意同档生产卡的传说路线。
 	var tier_counts := {1: [], 2: []}
 	for tier in [1, 2]:
-		for n in range(2, CardDB.max_upgrade_n() + 1):
-			if ComboRules.legend_upgrade_target(tier, n) != "":
+		for n in range(2, OnWorkCardDB.max_upgrade_n() + 1):
+			if OnWorkComboRules.legend_upgrade_target(tier, n) != "":
 				tier_counts[tier].append(n)
 	var with_t2 := "shuabuting"
 	var t2_id := t2_of(with_t2)
-	var t2_step := int(CardDB.get_def(t2_id)["upgrade_dup_n"])
-	check(board.hover_desc_text(with_t2).contains("同名×%d → %s" % [t2_step, CardDB.card_name(t2_id)]),
+	var t2_step := int(OnWorkCardDB.get_def(t2_id)["upgrade_dup_n"])
+	check(board.hover_desc_text(with_t2).contains("同名×%d → %s" % [t2_step, OnWorkCardDB.card_name(t2_id)]),
 		"普通T1→T2仍明确需要同名材料")
 	for sample in [with_t2, t2_id, "chunwan"]:
-		var tier := int(CardDB.get_def(sample)["tier"])
+		var tier := int(OnWorkCardDB.get_def(sample)["tier"])
 		var description := board.hover_desc_text(sample)
 		var stage_name := "未升级的生产卡" if tier == 1 else "已升级的生产卡"
 		check(description.contains("%s\n×%s" % [stage_name, dup_slashed(tier_counts[tier])]),
-			"%s用升级前后状态展示传说的全部精确张数" % CardDB.card_name(sample))
+			"%s用升级前后状态展示传说的全部精确张数" % OnWorkCardDB.card_name(sample))
 		check(description.contains("同名异名均可") and description.contains("张数须精确") and description.contains("不能夹杂其他牌"),
-			"%s明确可异名、数量精确、不能夹杂" % CardDB.card_name(sample))
+			"%s明确可异名、数量精确、不能夹杂" % OnWorkCardDB.card_name(sample))
 	check(t2_of("chunwan") == "" and not board.hover_desc_text("chunwan").contains("同名×%d →" % t2_step),
 		"没有对应T2的卡不虚构普通同名升级路线")
 	for tier in [1, 2]:
 		for n in tier_counts[tier]:
-			var target := ComboRules.legend_upgrade_target(tier, n)
+			var target := OnWorkComboRules.legend_upgrade_target(tier, n)
 			var description := board.hover_desc_text(target)
 			var stage_name := "未升级的生产卡" if tier == 1 else "已升级的生产卡"
 			check(description.contains("%s×%d" % [stage_name, n]) and description.contains("同名异名均可"),
-				"%s说明按真实规则展示%s来源与张数" % [CardDB.card_name(target), stage_name])
+				"%s说明按真实规则展示%s来源与张数" % [OnWorkCardDB.card_name(target), stage_name])
 			check(not description.contains("同名巨头") and not description.contains("同名产品"), "传说说明不再要求同名材料")
-	var original_upgrade := CardDB.UPGRADE
-	CardDB.UPGRADE = original_upgrade.duplicate(true)
-	for route in CardDB.UPGRADE["routes"]:
-		if route.get("kind") == CardDB.KIND_PRODUCT and route.get("tier") == 1 and route.get("key") == "dup_key":
+	var original_upgrade := OnWorkCardDB.UPGRADE
+	OnWorkCardDB.UPGRADE = original_upgrade.duplicate(true)
+	for route in OnWorkCardDB.UPGRADE["routes"]:
+		if route.get("kind") == OnWorkCardDB.KIND_PRODUCT and route.get("tier") == 1 and route.get("key") == "dup_key":
 			route["per"] = 3
 	var configured_counts: Array = []
-	for n in range(2, CardDB.max_upgrade_n() + 1):
-		var target := ComboRules.legend_upgrade_target(1, n)
+	for n in range(2, OnWorkCardDB.max_upgrade_n() + 1):
+		var target := OnWorkComboRules.legend_upgrade_target(1, n)
 		if target != "":
 			configured_counts.append(n)
 			check(board.hover_desc_text(target).contains("未升级的生产卡×%d" % n), "传说说明实时跟随per变化，不硬编码dup×2")
 	check(board.hover_desc_text(with_t2).contains("未升级的生产卡\n×%s" % dup_slashed(configured_counts)),
 		"生产卡说明实时跟随传说路线折算配置")
-	CardDB.UPGRADE = original_upgrade
+	OnWorkCardDB.UPGRADE = original_upgrade
 	check(board.hover_desc_text(with_t2).contains("未升级的生产卡\n×%s" % dup_slashed(tier_counts[1])), "恢复配置后悬停提示不保留旧张数")
 
 	# ---- 两种防御膜共用一句模板，res 从 buff_type 反解（protect_<res>）----
@@ -169,7 +169,7 @@ func _initialize() -> void:
 	for buff_id in ["tuisong", "jiangjia"]:
 		var description: String = board.hover_desc_text(buff_id)
 		check(description.contains("入组立即保护") and not description.contains("下回合"),
-			"防御卡悬停说明明确即时保护：%s" % CardDB.card_name(buff_id))
+			"防御卡悬停说明明确即时保护：%s" % OnWorkCardDB.card_name(buff_id))
 	check(board.hover_desc_text("tuisong").contains("组内用户不可被移除"),
 		"推送弹窗说的是用户不可被移除")
 	check(board.hover_desc_text("jiangjia").contains("组内现金不可被移除"),

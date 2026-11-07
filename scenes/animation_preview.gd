@@ -9,7 +9,7 @@ const Hands = preload("res://scenes/table_hands.gd")
 const ModeSwitch = preload("res://scenes/preview_mode_switch.gd")
 const ButtonTheme = preload("res://scenes/ui_button_theme.gd")
 const ArtResolution = preload("res://scenes/preview_art_resolution.gd")
-const PreviewCard = preload("res://scenes/preview_card.gd")
+const OnWorkPreviewCard = preload("res://scenes/on_work_preview_card.gd")
 const ComicFx = preload("res://scenes/comic_fx.gd")
 const UIMotion = preload("res://scenes/ui_motion.gd")
 const ResultPresentation = preload("res://scenes/result_presentation.gd")
@@ -23,9 +23,9 @@ const FX_DEMOS := [
 ## 特效页台面：左边一张生产牌（产出、升级、作废都盖在它身上），右边一叠被攻击的资源牌。
 const FX_CORE := Vector3(-1.9, 0.05, 0.0)
 const FX_TARGET := Vector3(1.9, 0.05, 0.0)
-@export var start_off_duty := false
-var off_duty := false
-var work_preview: Control
+@export var start_off_work := false
+var off_work_active := false
+var off_work_preview: Control
 var _modes: HBoxContainer
 var _layer: CanvasLayer
 var _resolution_caption: Label
@@ -106,7 +106,7 @@ func _ready() -> void:
 	ModeSwitch.configure_window(window, "牛马牌 · 动画预览 · 上班",
 		Vector2i(window_settings.minimum_size[0], window_settings.minimum_size[1]),
 		Vector2i(window_settings.size[0], window_settings.size[1]))
-	_ids = CardDB.all_cards().keys()
+	_ids = OnWorkCardDB.all_cards().keys()
 	# 交付每五张时可以只列本批；普通预览仍包含全部卡牌。
 	var review_batch := OS.get_environment("CARD_PREVIEW_BATCH")
 	if not review_batch.is_empty():
@@ -157,23 +157,23 @@ func _ready() -> void:
 	var requested_resolution := OS.get_environment("CARD_PREVIEW_RESOLUTION")
 	if not requested_resolution.is_empty():
 		set_resolution(int(requested_resolution))
-	if start_off_duty:
+	if start_off_work:
 		select_mode(true)
 	if OS.get_environment("CARD_PREVIEW_SHOT") != "":
 		_capture_preview()
 
 func select_mode(to_off: bool) -> void:
 	_modes.select(to_off)
-	if off_duty == to_off: return
+	if off_work_active == to_off: return
 	var was_paused := _hover_pause.button_pressed
-	off_duty = to_off
-	get_window().title = "牛马牌 · 动画预览 · " + ("下班" if off_duty else "上班")
-	_stage.visible = not off_duty
-	table_hands.visible = not off_duty
-	_tabs.visible = not off_duty
+	off_work_active = to_off
+	get_window().title = "牛马牌 · 动画预览 · " + ("下班" if off_work_active else "上班")
+	_stage.visible = not off_work_active
+	table_hands.visible = not off_work_active
+	_tabs.visible = not off_work_active
 	for item in [_resolution_caption, _resolution, _resolution_note, _gallery]:
-		item.visible = not off_duty
-	if off_duty:
+		item.visible = not off_work_active
+	if off_work_active:
 		_clear_cards()
 		_clear_fx()
 		_set_busy(false)
@@ -183,14 +183,14 @@ func select_mode(to_off: bool) -> void:
 		_spacer.hide()
 		_list.show()
 		_hover_controls.show()
-		if work_preview == null:
-			work_preview = preload("res://scenes/work_animation_preview.gd").new()
-			_layer.add_child(work_preview)
-			work_preview.bind(self)
-		work_preview.paused = was_paused
-		work_preview.activate()
+		if off_work_preview == null:
+			off_work_preview = preload("res://scenes/off_work_animation_preview.gd").new()
+			_layer.add_child(off_work_preview)
+			off_work_preview.bind(self)
+		off_work_preview.paused = was_paused
+		off_work_preview.activate()
 	else:
-		work_preview.deactivate()
+		off_work_preview.deactivate()
 		_hover_seek.step = 1.0 / CardArt.hover_fps()
 		_large.material = null
 		_magnify.disabled = false
@@ -202,9 +202,9 @@ func select_mode(to_off: bool) -> void:
 
 func _sync_magnifier() -> void:
 	var enlarged := _magnify.button_pressed and _hover_controls.visible
-	if off_duty:
-		enlarged = enlarged and not work_preview.is_scenario_mode()
-		if is_instance_valid(work_preview.card): work_preview.card.visible = not enlarged
+	if off_work_active:
+		enlarged = enlarged and not off_work_preview.is_scenario_mode()
+		if is_instance_valid(off_work_preview.card): off_work_preview.card.visible = not enlarged
 	else:
 		enlarged = enlarged and _page == 0 and not _cards.is_empty()
 		if _page == 0 and not _cards.is_empty():
@@ -213,8 +213,8 @@ func _sync_magnifier() -> void:
 	_large.visible = enlarged
 
 func step_frame(direction: int) -> void:
-	if off_duty:
-		work_preview.step_frame(direction)
+	if off_work_active:
+		off_work_preview.step_frame(direction)
 	else:
 		_hover_seek.value = clampf(_hover_seek.value + direction * _hover_seek.step, 0.0, _hover_seek.max_value)
 
@@ -277,7 +277,7 @@ func _build_ui() -> void:
 	_gallery.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list.add_child(_gallery)
 	for id in _ids:
-		var button := _button(CardDB.card_name(id), show_card.bind(id))
+		var button := _button(OnWorkCardDB.card_name(id), show_card.bind(id))
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		_gallery.add_child(button)
 		_buttons.append(button)
@@ -340,7 +340,7 @@ func _build_ui() -> void:
 	_hover_pause = CheckButton.new()
 	_hover_pause.text = "暂停"
 	_hover_pause.toggled.connect(func(on):
-		if off_duty: work_preview.set_paused(on)
+		if off_work_active: off_work_preview.set_paused(on)
 		elif not _cards.is_empty(): _cards[0].hover_animation_paused = on)
 	actions.add_child(_hover_pause)
 	actions.add_child(_button("下一步", step_frame.bind(1)))
@@ -374,9 +374,9 @@ func _build_ui() -> void:
 	_hover_seek.step = 1.0 / CardArt.hover_fps()
 	_hover_seek.accessibility_name = "动画时间轴"
 	_hover_seek.drag_started.connect(func():
-		if off_duty: work_preview._timeline_dragging = true)
+		if off_work_active: off_work_preview._timeline_dragging = true)
 	_hover_seek.drag_ended.connect(func(changed):
-		if off_duty: work_preview._finish_timeline_drag(changed))
+		if off_work_active: off_work_preview._finish_timeline_drag(changed))
 	_hover_seek.value_changed.connect(_seek_seconds)
 	sliders.add_child(_hover_seek)
 	var speed_caption := _label("播放速度", 15)
@@ -414,8 +414,8 @@ func _build_ui() -> void:
 	_attack_controls.hide()
 
 func _compare_original(on: bool) -> void:
-	if off_duty:
-		work_preview.show_original(on)
+	if off_work_active:
+		off_work_preview.show_original(on)
 		return
 	if _cards.is_empty(): return
 	var card := _cards[0]
@@ -428,8 +428,8 @@ func _compare_original(on: bool) -> void:
 		_hover = card
 
 func _seek_seconds(value: float) -> void:
-	if off_duty:
-		work_preview._timeline_changed(value)
+	if off_work_active:
+		off_work_preview._timeline_changed(value)
 		return
 	if _cards.is_empty(): return
 	_hover_original.set_pressed_no_signal(false)
@@ -510,19 +510,19 @@ func _relayout() -> void:
 	_status.size = Vector2(_surface.size.x, 55 * _scale_factor)
 	_large.position = _surface.position
 	_large.size = _surface.size
-	if is_instance_valid(work_preview):
-		work_preview.position = _surface.position
-		work_preview.size = _surface.size
+	if is_instance_valid(off_work_preview):
+		off_work_preview.position = _surface.position
+		off_work_preview.size = _surface.size
 	for label in [_heading, _hint, _status]:
 		_theme(label)
 	_position_cards()
 
 func _position_cards() -> void:
 	var card_framing := maxf(2.8, 1.95 * get_viewport().get_visible_rect().size.y / maxf(1, _surface.size.y))
-	if off_duty and is_instance_valid(work_preview) and is_instance_valid(work_preview.card):
+	if off_work_active and is_instance_valid(off_work_preview) and is_instance_valid(off_work_preview.card):
 		_camera.size = card_framing
 		var center := _camera.project_ray_origin(_surface.get_center())
-		work_preview.card.position = Vector3(center.x, 0.05, center.z)
+		off_work_preview.card.position = Vector3(center.x, 0.05, center.z)
 		return
 	_camera.size = maxf(4.8, (1.35 * _cards.size() + 1.0) * get_viewport().get_visible_rect().size.y / _surface.size.x) \
 		if _page == 1 and _spread.button_pressed else 4.8
@@ -560,7 +560,7 @@ func _clear_cards() -> void:
 	_cards.clear()
 
 func _spawn(id: String) -> void:
-	var card := PreviewCard.new()
+	var card := OnWorkPreviewCard.new()
 	_uid += 1
 	card.setup(_uid, id)
 	_stage.add_child(card)
@@ -569,7 +569,7 @@ func _spawn(id: String) -> void:
 	_cards.append(card)
 
 func set_page(page: int) -> void:
-	if off_duty: return
+	if off_work_active: return
 	if _player_attack_busy != 0:
 		return
 	_page = page
@@ -604,7 +604,7 @@ func reset_fx() -> void:
 	_status.text = ""
 	_relayout()
 	_fx_place("yunketang", FX_CORE)
-	_fx_place(CardDB.unit_id(CardDB.RES_USER), FX_TARGET)
+	_fx_place(OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER), FX_TARGET)
 
 func _fx_center() -> Vector3:
 	var ray := _camera.project_ray_origin(_surface.get_center())
@@ -614,7 +614,7 @@ func _fx_center() -> Vector3:
 func _fx_place(id: String, offset: Vector3, count := 1) -> Array:
 	var made: Array = []
 	for i in count:
-		var card := PreviewCard.new()
+		var card := OnWorkPreviewCard.new()
 		_uid += 1
 		card.setup(_uid, id)
 		_fx_root.add_child(card)
@@ -650,7 +650,7 @@ func play_fx(kind: String) -> void:
 		core = _fx_place("yunketang", FX_CORE)[0]
 	match kind:
 		"hit", "coins", "final":
-			_fx_attack(CardDB.RES_CASH if kind == "coins" else CardDB.RES_USER, kind == "final", 3)
+			_fx_attack(OnWorkCardDB.RES_CASH if kind == "coins" else OnWorkCardDB.RES_USER, kind == "final", 3)
 		"void":
 			_sound.play("combo_broken")
 			core.set_void_stamp(true)
@@ -660,7 +660,7 @@ func play_fx(kind: String) -> void:
 			var cash := kind == "cash"
 			var color := Palette.semantic("cash" if cash else "user")
 			var source := ComicFx.production(_fx_root, _camera, core, core.global_position, cash,
-				int(CardDB.get_def("yunketang").get("output_n", 3)), _sound)
+				int(OnWorkCardDB.get_def("yunketang").get("output_n", 3)), _sound)
 			UIMotion.play(_fx_root, "production", source, color, 12, "coin" if cash else "user")
 		"upgrade", "legend":
 			_sound.play("upgrade")
@@ -672,7 +672,7 @@ func play_fx(kind: String) -> void:
 
 ## 撕一叠：真实的抓握、顿帧、折痕与裂口、撕开、纸屑，和对局里同一条链。
 func _fx_attack(res: String, final: bool, count: int) -> void:
-	var unit := CardDB.unit_id(res)
+	var unit := OnWorkCardDB.unit_id(res)
 	for old in _fx_root.get_children():
 		if old is CardEntity and old.def_id != "yunketang" and old.def_id != unit:
 			old.queue_free()
@@ -697,24 +697,24 @@ func _fx_attack(res: String, final: bool, count: int) -> void:
 
 ## 终局：按胜因造一份真实终局读数，弹出正式结果面板，并在桌上补终局的那一笔。
 func _show_fx_result(kind: String, at: Vector3) -> void:
-	var state := GameState.new()
+	var state := OnWorkState.new()
 	state.new_game()
-	var me := GameState.PLAYER
-	var foe := GameState.BOT
-	var win_cash := int(CardDB.game_rules()["win_cash"])
+	var me := OnWorkState.PLAYER
+	var foe := OnWorkState.BOT
+	var win_cash := int(OnWorkCardDB.game_rules()["win_cash"])
 	match kind:
 		"listing":
-			_set_resource(state, me, CardDB.RES_CASH, win_cash)
+			_set_resource(state, me, OnWorkCardDB.RES_CASH, win_cash)
 		"bankrupt":
-			_set_resource(state, foe, CardDB.RES_CASH, 0)
+			_set_resource(state, foe, OnWorkCardDB.RES_CASH, 0)
 		"exodus":
-			_set_resource(state, foe, CardDB.RES_USER, 0)
+			_set_resource(state, foe, OnWorkCardDB.RES_USER, 0)
 		_:
-			_set_resource(state, me, CardDB.RES_CASH, maxi(1, win_cash - 3))
-			_set_resource(state, foe, CardDB.RES_CASH, win_cash)
+			_set_resource(state, me, OnWorkCardDB.RES_CASH, maxi(1, win_cash - 3))
+			_set_resource(state, foe, OnWorkCardDB.RES_CASH, win_cash)
 	state.round_num = 9
 	state.check_victory()
-	var stats := {me: {CardDB.RES_CASH: 46, CardDB.RES_USER: 12, "torn": 9}}
+	var stats := {me: {OnWorkCardDB.RES_CASH: 46, OnWorkCardDB.RES_USER: 12, "torn": 9}}
 	var finale := ResultPresentation.finale_for(state, me, stats)
 	_fx_result = ResultPresentation.create(self, state, me, _sound, func(): ResultPresentation.close(_fx_result),
 		"关闭", false, false, finale)
@@ -723,8 +723,8 @@ func _show_fx_result(kind: String, at: Vector3) -> void:
 		"loser_cash": at + FX_TARGET, "loser_user": at + FX_TARGET}, state.winner != me, _sound)
 	_status.text = "%s · %s" % [finale.get("stamp", ""), state.win_reason]
 
-static func _set_resource(state: GameState, seat: String, res: String, count: int) -> void:
-	var unit := CardDB.unit_id(res)
+static func _set_resource(state: OnWorkState, seat: String, res: String, count: int) -> void:
+	var unit := OnWorkCardDB.unit_id(res)
 	state.players[seat]["cards"] = state.players[seat]["cards"].filter(func(card): return card["def_id"] != unit)
 	for i in count:
 		state.add_card(seat, unit)
@@ -743,7 +743,7 @@ func show_card(id: String) -> void:
 	_hover_seek.set_value_no_signal(0)
 	_hover_seek.max_value = _cards[0].hover_animation_duration
 	_hover_controls.visible = _page == 0 and _cards[0].hover_animation_duration > 0.0
-	_heading.text = "%s · %d / %d" % [CardDB.card_name(_ids[_selection]), _selection + 1, _ids.size()]
+	_heading.text = "%s · %d / %d" % [OnWorkCardDB.card_name(_ids[_selection]), _selection + 1, _ids.size()]
 	var config := CardArt.hover_config(_ids[_selection])
 	var kind := "完整帧动画" if config.has("files") or config.get("codec", "") == "hdelta-v1" else "待修复图集"
 	_hint.text = "%s · %d 帧 · %d fps · 鼠标悬停播放。" % [kind, int(config.get("frames", 0)), int(CardArt.hover_fps())]
@@ -760,8 +760,8 @@ func set_hover_animation_speed(value: float) -> void:
 	_apply_hover_speed()
 
 func _apply_hover_speed() -> void:
-	if off_duty:
-		work_preview.apply_speed(_hover_speed * (0.25 if _hover_slow.button_pressed else 1.0))
+	if off_work_active:
+		off_work_preview.apply_speed(_hover_speed * (0.25 if _hover_slow.button_pressed else 1.0))
 		return
 	_hover_speed_value.text = UIConfig.hover_speed_text(_hover_speed)
 	if _page == 0:
@@ -895,8 +895,8 @@ func _update_resolution_note(progress := "") -> void:
 		_resolution_note.text += "\n高于源图的档位不放大。"
 
 func replay_motion() -> void:
-	if off_duty:
-		work_preview.replay()
+	if off_work_active:
+		off_work_preview.replay()
 		return
 	if _cards.is_empty() or _cards[0].hover_animation_duration <= 0.0: return
 	_hover_original.set_pressed_no_signal(false)
@@ -917,7 +917,7 @@ func reset_attack() -> void:
 	for i in int(_count.value):
 		_spawn(id)
 	_attack_hl.append_array(_cards)
-	_heading.text = "攻击撕牌 · %s × %d" % [CardDB.card_name(id), _cards.size()]
+	_heading.text = "攻击撕牌 · %s × %d" % [OnWorkCardDB.card_name(id), _cards.size()]
 	_hint.text = "指向卡牌时手会生气；点击卡牌或“播放撕牌”查看整批效果。"
 	_status.text = "准备就绪 · 一次抓成一叠，一次撕开。"
 	_relayout()
@@ -960,7 +960,7 @@ func play_attack() -> void:
 	_status.text = "已一次撕开 %d 张牌。点击“播放撕牌”可再看一次。" % count
 
 func _process(_delta: float) -> void:
-	if off_duty or board == null or _player_attack_busy != 0:
+	if off_work_active or board == null or _player_attack_busy != 0:
 		return
 	_update_hover(get_viewport().get_mouse_position())
 	_sync_magnifier()
@@ -1002,7 +1002,7 @@ func _update_hover(pointer: Vector2) -> void:
 			_status.text = "当前卡牌没有登记动作图集"
 
 func _unhandled_input(event: InputEvent) -> void:
-	if off_duty: return
+	if off_work_active: return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
 		and _page == 1 and _player_attack_busy == 0 and _surface.has_point(event.position):
 		if _attack_hl.has(board._pick_card(event.position)):
@@ -1010,7 +1010,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _input(event: InputEvent) -> void:
-	if off_duty: return
+	if off_work_active: return
 	if event is InputEventKey and event.pressed and not event.echo and _page == 0:
 		if event.keycode in [KEY_A, KEY_D]:
 			step_frame(1 if event.keycode == KEY_D else -1)

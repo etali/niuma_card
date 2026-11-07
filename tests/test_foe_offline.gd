@@ -6,7 +6,7 @@ extends "res://tests/harness.gd"
 
 ## 对手掉线这条路：提示挂上去、摘下来，掉线期间**打不到他的牌**。
 ##
-## 为什么要真开端口：掉线是**连接**这一层的事件，NetRoom 里没有它 ——
+## 为什么要真开端口：掉线是**连接**这一层的事件，OnWorkRoom 里没有它 ——
 ## drop_peer 由服务器在收到 WebSocket 断开时调，而那一刻要判「房间空了没」
 ## 才决定回收房间还是广播 foe_left。假连接测不到这个分叉。
 ##
@@ -17,8 +17,8 @@ extends "res://tests/harness.gd"
 ##   「直到对手重新上线，进入房间」            → T3（提示摘掉、拦解除）
 
 const PORT_BASE := 47380
-const A := GameState.PLAYER
-const B := GameState.BOT
+const A := OnWorkState.PLAYER
+const B := OnWorkState.BOT
 
 ## 协程完成标志。**必须是成员变量** —— GDScript 的 lambda 按值捕获外层局部量
 ## （test_net_attack_flow 的 _flag 那段注释里有实测经过）
@@ -27,7 +27,7 @@ var _flag2 := false
 
 func _initialize() -> void:
 	print("=== 对手掉线测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	await _t1_notice_appears()
 	await _t2_my_half_lives_his_half_blocked()
 	await _t3_notice_clears_when_he_returns()
@@ -35,12 +35,12 @@ func _initialize() -> void:
 	finish()
 
 # ---------- 服务器 / 客户端（与 test_net_piles 同法，端口段错开） ----------
-func _server_room() -> NetRoom:
+func _server_room() -> OnWorkRoom:
 	for code in _srv.rooms:
 		return _srv.rooms[code]
 	return null
 
-func _server_applier() -> IntentApply:
+func _server_applier() -> OnWorkIntentApply:
 	var room := _server_room()
 	return room.applier if room != null else null
 ## 一份真场景坐 A 座 + 一条光秃秃的连接替对手收发（同 test_net_piles）
@@ -76,7 +76,7 @@ func _t1_notice_appears() -> void:
 	check(str(main._foe_offline_lbl.text) == "对手断开",
 		"提示的字是「对手断开」（实为「%s」）" % str(main._foe_offline_lbl.text))
 	check(not main._foe_online, "掉线之后 _foe_online 为假")
-	# 房间**不能**被回收：座位令牌留在那儿才回得来（net/room.gd 的 drop_peer）
+	# 房间**不能**被回收：座位令牌留在那儿才回得来（net/on_work_room.gd 的 drop_peer）
 	check(_srv.rooms.has("OFFL1"),
 		"对手掉线之后房间还留着 —— 回收掉的话他拿令牌也坐不回原位")
 	main.queue_free()
@@ -165,12 +165,12 @@ func _t2_my_half_lives_his_half_blocked() -> void:
 	await net_pump([a], 2)
 
 ## 在服务器那份状态上给某座位编一个攻击组合（同 test_net_attack_flow）
-func _give_attack_combo(room: NetRoom, seat: String) -> void:
+func _give_attack_combo(room: OnWorkRoom, seat: String) -> void:
 	var def_id := ""
 	var best := 999
-	for id in CardDB.all_cards():
-		var d: Dictionary = CardDB.get_def(id)
-		if d.get("kind") != CardDB.KIND_ATTACK:
+	for id in OnWorkCardDB.all_cards():
+		var d: Dictionary = OnWorkCardDB.get_def(id)
+		if d.get("kind") != OnWorkCardDB.KIND_ATTACK:
 			continue
 		var n := int(d.get("recipe_n", 0))
 		if n >= 1 and n < best:
@@ -178,9 +178,9 @@ func _give_attack_combo(room: NetRoom, seat: String) -> void:
 			def_id = str(id)
 	if def_id == "":
 		return
-	var d: Dictionary = CardDB.get_def(def_id)
+	var d: Dictionary = OnWorkCardDB.get_def(def_id)
 	var uids: Array = [room.state.add_card(seat, def_id)["uid"]]
-	var unit := "cash" if str(d.get("recipe_res")) == CardDB.RES_CASH else "user"
+	var unit := "cash" if str(d.get("recipe_res")) == OnWorkCardDB.RES_CASH else "user"
 	for i in int(d.get("recipe_n", 0)):
 		uids.append(room.state.add_card(seat, unit)["uid"])
 	# 弹药付款是真扣的（arm_attacks charge=true），配方之外还得有余量
@@ -197,7 +197,7 @@ func _both_action_done(main: Node, a: NetTransport, b: NetTransport) -> bool:
 		var t: NetTransport = a if str(seat) == a.my_seat else b
 		_flag = false
 		net_pump_until([a, b], func(): return _flag)
-		var r: Dictionary = await t.submit(Intent.action_done(t.my_seat))
+		var r: Dictionary = await t.submit(OnWorkIntent.action_done(t.my_seat))
 		_flag = true
 		if not r.get("ok", false):
 			check(false, "过行动阶段（%s）：%s" % [t.my_seat, r.get("reason", "")])

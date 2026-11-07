@@ -25,13 +25,13 @@ from test_runtime import cleanup_user_data
 from project_paths import display_path, redact_paths, relative_path, sanitize_file
 
 ROOT = Path(__file__).resolve().parents[1]
-STATIC_CHECKS = ("check_card_table.py", "check_balance_numbers.py", "check_shell_utf8.py",
+STATIC_CHECKS = ("on_work_check_card_table.py", "on_work_check_balance_numbers.py", "check_shell_utf8.py",
                  "check_launch_script.py", "check_doc_refs.py", "check_no_line_refs.py")
 SUITES = {
-    "gd": ("tests/test_*.gd", "tests/realtime/test_*.gd"),
-    "off-work": ("tests/realtime/test_*.gd",),
+    "gd": ("tests/test_*.gd", "tests/off_work/test_*.gd"),
+    "off-work": ("tests/off_work/test_*.gd",),
     "python": ("tests/test_*.py",),
-    "static": ("tools/check_*.py",),
+    "static": ("tools/check_*.py", "tools/on_work_check_*.py", "tools/off_work_check_*.py"),
     "drawer": ("tests/test_drawer_*.gd",),
     "bot": ("tests/test_bot_*", "tests/test_think_clock.gd"),
     "network": ("tests/test_net_*.gd", "tests/test_protocol.gd", "tests/test_seat_map.gd",
@@ -55,7 +55,7 @@ class Result:
 
 def discover(root, pattern, suites=()):
     files = sorted(p for p in (root / "tests").glob("test_*") if p.suffix in (".gd", ".py"))
-    files += sorted((root / "tests/realtime").glob("test_*.gd"))
+    files += sorted((root / "tests/off_work").glob("test_*.gd"))
     files += [root / "tools" / name for name in STATIC_CHECKS if (root / "tools" / name).is_file()]
     selected = [glob for suite in suites for glob in SUITES[suite]]
     return [p for p in files
@@ -108,7 +108,7 @@ def parse_result(path, root, code, output, log):
     result = Result(path.relative_to(root).as_posix(), kind, "failed", log=relative_path(log, root))
     if kind == "gd":
         match = re.findall(r"(\d+) 通过 / (\d+) 失败", output)
-        if not match and path.is_relative_to(root / "tests/realtime"):
+        if not match and path.is_relative_to(root / "tests/off_work"):
             match = [(n, "0") for n in re.findall(r"(?m)^\w+ PASS \((\d+) checks?(?:[,;][^\n)]*)?\)$", output)]
         if not match:
             result.reason = "没有测试汇总（编译失败或未跑完）"
@@ -212,7 +212,7 @@ def run_file(path, root, output_dir, env, timeout, cancelled, takeover_lock):
     log = output_dir / (path.relative_to(root).as_posix().replace("/", "__") + ".log")
     kind = file_kind(path)
     relative = path.relative_to(root).as_posix()
-    graphical = {"tests/realtime/test_drawer_visual_startup.gd", "tests/realtime/test_moving_card_ink.gd",
+    graphical = {"tests/off_work/test_drawer_visual_startup.gd", "tests/off_work/test_moving_card_ink.gd",
                  "tests/test_shift_visual.gd", "tests/test_preview_mode_switch.gd"}
     engine_args = [] if relative in graphical else ["--headless"]
     command = ([env["GODOT"], *engine_args, "-s", relative] if kind == "gd" else

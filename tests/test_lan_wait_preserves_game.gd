@@ -29,7 +29,7 @@ func _boot_drawer(dpi: float) -> Node:
 	root.size = Vector2i(roundi(1280 * dpi), roundi(800 * dpi))
 	root.content_scale_size = Vector2i.ZERO
 	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	main.drawer_ui_scale = dpi
 	var old_seed := OS.get_environment("CARD_SEED")
@@ -258,7 +258,7 @@ func _handoff_after_remote_action(resign: bool) -> void:
 		net_stop()
 		await _dispose(main)
 		return
-	check(remote.my_seat == GameState.PLAYER, "%s：远端拿到本局先手座位" % context)
+	check(remote.my_seat == OnWorkState.PLAYER, "%s：远端拿到本局先手座位" % context)
 	var original := _snapshot(main)
 	# 只保持与真实BOT思考相同的交接门，实际连接/入座/行动消息均走真实socket。
 	main._thinking = true
@@ -268,7 +268,7 @@ func _handoff_after_remote_action(resign: bool) -> void:
 	panel._on_connect()
 	var ready := await net_until([remote], func():
 		return is_instance_valid(panel) and panel._net != null \
-			and panel._net.has_dealt_state() and panel._net.phase() == PhaseMachine.ACTION)
+			and panel._net.has_dealt_state() and panel._net.phase() == OnWorkPhaseMachine.ACTION)
 	if not need(ready, "%s：双方已发牌，但本机仍停在旧行动交接门" % context):
 		main._thinking = false
 		if is_instance_valid(panel):
@@ -280,12 +280,12 @@ func _handoff_after_remote_action(resign: bool) -> void:
 	var pending: NetTransport = panel._net
 	var pumping_done := [false]
 	net_pump_until([remote], func(): return pumping_done[0])
-	var intent: Dictionary = Intent.resign(remote.my_seat) if resign else Intent.action_done(remote.my_seat)
+	var intent: Dictionary = OnWorkIntent.resign(remote.my_seat) if resign else OnWorkIntent.action_done(remote.my_seat)
 	var response: Dictionary = await remote.submit(intent, remote.my_seat)
 	pumping_done[0] = true
 	check(bool(response.get("ok", false)), "%s：远端操作被真实服务器接受" % context)
 	var advanced := await net_until([remote], func():
-		return pending.phase() == PhaseMachine.OVER if resign else pending.actor() == pending.my_seat)
+		return pending.phase() == OnWorkPhaseMachine.OVER if resign else pending.actor() == pending.my_seat)
 	check(advanced, "%s：候选连接已经收到了操作后的阶段" % context)
 	_assert_preserved(main, original, "%s尚未交接时" % context)
 	check(is_instance_valid(panel) and panel._waiting, "%s：等待界面仍可以取消" % context)
@@ -322,7 +322,7 @@ func _handoff_after_solo_resign_during_bot() -> void:
 		net_stop()
 		await _dispose(main)
 		return
-	var solo_state: GameState = main.state
+	var solo_state: OnWorkState = main.state
 	var original_market_size: int = solo_state.market.size()
 	# 不替换BOT决策或节拍：从玩家「完成行动」真实驱动BOT进入买卡步骤。
 	main._on_action_done()
@@ -367,7 +367,7 @@ func _handoff_after_solo_resign_during_bot() -> void:
 	await net_pump_for([remote], 900)
 	check(main.state.winner == "" and main.game_over_panel == null,
 		"%s：旧胜负层不留在新局里" % context)
-	check(main.my_seat == GameState.BOT and main._actor == remote.my_seat
+	check(main.my_seat == OnWorkState.BOT and main._actor == remote.my_seat
 		and pending.actor() == remote.my_seat and main.board.input_locked and main.btn_pass.disabled,
 		"%s：服务器仍是远端先手，旧BOT协程不能给本机后手提前解锁" % context)
 	main._reset_session_flags()
@@ -385,7 +385,7 @@ func _snapshot(main: Node) -> Dictionary:
 		groups.append({"cards": group["cards"].duplicate(),
 			"label": group.get("label"), "compact": group.get("compact", false)})
 	return {
-		"state": main.state, "hash": StateCodec.state_hash(main.state), "pipe": main.pipe,
+		"state": main.state, "hash": OnWorkStateCodec.state_hash(main.state), "pipe": main.pipe,
 		"tape": main.tape, "tape_head": main.tape.head.duplicate(true),
 		"tape_steps": main.tape.steps.duplicate(true), "tape_applier": main.tape._applier,
 		"entities": main.entities.duplicate(), "market": main.market_cards.duplicate(),
@@ -395,7 +395,7 @@ func _snapshot(main: Node) -> Dictionary:
 
 func _assert_preserved(main: Node, before: Dictionary, context: String) -> void:
 	check(main._net == null and main.state == before["state"]
-		and StateCodec.state_hash(main.state) == before["hash"],
+		and OnWorkStateCodec.state_hash(main.state) == before["hash"],
 		"%s：保留同一个 BOT 局面及其完整状态" % context)
 	check(main.pipe == before["pipe"] and main.tape == before["tape"]
 		and main.tape._applier == before["tape_applier"],
@@ -495,9 +495,9 @@ func _collapse_restore(main: Node, panel: JoinPanel, context: String) -> void:
 func _buy_one(main: Node, context: String) -> void:
 	var choice := -1
 	var price := 2147483647
-	var cash: int = main.state.resource_count(main.my_seat, CardDB.RES_CASH)
+	var cash: int = main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH)
 	for i in main.state.market.size():
-		var candidate: int = CardDB.get_def(main.state.market[i]).get("price", -1)
+		var candidate: int = OnWorkCardDB.get_def(main.state.market[i]).get("price", -1)
 		if candidate >= 0 and candidate < cash and candidate < price:
 			choice = i
 			price = candidate
@@ -505,7 +505,7 @@ func _buy_one(main: Node, context: String) -> void:
 		return
 	var before: int = main.tape.size()
 	var result: Dictionary = await main._try_buy(choice)
-	check(bool(result["ok"]) and main.state.resource_count(main.my_seat, CardDB.RES_CASH) == cash - price,
+	check(bool(result["ok"]) and main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == cash - price,
 		"%s：通过原管道真正买卡并扣除现金" % context)
 	check(main.tape.size() == before + 1 and main.entities.has(result.get("new_uid", -1)),
 		"%s：新购卡落在牌桌，录像继续追加本局步骤" % context)

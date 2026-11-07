@@ -4,7 +4,7 @@
 
 extends "res://tests/harness.gd"
 
-## 配方消耗演出 + HUD 拆分（scenes/main.gd 的 _resolve_combo_visual / _update_hud）。
+## 配方消耗演出 + HUD 拆分（scenes/on_work_main.gd 的 _resolve_combo_visual / _update_hud）。
 ##
 ## 这几条规格是**可见度**：规则一条没动，动的全是「玩家看不看得见」。
 ## 所以判据也全是「那句话在不在、写的是不是那个数」——
@@ -18,13 +18,13 @@ extends "res://tests/harness.gd"
 ## 其中一条第一版是**等价变异**（改了代码没改行为，MISS 背后没有真缺陷）：
 ## `pending_pay` 的 valid 那一跳被「evaluate 只在 valid 分支里填 recipe_pay_n」兜住了。
 ## 那种 MISS 的修法是**换锚点**，不是收紧判据：
-##   game_state.gd `pending_pay` 的待付改按卡面 `recipe_n` 取
+##   on_work_state.gd `pending_pay` 的待付改按卡面 `recipe_n` 取
 ##       → 「用户配方的摞待付 0」红（席位被当成每回合的成本）
-##   game_state.gd `on_duty += mini(seats, have)` 改成 `+= have`
+##   on_work_state.gd `on_duty += mini(seats, have)` 改成 `+= have`
 ##       → 「富余不算」红（富余用户被记成在岗 = 警报算成健康）
-##   main.gd 去掉待付括号 / 给在岗括号加 `if on_duty > 0`
+##   on_work_main.gd 去掉待付括号 / 给在岗括号加 `if on_duty > 0`
 ##       → 「HUD 写出『本回合待付』」「没有任何在岗时照旧写括号」红
-##   game_state.gd `recipe_pay_uids` 去掉「只取现金卡」那一判
+##   on_work_state.gd `recipe_pay_uids` 去掉「只取现金卡」那一判
 ##       → 「名单里全是这一组内的现金卡」红（屏幕上飞走一张核心卡）
 
 const T1_USER := "shuabuting"     # 配方 用户×3（下面查）
@@ -44,8 +44,8 @@ func _initialize() -> void:
 ## 卡表是可调的（tools/tune_sweep.py 会改数值），配方数变了造局就造不出那个形状，
 ## 而那时报出来的是一条看不懂的断言失败
 func _check_fixtures() -> void:
-	var d: Dictionary = CardDB.get_def(T1_USER)
-	check(str(d.get("recipe_res", "")) == CardDB.RES_USER
+	var d: Dictionary = OnWorkCardDB.get_def(T1_USER)
+	check(str(d.get("recipe_res", "")) == OnWorkCardDB.RES_USER
 		and int(d.get("recipe_n", 0)) >= 2,
 		"%s 是用户配方且需求 ≥2（现为 %s×%d）" % [
 			str(d.get("name", T1_USER)), str(d.get("recipe_res", "")),
@@ -53,10 +53,10 @@ func _check_fixtures() -> void:
 
 
 func _find_cash_core() -> String:
-	for def_id in CardDB.all_cards():
-		var d: Dictionary = CardDB.get_def(def_id)
-		if d.get("kind") == CardDB.KIND_PRODUCT \
-				and str(d.get("recipe_res", "")) == CardDB.RES_CASH \
+	for def_id in OnWorkCardDB.all_cards():
+		var d: Dictionary = OnWorkCardDB.get_def(def_id)
+		if d.get("kind") == OnWorkCardDB.KIND_PRODUCT \
+				and str(d.get("recipe_res", "")) == OnWorkCardDB.RES_CASH \
 				and int(d.get("recipe_n", 0)) > 0:
 			return def_id
 	return ""
@@ -69,7 +69,7 @@ func _spawn_both(main: Node, def_id: String, at: Vector3) -> CardEntity:
 	return main._spawn_entity(c, at, true)
 
 
-# ---------- 1. 配方消耗演出（scenes/main.gd 的 _resolve_combo_visual） ----------
+# ---------- 1. 配方消耗演出（scenes/on_work_main.gd 的 _resolve_combo_visual） ----------
 
 ## 结算吃掉的那几张现金要**先飞走再产出**。
 ##
@@ -83,14 +83,14 @@ func _t_consume_visual() -> void:
 		check(false, "卡表里找不到现金配方的核心卡，跳过消耗一节")
 		main.queue_free()
 		return
-	var need := int(CardDB.get_def(cash_core).get("recipe_n", 0))
+	var need := int(OnWorkCardDB.get_def(cash_core).get("recipe_n", 0))
 
 	# 直接在引擎里注册一个成立的现金配方组合
 	var uids: Array = []
 	var core: Dictionary = main.state.add_card(main.my_seat, cash_core)
 	uids.append(core["uid"])
 	for i in need:
-		uids.append(main.state.add_card(main.my_seat, CardDB.unit_id(CardDB.RES_CASH))["uid"])
+		uids.append(main.state.add_card(main.my_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))["uid"])
 	var made: Dictionary = main.state.create_combo(main.my_seat, uids)
 	check(bool(made.get("ok", false)), "注册成一个现金配方组合（%s）" % str(made.get("reason", "")))
 	if not bool(made.get("ok", false)):
@@ -105,16 +105,16 @@ func _t_consume_visual() -> void:
 	var all_cash_in_combo := true
 	for u in pay:
 		var c: Dictionary = main.state.find_card(main.my_seat, u)
-		if c.is_empty() or CardDB.get_def(str(c["def_id"])).get("res", "") != CardDB.RES_CASH:
+		if c.is_empty() or OnWorkCardDB.get_def(str(c["def_id"])).get("res", "") != OnWorkCardDB.RES_CASH:
 			all_cash_in_combo = false
 		if not (combo["uids"] as Array).has(u):
 			all_cash_in_combo = false
 	check(all_cash_in_combo, "名单里全是这一组内的现金卡")
 
-	# 引擎那边扣款念的是同一份名单：Settle._pay_recipe 走 recipe_pay_uids，
+	# 引擎那边扣款念的是同一份名单：OnWorkSettle._pay_recipe 走 recipe_pay_uids，
 	# 所以「结算后这几张 uid 都不在了」是同一件事的另一面
-	var before: int = main.state.resource_count(main.my_seat, CardDB.RES_CASH)
-	var paid: Dictionary = Settle._pay_recipe(main.state, combo, combo["eval"])
+	var before: int = main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH)
+	var paid: Dictionary = OnWorkSettle._pay_recipe(main.state, combo, combo["eval"])
 	check(bool(paid.get("ok", false)),
 		"付得起这一笔（%s）" % str(paid.get("reason", "")))
 	var gone := 0
@@ -123,9 +123,9 @@ func _t_consume_visual() -> void:
 			gone += 1
 	check(gone == pay.size(),
 		"结算吃掉的正是名单里那 %d 张（实为 %d）" % [pay.size(), gone])
-	check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == before - need,
+	check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == before - need,
 		"资金少了 %d（%d → %d）" % [
-			need, before, main.state.resource_count(main.my_seat, CardDB.RES_CASH)])
+			need, before, main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH)])
 
 	main.queue_free()
 	await physics_frame
@@ -186,7 +186,7 @@ func _t_sync_drop_is_immediate() -> void:
 	# 让 _sync_entities 走它的兜底路径（不在 state 里的都要撕掉）
 	var uids: Array = []
 	for i in 4:
-		uids.append(int(main.state.add_card(main.my_seat, CardDB.unit_id(CardDB.RES_CASH))["uid"]))
+		uids.append(int(main.state.add_card(main.my_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))["uid"]))
 	main._sync_entities()
 	await settle()
 
@@ -236,20 +236,20 @@ func _t_sync_drop_is_immediate() -> void:
 	await physics_frame
 
 
-# ---------- 2. HUD 拆分（scenes/main.gd 的 HUD 与面板实现） ----------
+# ---------- 2. HUD 拆分（scenes/on_work_main.gd 的 HUD 与面板实现） ----------
 
 func _t_hud_split() -> void:
 	var main: Node = await boot_main()
 	var board: Board = main.board
 	var cash_core := _find_cash_core()
-	var need_u := int(CardDB.get_def(T1_USER).get("recipe_n", 0))
+	var need_u := int(OnWorkCardDB.get_def(T1_USER).get("recipe_n", 0))
 
 	# --- 待付：一摞成立的现金配方 → HUD 括号里那个数 = 它的 recipe_n ---
 	if cash_core != "":
-		var need_c := int(CardDB.get_def(cash_core).get("recipe_n", 0))
+		var need_c := int(OnWorkCardDB.get_def(cash_core).get("recipe_n", 0))
 		var members: Array = [_spawn_both(main, cash_core, Vector3(-3.0, 0.05, 2.6))]
 		for i in need_c:
-			members.append(_spawn_both(main, CardDB.unit_id(CardDB.RES_CASH),
+			members.append(_spawn_both(main, OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH),
 				Vector3(-3.0 + 0.05 * i, 0.05, 3.1)))
 		isolate(board, members)
 		var g: Dictionary = board.make_group(members)
@@ -271,7 +271,7 @@ func _t_hud_split() -> void:
 
 		# --- 归零预警：把手上现金削到正好等于待付 ---
 		# 这是报障的那个形状（春晚 10 现金配方 + 手上正好 10）：
-		# 光写「待付 10」读起来像刚好付得起，而结算时 `Settle._pay_recipe`
+		# 光写「待付 10」读起来像刚好付得起，而结算时 `OnWorkSettle._pay_recipe`
 		# 会拒付、整组作废。差的就是最后这 1 块
 		# 排除的是**这一摞里的**现金卡，不是 `locked` —— 这里的摞只在 board 上，
 		# 没走 create_combo，state 里一张都没锁；按 locked 筛会把摞自己的钱也删掉
@@ -280,20 +280,20 @@ func _t_hud_split() -> void:
 			in_pile.append(int(c.uid))
 		var spare: Array = []
 		for c in main.state.players[main.my_seat]["cards"]:
-			var cd: Dictionary = CardDB.get_def(c["def_id"])
-			if cd.get("kind") == CardDB.KIND_UNIT and cd.get("res") == CardDB.RES_CASH \
+			var cd: Dictionary = OnWorkCardDB.get_def(c["def_id"])
+			if cd.get("kind") == OnWorkCardDB.KIND_UNIT and cd.get("res") == OnWorkCardDB.RES_CASH \
 					and not in_pile.has(int(c["uid"])):
 				spare.append(int(c["uid"]))
 		for u in spare:
 			main.state.remove_card(main.my_seat, u)
-		check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == need_c,
+		check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == need_c,
 			"手上现金削到正好 %d（实为 %d）" % [
-				need_c, main.state.resource_count(main.my_seat, CardDB.RES_CASH)])
+				need_c, main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH)])
 		main._update_hud()
 		check(main.lbl_player_res.text.contains("付完归零"),
 			"手上正好等于待付 → HUD 挂归零预警（实为「%s」）" % main.lbl_player_res.text)
 
-		# 摞**不成立**时待付要退回 0：不成立的组整组作废、一分钱不付（README.md §「2.6 组合与结算」），
+		# 摞**不成立**时待付要退回 0：不成立的组整组作废、一分钱不付（README.md §「组合与结算」），
 		# 记进待付是在预告一笔不会发生的支出
 		g["cards"].remove_at(g["cards"].size() - 1)
 		board._layout_group(g)
@@ -311,7 +311,7 @@ func _t_hud_split() -> void:
 	# 富余那 2 张**算闲置**：它们既不产出也拖不走，是闲置的最坏形态
 	var u_members: Array = [_spawn_both(main, T1_USER, Vector3(-5.0, 0.05, 2.6))]
 	for i in need_u + 2:
-		u_members.append(_spawn_both(main, CardDB.unit_id(CardDB.RES_USER),
+		u_members.append(_spawn_both(main, OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER),
 			Vector3(-5.0 + 0.05 * i, 0.05, 3.1)))
 	isolate(board, u_members)
 	var g2: Dictionary = board.make_group(u_members)
@@ -319,7 +319,7 @@ func _t_hud_split() -> void:
 	board._layout_group(g2)
 	await settle()
 
-	# 用户配方的摞**一分钱不付**：席位是永久的，不是每回合的成本（README.md §「2.6 组合与结算」）。
+	# 用户配方的摞**一分钱不付**：席位是永久的，不是每回合的成本（README.md §「组合与结算」）。
 	# 待付这个数只能取 eval 的 recipe_pay_n，不能拿核心卡的 recipe_n ——
 	# 后者对用户配方也是 7，屏幕上就成了「本回合待付 7」而它压根不掏钱。
 	# 上面那两条现金摞的判据抓不到这个：现金配方两个数恰好相等
@@ -327,7 +327,7 @@ func _t_hud_split() -> void:
 		"用户配方的摞待付 0（席位不是成本；实为 %d）"
 			% main.state.pending_pay(main.my_seat, main._core_piles()))
 
-	var total_u: int = main.state.resource_count(main.my_seat, CardDB.RES_USER)
+	var total_u: int = main.state.resource_count(main.my_seat, OnWorkCardDB.RES_USER)
 	var dep: Dictionary = main.state.user_deployment(main.my_seat, main._core_piles())
 	check(int(dep["on_duty"]) == need_u,
 		"在岗 = 席位数 %d，富余不算（实为 %d）" % [need_u, int(dep["on_duty"])])

@@ -4,7 +4,7 @@
 
 extends "res://tests/support/drawer_fixture.gd"
 
-const Snapshot = preload("res://scenes/table_snapshot.gd")
+const Snapshot = preload("res://scenes/on_work_table_snapshot.gd")
 
 class RecordedSound extends Sfx:
 	var events: Array = []
@@ -45,9 +45,9 @@ func _run() -> void:
 	var shared_buy: Dictionary = {}
 	for mode in ["cash", "tag", "reverse", "area"]:
 		var market: CardEntity = main.market_cards[0]
-		var price := int(CardDB.get_def(market.def_id)["price"])
+		var price := int(OnWorkCardDB.get_def(market.def_id)["price"])
 		var owned_before: Array = main.state.players[main.my_seat]["cards"].map(func(card): return card["uid"])
-		var cash_before: int = main.state.resource_count(main.my_seat, CardDB.RES_CASH)
+		var cash_before: int = main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH)
 		var market_size: int = main.state.market.size()
 		var source_group: Dictionary = _cash_group()
 		var cash_uids: Array = source_group["cards"].map(func(card): return card.uid)
@@ -64,7 +64,7 @@ func _run() -> void:
 		if mode in ["reverse", "area"]: _check_drop_position("正式" + mode)
 		check(purchases.size() == 1 and main.state.market.size() == market_size - 1,
 			"正式%s购买只走一次原dropped_on_market交易入口" % mode)
-		check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == cash_before - price,
+		check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == cash_before - price,
 			"正式%s只扣价签标价的真实现金" % mode)
 		var fresh: Array = main.state.players[main.my_seat]["cards"].filter(func(card): return not owned_before.has(card["uid"]))
 		check(fresh.size() == 1 and fresh[0]["uid"] == market.uid and fresh[0]["def_id"] == market.def_id
@@ -131,10 +131,10 @@ func _run() -> void:
 func _formal_fixture(cash_count := 24) -> void:
 	main.board.cancel_pointer()
 	main._invalidate_session()
-	main.state = GameState.new()
+	main.state = OnWorkState.new()
 	main.state.set_seed(7814)
-	main.state.players = {GameState.PLAYER: {"cards": []}, GameState.BOT: {"cards": []}}
-	for seat in [GameState.PLAYER, GameState.BOT]:
+	main.state.players = {OnWorkState.PLAYER: {"cards": []}, OnWorkState.BOT: {"cards": []}}
+	for seat in [OnWorkState.PLAYER, OnWorkState.BOT]:
 		for i in (cash_count if seat == main.my_seat else 10): main.state.add_card(seat, "cash")
 		for i in 8: main.state.add_card(seat, "user")
 	main.state.market = ["yunketang", "baoyue", "ditui", "zuokong"]
@@ -152,7 +152,7 @@ func _formal_fixture(cash_count := 24) -> void:
 func _invalid_inputs() -> void:
 	await _formal_fixture()
 	var market: CardEntity = main.market_cards[0]
-	var original := StateCodec.snapshot(main.state)
+	var original := OnWorkStateCodec.snapshot(main.state)
 	var home: Vector3 = market.global_position
 	var tag_point := _tag_point(market)
 	await _press(tag_point)
@@ -200,21 +200,21 @@ func _invalid_inputs() -> void:
 	await _drag(market, cash_cards[0].global_position)
 	await settle()
 	_check_no_purchase(original, "目标只有1现金时不借用别处现金偷偷成交")
-	_fixture_group(cash_cards.slice(0, int(CardDB.get_def(market.def_id)["price"])) + [_cards("user")[0]], Vector3(0, 0.05, 2.4), true)
+	_fixture_group(cash_cards.slice(0, int(OnWorkCardDB.get_def(market.def_id)["price"])) + [_cards("user")[0]], Vector3(0, 0.05, 2.4), true)
 	await settle()
 	var mixed_user: CardEntity = _cards("user")[0]
-	var cash_before: int = main.state.resource_count(main.my_seat, CardDB.RES_CASH)
+	var cash_before: int = main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH)
 	await _drag(market, cash_cards[0].global_position)
 	await settle()
 	check(purchases.size() == 1 and purchases[0].paid.is_empty() and not market.is_market
-		and main.state.resource_count(main.my_seat, CardDB.RES_CASH) == cash_before - int(CardDB.get_def(market.def_id)["price"])
+		and main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == cash_before - int(OnWorkCardDB.get_def(market.def_id)["price"])
 		and main.entities.has(mixed_user.uid) and main.board.group_of(market) != main.board.group_of(mixed_user),
 		"商品落在混组附近走本方区域自动付款，不拿用户付钱也不直接并入该组")
 	await _formal_fixture(1)
-	original = StateCodec.snapshot(main.state)
+	original = OnWorkStateCodec.snapshot(main.state)
 	await _tap_tag(main.market_cards[0])
 	await settle()
-	check(StateCodec.snapshot(main.state) == original and _actions().count("buy") == 0 and _actions().count("deny") == 1,
+	check(OnWorkStateCodec.snapshot(main.state) == original and _actions().count("buy") == 0 and _actions().count("deny") == 1,
 		"点价签现金不足仍由原引擎拒绝，沿用一次deny提示")
 
 func _resized_price_tag() -> void:
@@ -226,18 +226,18 @@ func _resized_price_tag() -> void:
 	var tag: Node3D = market.get_meta("price_tag").get_ref()
 	var tag_home: Vector3 = tag.global_position
 	var card_home: Vector3 = market.global_position
-	var before := StateCodec.snapshot(main.state)
+	var before := OnWorkStateCodec.snapshot(main.state)
 	await _drag(market, _cash_group()["cards"][0].global_position, true)
 	await settle()
-	check(StateCodec.snapshot(main.state) == before and market.global_position.distance_to(card_home) < 0.02
+	check(OnWorkStateCodec.snapshot(main.state) == before and market.global_position.distance_to(card_home) < 0.02
 		and tag.global_position.distance_to(tag_home) < 0.02
 		and tag.hit_test(_tag_point(market), main.board.camera),
 		"窗口缩放后取消商品反拖，价签回本次起点而非旧尺寸位置，纸面仍可点")
-	var cash_before: int = main.state.resource_count(main.my_seat, CardDB.RES_CASH)
-	var price := int(CardDB.get_def(market.def_id)["price"])
+	var cash_before: int = main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH)
+	var price := int(OnWorkCardDB.get_def(market.def_id)["price"])
 	await _tap_tag(market)
 	await settle()
-	check(not market.is_market and main.state.resource_count(main.my_seat, CardDB.RES_CASH) == cash_before - price,
+	check(not market.is_market and main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == cash_before - price,
 		"缩放后直接点击当前价签纸面仍能购买原商品")
 	root.size = Vector2i(1280, 800)
 	await relayout_drawer(main)
@@ -278,7 +278,7 @@ func _drop_positions_and_next_purchase() -> void:
 		if next_mode == "cash":
 			# 刚买到的商品留在前一摞上方；下一笔可自然使用另一摞可见现金。
 			for group in main.board.groups:
-				if group["cards"].size() >= int(CardDB.get_def(next.def_id)["price"]) \
+				if group["cards"].size() >= int(OnWorkCardDB.get_def(next.def_id)["price"]) \
 					and group["cards"].all(func(card): return card.draggable and card.def_id == "cash") \
 					and _xz(group["cards"][0].global_position).distance_to(_xz(dropped)) > 1.5:
 					payment = group["cards"][0]
@@ -295,11 +295,11 @@ func _drop_positions_and_next_purchase() -> void:
 	var one: CardEntity = _cards("cash")[0]
 	_fixture_group([one], Vector3(0, 0.05, 2.4), false)
 	await settle()
-	var before := StateCodec.snapshot(main.state)
+	var before := OnWorkStateCodec.snapshot(main.state)
 	await _drag(target, one.global_position)
 	var rejected_drop := last_drop_world
 	await settle()
-	check(StateCodec.snapshot(main.state) == before and target.is_market and target.global_position.distance_to(home) < 0.02,
+	check(OnWorkStateCodec.snapshot(main.state) == before and target.is_market and target.global_position.distance_to(home) < 0.02,
 		"明确现金不足的反拖恢复原货架，不遗留松手处商品")
 	_clear_events()
 	await _tap_tag(target)
@@ -308,7 +308,7 @@ func _drop_positions_and_next_purchase() -> void:
 		"反拖不足后点同一价签可自动付款，旧失败落点不会污染到货位置")
 
 func _single_cash_remainder() -> void:
-	var price := int(CardDB.get_def("yunketang")["price"])
+	var price := int(OnWorkCardDB.get_def("yunketang")["price"])
 	await _formal_fixture(price + 1)
 	var market: CardEntity = main.market_cards[0]
 	var cash: CardEntity = _cash_group()["cards"][0]
@@ -317,7 +317,7 @@ func _single_cash_remainder() -> void:
 	await settle()
 	_check_drop_position("反拖付款后只余1现金")
 	var left: Array = ids.filter(func(uid): return main.entities.has(uid))
-	if not need(left.size() == 1 and main.state.resource_count(main.my_seat, CardDB.RES_CASH) == 1,
+	if not need(left.size() == 1 and main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == 1,
 		"price+1现金真实反拖只支付price，原UID现金准确剩1张"): return
 	var remainder: CardEntity = main.entities[left[0]]
 	check(not _plane_rect(remainder.global_position).intersects(_plane_rect(market.global_position).grow(-0.02)),
@@ -329,9 +329,9 @@ func _single_cash_remainder() -> void:
 		"单张余款落稳后原组旧补间不会再把它拉回商品下面")
 
 func _automatic_payment_protects_combos() -> void:
-	var production_n := int(CardDB.get_def("ditui")["recipe_n"]) + 1
-	var attack_n := int(CardDB.get_def("heigongguan")["recipe_n"]) + 1
-	var price := int(CardDB.get_def("yunketang")["price"])
+	var production_n := int(OnWorkCardDB.get_def("ditui")["recipe_n"]) + 1
+	var attack_n := int(OnWorkCardDB.get_def("heigongguan")["recipe_n"]) + 1
+	var price := int(OnWorkCardDB.get_def("yunketang")["price"])
 	for mode in ["tag", "area"]:
 		for enough in [true, false]:
 			var idle_n := price + 2 if enough else price - 1
@@ -346,7 +346,7 @@ func _automatic_payment_protects_combos() -> void:
 			_fixture_group([attack] + money.slice(production_n, production_n + attack_n), Vector3(0, 0.05, 1.6), true)
 			_fixture_group(money.slice(production_n + attack_n), Vector3(3, 0.05, 1.6), true)
 			await settle()
-			var initial := StateCodec.snapshot(main.state)
+			var initial := OnWorkStateCodec.snapshot(main.state)
 			var visual := Snapshot.capture(main)
 			var protected_ids: Array = protected.map(func(card): return card.uid)
 			var protected_positions: Array = protected.map(func(card): return main.board.rest_pos(card))
@@ -364,18 +364,18 @@ func _automatic_payment_protects_combos() -> void:
 			check(unchanged and main.board.group_of(production)["compact"] and main.board.group_of(attack)["compact"],
 				"%s自动付款不移动、不展开已有有效组合" % mode)
 			if enough:
-				check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == production_n + attack_n + 2
+				check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == production_n + attack_n + 2
 					and main.entities.get(market.uid) == market and not market.is_market and _actions().count("buy") == 1,
 					"%s仅用闲置现金自动购买，保留两张闲置余款" % mode)
 			else:
-				check(StateCodec.snapshot(main.state) == initial and StateCodec.canon(Snapshot.capture(main)) == StateCodec.canon(visual)
+				check(OnWorkStateCodec.snapshot(main.state) == initial and OnWorkStateCodec.canon(Snapshot.capture(main)) == OnWorkStateCodec.canon(visual)
 					and _actions().count("buy") == 0 and _actions().count("deny") == 1,
 					"%s闲置现金不足整手拒绝，不拆有效组合凑钱且所有牌原位" % mode)
 
 func _tutorial_inputs(shared_buy: Dictionary) -> void:
 	await _formal_fixture()
-	var original_state: GameState = main.state
-	var original := StateCodec.snapshot(main.state)
+	var original_state: OnWorkState = main.state
+	var original := OnWorkStateCodec.snapshot(main.state)
 	var original_cards: Array = main.board.cards.duplicate()
 	check(main.drawer_presentation.start_tutorial("income"), "新购买入口在原牌桌开启首课")
 	var player: Node = main.drawer_presentation.tutorial
@@ -392,20 +392,20 @@ func _tutorial_inputs(shared_buy: Dictionary) -> void:
 		await _purchase_input(mode, main.market_cards[1], _cash_group()["cards"][0])
 		check(arena.operation_pending, "教程%s错买先真实执行并进入延迟单手回滚" % mode)
 		await _wait_tutorial_operation(arena)
-		if StateCodec.canon(player.session.capture_operation()) != StateCodec.canon(before):
+		if OnWorkStateCodec.canon(player.session.capture_operation()) != OnWorkStateCodec.canon(before):
 			for key in before:
 				if player.session.capture_operation().get(key) != before[key]: print("ROLLBACK_LOGIC ", mode, " ", key, " before=", before[key], " after=", player.session.capture_operation().get(key))
-		if StateCodec.canon(Snapshot.capture(main)) != StateCodec.canon(visual): print("ROLLBACK_VISUAL ", mode, " before=", visual, " after=", Snapshot.capture(main))
+		if OnWorkStateCodec.canon(Snapshot.capture(main)) != OnWorkStateCodec.canon(visual): print("ROLLBACK_VISUAL ", mode, " before=", visual, " after=", Snapshot.capture(main))
 		check(operations.size() == 1 and operations[0].get("rolled_back", false)
-			and StateCodec.canon(player.session.capture_operation()) == StateCodec.canon(before)
-			and StateCodec.canon(Snapshot.capture(main)) == StateCodec.canon(visual),
+			and OnWorkStateCodec.canon(player.session.capture_operation()) == OnWorkStateCodec.canon(before)
+			and OnWorkStateCodec.canon(Snapshot.capture(main)) == OnWorkStateCodec.canon(visual),
 			"教程%s错买恢复金额、商品、UID、原牌位和当前步骤" % mode)
 		check(_actions().count("buy") == 1 and _actions().count("deny_quiet") == 1,
 			"教程%s错买沿用buy后只补一次轻提示" % mode)
 		_clear_events()
 		var market: CardEntity = main.market_cards[0]
-		var old_cash: int = main.state.resource_count(main.my_seat, CardDB.RES_CASH)
-		var price := int(CardDB.get_def(market.def_id)["price"])
+		var old_cash: int = main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH)
+		var price := int(OnWorkCardDB.get_def(market.def_id)["price"])
 		await _purchase_input(mode, market, _cash_group()["cards"][0], mode in ["reverse", "area"])
 		check(arena.operation_pending and operations.is_empty()
 			and player.session.current_step().get("id") == "income.buy",
@@ -416,7 +416,7 @@ func _tutorial_inputs(shared_buy: Dictionary) -> void:
 			and player.session.current_step().get("id") == "income.group"
 			and not player._awaiting_result and not arena.board.input_locked,
 			"教程%s到货后直接进入配牌，无额外点击且不重复交易" % mode)
-		check(main.state.resource_count(main.my_seat, CardDB.RES_CASH) == old_cash - price
+		check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == old_cash - price
 			and main.entities.get(market.uid) == market and market.draggable and not market.is_market,
 			"教程%s沿用真实付款与原商品实体" % mode)
 		var sounds: Array = sound.events.filter(func(event): return event.action == "buy")
@@ -425,7 +425,7 @@ func _tutorial_inputs(shared_buy: Dictionary) -> void:
 			"教程%s和正式购买共用TableActions、音源及唯一buy事件" % mode)
 	main.drawer_presentation.finish_tutorial(false)
 	await create_timer(0.6).timeout
-	check(main.state == original_state and StateCodec.snapshot(main.state) == original and main.board.cards == original_cards,
+	check(main.state == original_state and OnWorkStateCodec.snapshot(main.state) == original and main.board.cards == original_cards,
 		"新购买交互退出后完整恢复正式局，不留下异步交易")
 
 func _wait_tutorial_operation(arena: Node) -> void:
@@ -436,7 +436,7 @@ func _wait_tutorial_operation(arena: Node) -> void:
 
 func _mobile_price_tag() -> void:
 	root.size = Vector2i(960, 540)
-	main = load("res://scenes/main.tscn").instantiate()
+	main = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_mobile_layout = true
 	root.add_child(main)
 	_booted = main
@@ -465,7 +465,7 @@ func _mobile_price_tag() -> void:
 		var point := _tag_point(market)
 		check(tag.hit_test(point, main.board.camera) and main.board._pick_card(point) == null,
 			"长按测试命中卡牌外扩价签纸面，不能靠卡面射线误过")
-		var before := StateCodec.snapshot(main.state)
+		var before := OnWorkStateCodec.snapshot(main.state)
 		_clear_events()
 		await _touch(point, true)
 		await create_timer(0.6).timeout
@@ -474,16 +474,16 @@ func _mobile_price_tag() -> void:
 			"%s长按价签走共享说明并取消待购买点击" % ("教程" if tutorial else "正式局"))
 		await _touch(point, false)
 		await settle()
-		check(StateCodec.snapshot(main.state) == before and market.is_market and _actions().count("buy") == 0,
+		check(OnWorkStateCodec.snapshot(main.state) == before and market.is_market and _actions().count("buy") == 0,
 			"%s价签长按松手只保留详情，不购买" % ("教程" if tutorial else "正式局"))
-		var cash_before: int = main.state.resource_count(main.my_seat, CardDB.RES_CASH)
-		var price := int(CardDB.get_def(market.def_id)["price"])
+		var cash_before: int = main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH)
+		var price := int(OnWorkCardDB.get_def(market.def_id)["price"])
 		_clear_events()
 		await _touch(_tag_point(market), true)
 		await _touch(pointer, false)
 		if tutorial: await _wait_tutorial_operation(arena)
 		else: await settle()
-		check(not market.is_market and main.state.resource_count(main.my_seat, CardDB.RES_CASH) == cash_before - price
+		check(not market.is_market and main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == cash_before - price
 			and _actions().count("buy") == 1,
 			"%s随后正常轻触价签仍购买一次，长按取消不会永久阻止短点" % ("教程" if tutorial else "正式局"))
 		if tutorial:
@@ -503,7 +503,7 @@ func _touch(at: Vector2, pressed: bool) -> void:
 	await process_frame
 
 func _check_no_purchase(snapshot: Dictionary, label: String) -> void:
-	check(StateCodec.snapshot(main.state) == snapshot and purchases.is_empty() and _actions().count("buy") == 0, label)
+	check(OnWorkStateCodec.snapshot(main.state) == snapshot and purchases.is_empty() and _actions().count("buy") == 0, label)
 
 func _cards(id: String) -> Array:
 	return main.entities.values().filter(func(card): return card.draggable and card.def_id == id)

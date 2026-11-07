@@ -13,7 +13,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 import hover_source_art as source
-import render_hover_batch01 as batch
+import on_work_render_hover_batch01 as batch
 from hover_delta_codec import encode_frames, decode_bytes
 
 

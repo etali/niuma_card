@@ -20,13 +20,13 @@ func _run() -> void:
 	if not need(main != null, "原牌桌正常启动"): return
 	presentation = main.drawer_presentation
 	if is_instance_valid(presentation._learning_invitation): presentation._learning_invitation.hide()
-	var original_state: GameState = main.state
+	var original_state: OnWorkState = main.state
 	var original_cards: Array = main.board.cards.duplicate()
 	var center: Vector2 = presentation.content_rect().get_center()
 	presentation.camera_view.change(1.3, center, center + Vector2(24, -18))
 	main._flush_record_view()
 	var original_tape: Dictionary = main.tape.to_dict().duplicate(true)
-	var original_hash := StateCodec.state_hash(main.state)
+	var original_hash := OnWorkStateCodec.state_hash(main.state)
 	var view := _view()
 	check(presentation.start_tutorial("income"), "从第一课开启连续教学")
 	var player: Node = presentation.tutorial
@@ -56,7 +56,7 @@ func _run() -> void:
 		and confirmed_results.size() + reading_count + automatic_steps.size() == 9
 		and automatic_steps.size() == 6 and reading_count == 0,
 		"主线9步各完成一次：6项操作直接衔接，关键结果点击继续，没有纯阅读步骤")
-	check(main.state == original_state and main.board.cards == original_cards and StateCodec.state_hash(main.state) == original_hash
+	check(main.state == original_state and main.board.cards == original_cards and OnWorkStateCodec.state_hash(main.state) == original_hash
 		and main.tape.to_dict() == original_tape and _same_view(view), "连续三课后完整恢复原对局、原卡、录像和用户视角")
 	await process_frame
 	await _test_reference_and_switch()
@@ -177,9 +177,9 @@ func _test_reference_and_switch() -> void:
 	arena.finish_action()
 	check(arena.operation_pending, "错误提前完成已排定旧课程单步回滚")
 	check(player.switch_course("growth"), "旧回滚等待时仍可明确切换课程")
-	var new_state := StateCodec.state_hash(player.session.state)
+	var new_state := OnWorkStateCodec.state_hash(player.session.state)
 	await create_timer(arena.ROLLBACK_DELAY + 0.15).timeout
-	check(player.session.course_id == "growth" and StateCodec.state_hash(player.session.state) == new_state and not arena.operation_pending,
+	check(player.session.course_id == "growth" and OnWorkStateCodec.state_hash(player.session.state) == new_state and not arena.operation_pending,
 		"切课使旧回滚失效，不把新课程还原成上一课")
 	player.session.run_example()
 	arena.sync_state(true)

@@ -8,7 +8,7 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	BOTSearch.set_pref_strength(0.0)
+	OnWorkBOTSearch.set_pref_strength(0.0)
 	var main := await boot_main()
 	main.sfx.set_user_muted(false)
 	main.sfx.set_drawer_suspended(false)
@@ -37,11 +37,11 @@ func _run() -> void:
 	main._run_foe_action()
 	await process_frame
 	check(main.sfx._next == before, "远端仍在行动时不提前提醒")
-	await main.pipe.submit(Intent.action_done(main.my_seat))
+	await main.pipe.submit(OnWorkIntent.action_done(main.my_seat))
 	await process_frame
 	check(main.sfx._next == before and main._actor == main.foe_seat,
 		"自己的收手消息不会触发对手完成提醒")
-	var result: Dictionary = await main.pipe.submit(Intent.action_done(main.foe_seat))
+	var result: Dictionary = await main.pipe.submit(OnWorkIntent.action_done(main.foe_seat))
 	check(result.get("ok", false), "远端收手经真实管道落地")
 	for i in 30:
 		await process_frame
@@ -77,5 +77,5 @@ func _run() -> void:
 	await process_frame
 	check(main.sfx._next == before, "退出或换局取消等待时不伪报对手已完成")
 	main.sfx.set_user_muted(true)
-	BOTSearch.restore_defaults()
+	OnWorkBOTSearch.restore_defaults()
 	finish()

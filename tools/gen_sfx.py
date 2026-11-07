@@ -99,7 +99,7 @@ write_wav("buy", seq([1046, 1318, 1568], 0.09, gap=0.02, vol=0.4))
 write_wav("deny", seq([220, 185], 0.12, vol=0.45, decay_exp=2.5))
 
 # 产出没有自己的音效：产出就是「一批资源牌落到桌上」，
-# 每张牌落地各响一声 drop（scenes/main.gd 的 _fly_from）
+# 每张牌落地各响一声 drop（scenes/on_work_main.gd 的 _fly_from）
 
 # 升级：上行五连
 write_wav("upgrade", seq([523, 659, 784, 1046, 1318], 0.09, gap=0.02, vol=0.4))

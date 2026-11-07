@@ -74,7 +74,7 @@ func _playing_count(sfx: Sfx) -> int:
 	return count
 
 func _boot_drawer_main() -> Node:
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	root.size = Vector2i(1280, 900)
 	root.content_scale_size = Vector2i.ZERO

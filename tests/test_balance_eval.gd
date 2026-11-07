@@ -4,10 +4,10 @@
 
 extends SceneTree
 
-const Logic = preload("res://tools/balance/logic.gd")
-const Scoring = preload("res://tools/balance/scoring.gd")
-const EvalReport = preload("res://tools/eval_report.gd")
-const Victory = preload("res://tools/balance/victory.gd")
+const Logic = preload("res://tools/balance/on_work_logic.gd")
+const Scoring = preload("res://tools/balance/on_work_scoring.gd")
+const EvalReport = preload("res://tools/on_work_eval_report.gd")
+const Victory = preload("res://tools/balance/on_work_victory.gd")
 var failed := 0
 var passed := 0
 
@@ -18,7 +18,7 @@ func check(ok: bool, label: String) -> void:
 		printerr("FAIL: ", label)
 
 func _initialize() -> void:
-	CardDB.load_from("res://data/on_work_cards.json")
+	OnWorkCardDB.load_from("res://data/on_work_cards.json")
 	var base: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/on_work_cards.json"))
 	check(Logic.validate(base, base).is_empty(), "默认卡表通过白名单")
 	var resale := base.duplicate(true)
@@ -86,26 +86,26 @@ func _initialize() -> void:
 	_test_pawn_collection()
 	_test_transient_resource_peak()
 	_test_report_output()
-	var cfgs := BOTSearch.duel_seats(BOTSearch.from_strength(0), BOTSearch.from_strength(0), false)
-	var plain := MatchSimulator.run_rounds(3,93,Callable(),Callable(),Callable(),cfgs,"bot")
+	var cfgs := OnWorkBOTSearch.duel_seats(OnWorkBOTSearch.from_strength(0), OnWorkBOTSearch.from_strength(0), false)
+	var plain := OnWorkMatchSimulator.run_rounds(3,93,Callable(),Callable(),Callable(),cfgs,"bot")
 	var counts := {"production":0,"attack":0}
 	var actual_peaks := {}
-	var observed := MatchSimulator.run_rounds(3,93,
-		func(s:GameState)->void: EvalReport._observe_resources(actual_peaks,s),
-		func(s:GameState)->void: EvalReport._begin_settle_observation(actual_peaks,s),Callable(),cfgs,"bot",
-		{"intent":func(s:GameState,intent:Dictionary,result:Dictionary)->void:
+	var observed := OnWorkMatchSimulator.run_rounds(3,93,
+		func(s:OnWorkState)->void: EvalReport._observe_resources(actual_peaks,s),
+		func(s:OnWorkState)->void: EvalReport._begin_settle_observation(actual_peaks,s),Callable(),cfgs,"bot",
+		{"intent":func(s:OnWorkState,intent:Dictionary,result:Dictionary)->void:
 			EvalReport._observe_resources(actual_peaks,s)
 			EvalReport._observe_pawn(actual_peaks,s,intent,result),
-		"settle":func(event:String,s:GameState,d:Dictionary)->void:
+		"settle":func(event:String,s:OnWorkState,d:Dictionary)->void:
 			EvalReport._observe_resources(actual_peaks,s)
 			if event == "production": EvalReport._observe_upgrade_production(actual_peaks,s,d)
 			if counts.has(event):counts[event]+=1})
-	check(StateCodec.state_hash(plain)==StateCodec.state_hash(observed),"观测钩子不改变规则或随机流")
+	check(OnWorkStateCodec.state_hash(plain)==OnWorkStateCodec.state_hash(observed),"观测钩子不改变规则或随机流")
 	print("balance eval: %d 通过 / %d 失败" % [passed,failed])
 	quit(1 if failed else 0)
 
 func _metric_record(winner: String, fields: Dictionary) -> Dictionary:
-	var record := {"winner":winner,"first":GameState.PLAYER,"end_round":3}
+	var record := {"winner":winner,"first":OnWorkState.PLAYER,"end_round":3}
 	record.merge(fields)
 	return record
 
@@ -135,49 +135,49 @@ func _test_upgrade_and_pawn_metrics() -> void:
 		"Q11分母含未典当及未结束的已采集局，缺失或非法字段独立排除")
 
 func _install_metric_cards() -> void:
-	CardDB.CARDS["metric_t1"] = {"name":"指标一级","kind":"product","tier":1,"price":2,"weight":1,
+	OnWorkCardDB.CARDS["metric_t1"] = {"name":"指标一级","kind":"product","tier":1,"price":2,"weight":1,
 		"recipe_res":"user","recipe_n":1,"output_res":"cash","output_n":2}
-	CardDB.CARDS["metric_t2"] = {"name":"指标二级","kind":"product","tier":2,"price":2,"weight":1,
+	OnWorkCardDB.CARDS["metric_t2"] = {"name":"指标二级","kind":"product","tier":2,"price":2,"weight":1,
 		"recipe_res":"user","recipe_n":1,"output_res":"cash","output_n":3,
 		"upgrade_from":"metric_t1","upgrade_dup_n":2}
 
-func _metric_combo(s: GameState, who: String, uid: int) -> Array:
+func _metric_combo(s: OnWorkState, who: String, uid: int) -> Array:
 	var core := s.find_card(who,uid)
-	var def := CardDB.get_def(str(core["def_id"]))
+	var def := OnWorkCardDB.get_def(str(core["def_id"]))
 	var uids: Array = [uid]
 	for card in s.players[who]["cards"]:
 		if bool(card.get("locked",false)): continue
-		if CardDB.get_def(str(card["def_id"])).get("res") == def.get("recipe_res"):
+		if OnWorkCardDB.get_def(str(card["def_id"])).get("res") == def.get("recipe_res"):
 			uids.append(card["uid"])
 			if uids.size() > int(def["recipe_n"]): break
 	check(s.create_combo(who,uids).get("ok",false), "指标夹具可通过真实规则组成生产组合")
 	return uids
 
-func _resolve_metric_production(s: GameState,g: Dictionary) -> void:
-	var plain := GameState.new()
-	StateCodec.restore(plain,StateCodec.snapshot(s))
+func _resolve_metric_production(s: OnWorkState,g: Dictionary) -> void:
+	var plain := OnWorkState.new()
+	OnWorkStateCodec.restore(plain,OnWorkStateCodec.snapshot(s))
 	EvalReport._begin_settle_observation(g,s)
-	Settle.produce(s,func(event:String,state:GameState,d:Dictionary)->void:
+	OnWorkSettle.produce(s,func(event:String,state:OnWorkState,d:Dictionary)->void:
 		if event == "production": EvalReport._observe_upgrade_production(g,state,d))
-	Settle.produce(plain)
-	check(StateCodec.state_hash(s) == StateCodec.state_hash(plain), "UID采集不改变结算结果或随机流")
+	OnWorkSettle.produce(plain)
+	check(OnWorkStateCodec.state_hash(s) == OnWorkStateCodec.state_hash(plain), "UID采集不改变结算结果或随机流")
 
-func _metric_upgrade(s: GameState,g: Dictionary,who: String) -> int:
+func _metric_upgrade(s: OnWorkState,g: Dictionary,who: String) -> int:
 	var a := s.add_card(who,"metric_t1")
 	var b := s.add_card(who,"metric_t1")
 	check(s.create_combo(who,[a["uid"],b["uid"]]).get("ok",false), "指标夹具真实生成升级组合")
 	_resolve_metric_production(s,g)
-	Settle.finalize(s)
+	OnWorkSettle.finalize(s)
 	check(g.get("upgrade_occurred",false) and not g.get("upgrade_produced",false), "仅完成升级还不算Q7")
 	return int(g["upgraded_uids"].keys().back())
 
 func _test_upgrade_production_collection() -> void:
-	var saved := CardDB.CARDS.duplicate(true)
+	var saved := OnWorkCardDB.CARDS.duplicate(true)
 	_install_metric_cards()
-	for who in [GameState.PLAYER,GameState.BOT]:
+	for who in [OnWorkState.PLAYER,OnWorkState.BOT]:
 		var s := _victory_state(20,20,4,4)
 		s.market = ["metric_t2"]
-		var bought := IntentApply.new(s).apply(Intent.buy(who,0),who)
+		var bought := OnWorkIntentApply.new(s).apply(OnWorkIntent.buy(who,0),who)
 		check(bought.get("ok",false), "同名T2实际通过购买获得，不能凭类型算升级产物")
 		var ordinary := s.add_card(who,"metric_t1")
 		_metric_combo(s,who,int(ordinary["uid"]))
@@ -190,7 +190,7 @@ func _test_upgrade_production_collection() -> void:
 		_metric_combo(s,who,int(bought["new_uid"]))
 		_resolve_metric_production(s,g)
 		check(not g["upgrade_produced"], "升级后由别的同名实例生产仍不算Q7")
-		Settle.finalize(s)
+		OnWorkSettle.finalize(s)
 		s.round_num += 1
 		_metric_combo(s,who,upgraded_uid)
 		_resolve_metric_production(s,g)
@@ -199,25 +199,25 @@ func _test_upgrade_production_collection() -> void:
 		_install_metric_cards()
 		var s := _victory_state(20,20,4,4)
 		var g := {}
-		var uid := _metric_upgrade(s,g,GameState.PLAYER)
+		var uid := _metric_upgrade(s,g,OnWorkState.PLAYER)
 		if scenario == "sold_replaced":
-			check(IntentApply.new(s).apply(Intent.pawn(GameState.PLAYER,[uid]),GameState.PLAYER).get("ok",false),
+			check(OnWorkIntentApply.new(s).apply(OnWorkIntent.pawn(OnWorkState.PLAYER,[uid]),OnWorkState.PLAYER).get("ok",false),
 				"升级产物实际典当成功")
 			s.market = ["metric_t2"]
-			var bought := IntentApply.new(s).apply(Intent.buy(GameState.PLAYER,0),GameState.PLAYER)
+			var bought := OnWorkIntentApply.new(s).apply(OnWorkIntent.buy(OnWorkState.PLAYER,0),OnWorkState.PLAYER)
 			uid = int(bought["new_uid"])
 		elif scenario == "zero":
-			CardDB.CARDS["metric_t2"]["output_n"] = 0
+			OnWorkCardDB.CARDS["metric_t2"]["output_n"] = 0
 		elif scenario == "unpaid":
-			CardDB.CARDS["metric_t2"]["recipe_res"] = "cash"
-			CardDB.CARDS["metric_t2"]["recipe_n"] = s.resource_count(GameState.PLAYER,CardDB.RES_CASH)
-		var uids := _metric_combo(s,GameState.PLAYER,uid)
+			OnWorkCardDB.CARDS["metric_t2"]["recipe_res"] = "cash"
+			OnWorkCardDB.CARDS["metric_t2"]["recipe_n"] = s.resource_count(OnWorkState.PLAYER,OnWorkCardDB.RES_CASH)
+		var uids := _metric_combo(s,OnWorkState.PLAYER,uid)
 		if scenario == "interrupted":
-			var pools := {CardDB.RES_CASH:0,CardDB.RES_USER:1}
+			var pools := {OnWorkCardDB.RES_CASH:0,OnWorkCardDB.RES_USER:1}
 			var attacked := false
-			for target in s.affordable_targets(GameState.PLAYER,pools):
+			for target in s.affordable_targets(OnWorkState.PLAYER,pools):
 				if int(uids[1]) in target["uids"]:
-					attacked = s.apply_attack(GameState.BOT,target,pools).get("ok",false)
+					attacked = s.apply_attack(OnWorkState.BOT,target,pools).get("ok",false)
 					break
 			check(attacked, "通过真实攻击拆散升级产物的生产配方")
 		_resolve_metric_production(s,g)
@@ -225,89 +225,89 @@ func _test_upgrade_production_collection() -> void:
 	_install_metric_cards()
 	var legend_state := _victory_state(2,2,4,4)
 	var materials: Array = []
-	for i in 4: materials.append(legend_state.add_card(GameState.PLAYER,"metric_t1")["uid"])
-	check(legend_state.create_combo(GameState.PLAYER,materials).get("ok",false), "真实直升传说夹具成立")
+	for i in 4: materials.append(legend_state.add_card(OnWorkState.PLAYER,"metric_t1")["uid"])
+	check(legend_state.create_combo(OnWorkState.PLAYER,materials).get("ok",false), "真实直升传说夹具成立")
 	var legend_observation := {}
 	_resolve_metric_production(legend_state,legend_observation)
-	Settle.finalize(legend_state)
+	OnWorkSettle.finalize(legend_state)
 	var legend_uid := int(legend_observation["upgraded_uids"].keys()[0])
-	check(IntentApply.new(legend_state).apply(Intent.pawn(GameState.PLAYER,[legend_uid]),GameState.PLAYER).get("ok",false) \
+	check(OnWorkIntentApply.new(legend_state).apply(OnWorkIntent.pawn(OnWorkState.PLAYER,[legend_uid]),OnWorkState.PLAYER).get("ok",false) \
 		and not legend_observation["upgrade_produced"], "升级传说再典当仍不算升级后生产")
-	CardDB.CARDS = saved
+	OnWorkCardDB.CARDS = saved
 
 func _test_pawn_collection() -> void:
-	var saved := CardDB.CARDS.duplicate(true)
+	var saved := OnWorkCardDB.CARDS.duplicate(true)
 	_install_metric_cards()
-	for id in ["metric_t1",CardDB.unit_id(CardDB.RES_USER),"dujiaoshou"]:
+	for id in ["metric_t1",OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER),"dujiaoshou"]:
 		var s := _victory_state(2,2,4,4)
 		var g := {"pawned_seats":[]}
-		var app := IntentApply.new(s)
+		var app := OnWorkIntentApply.new(s)
 		app.landed_intent.connect(func(intent:Dictionary,result:Dictionary,_from:String)->void:
-			var before := StateCodec.state_hash(s)
+			var before := OnWorkStateCodec.state_hash(s)
 			EvalReport._observe_pawn(g,s,intent,result)
-			check(before == StateCodec.state_hash(s), "典当观测不改变局面或随机流"))
-		var card := s.add_card(GameState.PLAYER,id)
-		var result := app.apply(Intent.pawn(GameState.PLAYER,[card["uid"]]),GameState.PLAYER)
-		check(result.get("ok",false) and s.find_card(GameState.PLAYER,card["uid"]).is_empty() \
-			and g["pawned_seats"] == [GameState.PLAYER], "普通牌、用户、传说的真实成功典当都采集："+id)
-		var other := s.add_card(GameState.PLAYER,"metric_t1")
-		app.apply(Intent.pawn(GameState.PLAYER,[other["uid"]]),GameState.PLAYER)
+			check(before == OnWorkStateCodec.state_hash(s), "典当观测不改变局面或随机流"))
+		var card := s.add_card(OnWorkState.PLAYER,id)
+		var result := app.apply(OnWorkIntent.pawn(OnWorkState.PLAYER,[card["uid"]]),OnWorkState.PLAYER)
+		check(result.get("ok",false) and s.find_card(OnWorkState.PLAYER,card["uid"]).is_empty() \
+			and g["pawned_seats"] == [OnWorkState.PLAYER], "普通牌、用户、传说的真实成功典当都采集："+id)
+		var other := s.add_card(OnWorkState.PLAYER,"metric_t1")
+		app.apply(OnWorkIntent.pawn(OnWorkState.PLAYER,[other["uid"]]),OnWorkState.PLAYER)
 		check(g["pawned_seats"].size() == 1, "同座位反复典当只记录一次")
-		var rival := s.add_card(GameState.BOT,"metric_t1")
-		app.apply(Intent.pawn(GameState.BOT,[rival["uid"]]),GameState.BOT)
+		var rival := s.add_card(OnWorkState.BOT,"metric_t1")
+		app.apply(OnWorkIntent.pawn(OnWorkState.BOT,[rival["uid"]]),OnWorkState.BOT)
 		check(g["pawned_seats"].size() == 2, "赢家未定时双方成功典当都保留，留待终局选择")
 	var s := _victory_state(2,2)
 	var g := {"pawned_seats":[]}
-	var app := IntentApply.new(s)
+	var app := OnWorkIntentApply.new(s)
 	app.landed_intent.connect(func(intent:Dictionary,result:Dictionary,_from:String)->void:
 		EvalReport._observe_pawn(g,s,intent,result))
-	var good := s.add_card(GameState.PLAYER,"metric_t1")
-	var cash_uid := int(s.players[GameState.PLAYER]["cards"][0]["uid"])
+	var good := s.add_card(OnWorkState.PLAYER,"metric_t1")
+	var cash_uid := int(s.players[OnWorkState.PLAYER]["cards"][0]["uid"])
 	for uids in [[],[999999],[good["uid"],cash_uid]]:
-		var result := app.apply(Intent.pawn(GameState.PLAYER,uids),GameState.PLAYER)
-		EvalReport._observe_pawn(g,s,Intent.pawn(GameState.PLAYER,uids),result)
+		var result := app.apply(OnWorkIntent.pawn(OnWorkState.PLAYER,uids),OnWorkState.PLAYER)
+		EvalReport._observe_pawn(g,s,OnWorkIntent.pawn(OnWorkState.PLAYER,uids),result)
 		check(not result.get("ok",false) and g["pawned_seats"].is_empty() \
-			and not s.find_card(GameState.PLAYER,good["uid"]).is_empty(),
+			and not s.find_card(OnWorkState.PLAYER,good["uid"]).is_empty(),
 			"空典当、不存在卡和含非法卡整批失败不计Q11且合法卡未被移除")
-	EvalReport._observe_pawn(g,s,Intent.pawn(GameState.PLAYER,[]),{"ok":true,"uids":[]})
+	EvalReport._observe_pawn(g,s,OnWorkIntent.pawn(OnWorkState.PLAYER,[]),{"ok":true,"uids":[]})
 	check(g["pawned_seats"].is_empty(), "没有真实移除卡的空成功结果也不计典当")
-	CardDB.CARDS = saved
+	OnWorkCardDB.CARDS = saved
 
 func _test_transient_resource_peak() -> void:
-	var s := GameState.new()
+	var s := OnWorkState.new()
 	s.new_game()
-	for who in [GameState.PLAYER,GameState.BOT]:
+	for who in [OnWorkState.PLAYER,OnWorkState.BOT]:
 		s.players[who]["cards"].clear()
 		for i in 10: s.add_card(who,"cash")
 		for i in 5: s.add_card(who,"user")
 	# 第一组产出现金 9，第二组消耗现金 8 产出用户 6；结算终点只有现金 11，峰值却是 19。
-	CardDB.CARDS["peak_cash_test"] = {"name":"峰值现金测试","kind":"product","tier":1,
+	OnWorkCardDB.CARDS["peak_cash_test"] = {"name":"峰值现金测试","kind":"product","tier":1,
 		"price":-1,"weight":0,"recipe_res":"user","recipe_n":1,"output_res":"cash","output_n":9}
-	CardDB.CARDS["peak_users_test"] = {"name":"峰值用户测试","kind":"product","tier":1,
+	OnWorkCardDB.CARDS["peak_users_test"] = {"name":"峰值用户测试","kind":"product","tier":1,
 		"price":-1,"weight":0,"recipe_res":"cash","recipe_n":8,"output_res":"user","output_n":6}
-	var source := s.add_card(GameState.PLAYER,"peak_cash_test")
-	var source_users := s.add_card(GameState.PLAYER,"peak_users_test")
+	var source := s.add_card(OnWorkState.PLAYER,"peak_cash_test")
+	var source_users := s.add_card(OnWorkState.PLAYER,"peak_users_test")
 	var cash_uids: Array = [source_users["uid"]]
 	var user_uid := -1
-	for card in s.players[GameState.PLAYER]["cards"]:
+	for card in s.players[OnWorkState.PLAYER]["cards"]:
 		if card["def_id"] == "cash" and cash_uids.size() < 9: cash_uids.append(card["uid"])
 		if card["def_id"] == "user": user_uid = int(card["uid"])
-	check(s.create_combo(GameState.PLAYER,[source["uid"],user_uid]).get("ok",false) \
-		and s.create_combo(GameState.PLAYER,cash_uids).get("ok",false), "峰值夹具两组都能真实结算")
+	check(s.create_combo(OnWorkState.PLAYER,[source["uid"],user_uid]).get("ok",false) \
+		and s.create_combo(OnWorkState.PLAYER,cash_uids).get("ok",false), "峰值夹具两组都能真实结算")
 	var observed := {}
 	EvalReport._observe_resources(observed,s)
 	check(observed["max_cash"] == 10 and observed["max_users"] == 5, "开局峰值取任意一方而非双方相加")
-	var before := StateCodec.state_hash(s)
+	var before := OnWorkStateCodec.state_hash(s)
 	EvalReport._observe_resources(observed,s)
-	check(StateCodec.state_hash(s) == before, "峰值观测不改变局面或随机流")
-	Settle.produce(s,func(_event:String,state:GameState,_detail:Dictionary)->void:
+	check(OnWorkStateCodec.state_hash(s) == before, "峰值观测不改变局面或随机流")
+	OnWorkSettle.produce(s,func(_event:String,state:OnWorkState,_detail:Dictionary)->void:
 		EvalReport._observe_resources(observed,state))
-	check(s.resource_count(GameState.PLAYER,CardDB.RES_CASH) == 11 and observed["max_cash"] == 19,
+	check(s.resource_count(OnWorkState.PLAYER,OnWorkCardDB.RES_CASH) == 11 and observed["max_cash"] == 19,
 		"记录单组结算后的现金瞬时峰值，而非只看回合结束")
-	check(s.resource_count(GameState.PLAYER,CardDB.RES_USER) == 11 and observed["max_users"] == 11,
+	check(s.resource_count(OnWorkState.PLAYER,OnWorkCardDB.RES_USER) == 11 and observed["max_users"] == 11,
 		"各资源峰值独立记录")
-	CardDB.CARDS.erase("peak_cash_test")
-	CardDB.CARDS.erase("peak_users_test")
+	OnWorkCardDB.CARDS.erase("peak_cash_test")
+	OnWorkCardDB.CARDS.erase("peak_users_test")
 
 func _test_report_output() -> void:
 	var folder := ProjectSettings.globalize_path("user://test-eleven-metrics-%d" % OS.get_process_id())
@@ -319,7 +319,7 @@ func _test_report_output() -> void:
 		"options":{"pairs":1,"max_rounds":1,"seed_start":93,"model":"bot","strength":0,"bot_parameters":{}}})
 	var logs: Array = []
 	var code := OS.execute(OS.get_executable_path(),PackedStringArray(["--headless","--path",
-		ProjectSettings.globalize_path("res://"),"--script","res://tools/eval_report.gd","--",request]),logs,true)
+		ProjectSettings.globalize_path("res://"),"--script","res://tools/on_work_eval_report.gd","--",request]),logs,true)
 	var report := EvalReport._json(output)
 	check(code == 0 and report.get("status") == "complete", "真实评估命令输出完成的报告")
 	check(report.get("meta",{}).get("metric_version") == "manual-eleven-v4", "新报告指标版本为manual-eleven-v4")
@@ -328,8 +328,8 @@ func _test_report_output() -> void:
 	var cash_sum := 0
 	var users_sum := 0
 	for game in collected:
-		valid = valid and game.get("max_cash",-1) >= CardDB.game_rules()["start_cash"] \
-			and game.get("max_users",-1) >= CardDB.game_rules()["start_user"]
+		valid = valid and game.get("max_cash",-1) >= OnWorkCardDB.game_rules()["start_cash"] \
+			and game.get("max_users",-1) >= OnWorkCardDB.game_rules()["start_user"]
 		valid = valid and game.get("victory_method") is Dictionary and game.get("acquisitions") is Dictionary
 		valid = valid and game.get("upgrade_produced") is bool and Scoring.valid_pawned_seats(game.get("pawned_seats"))
 		cash_sum += int(game.get("max_cash",0))
@@ -343,7 +343,7 @@ func _test_report_output() -> void:
 	var acquired_ids := {}
 	for game in collected:
 		for id in game.get("acquisitions",{}):
-			check(CardDB.get_def(str(id)).get("kind") != CardDB.KIND_UNIT, "真实获得卡牌字段没有资源卡")
+			check(OnWorkCardDB.get_def(str(id)).get("kind") != OnWorkCardDB.KIND_UNIT, "真实获得卡牌字段没有资源卡")
 			acquisition_total += int(game["acquisitions"][id])
 			acquired_ids[id] = true
 	var acquisition_metric: Dictionary = metrics.get("Q6",{}).get("acquisitions",{})
@@ -398,50 +398,50 @@ func _test_victory_diversity() -> void:
 		"未结束和无效分类不污染Q10，有效样本独立计数")
 	check(Scoring.victory_diversity([a,b])["value"] == two["value"], "独立逐局记录可重算同一多样性")
 
-func _victory_state(cash_a: int, cash_b: int, user_a := 2, user_b := 2) -> GameState:
-	var s := GameState.new()
-	s.players = {GameState.PLAYER:{"cards":[]},GameState.BOT:{"cards":[]}}
+func _victory_state(cash_a: int, cash_b: int, user_a := 2, user_b := 2) -> OnWorkState:
+	var s := OnWorkState.new()
+	s.players = {OnWorkState.PLAYER:{"cards":[]},OnWorkState.BOT:{"cards":[]}}
 	for index in 2:
-		var who: String = [GameState.PLAYER,GameState.BOT][index]
-		for i in [cash_a,cash_b][index]: s.add_card(who,CardDB.unit_id(CardDB.RES_CASH))
-		for i in [user_a,user_b][index]: s.add_card(who,CardDB.unit_id(CardDB.RES_USER))
+		var who: String = [OnWorkState.PLAYER,OnWorkState.BOT][index]
+		for i in [cash_a,cash_b][index]: s.add_card(who,OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH))
+		for i in [user_a,user_b][index]: s.add_card(who,OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER))
 	return s
 
 func _test_victory_classification() -> void:
-	var limit := int(CardDB.game_rules()["win_cash"])
+	var limit := int(OnWorkCardDB.game_rules()["win_cash"])
 	for sample in [[limit,2,2,2,"cash_threshold"],[2,0,2,2,"cash_depletion"],
 		[2,2,2,0,"user_depletion"],[0,2,2,2,"cash_depletion"],[2,2,0,2,"user_depletion"],
 		[limit,0,2,0,"cash_threshold"],[2,0,2,0,"cash_depletion"]]:
 		var s := _victory_state(sample[0],sample[1],sample[2],sample[3])
 		s.check_victory()
-		var before := StateCodec.state_hash(s)
+		var before := OnWorkStateCodec.state_hash(s)
 		check(Victory.classify(s).get("id") == sample[4], "资源状态归类遵循引擎胜负优先级，且不受座位文案影响")
-		check(StateCodec.state_hash(s) == before, "获胜分类不修改规则、状态或随机流")
+		check(OnWorkStateCodec.state_hash(s) == before, "获胜分类不修改规则、状态或随机流")
 	var running := _victory_state(2,2)
 	check(Victory.classify(running).is_empty(), "未结束局没有获胜方式")
-	running.winner = GameState.PLAYER
+	running.winner = OnWorkState.PLAYER
 	check(Victory.classify(running).is_empty(), "无资源终局条件的胜利不伪装成现金/用户清零")
 	var legend_ids: Array = []
-	for id in CardDB.all_cards():
-		if CardDB.get_def(id).get("kind") == CardDB.KIND_LEGEND and CardDB.pawn_value(id) > 0: legend_ids.append(id)
+	for id in OnWorkCardDB.all_cards():
+		if OnWorkCardDB.get_def(id).get("kind") == OnWorkCardDB.KIND_LEGEND and OnWorkCardDB.pawn_value(id) > 0: legend_ids.append(id)
 	for id in legend_ids:
-		var s := _victory_state(maxi(1,limit-CardDB.pawn_value(id)),2)
-		var card := s.add_card(GameState.PLAYER,id)
-		var known := Victory.legend_uids(s,GameState.PLAYER)
-		var intent := Intent.pawn(GameState.PLAYER,[card["uid"]])
-		var result := IntentApply.new(s).apply(intent,GameState.PLAYER)
-		check(result["ok"] and s.winner == GameState.PLAYER, "传说典当夹具经真实管道获胜："+str(id))
+		var s := _victory_state(maxi(1,limit-OnWorkCardDB.pawn_value(id)),2)
+		var card := s.add_card(OnWorkState.PLAYER,id)
+		var known := Victory.legend_uids(s,OnWorkState.PLAYER)
+		var intent := OnWorkIntent.pawn(OnWorkState.PLAYER,[card["uid"]])
+		var result := OnWorkIntentApply.new(s).apply(intent,OnWorkState.PLAYER)
+		check(result["ok"] and s.winner == OnWorkState.PLAYER, "传说典当夹具经真实管道获胜："+str(id))
 		check(Victory.classify(s,Victory.sold_legends(intent,known)).get("id") == "legend_cashout:"+str(id),
 			"典当后传说已不在手中，仍按行动前UID正确归类："+str(id))
 	if legend_ids.size() >= 2:
 		var id_a: String = legend_ids[0]
 		var id_b: String = legend_ids[1]
-		var s := _victory_state(maxi(1,limit-CardDB.pawn_value(id_a)-CardDB.pawn_value(id_b)),2)
-		var a := s.add_card(GameState.PLAYER,id_a)
-		var b := s.add_card(GameState.PLAYER,id_b)
-		var known := Victory.legend_uids(s,GameState.PLAYER)
-		var intent := Intent.pawn(GameState.PLAYER,[a["uid"],b["uid"]])
-		var result := IntentApply.new(s).apply(intent,GameState.PLAYER)
+		var s := _victory_state(maxi(1,limit-OnWorkCardDB.pawn_value(id_a)-OnWorkCardDB.pawn_value(id_b)),2)
+		var a := s.add_card(OnWorkState.PLAYER,id_a)
+		var b := s.add_card(OnWorkState.PLAYER,id_b)
+		var known := Victory.legend_uids(s,OnWorkState.PLAYER)
+		var intent := OnWorkIntent.pawn(OnWorkState.PLAYER,[a["uid"],b["uid"]])
+		var result := OnWorkIntentApply.new(s).apply(intent,OnWorkState.PLAYER)
 		check(result["ok"] and Victory.classify(s,Victory.sold_legends(intent,known)).get("id") == "legend_cashout:mixed",
 			"同次典当多种传说触发资金胜利时独立归类，不任意归给其中一种")
 		check(Victory.sold_legends({"uids":[a["uid"],a["uid"]]},known).size() == 1,
@@ -456,29 +456,29 @@ func _test_acquisition_distribution() -> void:
 	EvalReport._observe_acquisitions(g,s)
 	check(g["acquisitions"].is_empty(), "开局现金与用户均不计获得")
 	var materials: Array = []
-	for who in [GameState.PLAYER,GameState.PLAYER,GameState.BOT]:
+	for who in [OnWorkState.PLAYER,OnWorkState.PLAYER,OnWorkState.BOT]:
 		s.market = ["yunketang"]
-		var result := IntentApply.new(s).apply(Intent.buy(who,0),who)
+		var result := OnWorkIntentApply.new(s).apply(OnWorkIntent.buy(who,0),who)
 		check(result.get("ok",false), "获得指标通过真实购买发牌")
-		if who == GameState.PLAYER: materials.append(result["new_uid"])
+		if who == OnWorkState.PLAYER: materials.append(result["new_uid"])
 		EvalReport._observe_acquisitions(g,s)
-	var snapshot := StateCodec.state_hash(s)
+	var snapshot := OnWorkStateCodec.state_hash(s)
 	EvalReport._observe_acquisitions(g,s)
-	check(snapshot == StateCodec.state_hash(s) and g["acquisitions"] == {"yunketang":3},
+	check(snapshot == OnWorkStateCodec.state_hash(s) and g["acquisitions"] == {"yunketang":3},
 		"双方同名牌按张累计，重复观察不重计且不改变局面")
-	check(not IntentApply.new(s).apply(Intent.buy(GameState.PLAYER,99),GameState.PLAYER).get("ok",false),
+	check(not OnWorkIntentApply.new(s).apply(OnWorkIntent.buy(OnWorkState.PLAYER,99),OnWorkState.PLAYER).get("ok",false),
 		"失败购买没有实际发牌")
 	EvalReport._observe_acquisitions(g,s)
-	check(s.create_combo(GameState.PLAYER,materials).get("ok",false), "获得指标真实创建升级组合")
-	Settle.produce(s,func(_event:String,state:GameState,_detail:Dictionary)->void:
+	check(s.create_combo(OnWorkState.PLAYER,materials).get("ok",false), "获得指标真实创建升级组合")
+	OnWorkSettle.produce(s,func(_event:String,state:OnWorkState,_detail:Dictionary)->void:
 		EvalReport._observe_acquisitions(g,state))
-	Settle.finalize(s)
+	OnWorkSettle.finalize(s)
 	EvalReport._observe_acquisitions(g,s)
 	check(g["acquisitions"] == {"yunketang":3,"jiaolv":1},
 		"升级产物计获得且材料消耗不扣历史次数，失败购买未计数")
-	for card in s.players[GameState.PLAYER]["cards"].duplicate():
+	for card in s.players[OnWorkState.PLAYER]["cards"].duplicate():
 		if card["def_id"] == "jiaolv":
-			check(s.pawn(GameState.PLAYER,[card["uid"]]).get("ok",false), "实际出售升级产物")
+			check(s.pawn(OnWorkState.PLAYER,[card["uid"]]).get("ok",false), "实际出售升级产物")
 	EvalReport._observe_acquisitions(g,s)
 	check(g["acquisitions"] == {"yunketang":3,"jiaolv":1}, "出售和产生现金不改变非资源牌获得量")
 	g = {"acquisitions":{"yunketang":2,"butie":1}}

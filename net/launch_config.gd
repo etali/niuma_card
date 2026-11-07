@@ -18,7 +18,7 @@ const KEYS_HOST := ["host", "h"]
 const KEYS_PORT := ["port", "p"]
 
 ## 启动器可以将参数放在 Godot 的 -- 分隔符之前或之后。
-const FLAG_PREFIXES := ["--server=", "--room=", "--port=", "--host", "--cards-config=", "--cards-config"]
+const FLAG_PREFIXES := ["--server=", "--room=", "--port=", "--host", "--off-work-playtest", "--cards-config=", "--cards-config"]
 
 # ---------- 解析 ----------
 

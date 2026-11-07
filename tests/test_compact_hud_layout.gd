@@ -41,7 +41,7 @@ func _boot(drawer: bool, viewport_size: Vector2i, dpi: float) -> Node:
 	root.size = viewport_size
 	root.content_scale_size = Vector2i.ZERO
 	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = drawer
 	main.drawer_ui_scale = dpi
 	root.add_child(main)
@@ -96,9 +96,9 @@ func _check_content_changes(main: Node, dpi: float, tag: String) -> void:
 	var saved_cards := {}
 	for seat: String in [main.my_seat, main.foe_seat]:
 		saved_cards[seat] = main.state.players[seat]["cards"].duplicate(true)
-		for res: String in [CardDB.RES_CASH, CardDB.RES_USER]:
+		for res: String in [OnWorkCardDB.RES_CASH, OnWorkCardDB.RES_USER]:
 			while main.state.resource_count(seat, res) < 123:
-				main.state.add_card(seat, CardDB.unit_id(res))
+				main.state.add_card(seat, OnWorkCardDB.unit_id(res))
 	# HUD 读数使用真实规则状态；此处不新增牌面，避免将构图测试变成数百张牌的压力测试。
 	main._update_hud()
 	main.lbl_player_res.text += " ⚠"
@@ -116,8 +116,8 @@ func _check_content_changes(main: Node, dpi: float, tag: String) -> void:
 	check(absf(presentation._header.size.x - stable_width) <= 1.0,
 		tag + " 重复布局不会逐次撑大顶栏")
 	main._thinking = true
-	ThinkClock.start(ThinkClock.SRC_BOT)
-	ThinkClock._t0 -= 9900
+	OnWorkThinkClock.start(OnWorkThinkClock.SRC_BOT)
+	OnWorkThinkClock._t0 -= 9900
 	main._update_hud()
 	await _flush_layout(main)
 	_check_drawer_header(main, dpi, tag + " 思考中")
@@ -125,13 +125,13 @@ func _check_content_changes(main: Node, dpi: float, tag: String) -> void:
 		tag + " 思考状态保留先手说明")
 	check(main.lbl_round.text.contains("秒"), tag + " 顶部思考状态包含实际秒数")
 	var thinking_rect: Rect2 = presentation._header.get_global_rect()
-	ThinkClock._t0 -= 200
+	OnWorkThinkClock._t0 -= 200
 	main._update_thinking_hint()
 	await _flush_layout(main)
 	check(thinking_rect.is_equal_approx(presentation._header.get_global_rect()),
 		tag + " 思考秒数跨位增长时顶栏位置与尺寸稳定")
 	main._thinking = false
-	ThinkClock.stop()
+	OnWorkThinkClock.stop()
 	for seat: String in saved_cards:
 		main.state.players[seat]["cards"] = saved_cards[seat]
 	main._update_hud()
@@ -199,8 +199,8 @@ func _check_normal_hud() -> void:
 	var widths: Array = cards.map(func(card): return card.size.x)
 	for viewport_size in [Vector2i(1280, 800), Vector2i(2800, 1100)]:
 		root.size = viewport_size
-		ThinkClock.start(ThinkClock.SRC_BOT)
-		ThinkClock._t0 -= 9900
+		OnWorkThinkClock.start(OnWorkThinkClock.SRC_BOT)
+		OnWorkThinkClock._t0 -= 9900
 		main._update_thinking_hint(true)
 		await _flush_layout(main)
 		check(Rect2(Vector2.ZERO, Vector2(root.size)).encloses(main.table_hud_rect()),
@@ -213,7 +213,7 @@ func _check_normal_hud() -> void:
 		check(fits and main.lbl_round.get_line_count() == 3,
 			"普通横屏%d思考秒数完整显示，未增加意外换行" % viewport_size.x)
 		var thinking_rect: Rect2 = main.table_hud_rect()
-		ThinkClock._t0 -= 200
+		OnWorkThinkClock._t0 -= 200
 		main._update_thinking_hint()
 		await _flush_layout(main)
 		check(thinking_rect.is_equal_approx(main.table_hud_rect()),
@@ -234,7 +234,7 @@ func _check_normal_hud() -> void:
 				var metric_bounds := (metric.get_child(0) as Control).get_global_rect().merge(number.get_global_rect())
 				check(absf(metric_bounds.get_center().x - metric.get_global_rect().get_center().x) <= 1.0,
 					"普通横屏资源名称与数字作为整体居中")
-		ThinkClock.stop()
+		OnWorkThinkClock.stop()
 		main._update_thinking_hint()
 	check(main.hud_player_card.summary == main.lbl_player_res and main.hud_bot_card.summary == main.lbl_bot_res,
 		"紧凑布局仍保留原资源摘要接口")

@@ -5,15 +5,15 @@
 class_name NetTransport
 extends Transport
 
-## 联网传输：通过 WebSocket 把意图交给 NetServer / NetRoom 裁决。
+## 联网传输：通过 WebSocket 把意图交给 NetServer / OnWorkRoom 裁决。
 ##
-## 和 LocalTransport 换着用，场景层一行不用改：这是 Transport 那层抽象存在的
+## 和 OnWorkLocalTransport 换着用，场景层一行不用改：这是 Transport 那层抽象存在的
 ## 全部理由（见 engine/transport.gd 文件头「submit 一定是 coroutine」那段）。
 ##
 ## 客户端侧**没有裁决器**。applier() / state() 在这里是「服务器说了算的那份的副本」：
 ##   - state 有：客户端要画牌，必须有一份状态
 ##   - applier 没有：它是权威，客户端持有一份就等于在本地又判了一次，
-##     两处判定必然某天分叉（正是 README.md §「3. 文件目录结构」要避免的）
+##     两处判定必然某天分叉（正是 README.md §「文件目录结构」要避免的）
 ## 所以 applier() 返回一个**只读用途**的裁决器：pools() / production_count()
 ## 这些查询方法要用，但它的 apply() 不该被客户端调 —— submit 走网络
 
@@ -53,8 +53,8 @@ var url := ""
 ## 重连令牌：服务器在 seated 里给的，断线重连时带回去证明「我是原来那个座位」
 var resume_token := ""
 
-var _state := GameState.new()
-var _applier: IntentApply
+var _state := OnWorkState.new()
+var _applier: OnWorkIntentApply
 var _phase := ""
 var _actor := ""
 ## 独立于动画用 state；每份都由服务端一次事务原子生成。
@@ -80,7 +80,7 @@ func _init(server_url := "", room_code := "") -> void:
 	_remote = true          # 见 Transport 文件头：submit 要真的挂起
 	url = server_url
 	room = room_code
-	_applier = IntentApply.new(_state)
+	_applier = OnWorkIntentApply.new(_state)
 
 # ---------- 连接 ----------
 
@@ -112,7 +112,7 @@ func poll() -> void:
 				_emit_closed()
 
 func join_message() -> Dictionary:
-	return Protocol.join(room, StateCodec.table_hash(), resume_token)
+	return Protocol.join(room, OnWorkStateCodec.table_hash(), resume_token)
 
 var _sent_join := false
 
@@ -224,10 +224,10 @@ func close() -> void:
 
 # ---------- Transport 接口 ----------
 
-func applier() -> IntentApply:
+func applier() -> OnWorkIntentApply:
 	return _applier
 
-func state() -> GameState:
+func state() -> OnWorkState:
 	return _state
 
 ## 入座消息也可能是空房。只有双方都在快照里，才有可以切换过去的对局。
@@ -248,7 +248,7 @@ func recovery_checkpoint() -> Dictionary:
 	return _recovery.duplicate(true)
 
 func recovery_pending() -> bool:
-	return not _recovery.is_empty() and StateCodec.canon_hash(_recovery["snapshot"]) != StateCodec.canon_hash(_display_snapshot())
+	return not _recovery.is_empty() and OnWorkStateCodec.canon_hash(_recovery["snapshot"]) != OnWorkStateCodec.canon_hash(_display_snapshot())
 
 ## 进场/接管时直接恢复当前权威状态，不等待已过去的 ARM 或重新播放旧回合。
 ## 接管先逐条录入已经收齐的回执；检查点比回执更靠前时，另记显式恢复快照。
@@ -260,7 +260,7 @@ func restore_checkpoint(record_pending := false) -> bool:
 			_adopt(msg["snapshot"])
 			seq = int(msg.get("seq", seq))
 			recorded_step.emit(msg["result"], msg["snapshot"])
-	var changed := StateCodec.canon_hash(_recovery["snapshot"]) != StateCodec.canon_hash(_display_snapshot())
+	var changed := OnWorkStateCodec.canon_hash(_recovery["snapshot"]) != OnWorkStateCodec.canon_hash(_display_snapshot())
 	_adopt(_recovery["snapshot"])
 	seq = int(_recovery["seq"])
 	_restored_seq = seq
@@ -272,32 +272,32 @@ func restore_checkpoint(record_pending := false) -> bool:
 	_inbox.clear()
 	_scene_events = _scene_events.filter(func(msg): return msg["t"] != Protocol.APPLIED)
 	_pending = false
-	_last_result = Intent.err("cancelled", "连接已恢复")
+	_last_result = OnWorkIntent.err("cancelled", "连接已恢复")
 	return true
 
 func _display_snapshot() -> Dictionary:
-	var snap := StateCodec.snapshot(_state)
+	var snap := OnWorkStateCodec.snapshot(_state)
 	snap["pools"] = _applier.pools_snapshot()
 	return snap
 
 ## 发一条意图并等服务器回音。
 ##
-## from_seat 在这里**不发出去**：服务器按连接认身份（见 net/room.gd）。
-## 参数留着是为了和 LocalTransport 同签名 —— 场景层的调用点是同一份代码
+## from_seat 在这里**不发出去**：服务器按连接认身份（见 net/on_work_room.gd）。
+## 参数留着是为了和 OnWorkLocalTransport 同签名 —— 场景层的调用点是同一份代码
 func submit(intent, _from_seat := "") -> Dictionary:
 	var it: Dictionary = intent if intent is Dictionary else {}
 	if intent is String:
-		var dec: Dictionary = Intent.decode(intent)
+		var dec: Dictionary = OnWorkIntent.decode(intent)
 		if not dec["ok"]:
 			return _publish(dec)
 		it = dec["intent"]
 	if _closed or socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
-		return _publish(Intent.err("offline", "还没连上服务器"))
+		return _publish(OnWorkIntent.err("offline", "还没连上服务器"))
 	if _pending:
 		# 上一条还在飞。这不是网络错误，是**界面没锁住**：
 		# 玩家能在等回音的时候再点一次。报出来而不是排队，
 		# 排队会让第二次点击在几百毫秒后突然生效，手感上像误触
-		return _publish(Intent.err("busy", "上一步还在等服务器回话"))
+		return _publish(OnWorkIntent.err("busy", "上一步还在等服务器回话"))
 	_pending = true
 	_last_result = {}
 	_send(Protocol.intent(it))
@@ -314,14 +314,14 @@ func submit(intent, _from_seat := "") -> Dictionary:
 		if _pending and Time.get_ticks_msec() >= valve_at and not _inbox.is_empty():
 			var head: Dictionary = _inbox[0]
 			var head_op := str((head["result"] as Dictionary).get("op", ""))
-			if not Intent.is_client_op(head_op):
+			if not OnWorkIntent.is_client_op(head_op):
 				push_warning("回音被服务器的 %s 挡着 —— 放行，这一步没有演出" % head_op)
 				_inbox.pop_front()
 				_apply(head)
 				_drain()
 	if _pending:
 		_pending = false
-		return _publish(Intent.err("timeout", "服务器没回话（%.0f 秒）" % TIMEOUT_SEC))
+		return _publish(OnWorkIntent.err("timeout", "服务器没回话（%.0f 秒）" % TIMEOUT_SEC))
 	return _publish(_last_result)
 
 ## 等一帧，并且**顺手 poll 一次**。
@@ -410,7 +410,7 @@ func _dispatch_message(msg: Dictionary) -> void:
 		Protocol.REJECTED:
 			# 被拒的可能是我这条，也可能是别的（比如没进房间就发意图）。
 			# _pending 时按「我这条被拒了」处理，否则只广播
-			var r: Dictionary = Intent.err(str(msg["code"]), str(msg["reason"]))
+			var r: Dictionary = OnWorkIntent.err(str(msg["code"]), str(msg["reason"]))
 			if _pending:
 				_last_result = r
 				_pending = false
@@ -454,10 +454,10 @@ func _on_applied(msg: Dictionary) -> void:
 ## 收到的 applied 还没处理完的那些，**到达次序**。
 ##
 ## 为什么要排队而不是收到就处理：服务器是**一口气**把一整段推完的 ——
-## net/room.gd 的 _settle 一次返回 produce×n + finalize + next_round，
+## net/on_work_room.gd 的 _settle 一次返回 produce×n + finalize + next_round，
 ## 这一串会在同一次 poll 里全部到达。而每条都带全量快照，
 ## 收到就合上的话客户端的状态在场景层演第 0 组之前就已经跳到**下一回合**了：
-##   - _resolve_combo_visual(0) 去 Settle.ordered_production_combos(state) 取第 0 组，
+##   - _resolve_combo_visual(0) 去 OnWorkSettle.ordered_production_combos(state) 取第 0 组，
 ##     而那时 state.combos 已经被 finalize 清空 —— 下标越界，崩在结算演出的第一行
 ##   - 侥幸不崩的话也是「产出动画演的是下一回合的局面」
 ## 都不报错，因为服务器那边一切正常。
@@ -475,7 +475,7 @@ func _drain() -> void:
 	while not _inbox.is_empty():
 		var msg: Dictionary = _inbox[0]
 		var op := str((msg["result"] as Dictionary).get("op", ""))
-		if not Intent.is_client_op(op):
+		if not OnWorkIntent.is_client_op(op):
 			return
 		_inbox.pop_front()
 		_apply(msg)
@@ -495,7 +495,7 @@ func _apply(msg: Dictionary) -> void:
 	# 录制早于返回自己操作的回音，也覆盖服务器阶段步骤和对手操作。
 	if msg.has("snapshot"):
 		recorded_step.emit(r, msg["snapshot"])
-	if _pending and str(r.get("seat", "")) == my_seat and Intent.is_client_op(str(r.get("op", ""))):
+	if _pending and str(r.get("seat", "")) == my_seat and OnWorkIntent.is_client_op(str(r.get("op", ""))):
 		_last_result = r
 		_pending = false
 		return
@@ -503,14 +503,14 @@ func _apply(msg: Dictionary) -> void:
 	applied.emit(r)
 
 ## 把服务器那份快照合进本地。**seated 和 applied 走同一个函数** ——
-## 它们带的是同一种快照（net/room.gd 的 snapshot()）。
+## 它们带的是同一种快照（net/on_work_room.gd 的 snapshot()）。
 ##
-## pools 单独一步是因为点数池不在 GameState 上，它是裁决器的成员
-## （见 engine/intent_apply.gd 的 pools_snapshot 那段说明）。
+## pools 单独一步是因为点数池不在 OnWorkState 上，它是裁决器的成员
+## （见 engine/on_work_intent_apply.gd 的 pools_snapshot 那段说明）。
 ## 漏这一步的症状：状态全对、画面全对，但攻击回合**整段被跳过** ——
 ## pool_empty() 一上来就是真，而这条路径上没有任何一处会报错
 func _adopt(snap: Dictionary) -> void:
-	StateCodec.restore(_state, snap)
+	OnWorkStateCodec.restore(_state, snap)
 	_applier.pools_restore(snap.get("pools", {}))
 
 # ---------- 阶段推进：等服务器发，不自己发 ----------
@@ -544,30 +544,30 @@ func _await_server_op(op: String) -> Dictionary:
 				return r
 			continue
 		if _closed:
-			return Intent.err("offline", "连接断了，没等到服务器的 %s" % op)
+			return OnWorkIntent.err("offline", "连接断了，没等到服务器的 %s" % op)
 		if Time.get_ticks_msec() >= deadline:
-			return Intent.err("timeout", "服务器没发来 %s（%.0f 秒）" % [op, TIMEOUT_SEC])
+			return OnWorkIntent.err("timeout", "服务器没发来 %s（%.0f 秒）" % [op, TIMEOUT_SEC])
 		await _next_frame()
-	return Intent.err("unreachable", "")
+	return OnWorkIntent.err("unreachable", "")
 
-## 这四个是**服务器专属**的操作（Intent.CLIENT_OPS 里没有它们）。
-## 客户端调 submit 会被 PhaseMachine 的 not_client_op 拒掉 ——
+## 这四个是**服务器专属**的操作（OnWorkIntent.CLIENT_OPS 里没有它们）。
+## 客户端调 submit 会被 OnWorkPhaseMachine 的 not_client_op 拒掉 ——
 ## 所以这一侧的语义反过来：不是「我发一条」，而是「我等服务器那条」。
 ##
 ## 场景层的调用点因此一行不用改：它照样写 `await pipe.arm(who)`，
 ## 单机局那是本地裁决，联网局那是「等服务器装弹完广播过来」。
 ## 这正是 Transport 那层抽象存在的理由（见 engine/transport.gd 文件头）
 func arm(_seat: String) -> Dictionary:
-	return await _await_server_op(Intent.OP_ARM)
+	return await _await_server_op(OnWorkIntent.OP_ARM)
 
 func produce(_combo_idx: int) -> Dictionary:
-	return await _await_server_op(Intent.OP_PRODUCE)
+	return await _await_server_op(OnWorkIntent.OP_PRODUCE)
 
 func finalize() -> Dictionary:
-	return await _await_server_op(Intent.OP_FINALIZE)
+	return await _await_server_op(OnWorkIntent.OP_FINALIZE)
 
 func next_round() -> Dictionary:
-	return await _await_server_op(Intent.OP_NEXT_ROUND)
+	return await _await_server_op(OnWorkIntent.OP_NEXT_ROUND)
 
 # ---------- 再来一局 ----------
 
@@ -613,7 +613,7 @@ func _on_rematch_start(msg: Dictionary) -> void:
 func _send(msg: Dictionary) -> void:
 	socket.send_text(Protocol.encode(msg))
 
-## 广播一帧拖拽。归一化坐标由 scenes/main.gd 提供，传输层不知道布局。
+## 广播一帧拖拽。归一化坐标由 scenes/on_work_main.gd 提供，传输层不知道布局。
 ## 失败不报错：拖拽是展示通道，丢一帧只是画面抖一下
 func send_drag(phase_name: String, uids: Array, u := 0.0, v := 0.0) -> void:
 	if _closed or socket.get_ready_state() != WebSocketPeer.STATE_OPEN:

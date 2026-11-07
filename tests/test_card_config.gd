@@ -4,7 +4,7 @@
 
 extends "res://tests/harness.gd"
 
-const CardConfigClass = preload("res://engine/card_config.gd")
+const CardConfigClass = preload("res://engine/on_work_card_config.gd")
 const NetServerClass = preload("res://net/server.gd")
 
 func _initialize() -> void:
@@ -25,23 +25,23 @@ func _initialize() -> void:
 		"旧绝对路径偏好恢复为当前上班卡表")
 	check(JSON.parse_string(FileAccess.get_file_as_string(CardConfigClass.pref_path())).path == base_path,
 		"已迁移的卡表偏好原子写回")
-	check(CardDB.ConfigData.bundled_path("res://off_work/data/cards.json") == WorkConfig.FILES.cards
-		and CardDB.ConfigData.bundled_path("off_work/data/cards.json") == WorkConfig.FILES.cards,
+	check(OnWorkCardDB.ConfigData.bundled_path("res://off_work/data/cards.json") == OffWorkConfig.FILES.cards
+		and OnWorkCardDB.ConfigData.bundled_path("off_work/data/cards.json") == OffWorkConfig.FILES.cards,
 		"下班内置卡表支持旧资源路径和项目相对路径")
-	check(CardDB.ConfigData.bundled_path("user://archive/data/cards.json") == "user://archive/data/cards.json",
+	check(OnWorkCardDB.ConfigData.bundled_path("user://archive/data/cards.json") == "user://archive/data/cards.json",
 		"不同目录中同名的文件不被重定向")
 	var valid := CardConfigClass.validate_file(temp_path)
 	check(bool(valid.get("ok", false)), "完整自定义卡表通过校验")
 	var selected := CardConfigClass.select(temp_path)
 	check(bool(selected.get("ok", false)), "保存自定义卡表路径")
 	var applied := CardConfigClass.apply_solo()
-	check(bool(applied.get("ok", false)) and int(CardDB.get_def("yunketang")["output_n"]) == int(custom["yunketang"]["output_n"]), "单机应用自定义卡表")
+	check(bool(applied.get("ok", false)) and int(OnWorkCardDB.get_def("yunketang")["output_n"]) == int(custom["yunketang"]["output_n"]), "单机应用自定义卡表")
 	var defaulted := CardConfigClass.apply_default()
-	check(bool(defaulted.get("ok", false)) and CardDB.loaded_from == CardConfigClass.DEFAULT_PATH, "恢复默认卡表")
-	CardDB.load_from(temp_path)
+	check(bool(defaulted.get("ok", false)) and OnWorkCardDB.loaded_from == CardConfigClass.DEFAULT_PATH, "恢复默认卡表")
+	OnWorkCardDB.load_from(temp_path)
 	var server := NetServerClass.new()
 	var server_result := server.start(18973)
-	check(bool(server_result.get("ok", false)) and CardDB.loaded_from == CardConfigClass.DEFAULT_PATH, "联网服务器强制默认卡表")
+	check(bool(server_result.get("ok", false)) and OnWorkCardDB.loaded_from == CardConfigClass.DEFAULT_PATH, "联网服务器强制默认卡表")
 	server.stop()
 	var invalid := custom.duplicate(true)
 	invalid["_game"]["win_cash"] = int(invalid["_game"]["win_cash"]) + 1
@@ -53,16 +53,16 @@ func _initialize() -> void:
 	pawn_custom["yunketang"]["pawn"] = 0
 	pawn_custom["jiaolv"]["pawn"] = 11
 	for id in pawn_custom:
-		if pawn_custom[id] is Dictionary and pawn_custom[id].get("kind") == CardDB.KIND_LEGEND:
+		if pawn_custom[id] is Dictionary and pawn_custom[id].get("kind") == OnWorkCardDB.KIND_LEGEND:
 			pawn_custom[id]["pawn"] = 19
 	_write_cards(temp_path, pawn_custom)
 	check(CardConfigClass.validate_file(temp_path).get("ok", false), "普通卡、升级卡、传说卡出售价格均可覆盖且允许零")
-	check(CardDB.load_from(temp_path) and CardDB.pawn_value("yunketang") == 0 and CardDB.pawn_value("jiaolv") == 11,
-		"覆盖出售价格通过既有 CardDB 加载并实际生效")
-	var state := GameState.new()
+	check(OnWorkCardDB.load_from(temp_path) and OnWorkCardDB.pawn_value("yunketang") == 0 and OnWorkCardDB.pawn_value("jiaolv") == 11,
+		"覆盖出售价格通过既有 OnWorkCardDB 加载并实际生效")
+	var state := OnWorkState.new()
 	state.new_game()
-	var zero_card := state.add_card(GameState.PLAYER, "yunketang")
-	var zero_sale := state.pawn(GameState.PLAYER, [zero_card["uid"]])
+	var zero_card := state.add_card(OnWorkState.PLAYER, "yunketang")
+	var zero_sale := state.pawn(OnWorkState.PLAYER, [zero_card["uid"]])
 	check(not zero_sale.get("ok", true) and "出售价格为 0" in str(zero_sale.get("reason", "")),
 		"零出售价格拒绝出售并准确说明原因")
 	for bad in [-1, 0.5, "3", true, 2147483648]:

@@ -6,7 +6,7 @@ func _run() -> void:
 	UIConfig.set_hover_animation_speed(1.0)
 	var art: Dictionary = UIConfig.read_section("art")
 	# 张数从卡表读（加了角色专属卡之后是 33）：每张卡都要有动画，下面逐张核对
-	check(art.hover.cards.size() == CardDB.all_cards().size(), "%d 张牌均登记小图差分动画" % CardDB.all_cards().size())
+	check(art.hover.cards.size() == OnWorkCardDB.all_cards().size(), "%d 张牌均登记小图差分动画" % OnWorkCardDB.all_cards().size())
 	check(art.hover.cards.values().all(func(config): return config.get("codec", "") == "hdelta-v1" and config.has("file") and not config.has("files")), "全部正式卡牌使用单文件差分动画")
 	check(art.hover.cards.values().all(func(config): return config.frame_size.max() <= 384), "全部正式动作最长边不超过 384 像素")
 	check(not art.has("motions"), "分层动画配置已移除")
@@ -14,7 +14,7 @@ func _run() -> void:
 	var holder := Node3D.new()
 	root.add_child(holder)
 	check(CardArt._hover_cache.is_empty() and CardArt._hover_loading.is_empty(), "没有悬停时不预载动作素材")
-	for id in CardDB.all_cards():
+	for id in OnWorkCardDB.all_cards():
 		var card := CardEntity.new()
 		card.freeze = true
 		holder.add_child(card)

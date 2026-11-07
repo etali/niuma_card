@@ -7,8 +7,8 @@ extends VBoxContainer
 ## “怎么玩”的单一入口。选择课程后回到原牌桌，由小人对话引导。
 const Catalog = preload("res://engine/tutorial_catalog.gd")
 const Progress = preload("res://engine/tutorial_progress.gd")
-const Content = preload("res://scenes/rulebook_content.gd")
-const RuleAnimation = preload("res://scenes/rulebook_animation.gd")
+const Content = preload("res://scenes/on_work_rulebook_content.gd")
+const RuleAnimation = preload("res://scenes/on_work_rulebook_animation.gd")
 const NAVIGATION := [["home", "hub.courses"], ["cards", "hub.cards"], ["upgrades", "hub.upgrades"]]
 
 signal section_changed(index: int)

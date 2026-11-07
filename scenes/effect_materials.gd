@@ -17,8 +17,8 @@ static var _particle_shader: Shader
 ## 同一形状的所有事件共用一份材质；颜色仍来自每个粒子的顶点色。
 const PARTICLE_SHAPES := {"coin": 0, "user": 1, "scrap": 2, "spark": 3, "runner_r": 4, "runner_l": 5}
 ## 硬币和小人直接用资源牌上那两枚图（现金牌的 ¥ 金币、用户牌的小人），不另画一个角色。
-const PARTICLE_FIGURES := {"coin": CardDB.RES_CASH, "user": CardDB.RES_USER,
-	"runner_r": CardDB.RES_USER, "runner_l": CardDB.RES_USER}
+const PARTICLE_FIGURES := {"coin": OnWorkCardDB.RES_CASH, "user": OnWorkCardDB.RES_USER,
+	"runner_r": OnWorkCardDB.RES_USER, "runner_l": OnWorkCardDB.RES_USER}
 
 ## 纸屑与星花是墨线小画：填色取顶点色，墨线取牌框墨色，用距离场画，任何缩放下线条都不糊。
 ## 硬币与小人贴资源牌原图，保留原色，只用顶点色的透明度淡出。

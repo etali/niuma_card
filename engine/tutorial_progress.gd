@@ -8,11 +8,12 @@ const Store = preload("res://engine/json_store.gd")
 const Config = preload("res://engine/config_data.gd")
 const SavePaths = preload("res://engine/save_paths.gd")
 
-static func path() -> String:
+static func path(off_work := false) -> String:
+	if off_work: return SavePaths.off_work_settings_file("tutorial_progress.json")
 	return SavePaths.settings_file("tutorial_progress.json")
 
-static func read() -> Dictionary:
-	var value := Config.read_dictionary(path())
+static func read(off_work := false) -> Dictionary:
+	var value := Config.read_dictionary(path(off_work))
 	if not value.get("courses", {}) is Dictionary:
 		value["courses"] = {}
 	return value
@@ -31,7 +32,7 @@ static func settle_returning_player() -> void:
 	Store.save(path(), value)
 
 static func _has_recordings() -> bool:
-	var directory := DirAccess.open(Tape.path_dir())
+	var directory := DirAccess.open(SavePaths.recordings_dir())
 	if directory == null:
 		return false
 	for name in directory.get_files():
@@ -47,15 +48,15 @@ static func mark_handle_opened() -> bool:
 	value["handle_opened"] = true
 	return Store.save(path(), value)
 
-static func invitation_seen() -> bool:
-	return bool(read().get("invitation_seen", false))
+static func invitation_seen(off_work := false) -> bool:
+	return bool(read(off_work).get("invitation_seen", false))
 
 ## choice 记录首次邀请的回答："tutorial" 跟教程，"skip" 直接开局。
-static func dismiss_invitation(choice := "skip") -> bool:
-	var value := read()
+static func dismiss_invitation(choice := "skip", off_work := false) -> bool:
+	var value := read(off_work)
 	value["invitation_seen"] = true
 	value["invitation_choice"] = choice
-	return Store.save(path(), value)
+	return Store.save(path(off_work), value)
 
 ## 首次邀请选了直接开局、也从没开过任何课程的玩家，第一次输掉单机局时在结算页补一次入口。
 static func wants_post_game_nudge() -> bool:
@@ -68,8 +69,8 @@ static func mark_post_game_nudged() -> bool:
 	value["post_game_nudged"] = true
 	return Store.save(path(), value)
 
-static func course(id: String) -> Dictionary:
-	var item: Variant = read().get("courses", {}).get(id, {})
+static func course(id: String, off_work := false) -> Dictionary:
+	var item: Variant = read(off_work).get("courses", {}).get(id, {})
 	return item if item is Dictionary else {}
 
 static func request_first_game_help() -> bool:
@@ -96,10 +97,10 @@ static func mark_tip_seen(id: String) -> bool:
 	value["tips"] = tips
 	return Store.save(path(), value)
 
-static func record(id: String, step: int, status: String) -> bool:
+static func record(id: String, step: int, status: String, off_work := false) -> bool:
 	if id.is_empty() or status not in ["started", "completed", "viewed", "skipped"]:
 		return false
-	var value := read()
+	var value := read(off_work)
 	var entries: Dictionary = value.get("courses", {})
 	var previous: Variant = entries.get(id, {})
 	var item: Dictionary = previous.duplicate(true) if previous is Dictionary else {}
@@ -113,7 +114,7 @@ static func record(id: String, step: int, status: String) -> bool:
 	value["courses"] = entries
 	value["last_course"] = id
 	value["invitation_seen"] = true
-	return Store.save(path(), value)
+	return Store.save(path(off_work), value)
 
 static func resume_id() -> String:
 	var value := read()

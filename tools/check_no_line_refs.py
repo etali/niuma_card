@@ -7,14 +7,14 @@
 
 **这个脚本是从 _check_doc_lines.py 翻过来的**，那份的活是「验行号指得对不对」。
 翻的理由写在它自己的 docstring 里：balance.md 三处把 `recipe_pay_n` 那道闸指在
-`combo_rules.gd:139`，实际在 140，从写下那天起就偏一行，而它一路报「异常 0 条」——
+`on_work_combo_rules.gd:139`，实际在 140，从写下那天起就偏一行，而它一路报「异常 0 条」——
 它只查越界，不查指错。而全仓扫一遍发现的不是「个别偏了」：
 
   31 处带文件名的引用，**没有一处指得准**。
   最狠的三种：
     · tests/test_foe_drag.gd 指 `net_transport.gd:49` —— 那是**空行**
-    · tests/test_buff_output_x2.gd 指 `settle.gd:110` —— 那个路径**根本不存在**
-      （真货在 engine/settle.gd，靠基名 rglob 才碰对）
+    · tests/test_buff_output_x2.gd 指 `on_work_settle.gd:110` —— 那个路径**根本不存在**
+      （真货在 engine/on_work_settle.gd，靠基名 rglob 才碰对）
     · tests/test_attack_dbl.gd 说「下面第 124 行」，而 124 在**上面**，
       真正问那件事的是再往下十来行
 
@@ -40,7 +40,7 @@ LINE_REF = re.compile(
 # 「第 N 行」。指文档表格的第几项也算 —— 有人插一行就错位，和代码行号一样脆
 NTH_LINE = re.compile(r'第 ?\d+ ?行')
 # 光秃秃的 `:58`，不带文件名 —— 「本文件 :58 那段」这种写法。
-# 上面那条要求文件名打头，接不住它：实测 engine/combo_rules.gd 里
+# 上面那条要求文件名打头，接不住它：实测 engine/on_work_combo_rules.gd 里
 # 就有一句「本文件 :58 那段」，而 58 行是 `evaluate()` 开头的字典字面量，
 # 真正说的那段 Buff 扫描在三十行开外，写下来那天大概是对的
 #
@@ -54,7 +54,7 @@ GH_LINE = re.compile(r'#L\d+(?:-L?\d+)?')
 
 SCAN_EXT = {'.gd', '.py', '.md', '.sh'}
 SKIP_DIRS = {'.godot', '.git', 'addons', 'build'}  # 编译缓存里的第三方源码不属于项目注释
-# 这份脚本自己要在 docstring 里举反例（`combo_rules.gd:139` 那些），
+# 这份脚本自己要在 docstring 里举反例（`on_work_combo_rules.gd:139` 那些），
 # 不跳过的话它永远拦下自己
 SKIP_FILES = {'tools/check_no_line_refs.py'}
 
@@ -66,7 +66,7 @@ def prose_lines(path: Path, lines: list) -> list:
     拼字符串（那是运行时位置，合法）、或者字典键 —— 都不该拦。
 
     **python 的多行 docstring 要跟状态**，不能只看「这一行以什么开头」：
-    第一版就是那么写的，于是 _check_doc_lines.py 那句 `combo_rules.gd:139`
+    第一版就是那么写的，于是 _check_doc_lines.py 那句 `on_work_combo_rules.gd:139`
     整个漏掉了 —— 它在 docstring 第 7 行上，前面既没有 `#` 也没有三引号。
     而那句恰好是**全仓最后一处**行号引用，「0 处」于是看着像扫干净了
     """
@@ -130,12 +130,12 @@ def scan():
 ## 的扒取范围上犯过一次，见 mutate_check.py 48b）。夹具把每条模式各钉一个例子，
 ## 改弱任何一条当场有人喊
 SELFTEST = [
-    ('# 见 engine/settle.gd:123 那段', True),          # 文件名 + 行号
+    ('# 见 engine/on_work_settle.gd:123 那段', True),          # 文件名 + 行号
     ('# 见下面第 42 行', True),                        # 第 N 行
     ('# 本文件 :77 那段', True),                       # 裸冒号 + 数字
     ('# 见 https://x/a/b.gd#L120', True),              # GitHub 式
     ('# 端口 ws://[::1]:8910、比例 3:4、时间 9:00', False),  # 冒号前贴着字母数字
-    ('# 搬过位置的那个函数见 card_db.gd 的 pawn_of()', False),  # 正确写法
+    ('# 搬过位置的那个函数见 on_work_card_db.gd 的 pawn_of()', False),  # 正确写法
 ]
 
 
@@ -156,12 +156,12 @@ def selftest() -> list:
 
 ## 取舍 prose 的自测：python 的多行 docstring **续行**也算正文。
 ## 这条单独钉，因为第一版就漏在这儿：`is_prose()` 只看「这一行以什么开头」，
-## 于是 docstring 第 7 行上那句 `combo_rules.gd:139` 整个没被看见 ——
+## 于是 docstring 第 7 行上那句 `on_work_combo_rules.gd:139` 整个没被看见 ——
 ## 而那恰好是全仓最后一处，「0 处」于是看着像扫干净了
 SELFTEST_DOC = [
     '"""头一行',
     '',
-    '续行里写了 engine/settle.gd:123',
+    '续行里写了 engine/on_work_settle.gd:123',
     '"""',
     'var x = 1  # 这行是代码，里面的 a.gd:9 不该拦',
 ]
@@ -184,7 +184,7 @@ def main():
         return 1
     hits = scan()
     if hits:
-        # 失败行前缀 `  - ` 和 check_balance_numbers 对齐：
+        # 失败行前缀 `  - ` 和 on_work_check_balance_numbers 对齐：
         # tools/mutate_check.py 靠它认出「python 判据红了」（见那边 _fail_lines）
         print('注释和文档里不许写行号引用（%d 处），改成「文件名 + 函数名」：'
               % len(hits))

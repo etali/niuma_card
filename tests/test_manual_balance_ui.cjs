@@ -11,8 +11,8 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const web = path.join(__dirname, '../tools/balance');
-const html = readFileSync(path.join(web, 'report.html'), 'utf8');
-const script = readFileSync(path.join(web, 'report.js'), 'utf8');
+const html = readFileSync(path.join(web, 'on_work_report.html'), 'utf8');
+const script = readFileSync(path.join(web, 'on_work_report.js'), 'utf8');
 const decode = text => text.replace(/&(amp|lt|gt|quot|#39);/g,
   (_, entity) => ({amp:'&', lt:'<', gt:'>', quot:'"', '#39':"'"})[entity]);
 
@@ -286,7 +286,7 @@ async function workbench({notes = {}, withRuns = false, activeRun = false, activ
     URL:{createObjectURL(blob) { downloads.push(blob); return 'blob:test'; }, revokeObjectURL() {}},
     window, confirm:() => true,
     prompt:(message, suggested) => { prompts.push({message, suggested}); return exportPath === undefined ? suggested : exportPath; }});
-  vm.runInContext(script, context, {filename:'report.js'});
+  vm.runInContext(script, context, {filename:'on_work_report.js'});
   await new Promise(resolve => setImmediate(resolve));
   const $ = id => document.getElementById(id);
   assert.equal(typeof $('run').onclick, 'function', $('message').textContent);

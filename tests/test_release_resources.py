@@ -52,7 +52,7 @@ class ReleaseResourcesTest(unittest.TestCase):
                 for ref in refs:
                     self.assertFalse(ref.startswith(audit.DEVELOPMENT_PREFIXES), f'{path}: {ref}')
         self.assertTrue((ROOT / 'scenes/debug_shot.gd').exists())
-        self.assertIn('res://scenes/debug_shot.gd', (ROOT / 'scenes/main.gd').read_text())
+        self.assertIn('res://scenes/debug_shot.gd', (ROOT / 'scenes/on_work_main.gd').read_text())
 
     def test_reader_lists_actual_pack_directory_v2_v3_v4(self):
         with tempfile.TemporaryDirectory() as tmp:

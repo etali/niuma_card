@@ -5,7 +5,7 @@
 class_name ResourceHUD
 extends PanelContainer
 
-var card_catalog: Script = CardDB
+var card_catalog: Script = OnWorkCardDB
 
 ## 双方共用的结构化资源卡；summary 是抽屉首行与旧调用方共用的完整摘要。
 ## 数值与风险独立布局，长预警不再挤进资金读数，也不改变牌桌鼠标事件路由。

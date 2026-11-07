@@ -10,7 +10,7 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	var world := Node3D.new()
 	root.add_child(world)
 	var table := TableScene.new(world,true)

@@ -55,7 +55,7 @@ func _initialize() -> void:
 			% [who, fc.global_position.x, fc.size.x,
 				fc.global_position.x - res_right])
 		# **展开态才是要量的那个**：收起态量出来的余量偏大，
-		# 而两块面板都是能展开的（见 scenes/main.gd 的 _setup_res_panel）
+		# 而两块面板都是能展开的（见 scenes/on_work_main.gd 的 _setup_res_panel）
 		var tg: Node = c.get_node_or_null("Frame/VB/Toggle")
 		if tg == null:
 			for b in c.find_children("*", "Button", true, false):

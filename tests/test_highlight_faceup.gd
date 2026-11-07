@@ -24,7 +24,7 @@ func plate_tint(e: CardEntity) -> Vector3:
 func _initialize() -> void:
 	print("=== 高亮跨翻面测试 ===")
 	var main: Node = await boot_main()
-	var cs: Array = main.state.players[GameState.PLAYER]["cards"]
+	var cs: Array = main.state.players[OnWorkState.PLAYER]["cards"]
 	var e: CardEntity = main.entities[cs[0]["uid"]]
 
 	# 底板着色器是这条路的前提，缺了下面每一条查的都是别的事

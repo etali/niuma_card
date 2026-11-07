@@ -149,7 +149,7 @@ func _test_detail_cache() -> void:
 	check(view._detail_flavor.text == "" and view._detail_status.text == "",
 		"设施说明不被上一张卡的隐藏文本撑宽")
 	view.show_card_detail(card, Vector2(550, 320))
-	var definition := CardDB.get_def(card.def_id)
+	var definition := OnWorkCardDB.get_def(card.def_id)
 	var old_flavor := str(definition.get("flavor", ""))
 	definition.flavor = "同名卡重新导入后的新说明"
 	view.show_card_detail(card, Vector2(550, 320))

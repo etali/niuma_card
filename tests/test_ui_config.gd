@@ -7,7 +7,7 @@ extends "res://tests/harness.gd"
 const Config = preload("res://engine/ui_config.gd")
 const Drawer = preload("res://scenes/drawer_window.gd")
 const Presentation = preload("res://scenes/drawer_presentation.gd")
-const PreviewCard = preload("res://scenes/preview_card.gd")
+const PreviewCard = preload("res://scenes/on_work_preview_card.gd")
 const ALTERNATE := "res://tests/fixtures/ui_alternate.json"
 const SPEED_ALTERNATE := "res://tests/fixtures/ui_speed_alternate.json"
 
@@ -48,7 +48,7 @@ func _run() -> void:
 	root.size = Vector2i(1600, 1000)
 	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
 	root.content_scale_size = Vector2i.ZERO
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	root.add_child(main)
 	await create_timer(0.5).timeout

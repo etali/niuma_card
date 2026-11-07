@@ -36,7 +36,7 @@ class RuntimePathsTest(unittest.TestCase):
         source.write_text(json.dumps(request))
         before = source.read_bytes()
         original = ['--path', '.', '--log-file', 'reports/引擎.log', '-s',
-                    'tools/eval_report.gd', '--', 'request.json']
+                    'tools/on_work_eval_report.gd', '--', 'request.json']
         remapped = self.remap(original)
         self.assertEqual(original[-1], 'request.json')
         self.assertEqual(source.read_bytes(), before)
@@ -53,7 +53,7 @@ class RuntimePathsTest(unittest.TestCase):
         source = self.root / 'request.json'
         source.write_text(json.dumps(dict(action='metadata', output_path='reports/profile.json',
                                          cards_path='res://data/on_work_cards.json', progress_path='user://progress.json')))
-        args = self.remap(['-s', 'tools/eval_report.gd', '--', 'request.json'])
+        args = self.remap(['-s', 'tools/on_work_eval_report.gd', '--', 'request.json'])
         request = json.loads(Path(args[-1]).read_text())
         self.assertEqual(request['output_path'], str(self.root / 'reports/profile.json'))
         self.assertEqual(request['cards_path'], 'res://data/on_work_cards.json')
@@ -63,16 +63,16 @@ class RuntimePathsTest(unittest.TestCase):
         play = self.remap(['--path', '.', '--', '--cards-config=data/on_work_cards.json'])
         self.assertEqual(play[-1], '--cards-config=' + str(self.root / 'data/on_work_cards.json'))
         (self.root / 'input-without-extension').write_text('{}')
-        args = self.remap(['-s', '../external/bot_decision_probe.gd', '--', 'fixed',
+        args = self.remap(['-s', '../external/on_work_bot_decision_probe.gd', '--', 'fixed',
                            'input-without-extension', 'reports/new.json', '40', '1.0', 'bot:1'])
-        self.assertEqual(args[1], str(self.root.parent / 'external/bot_decision_probe.gd'))
+        self.assertEqual(args[1], str(self.root.parent / 'external/on_work_bot_decision_probe.gd'))
         self.assertEqual(args[3], 'fixed')
         self.assertEqual(args[4:6], [str(self.root / 'input-without-extension'), str(self.root / 'reports/new.json')])
         self.assertEqual(args[-3:], ['40', '1.0', 'bot:1'])
 
     def test_invalid_request_is_left_for_engine_validation(self):
         source = self.root / 'request.json'; source.write_text('{invalid')
-        args = self.remap(['-s', 'tools/eval_report.gd', '--', 'request.json'])
+        args = self.remap(['-s', 'tools/on_work_eval_report.gd', '--', 'request.json'])
         self.assertEqual(args[-1], str(source))
         self.assertFalse((self.runtime / 'eval-request.json').exists())
 

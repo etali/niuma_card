@@ -5,7 +5,7 @@
 class_name RoomSeats
 extends RefCounted
 
-const SEATS := [GameState.PLAYER, GameState.BOT]
+const SEATS := [OnWorkState.PLAYER, OnWorkState.BOT]
 
 var code := ""
 ## seat -> peer id（0 = 空座）。断线时置 0 但**保留房间**，等重连
@@ -15,7 +15,7 @@ var occupants: Dictionary = {}
 var tokens: Dictionary = {}
 var seq := 0
 
-## 这一局结束后点了「再来一局」的座位。**两个都点齐才重开**（net/room.gd 的 rematch 投票与重开）。
+## 这一局结束后点了「再来一局」的座位。**两个都点齐才重开**（net/on_work_room.gd 的 rematch 投票与重开）。
 ##
 ## 为什么要投票而不是一方点了就重开：终局面板是玩家读战报的地方，
 ## 对手单方面重开会把它从屏幕上抽走 —— 那一刻他连自己为什么输都还没看完。
@@ -80,7 +80,7 @@ func seat_peer(peer: int, token := "") -> Dictionary:
 	occupants[s] = peer
 	return { "ok": true, "seat": s, "resumed": false }
 
-## 连接断开：座位置空但**不删房间**（scenes/main.gd 的 _offer_reconnect / _on_net_down：没有隐藏信息，重连很便宜）。
+## 连接断开：座位置空但**不删房间**（scenes/on_work_main.gd 的 _offer_reconnect / _on_net_down：没有隐藏信息，重连很便宜）。
 ## 令牌留着，原来那个人拿它能回来
 func drop_peer(peer: int) -> String:
 	var s := seat_of(peer)
@@ -88,7 +88,7 @@ func drop_peer(peer: int) -> String:
 		occupants[s] = 0
 		# 掉线**撤票**。留着的后果是这一票会记在座位上而不是人身上：
 		# 投了票的人走掉之后，另一位一点就直接开新局 —— 而他等的那个人不在了，
-		# 新局第一个对手回合停在等一条永远不来的 action_done（scenes/main.gd 的 _offer_reconnect / _on_net_down 处理的断线状态）。
+		# 新局第一个对手回合停在等一条永远不来的 action_done（scenes/on_work_main.gd 的 _offer_reconnect / _on_net_down 处理的断线状态）。
 		# 重连回来的人自己再点一次就是了：终局面板本来就还在他屏幕上
 		rematch_votes.erase(s)
 	return s

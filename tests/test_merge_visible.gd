@@ -25,7 +25,7 @@ func _boot() -> Node:
 	root.size = Vector2i(1600, 1000)
 	root.content_scale_size = Vector2i.ZERO
 	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	var main: Node = load("res://scenes/main.tscn").instantiate()
+	var main: Node = load("res://scenes/on_work_main.tscn").instantiate()
 	main.force_drawer_layout = true
 	root.add_child(main)
 	_booted = main
@@ -94,7 +94,7 @@ func _pile_onto_loose(count: int, target_id: String, flying: bool) -> void:
 		"%s：全部成员组成同一摞" % context)
 	_check_visible(main, expected_members, context)
 	if group != null and target_id != "cash":
-		check(group["cards"][0] == target and target.recipe_progress_text() == "%d/%d" % [count, int(CardDB.get_def(target_id)["recipe_n"])],
+		check(group["cards"][0] == target and target.recipe_progress_text() == "%d/%d" % [count, int(OnWorkCardDB.get_def(target_id)["recipe_n"])],
 			"%s：核心仍在摞顶并显示配方" % context)
 	if flying:
 		check(not target.has_meta("dest_pos"), "%s：已取消旧飞入目标" % context)
@@ -178,7 +178,7 @@ func _buy_from_compact_pile() -> void:
 	main._actor = main.my_seat
 	var count := 17
 	for i in 2:
-		count += int(CardDB.get_def(main.state.market[i])["price"])
+		count += int(OnWorkCardDB.get_def(main.state.market[i])["price"])
 	var members: Array = []
 	for i in count:
 		members.append(_card(main, "cash", Vector3(-3.7, 0.05, 3.0)))
@@ -225,7 +225,7 @@ func _restored_pile_stays_above_table() -> void:
 	board.groups.append(group)
 	board._layout_group(group, Vector3(-3.7, 0.05, 3.0))
 	await create_timer(0.4).timeout
-	var snapshot = load("res://scenes/table_snapshot.gd")
+	var snapshot = load("res://scenes/on_work_table_snapshot.gd")
 	snapshot.restore(main, snapshot.capture(main))
 	await physics_frame
 	var top: CardEntity = members[0]

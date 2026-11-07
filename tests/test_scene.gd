@@ -11,7 +11,7 @@ extends "res://tests/harness.gd"
 func _initialize() -> void:
 	print("=== 场景回归测试 ===\n")
 	var main: Node = await boot_main()
-	check(main != null, "main.tscn 实例化成功")
+	check(main != null, "on_work_main.tscn 实例化成功")
 
 	var board: Board = null
 	for child in main.get_children():
@@ -21,14 +21,14 @@ func _initialize() -> void:
 	# 场上实体 = 两边手牌 + 公共区。数目从 state 反推：开局手牌张数和卡位数
 	# 都是配置项（写死一个总数，`_game.market_size` 一调就得跟着改一次），
 	# 这条要验的是「state 里每张卡都建了实体、一张不落也不多」
-	var want: int = main.state.players[GameState.PLAYER]["cards"].size() \
-		+ main.state.players[GameState.BOT]["cards"].size() \
+	var want: int = main.state.players[OnWorkState.PLAYER]["cards"].size() \
+		+ main.state.players[OnWorkState.BOT]["cards"].size() \
 		+ main.state.market.size()
 	check(board.cards.size() == want, "全部实体注册（%d/%d）" % [board.cards.size(), want])
 
 	# 注入一张核心卡 + 取一份配方的用户卡，测堆叠进度显示。
 	# 配方量读卡表：这一节量的是「D 位怎么写」，吃几张是数值旋钮
-	var core_def: Dictionary = CardDB.get_def("shuabuting")
+	var core_def: Dictionary = OnWorkCardDB.get_def("shuabuting")
 	var need := int(core_def["recipe_n"])
 	var core: CardEntity = main._spawn_entity(
 		{ "uid": 9999, "def_id": "shuabuting" }, Vector3(0, 2, 3), true)
@@ -80,7 +80,7 @@ func _initialize() -> void:
 
 	# --- 结束面板要真的居中 ---
 	# 检查真实屏幕坐标，不约束居中容器是否铺满窗口；长文案撑大后也应居中。
-	main.state.winner = GameState.PLAYER
+	main.state.winner = OnWorkState.PLAYER
 	main.state.win_reason = "测试"
 	main._show_game_over()
 	await process_frame

@@ -38,7 +38,7 @@ var _main: Node = null
 
 func _initialize() -> void:
 	print("=== 联网面板测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	_main = await boot_main()
 	if _main == null:
 		check(false, "场景起不来")
@@ -55,7 +55,7 @@ func _initialize() -> void:
 # ---------- T1 开房间 ----------
 
 var _panel: JoinPanel = null
-var _solo_state: GameState = null
+var _solo_state: OnWorkState = null
 var _solo_pipe: Variant = null
 
 func _t1_host() -> void:
@@ -188,7 +188,7 @@ func _t3_apply_launch() -> void:
 	print("\n--- T3 启动参数直接进 ---")
 	# 先退回单机局，把上一节那条连接和服务器都收掉
 	_main._reset_session_flags()
-	_main.state = GameState.new()
+	_main.state = OnWorkState.new()
 	_main.state.new_game()
 	_main._rebuild_pipe()
 	_main._sync_round()
@@ -206,7 +206,7 @@ func _t3_apply_launch() -> void:
 
 	var panel: JoinPanel = _main._open_join_panel()
 	await process_frame
-	var solo_state: GameState = _main.state
+	var solo_state: OnWorkState = _main.state
 	var solo_pipe: Variant = _main.pipe
 	panel.apply_launch(cfg)
 	check(panel._url_edit.text == host.url(), "地址填好了")
@@ -348,7 +348,7 @@ func _t6_handoff_after_release() -> void:
 	if not need(_main.phase == _main.PHASE_ACTION and _main._actor == _main.my_seat
 		and not _main.board.input_locked, "当前 BOT 局处于玩家可操作的行动阶段"):
 		return
-	var solo_state: GameState = _main.state
+	var solo_state: OnWorkState = _main.state
 	var solo_pipe: Variant = _main.pipe
 	var panel: JoinPanel = _main._open_join_panel()
 	await process_frame
@@ -395,7 +395,7 @@ func _t6_handoff_after_release() -> void:
 	foe.connect_to_server()
 	var ready := await _until(func():
 		foe.poll()
-		return candidate.has_dealt_state() and candidate.phase() == PhaseMachine.ACTION
+		return candidate.has_dealt_state() and candidate.phase() == OnWorkPhaseMachine.ACTION
 	, 600)
 	check(ready, "抓牌期间第二位已到齐，候选连接收齐双座位快照和首阶段 phase")
 	check(_main._net == null and _main.state == solo_state and _main.pipe == solo_pipe,

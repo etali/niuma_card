@@ -13,7 +13,7 @@ extends "res://tests/harness.gd"
 ##
 ## 卡面这一格回答的是「打出去会发生什么」，所以它必须是**当前这一组**的函数，
 ## 不是卡定义的函数。判据分四段，各自对应一条会静默退化的实现错法：
-##   1. 倍数取自 ComboRules.effect_multipliers —— 卡面和结算读同一条规则。
+##   1. 倍数取自 OnWorkComboRules.effect_multipliers —— 卡面和结算读同一条规则。
 ##      分开数就会「卡面翻倍、结算发一份」
 ##   2. 配方没满时就要显示翻倍 —— 拿 eval["output_n"] 反推倍数的实现会在这里红
 ##      （eval 对没凑满的组给 output_n=0），而这正是玩家拖进 996 的那一刻
@@ -21,7 +21,7 @@ extends "res://tests/harness.gd"
 ##   4. 两条乘数不串台 —— 产出卡只吃 output_x2、攻击卡只吃 attack_x2
 ##
 ## 变异提示（每条都实跑验证过会红）：
-##   combo_rules.gd effect_multipliers 里 `"output_x2": out["output"] = ...` 那支删掉 → 第 1/2 组红
+##   on_work_combo_rules.gd effect_multipliers 里 `"output_x2": out["output"] = ...` 那支删掉 → 第 1/2 组红
 ##   board.gd _update_group_progress 里去掉 `_push_effect_mult(g)` → 第 1/2 组红
 ##   board.gd reset_recipe_progress 里去掉 `c.set_effect_mult(1)` → 第 3 组红
 ##   board.gd _push_effect_mult 里把 KIND_ATTACK 那支也喂 mult["output"] → 第 4 组红
@@ -50,39 +50,39 @@ func _c(def_id: String) -> Dictionary:
 ## effect_multipliers 只问「组里有没有那张 Buff」，和配方满不满无关。
 ## 卡面读的是它，结算读的是 evaluate —— 两者必须对同一组牌给出一致的倍数
 func test_multipliers_rule() -> void:
-	print("-- 1. ComboRules.effect_multipliers --")
+	print("-- 1. OnWorkComboRules.effect_multipliers --")
 	# 两路的倍数读 `_game.buff_mult`：这一节量的是「哪一路吃哪张 Buff」，
 	# 翻几倍是数值旋钮。1 不是配置，是「没 Buff」那一路的中性倍数
-	var m_out := CardDB.buff_mult("output_x2")
-	var m_atk := CardDB.buff_mult("attack_x2")
-	var bare := ComboRules.effect_multipliers([_c("ditui"), _c("cash")])
+	var m_out := OnWorkCardDB.buff_mult("output_x2")
+	var m_atk := OnWorkCardDB.buff_mult("attack_x2")
+	var bare := OnWorkComboRules.effect_multipliers([_c("ditui"), _c("cash")])
 	check(int(bare["output"]) == 1 and int(bare["attack"]) == 1, "没有 Buff：两路都是 1 倍")
 
-	var with996 := ComboRules.effect_multipliers([_c("ditui"), _c("yinqing996")])
+	var with996 := OnWorkComboRules.effect_multipliers([_c("ditui"), _c("yinqing996")])
 	check(int(with996["output"]) == m_out, "带 996：output 路 %d 倍" % m_out)
 	check(int(with996["attack"]) == 1, "带 996：attack 路仍是 1 倍")
 
-	var with_resou := ComboRules.effect_multipliers([_c("butie"), _c("resou")])
+	var with_resou := OnWorkComboRules.effect_multipliers([_c("butie"), _c("resou")])
 	check(int(with_resou["attack"]) == m_atk, "带热搜：attack 路 %d 倍" % m_atk)
 	check(int(with_resou["output"]) == 1, "带热搜：output 路仍是 1 倍")
 
 	# 配方一张料都没有也照样报出倍数 —— 这是它和 evaluate 的分工
-	var empty_recipe := ComboRules.effect_multipliers([_c("liulianghe"), _c("yinqing996")])
+	var empty_recipe := OnWorkComboRules.effect_multipliers([_c("liulianghe"), _c("yinqing996")])
 	check(int(empty_recipe["output"]) == m_out, "配方空着也报 %d 倍（卡面要在凑满前就显示）" % m_out)
 
 	# 防御 Buff 不是乘数，不该动这两个数
-	var prot := ComboRules.effect_multipliers([_c("ditui"), _c("tuisong"), _c("jiangjia")])
+	var prot := OnWorkComboRules.effect_multipliers([_c("ditui"), _c("tuisong"), _c("jiangjia")])
 	check(int(prot["output"]) == 1 and int(prot["attack"]) == 1, "防御 Buff 不参与翻倍")
 
 	# 和 evaluate 对同一组牌口径一致（配方凑满的情形）。
 	# 料给几张读地推的 recipe_n，别写死 —— 少一张这一条就变成量「没满」了
 	var full: Array = [_c("ditui")]
-	for i in int(CardDB.get_def("ditui")["recipe_n"]):
+	for i in int(OnWorkCardDB.get_def("ditui")["recipe_n"]):
 		full.append(_c("cash"))
 	full.append(_c("yinqing996"))
-	var ev := ComboRules.evaluate(full)
-	var mu := ComboRules.effect_multipliers(full)
-	check(int(ev["output_n"]) == int(CardDB.get_def("ditui")["output_n"]) * int(mu["output"]),
+	var ev := OnWorkComboRules.evaluate(full)
+	var mu := OnWorkComboRules.effect_multipliers(full)
+	check(int(ev["output_n"]) == int(OnWorkCardDB.get_def("ditui")["output_n"]) * int(mu["output"]),
 		"配方满时 evaluate 的产出 = 卡面值 × effect_multipliers 的倍数")
 	print("")
 
@@ -95,9 +95,9 @@ func test_face_doubles_in_group() -> void:
 	var main: Node = await boot_main()
 	var board: Board = main.board
 	# 卡面上那几个数全从卡表推：卡面值 = output_n，翻倍后 = output_n × buff_mult
-	var d_core: Dictionary = CardDB.get_def("ditui")
+	var d_core: Dictionary = OnWorkCardDB.get_def("ditui")
 	var out1 := int(d_core["output_n"])
-	var m_out := CardDB.buff_mult("output_x2")
+	var m_out := OnWorkCardDB.buff_mult("output_x2")
 	var need := int(d_core["recipe_n"])
 	var core: CardEntity = main._spawn_entity(
 		{ "uid": 9001, "def_id": "ditui" }, Vector3(-6.0, 0.05, 4.0), true)
@@ -117,7 +117,7 @@ func test_face_doubles_in_group() -> void:
 	_group(board, [core] + cash)
 	check(core.effect_text() == "+%d" % out1,
 		"地推 + %s×%d（无 996）：卡面仍 +%d（实为 %s）" % [
-			CardDB.card_name(str(d_core["recipe_res"])), need, out1, core.effect_text()])
+			OnWorkCardDB.card_name(str(d_core["recipe_res"])), need, out1, core.effect_text()])
 
 	_group(board, [core] + cash + [buff])
 	check(core.effect_text() == "+%d" % (out1 * m_out),
@@ -126,7 +126,7 @@ func test_face_doubles_in_group() -> void:
 
 	# 换一张产出更大的核心：翻倍后位数变多那一档，字号要重新塞回圆盘。
 	# 挑哪张不写死数字 —— 只要求「翻倍后比上面那张多一位」，这才是被测的那一档
-	var d_big: Dictionary = CardDB.get_def("liulianghe")
+	var d_big: Dictionary = OnWorkCardDB.get_def("liulianghe")
 	var out2 := int(d_big["output_n"])
 	check(len(str(out2 * m_out)) > len(str(out1 * m_out)),
 		"夹具前提：%s 翻倍后 %d 比 %d 多一位（考的是字号回缩）" % [
@@ -163,11 +163,11 @@ func test_face_doubles_before_recipe_full() -> void:
 	var data: Array = []
 	for c in g["cards"]:
 		data.append({ "uid": c.uid, "def_id": c.def_id })
-	check(not bool(ComboRules.evaluate(data)["valid"]), "前提：这一组配方没满")
-	check(int(ComboRules.evaluate(data)["output_n"]) == 0, "前提：没满时 eval 的产出是 0")
+	check(not bool(OnWorkComboRules.evaluate(data)["valid"]), "前提：这一组配方没满")
+	check(int(OnWorkComboRules.evaluate(data)["output_n"]) == 0, "前提：没满时 eval 的产出是 0")
 
-	var d_core: Dictionary = CardDB.get_def("liulianghe")
-	var want := int(d_core["output_n"]) * CardDB.buff_mult("output_x2")
+	var d_core: Dictionary = OnWorkCardDB.get_def("liulianghe")
+	var want := int(d_core["output_n"]) * OnWorkCardDB.buff_mult("output_x2")
 	check(core.effect_text() == "+%d" % want,
 		"配方 0/%d 时卡面已写 +%d（实为 %s）" % [
 			int(d_core["recipe_n"]), want, core.effect_text()])
@@ -191,8 +191,8 @@ func test_face_restores_on_leave() -> void:
 		{ "uid": 9202, "def_id": "yinqing996" }, Vector3(-6.0, 0.05, 4.0), true)
 	isolate(board, [core, buff])
 	# 原值和翻倍值都从卡表推：这一节量的是「退不退回去」，不是退到哪个数字
-	var base := int(CardDB.get_def("waimai")["output_n"])
-	var doubled := base * CardDB.buff_mult("output_x2")
+	var base := int(OnWorkCardDB.get_def("waimai")["output_n"])
+	var doubled := base * OnWorkCardDB.buff_mult("output_x2")
 	_group(board, [core, buff])
 	check(core.effect_text() == "+%d" % doubled,
 		"外卖 + 996：卡面 %d → +%d（实为 %s）" % [base, doubled, core.effect_text()])
@@ -236,10 +236,10 @@ func test_no_cross_wiring() -> void:
 		{ "uid": 9304, "def_id": "resou" }, Vector3(-6.0, 0.05, 4.0), true)
 	isolate(board, [atk, b996, prod, resou])
 
-	var atk_n := int(CardDB.get_def("butie")["attack_n"])
-	var out_n := int(CardDB.get_def("waimai")["output_n"])
-	var m_out := CardDB.buff_mult("output_x2")
-	var m_atk := CardDB.buff_mult("attack_x2")
+	var atk_n := int(OnWorkCardDB.get_def("butie")["attack_n"])
+	var out_n := int(OnWorkCardDB.get_def("waimai")["output_n"])
+	var m_out := OnWorkCardDB.buff_mult("output_x2")
+	var m_atk := OnWorkCardDB.buff_mult("attack_x2")
 	_group(board, [atk, b996])
 	check(atk.effect_text() == "−%d" % atk_n,
 		"补贴大战 + 996：攻击量不变（实为 %s，应为 −%d）" % [atk.effect_text(), atk_n])
@@ -282,8 +282,8 @@ func test_face_stacks_and_removes_one() -> void:
 	for core_id in ["ditui", "butie"]:
 		var production: bool = core_id == "ditui"
 		var prefix := "+" if production else "−"
-		var base := int(CardDB.get_def(core_id)["output_n" if production else "attack_n"])
-		var multiplier := CardDB.buff_mult("output_x2" if production else "attack_x2")
+		var base := int(OnWorkCardDB.get_def(core_id)["output_n" if production else "attack_n"])
+		var multiplier := OnWorkCardDB.buff_mult("output_x2" if production else "attack_x2")
 		var core: CardEntity = main._spawn_entity(_c(core_id), Vector3(-6.0, 0.05, 4.0), true)
 		var buffs: Array = []
 		for _i in 3:

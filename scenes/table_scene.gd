@@ -26,7 +26,7 @@ var _felt_material: ShaderMaterial
 func _init(parent: Node3D, drawer: bool, slots := -1) -> void:
 	host = parent
 	drawer_mode = drawer
-	market_count = int(CardDB.game_rules()["market_size"]) if slots < 0 else slots
+	market_count = int(OnWorkCardDB.game_rules()["market_size"]) if slots < 0 else slots
 
 func create_board() -> Board:
 	RenderWarmup.prepare(host)
@@ -302,7 +302,7 @@ func spawn_market_card(board: Board, idx: int, def_id: String, slot: Vector3) ->
 	tag.name = "MarketPriceTag_%d" % idx
 	tag.position = slot + Vector3(0, 0.15, 1.0)
 	host.add_child(tag)
-	tag.configure(int(CardDB.get_def(def_id).get("price", 0)), e, board)
+	tag.configure(int(OnWorkCardDB.get_def(def_id).get("price", 0)), e, board)
 	e.set_meta("price_tag", weakref(tag))
 	return {"card": e, "price": tag}
 

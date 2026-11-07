@@ -22,7 +22,7 @@ func _style(fill: Color, margin := 10, border := 2) -> StyleBoxFlat:
 ## 联网对战的入口界面（房间码校验见 net/protocol.gd 的 valid_room）
 ##
 ## 为什么这个文件必须存在：在它之前，联网这条路**在成品里根本走不到** ——
-## NetTransport / NetRoom / NetServer 全都写好了、测试全绿，
+## NetTransport / OnWorkRoom / NetServer 全都写好了、测试全绿，
 ## 而没有任何一处生产代码调 attach_net。也就是说「联网功能」当时的实际状态是
 ## 「测试里能跑，玩家点不到」。这是 共享执行路径缺少场景接线时最难发现的一种分叉：
 ## 每个零件都对，只是没接上，而测试恰好把每个零件都单独接过一次。
@@ -538,7 +538,7 @@ func apply_launch(cfg: Dictionary) -> void:
 
 ## 把输入框填好并说一句话（断线之后回来重连用，见 main._offer_reconnect）。
 ##
-## 房间码**照旧那个填**：服务器那间房还在（net/room.gd 的 drop_peer 只把座位
+## 房间码**照旧那个填**：服务器那间房还在（net/on_work_room.gd 的 drop_peer 只把座位
 ## 置 0，房间留着等重连），接管出来的那间房也刻意沿用同一个码
 ## （NetServer.adopt_room —— 用户那句「保持密码不变」）。
 ##
@@ -547,7 +547,7 @@ func apply_launch(cfg: Dictionary) -> void:
 ## （EmbeddedHost.start_takeover），端口这一段本来就对得上。
 ## 至于建面板时预填哪个 IP，见 default_url()：那个数是猜得出来的
 ## `share`：本机此刻开着房的话，「对手该填哪个地址」那一行。断线接管之后
-## （scenes/main.gd 的 _take_over_host）这个数**变了** —— 端口可能已经不是原来那个，
+## （scenes/on_work_main.gd 的 _take_over_host）这个数**变了** —— 端口可能已经不是原来那个，
 ## 而玩家手上那个老地址连不上任何东西。空串表示本机没开房，那一块就不立
 func prefill(room: String, hint: String, share := "") -> void:
 	if room != "":

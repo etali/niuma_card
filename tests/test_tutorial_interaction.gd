@@ -4,8 +4,8 @@
 
 extends "res://tests/support/drawer_fixture.gd"
 
-const Codec = preload("res://engine/state_codec.gd")
-const TableSnapshot = preload("res://scenes/table_snapshot.gd")
+const Codec = preload("res://engine/on_work_state_codec.gd")
+const TableSnapshot = preload("res://scenes/on_work_table_snapshot.gd")
 var main: Node
 var player: Control
 var stage: Node3D
@@ -21,7 +21,7 @@ func _run() -> void:
 	seed(444)
 	var p: Node = main.drawer_presentation
 	p._learning_invitation.hide()
-	var original_state: GameState = main.state
+	var original_state: OnWorkState = main.state
 	var original_board: Board = main.board
 	var original_camera: Camera3D = main.board.camera
 	var original_world: World3D = main.get_world_3d()
@@ -60,12 +60,12 @@ func _run() -> void:
 	check(_same_table_view(initial_view), "回滚不挪动牌桌或重置镜头")
 
 	var market: CardEntity = stage.market_cards[0]
-	var price := int(CardDB.get_def(market.def_id)["price"])
-	var cash_before: int = stage.state.resource_count(GameState.PLAYER, CardDB.RES_CASH)
+	var price := int(OnWorkCardDB.get_def(market.def_id)["price"])
+	var cash_before: int = stage.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH)
 	cash_group = stage.board.group_of(_card("cash"))
 	await _drag_pointer(cash_group["cards"][0], market.position)
 	await _wait_operation("group")
-	check(stage.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == cash_before - price and _card("yunketang") != null,
+	check(stage.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == cash_before - price and _card("yunketang") != null,
 		"真实买牌只扣一次费用，直接进入配牌目标")
 	check(Codec.snapshot(original_state) == original_snapshot and main.tape.to_dict() == tape_snapshot, "购买不写原局或录像")
 
@@ -92,13 +92,13 @@ func _run() -> void:
 				"分次放入%d张用户保留正确的中间进展" % (i + 1))
 	await _wait_operation("resolution")
 	check(_business_user_count(business) == 3, "配齐三张用户后直接进入结算目标")
-	var cash_at_settle: int = stage.state.resource_count(GameState.PLAYER, CardDB.RES_CASH)
-	var users_at_settle: int = stage.state.resource_count(GameState.PLAYER, CardDB.RES_USER)
+	var cash_at_settle: int = stage.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH)
+	var users_at_settle: int = stage.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_USER)
 	await _click_button(main.btn_pass)
 	await _wait_result()
-	check(main.btn_pass == pass_button and stage.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == cash_at_settle + 4,
+	check(main.btn_pass == pass_button and stage.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == cash_at_settle + 4,
 		"点击原完成按钮真实产出4现金")
-	check(stage.state.resource_count(GameState.PLAYER, CardDB.RES_USER) == users_at_settle and player.session.phase == "review"
+	check(stage.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_USER) == users_at_settle and player.session.phase == "review"
 		and stage.state.round_num == 1, "看收入步骤保留第一回合结果，不提前跳到下一回合")
 	check(_same_table_view(initial_view), "按牌桌操作走到首次课末，始终不改变牌桌构图")
 	await _check_course_clicks()
@@ -310,7 +310,7 @@ func _same_table_view(expected: Dictionary) -> bool:
 	return true
 
 func _card(def_id: String) -> CardEntity:
-	for record in stage.state.players[GameState.PLAYER]["cards"]:
+	for record in stage.state.players[OnWorkState.PLAYER]["cards"]:
 		if record["def_id"] == def_id: return stage.entities.get(record["uid"])
 	return null
 
@@ -319,7 +319,7 @@ func _unassigned_user(business: CardEntity) -> CardEntity:
 	for group in stage.board.groups:
 		if is_same(group, business_group): continue
 		if not group["cards"].is_empty() and group["cards"][-1].def_id == "user": return group["cards"][-1]
-	for record in stage.state.players[GameState.PLAYER]["cards"]:
+	for record in stage.state.players[OnWorkState.PLAYER]["cards"]:
 		var card: CardEntity = stage.entities[record["uid"]]
 		if card.def_id == "user" and stage.board.group_of(card) == null: return card
 	return null

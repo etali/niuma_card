@@ -51,11 +51,11 @@ func _run() -> void:
 		if not need(current_scene == host and is_instance_valid(mode_switch), "切换沿用原预览场景与班次按钮"):
 			finish()
 			return
-		check(host.off_duty == (destination == "OffWork") and mode_switch.get_node(destination).button_pressed, "鼠标点击切换到对应班次")
+		check(host.off_work_active == (destination == "OffWork") and mode_switch.get_node(destination).button_pressed, "鼠标点击切换到对应班次")
 		check(controls == [host._sidebar, host._heading, host._hover_seek, host._hover_pause, host._hover_speed_slider, host._hover_original],
 			"两种玩法使用同一侧栏、标题与播放控制实例")
-		if host.off_duty:
-			if not need(is_instance_valid(host.work_preview) and not host.work_preview.entries.is_empty(), "下班完整动作目录可选"):
+		if host.off_work_active:
+			if not need(is_instance_valid(host.off_work_preview) and not host.off_work_preview.entries.is_empty(), "下班完整动作目录可选"):
 				finish()
 				return
 		check(_has_artwork(root.get_texture().get_image(), host._surface),

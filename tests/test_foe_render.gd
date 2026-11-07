@@ -4,12 +4,12 @@
 
 extends "res://tests/harness.gd"
 
-## 对手侧画面测试 —— 「对手做了什么」画得出来吗（scenes/main.gd 的拖拽广播与租约处理）
+## 对手侧画面测试 —— 「对手做了什么」画得出来吗（scenes/on_work_main.gd 的拖拽广播与租约处理）
 ##
 ## 为什么单独立一个文件：这一整块**原先没有任何观察点**。改造前对手的每一处
-## 画面都长在「驱动对手的那段代码」里（那时 scenes/main.gd 里有 _bot_buy_once /
+## 画面都长在「驱动对手的那段代码」里（那时 scenes/on_work_main.gd 里有 _bot_buy_once /
 ## _bot_pawn_relief 两个函数，买完顺手 _spawn_entity、典当完顺手 _fly_out；
-## 两个名字现在都不在仓里了，决策次序搬去了 engine/bot_agent.gd），
+## 两个名字现在都不在仓里了，决策次序搬去了 engine/on_work_bot_agent.gd），
 ## 而没有一条判据看对手侧的画面 ——
 ## 实测把那几处画面调用全删掉，32 个测试文件一条不红。
 ## 于是「联网局对手侧一个像素都不动」这个 bug 在测试里是不可见的。
@@ -21,12 +21,12 @@ extends "res://tests/harness.gd"
 ##
 ## 变异：十一条都**跑过 tools/mutate_check.py 并报了 OK**，登记在那张表的
 ## 「对手侧画面只能来自 pipe.applied」一段，第 5 个元素都写了这个文件
-## （scenes/main.gd 在 TEST_FOR 里指向 test_arrivals.gd，省略就会去跑一个
+## （scenes/on_work_main.gd 在 TEST_FOR 里指向 test_arrivals.gd，省略就会去跑一个
 ## 根本不看对手画面的测试 —— 跑得过，等于没测）。登记前那十一条**全是 MISS**。
 ## 具体锚点和报警关键字看那张表，这里只记它们分别钉住了什么：
 ##   总闸（不连 applied）／四个 op 分支各自不画／座位过滤失效／不分客户端操作／
 ##   判定接反／landed 不发（BOT 内部落地又看不见）／submit 去重失效（广播两遍）／
-##   阶段名不再转引 PhaseMachine
+##   阶段名不再转引 OnWorkPhaseMachine
 ##
 ## T1 里另有一条「买的卡落在他那半边」，它**没有登记变异**，而且是故意的：
 ## 对手侧的落位是**双重决定**的 —— _render_foe_buy 先按 _unit_anchor 摆一次，
@@ -59,10 +59,10 @@ func _initialize() -> void:
 
 ## 这个座位买得起的第一个货架位（-1 = 一个都买不起）。
 ## 判据要「留 1 块」那条护栏之内的价格：付完归零会被 buy 自己拦掉
-func _affordable_slot(state: GameState, seat: String) -> int:
-	var cash: int = state.resource_count(seat, CardDB.RES_CASH)
+func _affordable_slot(state: OnWorkState, seat: String) -> int:
+	var cash: int = state.resource_count(seat, OnWorkCardDB.RES_CASH)
 	for i in state.market.size():
-		var price: int = int(CardDB.get_def(state.market[i]).get("price", -1))
+		var price: int = int(OnWorkCardDB.get_def(state.market[i]).get("price", -1))
 		if price > 0 and cash - price > 0:
 			return i
 	return -1
@@ -87,7 +87,7 @@ func _foe_entity_count(main: Node) -> int:
 ## 任何一段代码在驱动对手，只有一条 submit
 func _t1_buy(main: Node) -> void:
 	print("\n--- T1 对手买卡 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# 挑一张对手买得起的。市场下标 0 起，价格从卡表读
 	var idx := _affordable_slot(state, main.foe_seat)
 	check(idx >= 0, "公共区里有对手买得起的卡（下标 %d）" % idx)
@@ -100,7 +100,7 @@ func _t1_buy(main: Node) -> void:
 	# **以服务器身份提交**（from_seat 留空）。联网局里这一步是
 	# 「服务器把对方客户端发来的 buy 落地后广播给我」，本地局是 BOT 驱动 ——
 	# 两条路进到 _on_intent_applied 是同一个形状
-	var r: Dictionary = await main.pipe.submit(Intent.buy(main.foe_seat, idx))
+	var r: Dictionary = await main.pipe.submit(OnWorkIntent.buy(main.foe_seat, idx))
 	check(r["ok"], "对手的 buy 意图落地（%s）" % r.get("reason", ""))
 	if not r["ok"]:
 		return
@@ -149,15 +149,15 @@ func _t1_buy(main: Node) -> void:
 ## uids 只能从结果里来：典当掉的卡在状态里已经没了
 func _t2_pawn(main: Node) -> void:
 	print("\n--- T2 对手典当 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	# 给对手塞一张典当行肯收的卡，确保有东西可当
-	var c: Dictionary = state.add_card(main.foe_seat, CardDB.unit_id(CardDB.RES_USER))
+	var c: Dictionary = state.add_card(main.foe_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER))
 	main._spawn_entity(c, Vector3(-6.0, 0.05, main.BOT_ZONE_Z), false)
 	await settle()
 	var uid: int = c["uid"]
 	check(main.entities.has(uid), "待当的卡在场上（uid=%d）" % uid)
 
-	var r: Dictionary = await main.pipe.submit(Intent.pawn(main.foe_seat, [uid]))
+	var r: Dictionary = await main.pipe.submit(OnWorkIntent.pawn(main.foe_seat, [uid]))
 	check(r["ok"], "对手的 pawn 意图落地（%s）" % r.get("reason", ""))
 	if not r["ok"]:
 		return
@@ -171,18 +171,18 @@ func _t2_pawn(main: Node) -> void:
 
 ## 对手编成一组 → 那一组在对手区收拢成摞。
 ##
-## 这条同时盯着 IntentApply.landed：BOT 的编组走 applier.apply（不经 submit），
+## 这条同时盯着 OnWorkIntentApply.landed：BOT 的编组走 applier.apply（不经 submit），
 ## landed 不发的话表现层就看不见它 —— 所以下面第二段直接调 applier.apply
 func _t3_combo(main: Node) -> void:
 	print("\n--- T3 对手编组 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	var uids := _make_foe_combo_cards(main)
 	if uids.is_empty():
 		check(false, "凑不出一组对手的组合（跳过 T3）")
 		return
 	await settle()
 
-	var r: Dictionary = await main.pipe.submit(Intent.create_combo(main.foe_seat, uids))
+	var r: Dictionary = await main.pipe.submit(OnWorkIntent.create_combo(main.foe_seat, uids))
 	check(r["ok"], "对手的 create_combo 意图落地（%s）" % r.get("reason", ""))
 	if not r["ok"]:
 		return
@@ -198,12 +198,12 @@ func _t3_combo(main: Node) -> void:
 
 	# 第二段：**不经 submit**，直接让裁决器落地一条 —— 那是 BOT 走的路
 	# （旧组卡器 把决策和落地交错在一个 while 里）。
-	# 这一段能画出来，靠的是 IntentApply.landed
+	# 这一段能画出来，靠的是 OnWorkIntentApply.landed
 	var uids2 := _make_foe_combo_cards(main)
 	if uids2.is_empty():
 		return
 	await settle()
-	var r2: Dictionary = main.pipe.applier().apply(Intent.create_combo(main.foe_seat, uids2))
+	var r2: Dictionary = main.pipe.applier().apply(OnWorkIntent.create_combo(main.foe_seat, uids2))
 	check(r2["ok"], "第二组直接经 applier 落地（%s）" % r2.get("reason", ""))
 	if not r2["ok"]:
 		return
@@ -218,19 +218,19 @@ func _t3_combo(main: Node) -> void:
 ## 给对手凑一组能成立的组合（一张核心 + 它要的单位卡），返回 uids。
 ## 凑不出返回空数组
 func _make_foe_combo_cards(main: Node) -> Array:
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	var prod: Dictionary = state.add_card(main.foe_seat, "shuabuting")
 	main._spawn_entity(prod, Vector3(1.0, 0.05, main.BOT_ZONE_Z), false)
 	var uids: Array = [prod["uid"]]
 	var need := 7
 	for i in need:
-		var u: Dictionary = state.add_card(main.foe_seat, CardDB.unit_id(CardDB.RES_USER))
+		var u: Dictionary = state.add_card(main.foe_seat, OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER))
 		main._spawn_entity(u, Vector3(2.0 + float(i) * 0.4, 0.05, main.BOT_ZONE_Z), false)
 		uids.append(u["uid"])
 	var cards: Array = []
 	for u in uids:
 		cards.append(state.find_card(main.foe_seat, u))
-	if not ComboRules.evaluate(cards)["valid"]:
+	if not OnWorkComboRules.evaluate(cards)["valid"]:
 		return []
 	return uids
 
@@ -238,10 +238,10 @@ func _make_foe_combo_cards(main: Node) -> Array:
 
 ## 对手打掉我一张 → 那张从场上消失。
 ## 装弹走测试后门（seed_pool_for_test）：正常路径的 arm 要真扣配方现金，
-## 为了这条判据凑一套能装弹的阵型不值当（见 IntentApply.seed_pool_for_test）
+## 为了这条判据凑一套能装弹的阵型不值当（见 OnWorkIntentApply.seed_pool_for_test）
 func _t4_attack(main: Node) -> void:
 	print("\n--- T4 对手攻击 ---")
-	var state: GameState = main.state
+	var state: OnWorkState = main.state
 	main.pipe.applier().seed_pool_for_test(main.foe_seat, 30, 30)
 	var targets: Array = state.attack_targets(main.my_seat)
 	var target := {}
@@ -251,7 +251,7 @@ func _t4_attack(main: Node) -> void:
 			if not main.entities.has(u):
 				all_on_table = false
 				break
-		if all_on_table and GameState.target_affordable(
+		if all_on_table and OnWorkState.target_affordable(
 				t, main.pipe.applier().pools(main.foe_seat)):
 			target = t
 			break
@@ -261,7 +261,7 @@ func _t4_attack(main: Node) -> void:
 	var victims: Array = (target["uids"] as Array).duplicate()
 
 	var r: Dictionary = await main.pipe.submit(
-		Intent.apply_attack(main.foe_seat, Intent.target_ref(target)))
+		OnWorkIntent.apply_attack(main.foe_seat, OnWorkIntent.target_ref(target)))
 	check(r["ok"], "对手的 apply_attack 意图落地（%s）" % r.get("reason", ""))
 	if not r["ok"]:
 		return
@@ -287,16 +287,16 @@ func _t5_remote_shape(main: Node) -> void:
 
 	# 先确认「等对手」真的在等：起一条 _foe_action 但不喂 action_done，
 	# 它必须停在那儿不往下走（不往下走 = 没进 _finish_actions，phase 还是行动阶段）
-	main.phase = PhaseMachine.ACTION
+	main.phase = OnWorkPhaseMachine.ACTION
 	main._foe_action()
 	for i in 12:
 		await physics_frame
-	check(main.phase == PhaseMachine.ACTION,
+	check(main.phase == OnWorkPhaseMachine.ACTION,
 		"没收到 action_done 时停在行动阶段等着（phase=%s）" % main.phase)
 
 	# 喂一条 action_done —— 联网局里这是服务器广播过来的
 	var before := _foe_entity_count(main)
-	var r: Dictionary = await main.pipe.submit(Intent.action_done(main.foe_seat))
+	var r: Dictionary = await main.pipe.submit(OnWorkIntent.action_done(main.foe_seat))
 	check(r["ok"], "对手的 action_done 落地（%s）" % r.get("reason", ""))
 	for i in 6:
 		await physics_frame
@@ -317,14 +317,14 @@ func _t5_remote_shape(main: Node) -> void:
 ## 所以判定必须自己有读者，这就是那个读者（memory: green-mutation-means-no-observer）
 func _t6_own_op_not_mirrored(main: Node) -> void:
 	print("\n--- T6 我自己的操作不镜像到对手区 ---")
-	var state: GameState = main.state
-	check(main.is_foe_client_op({ "op": Intent.OP_BUY, "seat": main.foe_seat }),
+	var state: OnWorkState = main.state
+	check(main.is_foe_client_op({ "op": OnWorkIntent.OP_BUY, "seat": main.foe_seat }),
 		"对手的 buy 归对手侧渲染管")
-	check(not main.is_foe_client_op({ "op": Intent.OP_BUY, "seat": main.my_seat }),
+	check(not main.is_foe_client_op({ "op": OnWorkIntent.OP_BUY, "seat": main.my_seat }),
 		"我自己的 buy **不**归对手侧渲染管")
-	check(not main.is_foe_client_op({ "op": Intent.OP_PRODUCE, "seat": main.foe_seat }),
+	check(not main.is_foe_client_op({ "op": OnWorkIntent.OP_PRODUCE, "seat": main.foe_seat }),
 		"produce 不归对手侧渲染管（seat 是组合主人，但那是结算阶段在演）")
-	check(not main.is_foe_client_op({ "op": Intent.OP_ARM, "seat": main.foe_seat }),
+	check(not main.is_foe_client_op({ "op": OnWorkIntent.OP_ARM, "seat": main.foe_seat }),
 		"arm 不归对手侧渲染管（服务器推进的阶段，不是对手的操作）")
 	var idx := _affordable_slot(state, main.my_seat)
 	if idx < 0:
@@ -333,7 +333,7 @@ func _t6_own_op_not_mirrored(main: Node) -> void:
 	var foe_before := _foe_entity_count(main)
 	var market_before: int = main.market_cards.size()
 	var r: Dictionary = await main.pipe.submit(
-		Intent.buy(main.my_seat, idx), main.my_seat)
+		OnWorkIntent.buy(main.my_seat, idx), main.my_seat)
 	check(r["ok"], "我的 buy 意图落地（%s）" % r.get("reason", ""))
 	if not r["ok"]:
 		return
@@ -349,21 +349,21 @@ func _t6_own_op_not_mirrored(main: Node) -> void:
 
 # ---------- T7 阶段名 ----------
 
-## main.gd 的阶段名是**转引** PhaseMachine 的，不是各写一套字面量。
+## on_work_main.gd 的阶段名是**转引** OnWorkPhaseMachine 的，不是各写一套字面量。
 ## 联网之后阶段名要过网线（Protocol.PHASE），一边改成 "attacking"
 ## 另一边还认 "attack" 的后果是界面永远等不到自己的回合，而且不报错
 func _t7_phase_names() -> void:
 	print("\n--- T7 阶段名一份 ---")
-	var main_script: Variant = load("res://scenes/main.gd")
-	check(main_script.PHASE_ACTION == PhaseMachine.ACTION,
-		"PHASE_ACTION 和 PhaseMachine.ACTION 是同一个值（%s / %s）" % [
-			main_script.PHASE_ACTION, PhaseMachine.ACTION])
-	check(main_script.PHASE_ATTACK == PhaseMachine.ATTACK,
-		"PHASE_ATTACK 和 PhaseMachine.ATTACK 是同一个值（%s / %s）" % [
-			main_script.PHASE_ATTACK, PhaseMachine.ATTACK])
-	check(main_script.PHASE_SETTLING == PhaseMachine.SETTLING,
-		"PHASE_SETTLING 和 PhaseMachine.SETTLING 是同一个值（%s / %s）" % [
-			main_script.PHASE_SETTLING, PhaseMachine.SETTLING])
-	check(main_script.PHASE_OVER == PhaseMachine.OVER,
-		"PHASE_OVER 和 PhaseMachine.OVER 是同一个值（%s / %s）" % [
-			main_script.PHASE_OVER, PhaseMachine.OVER])
+	var main_script: Variant = load("res://scenes/on_work_main.gd")
+	check(main_script.PHASE_ACTION == OnWorkPhaseMachine.ACTION,
+		"PHASE_ACTION 和 OnWorkPhaseMachine.ACTION 是同一个值（%s / %s）" % [
+			main_script.PHASE_ACTION, OnWorkPhaseMachine.ACTION])
+	check(main_script.PHASE_ATTACK == OnWorkPhaseMachine.ATTACK,
+		"PHASE_ATTACK 和 OnWorkPhaseMachine.ATTACK 是同一个值（%s / %s）" % [
+			main_script.PHASE_ATTACK, OnWorkPhaseMachine.ATTACK])
+	check(main_script.PHASE_SETTLING == OnWorkPhaseMachine.SETTLING,
+		"PHASE_SETTLING 和 OnWorkPhaseMachine.SETTLING 是同一个值（%s / %s）" % [
+			main_script.PHASE_SETTLING, OnWorkPhaseMachine.SETTLING])
+	check(main_script.PHASE_OVER == OnWorkPhaseMachine.OVER,
+		"PHASE_OVER 和 OnWorkPhaseMachine.OVER 是同一个值（%s / %s）" % [
+			main_script.PHASE_OVER, OnWorkPhaseMachine.OVER])

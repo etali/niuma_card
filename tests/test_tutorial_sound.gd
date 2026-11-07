@@ -19,10 +19,10 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var main: Node = await boot_drawer(Vector2i(1280, 800), 1.0, true)
-	var original_rules := CardDB.SFX
-	CardDB.SFX = original_rules.duplicate(true)
-	CardDB.SFX["actions"]["pile_toggle"] = {"sound": "drop", "db": -13.0, "pitch": 1.31}
-	var customized_rules := CardDB.SFX
+	var original_rules := OnWorkCardDB.SFX
+	OnWorkCardDB.SFX = original_rules.duplicate(true)
+	OnWorkCardDB.SFX["actions"]["pile_toggle"] = {"sound": "drop", "db": -13.0, "pitch": 1.31}
+	var customized_rules := OnWorkCardDB.SFX
 	var sound := RecordedSound.new()
 	main.add_child(sound)
 	main.sfx = sound
@@ -37,7 +37,7 @@ func _run() -> void:
 	check(arena.sfx == sound and arena._card_motion.sfx == sound
 		and main.find_children("*", "Sfx", true, false).size() == sound_count,
 		"教程动作及动画直接共用原Sfx实例，没有新建播放器")
-	check(is_same(CardDB.SFX, customized_rules) and sound._streams == original_streams,
+	check(is_same(OnWorkCardDB.SFX, customized_rules) and sound._streams == original_streams,
 		"标准教学卡表不覆盖当前音效配置或已加载的音源")
 	check(sound.process_mode == Node.PROCESS_MODE_ALWAYS and sound._players[0].can_process(),
 		"原播放器在教学暂停期间仍可处理声音")
@@ -66,13 +66,13 @@ func _run() -> void:
 	main.board.toggle_compact(lesson_pile)
 	check(_actions(sound.events) == ["pile_toggle"], "展开抽屉后只恢复一条摞牌声音路由")
 	main.drawer_presentation.finish_tutorial(false)
-	check(sound.process_mode == original_mode and main.sfx == sound and is_same(CardDB.SFX, customized_rules),
+	check(sound.process_mode == original_mode and main.sfx == sound and is_same(OnWorkCardDB.SFX, customized_rules),
 		"退出保留原声音实例和配置，恢复播放器处理模式")
 	var after: Array = await _toggle_pair(main.board, sound, original_pile)
 	check(_actions(after) == ["pile_toggle", "pile_toggle"] and after[0].spec == before[0].spec
 		and after[0].stream == before[0].stream,
 		"回到正式对局后收摞与展开仍是原配置且各只响一次")
-	CardDB.SFX = original_rules
+	OnWorkCardDB.SFX = original_rules
 	await dispose_drawer(main)
 	finish()
 

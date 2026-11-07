@@ -18,7 +18,7 @@ var arena: Node3D
 var sound: RecordedSound
 var final_events: Array = []
 var completed_courses: Array = []
-var original_state: GameState
+var original_state: OnWorkState
 var original_snapshot: Dictionary
 var original_cards: Array
 var original_tape: Dictionary
@@ -36,7 +36,7 @@ func _run() -> void:
 	if not need(main != null, "原牌桌正常启动"): return
 	main.drawer_presentation._learning_invitation.hide()
 	original_state = main.state
-	original_snapshot = StateCodec.snapshot(main.state)
+	original_snapshot = OnWorkStateCodec.snapshot(main.state)
 	original_cards = main.board.cards.duplicate()
 	original_camera = main.board.camera.global_transform
 	main._flush_record_view()
@@ -56,11 +56,11 @@ func _run() -> void:
 
 func _capture_shared_result_reference() -> void:
 	# 建立正式结果组件的结构/主题基准，不修改正在保管的正式牌局。
-	var ended := GameState.new()
-	StateCodec.restore(ended, original_snapshot)
-	ended.winner = GameState.PLAYER
+	var ended := OnWorkState.new()
+	OnWorkStateCodec.restore(ended, original_snapshot)
+	ended.winner = OnWorkState.PLAYER
 	ended.win_reason = "共享胜利视图基准"
-	var view := ResultPresentation.create(main, ended, GameState.PLAYER, sound, func(): pass)
+	var view := ResultPresentation.create(main, ended, OnWorkState.PLAYER, sound, func(): pass)
 	ResultPresentation.present(view, main.drawer_presentation)
 	await relayout_drawer(main)
 	for key in ["ResultMascot", "ResultTitle", "ResultMessage", "ResultReason"]:
@@ -283,7 +283,7 @@ func _cancel_during_result(course: String, target: String, exiting: bool) -> voi
 		main.drawer_window.pin()
 		await process_frame
 		check(_result_layer() == null, "取消后再pin展开不会从待恢复集合唤回旧结果")
-	var new_state := StateCodec.snapshot(main.state)
+	var new_state := OnWorkStateCodec.snapshot(main.state)
 	await create_timer(6.0).timeout
 	check(layer.get_ref() == null and (not animation.is_valid() or not animation.is_running())
 		and _result_layer() == null, "等待超过旧演出时长后，不残留面板、动画或晚到弹窗")
@@ -293,7 +293,7 @@ func _cancel_during_result(course: String, target: String, exiting: bool) -> voi
 		check(old_arena.get_ref() == null and _restored(), "演出中退出释放整套教学现场并完整恢复正式牌桌")
 	else:
 		check(arena.session.course_id == "income" and arena.session.step_index == 0
-			and StateCodec.snapshot(main.state) == new_state and arena._result_view.is_empty(),
+			and OnWorkStateCodec.snapshot(main.state) == new_state and arena._result_view.is_empty(),
 			"旧胜利回调不会覆盖新课程、改变其进度或重建旧面板")
 		main.drawer_presentation.finish_tutorial(false)
 		await process_frame
@@ -337,11 +337,11 @@ func _prepare(course: String, target: String) -> bool:
 func _trigger_victory(course: String) -> void:
 	var legends: Array = arena.entities.values().filter(func(card): return card.draggable and card.def_id == "dujiaoshou")
 	if not need(legends.size() == 1 and arena.session.phase == "action"
-		and arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 70,
+		and arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == 70,
 		"真实合成后的独角兽可在下一行动阶段典当，当前现金70"): return
 	await _drag(legends[0], main.board.pawn_pos)
-	check(arena.state.winner == GameState.PLAYER, course + "：最后一手由真实裁决产生胜者")
-	check(arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == int(CardDB.game_rules()["win_cash"]),
+	check(arena.state.winner == OnWorkState.PLAYER, course + "：最后一手由真实裁决产生胜者")
+	check(arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == int(OnWorkCardDB.game_rules()["win_cash"]),
 		"典当真实支付三十现金并达到胜利线")
 
 ## 守住公司第一步：对手攻击打空现金。判负是本步要看的结果，复用正式失败演出后再续步。
@@ -360,7 +360,7 @@ func _defeat_case() -> void:
 	if not need(shown, "判负：被打空现金后出现正式结果层"): return
 	var panel: Control = arena._result_view["panel"]
 	var result_id: int = arena._result_view["layer"].get_instance_id()
-	check(arena.state.winner == GameState.BOT and arena.state.resource_count(GameState.PLAYER, CardDB.RES_CASH) == 0,
+	check(arena.state.winner == OnWorkState.BOT and arena.state.resource_count(OnWorkState.PLAYER, OnWorkCardDB.RES_CASH) == 0,
 		"判负：对手真实攻击打空3现金，胜者为对手")
 	check(panel.find_child("ResultTitle", true, false).text == "失败" and panel.find_child("ResultRestart", true, false) == null
 		and sound.events.count("lose") == 1 and not sound.events.has("win"),
@@ -398,7 +398,7 @@ func _result_layer() -> CanvasLayer:
 	return null
 
 func _original_untouched() -> bool:
-	return StateCodec.snapshot(original_state) == original_snapshot and main.tape.to_dict() == original_tape
+	return OnWorkStateCodec.snapshot(original_state) == original_snapshot and main.tape.to_dict() == original_tape
 
 func _restored() -> bool:
 	return main.state == original_state and main.board.cards == original_cards and _original_untouched() \

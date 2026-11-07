@@ -122,7 +122,7 @@ func _t2_subset_no_reding(main: Node, board: Board) -> void:
 	# 地推扫码：全卡表里配方最小的生产卡，凑满所需的组最小可控。
 	# 张数从卡表取 —— 这一节量的是「按住子集再放回不重复响」，
 	# 配方是几张无关，硬写的话每轮调数值都要来改一次
-	var ditui_n := int(CardDB.get_def("ditui")["recipe_n"])
+	var ditui_n := int(OnWorkCardDB.get_def("ditui")["recipe_n"])
 	var core: CardEntity = main._spawn_entity(
 		{ "uid": 9300, "def_id": "ditui" }, Vector3(-6.0, 0.05, 3.0), true)
 	var members: Array = [core]

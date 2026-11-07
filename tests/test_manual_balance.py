@@ -40,7 +40,7 @@ class ManualBalanceTest(unittest.TestCase):
             self.assertFalse(mb.same_project(identity))
 
     def test_profile_request_uses_readable_relative_paths(self):
-        app=mb.Workbench.__new__(mb.Workbench);app.godot='godot-fixture'
+        app=mb.OnWorkWorkbench.__new__(mb.OnWorkWorkbench);app.godot='godot-fixture'
         def evaluate(command,**kwargs):
             self.assertEqual(kwargs['cwd'],str(ROOT))
             self.assertEqual(command[command.index('--path')+1],'.')
@@ -130,31 +130,31 @@ class ManualBalanceTest(unittest.TestCase):
     def test_engine_fingerprint_tracks_victory_classification(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=pathlib.Path(tmp)
-            for relative in ['engine/state.gd','tools/bot_duel.gd','tools/bot_duel_report.gd','tools/bot_decision_stats.gd','tools/eval_report.gd','tools/balance/scoring.gd',
-                             'tools/balance/logic.gd','tools/balance/victory.gd','data/on_work_bot.json',
-                             'data/card_config_schema.json']:
+            for relative in ['engine/state.gd','tools/on_work_bot_duel.gd','tools/on_work_bot_duel_report.gd','tools/on_work_bot_decision_stats.gd','tools/on_work_eval_report.gd','tools/balance/on_work_scoring.gd',
+                             'tools/balance/on_work_logic.gd','tools/balance/on_work_victory.gd','data/on_work_bot.json',
+                             'data/on_work_card_config_schema.json']:
                 path=root/relative
                 path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_text('fixture')
             with mock.patch.object(mb,'ROOT',root),mock.patch.object(mb,'WEB',root/'tools/balance'):
                 before=mb.engine_fingerprint()
                 self.assertEqual(before,mb.engine_fingerprint())
-                (root/'tools/balance/victory.gd').write_text('changed terminal-event classification')
+                (root/'tools/balance/on_work_victory.gd').write_text('changed terminal-event classification')
                 self.assertNotEqual(before,mb.engine_fingerprint())
 
     def test_schema_change_invalidates_workbench_and_simulation_versions(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=pathlib.Path(tmp)
-            for relative in ['tools/bot_duel.gd','tools/bot_duel_report.gd','tools/bot_decision_stats.gd','tools/eval_report.gd','data/on_work_bot.json','data/card_config_schema.json',
-                             'tools/balance/report.html','tools/balance/report.js','tools/balance/report.css',
-                             'tools/balance/storage.py','tools/balance/realtime.py','tools/balance/realtime_run.gd',
-                             'tools/balance/realtime.html','tools/balance/realtime.js','tools/balance/realtime.css']:
+            for relative in ['tools/on_work_bot_duel.gd','tools/on_work_bot_duel_report.gd','tools/on_work_bot_decision_stats.gd','tools/on_work_eval_report.gd','data/on_work_bot.json','data/on_work_card_config_schema.json',
+                             'tools/balance/on_work_report.html','tools/balance/on_work_report.js','tools/balance/report.css',
+                             'tools/balance/storage.py','tools/balance/off_work_workbench.py','tools/balance/off_work_run.gd',
+                             'tools/balance/off_work_workbench.html','tools/balance/off_work_workbench.js','tools/balance/off_work_workbench.css']:
                 path=root/relative
                 path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_text('fixture')
             with mock.patch.object(mb,'ROOT',root),mock.patch.object(mb,'WEB',root/'tools/balance'):
                 source,engine=mb.source_version(),mb.engine_fingerprint()
-                (root/'data/card_config_schema.json').write_text('changed validation contract')
+                (root/'data/on_work_card_config_schema.json').write_text('changed validation contract')
                 self.assertNotEqual(source,mb.source_version())
                 self.assertNotEqual(engine,mb.engine_fingerprint())
 
@@ -200,8 +200,8 @@ class WorkbenchStorageTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def open_app(self):
-        with mock.patch.object(mb.Workbench,'profile',return_value={'schema':[],'parameters':{}}):
-            app=mb.Workbench(self.store,'unused-godot')
+        with mock.patch.object(mb.OnWorkWorkbench,'profile',return_value={'schema':[],'parameters':{}}):
+            app=mb.OnWorkWorkbench(self.store,'unused-godot')
         self.apps.append(app)
         return app
 
@@ -338,8 +338,8 @@ class WorkbenchPlayTest(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(prefix='试玩 空格 ')
         self.base=json.loads((ROOT/'data/on_work_cards.json').read_text())
-        with mock.patch.object(mb.Workbench,'profile',return_value={'schema':[],'parameters':{}}):
-            self.app=mb.Workbench(pathlib.Path(self.tmp.name)/'配置 存档','/应用 程序/Godot')
+        with mock.patch.object(mb.OnWorkWorkbench,'profile',return_value={'schema':[],'parameters':{}}):
+            self.app=mb.OnWorkWorkbench(pathlib.Path(self.tmp.name)/'配置 存档','/应用 程序/Godot')
         cards=copy.deepcopy(self.base);cards['yunketang']['pawn']=0
         self.config=self.app.save({'source_id':'default','name':'出售为零 测试','cards':cards})
     def tearDown(self):
@@ -407,7 +407,7 @@ class WorkbenchPlayTest(unittest.TestCase):
         def launch(command,**kwargs):
             snapshot=(ROOT/command[-1].removeprefix('--cards-config=')).resolve()
             # 引擎可输出绝对路径；过滤后的标记仍能完成同一配置的握手。
-            kwargs['stdout'].write('CARDS_CONFIG_READY: '+str(snapshot)+'\n'+str(ROOT/'scenes/main.gd')+'\n')
+            kwargs['stdout'].write('CARDS_CONFIG_READY: '+str(snapshot)+'\n'+str(ROOT/'scenes/on_work_main.gd')+'\n')
             kwargs['stdout'].flush()
             return mock.Mock(pid=1234,poll=mock.Mock(return_value=None),wait=mock.Mock(return_value=0))
         with mock.patch.object(mb.subprocess,'Popen',side_effect=self.filtered_launcher(launch)),mock.patch.object(mb.threading,'Thread',ImmediateThread):
@@ -415,7 +415,7 @@ class WorkbenchPlayTest(unittest.TestCase):
         self.assertTrue(result['started'])
         log=next((self.app.store/'playtests').glob('*/godot.log')).read_text()
         self.assertNotIn(str(ROOT),log)
-        self.assertIn('./scenes/main.gd',log)
+        self.assertIn('./scenes/on_work_main.gd',log)
 
     def test_play_spawn_failure_reports_log_and_does_not_create_run(self):
         with mock.patch.object(mb.subprocess,'Popen',side_effect=FileNotFoundError('测试执行文件不存在：'+str(ROOT/'missing-godot'))):
@@ -457,7 +457,7 @@ print('LATE_HOME: '+str(pathlib.Path.home()/'late-event.txt'),flush=True)
 import json,pathlib,sys
 sys.path.insert(0,str(pathlib.Path(sys.argv[1])/'tools'))
 import manual_balance as mb
-mb.Workbench.profile=lambda self,strength: {'schema':[],'parameters':{}}
+mb.OnWorkWorkbench.profile=lambda self,strength: {'schema':[],'parameters':{}}
 spawn=mb.subprocess.Popen
 filters=[]
 def observe(command,**kwargs):
@@ -465,7 +465,7 @@ def observe(command,**kwargs):
     if command[0]==sys.executable: filters.append(child.pid)
     return child
 mb.subprocess.Popen=observe
-app=mb.Workbench(pathlib.Path(sys.argv[2]),sys.argv[3])
+app=mb.OnWorkWorkbench(pathlib.Path(sys.argv[2]),sys.argv[3])
 result=app.play({'config_id':'default'})
 result['filter_pid']=filters[0]
 app.close()
@@ -550,7 +550,7 @@ if request.get('action')=='metadata':
     write(output,{'schema':[],'parameters':{}});sys.exit(0)
 progress=pathlib.Path(request['progress_path'])
 if request['options']['seed_start']==2002:
-    detail='fixture process failed: '+str(pathlib.Path.cwd()/'scenes/main.gd')
+    detail='fixture process failed: '+str(pathlib.Path.cwd()/'scenes/on_work_main.gd')
     pathlib.Path(sys.argv[sys.argv.index('--log-file')+1]).write_text(detail)
     print(detail,flush=True);sys.exit(7)
 count=0
@@ -560,8 +560,8 @@ while not (folder/'release').exists():
 write(output,{'status':'complete','games':[]})
 """)
         self.fake.chmod(0o755)
-        with mock.patch.object(mb.Workbench,'profile',return_value={'schema':[],'parameters':{}}):
-            self.app=mb.Workbench(self.store,self.fake)
+        with mock.patch.object(mb.OnWorkWorkbench,'profile',return_value={'schema':[],'parameters':{}}):
+            self.app=mb.OnWorkWorkbench(self.store,self.fake)
 
     def tearDown(self):
         self.app.close()
@@ -1157,7 +1157,7 @@ class ApiIntegrationTest(unittest.TestCase):
                                'output_path':mb.relative_path(output,ROOT),
                                'progress_path':mb.relative_path(progress,ROOT),'options':options})
         godot=__import__('os').environ.get('GODOT','/Applications/Godot.app/Contents/MacOS/Godot')
-        result=subprocess.run([godot,'--headless','--path','.','-s','tools/eval_report.gd','--',mb.relative_path(request,ROOT)],
+        result=subprocess.run([godot,'--headless','--path','.','-s','tools/on_work_eval_report.gd','--',mb.relative_path(request,ROOT)],
                               cwd=ROOT,capture_output=True,text=True,timeout=30)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertNotIn('SCRIPT ERROR:',result.stdout+result.stderr)

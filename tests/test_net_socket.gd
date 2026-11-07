@@ -7,7 +7,7 @@ extends "res://tests/harness.gd"
 ## 真开一个端口：NetServer + 两个 NetTransport，走完整的 WebSocket 往返。
 ##
 ## 和 test_net_parity / test_net_replay 分工不同 —— 那两条是**无端口**的
-## （直接喂 NetRoom.handle_intent），钉的是「两条路径同态」和「状态 = f(种子, 意图)」。
+## （直接喂 OnWorkRoom.handle_intent），钉的是「两条路径同态」和「状态 = f(种子, 意图)」。
 ## 这一条钉的是它们碰不到的那一段：`net/net_transport.gd` 整个文件。
 ## 握手、submit 的自泵帧、超时、seated 快照重建、关闭码 ——
 ## 在这条判据之前这些全靠人眼看，一行覆盖都没有。
@@ -63,12 +63,12 @@ extends "res://tests/harness.gd"
 ## 不过网、不看墙钟，所以稳。
 
 const PORT_BASE := 47100
-const A := GameState.PLAYER
-const B := GameState.BOT
+const A := OnWorkState.PLAYER
+const B := OnWorkState.BOT
 
 func _initialize() -> void:
 	print("=== 真 socket 联机测试 ===")
-	CardDB.ensure_loaded()
+	OnWorkCardDB.ensure_loaded()
 	await _t1_handshake()
 	await _t2_intent_roundtrip()
 	await _t3_busy_and_offline()
@@ -116,19 +116,19 @@ func _t1_handshake() -> void:
 		"peer id 握手包被认出来（a=%d b=%d）" % [a.peer_id, b.peer_id])
 	check(a.peer_id != b.peer_id, "两条连接的 peer id 不同")
 
-	# 快照重建：seated 里带的是全量快照，客户端 StateCodec.restore 出来的
+	# 快照重建：seated 里带的是全量快照，客户端 OnWorkStateCodec.restore 出来的
 	# 状态要和服务器那份一致。先进来的那位收到的是**开局前**的空局面，
 	# 满座之后服务器补发了一份 —— 这一条就在验那次补发
-	var room: NetRoom = _srv.rooms["TEST"]
-	var want := StateCodec.state_hash(room.state)
-	check(StateCodec.state_hash(a.state()) == want, "先连那位的快照和服务器一致")
-	check(StateCodec.state_hash(b.state()) == want, "后连那位的快照和服务器一致")
+	var room: OnWorkRoom = _srv.rooms["TEST"]
+	var want := OnWorkStateCodec.state_hash(room.state)
+	check(OnWorkStateCodec.state_hash(a.state()) == want, "先连那位的快照和服务器一致")
+	check(OnWorkStateCodec.state_hash(b.state()) == want, "后连那位的快照和服务器一致")
 	check(a.state().players[A]["cards"].size() > 0, "客户端手上真有牌（%d 张）"
 		% a.state().players[A]["cards"].size())
 
 	# 阶段广播
 	await net_until([a, b], func(): return a.phase() != "" and b.phase() != "")
-	check(a.phase() == PhaseMachine.ACTION, "开局是行动阶段（实为 %s）" % a.phase())
+	check(a.phase() == OnWorkPhaseMachine.ACTION, "开局是行动阶段（实为 %s）" % a.phase())
 	check(a.actor() == room.phase.actor, "行动方和服务器一致（%s）" % a.actor())
 	check(a.my_turn() != b.my_turn(), "同一时刻只有一边轮到")
 	check(a.online() and b.online(), "两边都在线")
@@ -162,7 +162,7 @@ func _t2_intent_roundtrip() -> void:
 	var a: NetTransport = pair[0]
 	var b: NetTransport = pair[1]
 	await net_until([a, b], func(): return a.actor() != "")
-	var room: NetRoom = _srv.rooms["TEST"]
+	var room: OnWorkRoom = _srv.rooms["TEST"]
 
 	# 轮到谁就让谁买。**先连的不一定先行动** —— action_first() 是
 	# draw_first 的反面，判据不该假设这个方向
@@ -173,14 +173,14 @@ func _t2_intent_roundtrip() -> void:
 	var foe_saw: Array = []
 	second.applied.connect(func(r): foe_saw.append(r))
 
-	var before := StateCodec.state_hash(room.state)
+	var before := OnWorkStateCodec.state_hash(room.state)
 	# 这一句是这条判据的核心：submit 是 coroutine，挂在自己的 _next_frame 上。
 	# 而 _next_frame 除了等帧还**自己 poll 一次** —— 没有那一下，
 	# 唤醒它的回音就永远收不到（场景层忘了调 poll 时的表现是按钮全灰）
 	var pumping := true
 	# 只摇服务器 + 旁观那个。**first 不进去** —— 它要靠 _next_frame 自己那下 poll
 	_keep_pumping([second], func(): return pumping)
-	var r: Dictionary = await first.submit(Intent.buy(first.my_seat, 0))
+	var r: Dictionary = await first.submit(OnWorkIntent.buy(first.my_seat, 0))
 	pumping = false
 	check(r.get("ok", false), "买卡落地了（submit 自己泵帧；%s）" % r.get("reason", ""))
 	check(int(r.get("seq", -1)) != -1 or r.has("new_uid"), "回音带着落地结果")
@@ -188,7 +188,7 @@ func _t2_intent_roundtrip() -> void:
 	await net_pump([a, b], 4)
 	# 比哈希而不是数手牌张数：买卡是**花现金**换一张产出卡，
 	# 张数是降的（30 → 21）。第一版写成「张数变多了」，报的红是判据自己错
-	check(StateCodec.state_hash(room.state) != before, "服务器那份状态真的变了")
+	check(OnWorkStateCodec.state_hash(room.state) != before, "服务器那份状态真的变了")
 	check(room.state.find_card(first.my_seat, int(r.get("new_uid", -1))) != null,
 		"买到的那张进了服务器那份手牌（uid=%s）" % r.get("new_uid", "?"))
 	var mine_ops: Array = []
@@ -198,14 +198,14 @@ func _t2_intent_roundtrip() -> void:
 		foe_saw.size(), ", ".join(mine_ops)])
 	var saw_buy := false
 	for e in foe_saw:
-		if str((e as Dictionary).get("op", "")) == Intent.OP_BUY:
+		if str((e as Dictionary).get("op", "")) == OnWorkIntent.OP_BUY:
 			saw_buy = true
 	check(saw_buy, "对手看到的是那条买卡")
 
 	# 不轮到你的时候发意图 → 被拒，而且报的是次序而不是规则
 	pumping = true
 	_keep_pumping([first], func(): return pumping)   # 发的是 second，它不进去
-	var bad: Dictionary = await second.submit(Intent.buy(second.my_seat, 0))
+	var bad: Dictionary = await second.submit(OnWorkIntent.buy(second.my_seat, 0))
 	pumping = false
 	check(not bad.get("ok", true), "不轮到你时买卡被拒")
 	check(str(bad.get("code", "")) == "not_your_turn",
@@ -221,9 +221,9 @@ func _t2_intent_roundtrip() -> void:
 	# 少了座位判断的话：submit 返回的是对手那条结果，
 	# 于是自己这边照对手的落地去演 —— 两边从此画的不是同一局，而且不报错
 	var mine: Array = []
-	_in_flight(first, Intent.action_done(first.my_seat), mine)
+	_in_flight(first, OnWorkIntent.action_done(first.my_seat), mine)
 	first._on_text(Protocol.encode(Protocol.applied({
-		"ok": true, "op": Intent.OP_BUY, "seat": second.my_seat,
+		"ok": true, "op": OnWorkIntent.OP_BUY, "seat": second.my_seat,
 		"new_uid": 999, "market_idx": 0, "removed_uids": [] }, 99)))
 	check(mine.is_empty(), "对手那条不算自己的回音（submit 还在等）")
 	await net_pump([a, b], 8)
@@ -231,7 +231,7 @@ func _t2_intent_roundtrip() -> void:
 		var got: Dictionary = mine[0]
 		check(str(got.get("seat", "")) == first.my_seat,
 			"submit 拿回来的是自己那条（seat=%s）" % got.get("seat", ""))
-		check(str(got.get("op", "")) == Intent.OP_ACTION_DONE,
+		check(str(got.get("op", "")) == OnWorkIntent.OP_ACTION_DONE,
 			"而且是自己发的那个 op（%s）" % got.get("op", ""))
 
 	a.close()
@@ -327,7 +327,7 @@ func _t3_busy_and_offline() -> void:
 	# 没连服务器就发：要立刻拿到 offline，不能挂在 await 上等超时。
 	# 挂住的表现是界面全灰 8 秒，那比报错糟糕得多
 	var lone := NetTransport.new("ws://127.0.0.1:1/nope", "TEST")
-	var r0: Dictionary = await lone.submit(Intent.action_done(A))
+	var r0: Dictionary = await lone.submit(OnWorkIntent.action_done(A))
 	check(not r0.get("ok", true) and str(r0.get("code", "")) == "offline",
 		"没连上就发意图 → offline（%s）" % r0.get("code", ""))
 
@@ -351,8 +351,8 @@ func _t3_busy_and_offline() -> void:
 	# 泵一下上一条就已经落地了，_pending 早回落 —— 于是造不出「两条同时在飞」。
 	# submit 在第一个 await 之前是同步的（包已发出、_pending 已立起），
 	# 所以 _in_flight 返回时局面就已经到位了
-	_in_flight(first, Intent.buy(first.my_seat, 0), box)
-	var busy: Dictionary = await first.submit(Intent.action_done(first.my_seat))
+	_in_flight(first, OnWorkIntent.buy(first.my_seat, 0), box)
+	var busy: Dictionary = await first.submit(OnWorkIntent.action_done(first.my_seat))
 	check(not busy.get("ok", true) and str(busy.get("code", "")) == "busy",
 		"上一条在飞时再发被拒（%s）" % busy.get("code", ""))
 	await net_until([a, b], func(): return not box.is_empty())
@@ -375,9 +375,9 @@ func _t4_bad_table_hash() -> void:
 	print("\n-- T4 卡表不一致要拒连，并说清原因 --")
 	if not net_boot(PORT_BASE):
 		return
-	# 手搓一个 join：客户端那份 table_hash 是 StateCodec 算的，
+	# 手搓一个 join：客户端那份 table_hash 是 OnWorkStateCodec 算的，
 	# 改不了 —— 所以直接用一个裸 socket 发一份假的。
-	# 这条判据验证 StateCodec.table_hash() 的握手保护：
+	# 这条判据验证 OnWorkStateCodec.table_hash() 的握手保护：
 	# 两份不同的 cards.json 会让两个人玩不同价格的同一个游戏，且不报错
 	var raw := _raw()
 	if not need(await _raw_open(raw), "裸 socket 连上了"):
@@ -408,7 +408,7 @@ func _t4_bad_table_hash() -> void:
 		over_long += "A"
 	raw2.send_text(Protocol.encode({
 		"t": Protocol.JOIN, "version": Protocol.VERSION,
-		"room": over_long, "table_hash": StateCodec.table_hash() }))
+		"room": over_long, "table_hash": OnWorkStateCodec.table_hash() }))
 	var bad_room := await _raw_closed(raw2)
 	check(bad_room["code"] == Protocol.CLOSE_BAD_ROOM,
 		"房间码不合法单独成码（%s）" % bad_room["code"])
@@ -419,7 +419,7 @@ func _t4_bad_table_hash() -> void:
 	await _raw_open(raw3)
 	raw3.send_text(Protocol.encode({
 		"t": Protocol.JOIN, "version": Protocol.VERSION + 99,
-		"room": "TEST", "table_hash": StateCodec.table_hash() }))
+		"room": "TEST", "table_hash": OnWorkStateCodec.table_hash() }))
 	var bad_ver := await _raw_closed(raw3)
 	check(bad_ver["code"] == Protocol.CLOSE_VERSION,
 		"协议版本不一致单独成码（%s）" % bad_ver["code"])
@@ -447,7 +447,7 @@ func _t5_forged_message() -> void:
 	if not need(await _raw_open(raw), "裸 socket 连上了"):
 		net_stop()
 		return
-	raw.send_text(Protocol.encode(Protocol.join("TEST", StateCodec.table_hash())))
+	raw.send_text(Protocol.encode(Protocol.join("TEST", OnWorkStateCodec.table_hash())))
 	var seated := await _raw_wait(raw, Protocol.SEATED)
 	if not need(not seated.is_empty(), "裸 socket 也能正常入座（对照组）"):
 		net_stop()
@@ -455,7 +455,7 @@ func _t5_forged_message() -> void:
 
 	# 伪造一份 seated：挡不住的话，一个改过的客户端能给对手发假快照 ——
 	# 而对手会照着画，两边从此看到不同的牌，且没有任何一处报错
-	raw.send_text(Protocol.encode(Protocol.seated(A, B, StateCodec.snapshot(GameState.new()), "stolen")))
+	raw.send_text(Protocol.encode(Protocol.seated(A, B, OnWorkStateCodec.snapshot(OnWorkState.new()), "stolen")))
 	var rej := await _raw_wait(raw, Protocol.REJECTED)
 	check(str(rej.get("code", "")) == "not_client_msg",
 		"客户端伪造 seated 被拒（%s）" % rej.get("code", ""))
@@ -470,7 +470,7 @@ func _t5_forged_message() -> void:
 	# 还没进房间就发意图：要报 no_room 而不是在某个 null 上崩
 	var raw2 := _raw()
 	await _raw_open(raw2)
-	raw2.send_text(Protocol.encode(Protocol.intent(Intent.action_done(A))))
+	raw2.send_text(Protocol.encode(Protocol.intent(OnWorkIntent.action_done(A))))
 	var rej3 := await _raw_wait(raw2, Protocol.REJECTED)
 	check(str(rej3.get("code", "")) == "no_room",
 		"没进房间就发意图被拒（%s）" % rej3.get("code", ""))
@@ -530,19 +530,19 @@ func _t7_foe_left() -> void:
 	b.close()
 	await net_until([a], func(): return left[0])
 	check(left[0], "对手掉线时我收到通知")
-	# 房间**不删**（scenes/main.gd 的 _offer_reconnect / _on_net_down）：没有隐藏信息，重连很便宜。
+	# 房间**不删**（scenes/on_work_main.gd 的 _offer_reconnect / _on_net_down）：没有隐藏信息，重连很便宜。
 	# 删了的话一方刷新页面就把局面弄丢了
 	check(_srv.room_count() == 1, "对手掉线后房间还在")
-	var room: NetRoom = _srv.rooms["TEST"]
-	var hash_before := StateCodec.state_hash(room.state)
+	var room: OnWorkRoom = _srv.rooms["TEST"]
+	var hash_before := OnWorkStateCodec.state_hash(room.state)
 	check(int(room.occupants[seat_b]) == 0, "那个座位空出来了")
 
 	# 拿令牌重连 → 回原座位，而且局面没变
 	var b2 := net_client("TEST", token_b)
 	await net_until([a, b2], func(): return b2.my_seat != "")
 	check(b2.my_seat == seat_b, "带令牌重连回到原座位（%s）" % b2.my_seat)
-	check(StateCodec.state_hash(room.state) == hash_before, "重连没重开一局")
-	check(StateCodec.state_hash(b2.state()) == hash_before, "重连拿到的是当前局面")
+	check(OnWorkStateCodec.state_hash(room.state) == hash_before, "重连没重开一局")
+	check(OnWorkStateCodec.state_hash(b2.state()) == hash_before, "重连拿到的是当前局面")
 
 	a.close()
 	b2.close()
@@ -554,10 +554,10 @@ func _t7_foe_left() -> void:
 ## uid 从网上回来必须还是 int，不能是 60.0。
 ##
 ## 这条不是洁癖。JSON 的数字全是 double，值又相等（60 == 60.0 为真），
-## 所以 find_card 照样找得到 —— 末态哈希也抓不到（StateCodec.canon 故意把
+## 所以 find_card 照样找得到 —— 末态哈希也抓不到（OnWorkStateCodec.canon 故意把
 ## 整值 float 印成整数）。它只炸在**拿 uid 当字典键**的地方：
 ## 实测 { 60: x }.has(60.0) = false，[60].has(60.0) = false。
-## 而 scenes/main.gd 的 _commit_buy 就是 `entities.has(u)`，
+## 而 scenes/on_work_main.gd 的 _commit_buy 就是 `entities.has(u)`，
 ## 拖拽买是 `paid.has(c.uid)` —— 联网局里付掉的现金卡不被吸走、
 ## 还被当成「多付的」退回来，等于白拿一张牌，单机局完全正常。
 ##
@@ -575,7 +575,7 @@ func _t8_uids_stay_int() -> void:
 
 	var pumping := true
 	_keep_pumping([b if first == a else a], func(): return pumping)   # first 不进去
-	var r: Dictionary = await first.submit(Intent.buy(first.my_seat, 0))
+	var r: Dictionary = await first.submit(OnWorkIntent.buy(first.my_seat, 0))
 	pumping = false
 	if not need(r.get("ok", false), "买到了（%s）" % r.get("reason", "")):
 		net_stop()
@@ -588,10 +588,10 @@ func _t8_uids_stay_int() -> void:
 			"removed_uids 里是 int（实为 %s）" % type_string(typeof(u)))
 		break
 
-	# 拿它当字典键真的查得中 —— 这才是 main.gd 的用法
+	# 拿它当字典键真的查得中 —— 这才是 on_work_main.gd 的用法
 	var ents := {}
 	ents[int(r["new_uid"])] = "卡实体"
-	check(ents.has(r["new_uid"]), "new_uid 当字典键查得中（main.gd 的 entities 用法）")
+	check(ents.has(r["new_uid"]), "new_uid 当字典键查得中（on_work_main.gd 的 entities 用法）")
 
 	var bad: Array = []
 	_scan_uid_floats(r, "result", bad)
@@ -607,7 +607,7 @@ func _t8_uids_stay_int() -> void:
 ##
 ## 这张表是补丁，不是设计：扫描器按字段名找 uid，白名单也按字段名登记 ——
 ## 两道网织法相同，于是同一个字眼能一次漏两道。`removed` 就是这么漏的
-## （`GameState.apply_attack` 的回执，一串被打掉的 uid），
+## （`OnWorkState.apply_attack` 的回执，一串被打掉的 uid），
 ## 症状见 net/protocol.gd 的 UID_LIST_FIELDS 那段注释。
 ##
 ## 新增这类字段时**两处都要登记**：这里，和 Protocol.UID_LIST_FIELDS
