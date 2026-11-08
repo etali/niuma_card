@@ -150,6 +150,7 @@ func _ready() -> void:
 	board.offer_bought.connect(_on_buy)
 	board.dismiss_requested.connect(_on_dismiss)
 	board.tool_activated.connect(_activate)
+	board.strike_delivered.connect(_deliver_strike)
 	board.ingredient_requested.connect(_activate)
 	board.card_selected.connect(_on_selected)
 	if board.has_signal("action_rejected"):
@@ -484,11 +485,14 @@ func _on_activate(id: int, target_group: int) -> void:
 		return
 	_activate(id, target_group)
 
-func _activate(id: int, group: int, target_card := -1) -> void:
+func _deliver_strike(id: int, group: int) -> void:
+	_activate(id, group, -1, true)
+
+func _activate(id: int, group: int, target_card := -1, delivered := false) -> void:
 	if replay.playing: return
 	if lan != null and lan.live():
-		board.await_manual_strike_ack(id)
-		lan.submit({"op":"activate", "id":id, "group":group, "target":target_card})
+		if delivered: board.await_manual_strike_ack(id)
+		lan.submit({"op":"deliver_strike" if delivered else "activate", "id":id, "group":group, "target":target_card})
 		return
 	if get_tree().paused: return
 	_cache_positions()
@@ -497,13 +501,14 @@ func _activate(id: int, group: int, target_card := -1) -> void:
 	var activated := false
 	# A coffee handed to a visiting employee must still join that person's
 	# authoritative group. It cannot upgrade someone across the table remotely.
-	if kind == "coffee" and str(state.cards[id].status) == "ready" and int(state.cards[id].group) != group \
+	if not delivered and kind == "coffee" and str(state.cards[id].status) == "ready" and int(state.cards[id].group) != group \
 			and state.cards.has(target_card) and int(state.cards[target_card].group) == group \
 			and int(state.cards[target_card].owner) == actor \
 			and not state.config.coffee_upgrade(str(state.cards[target_card].type)).is_empty():
 		if state.move_cards([id], group, target_card) >= 0:
 			activated = state.cards.has(id) and str(state.cards[id].status) == "active"
-	if not activated: activated = state.activate(id, group, target_card)
+	if not activated:
+		activated = state.deliver_strike(id, group) if delivered else state.activate(id, group, target_card)
 	if not activated: _notify(_error_text(), true)
 	else:
 		# Involution is passive; its no-op activation on an idle pile is not play.

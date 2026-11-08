@@ -31,18 +31,17 @@ func _run() -> void:
 	var source_positions: Dictionary = {}
 	for uid in people: source_positions[uid] = board.by_uid[uid].global_position
 	var target: Dictionary = board.enemy_board.group_of(board.by_uid[people[0]])
+	var drop_time := state.time
+	state.drain_events()
 	await _drag(board.by_uid[strike], _point(target.cards[board.enemy_board._top_index(target)]))
-	_check(state.pending_strikes.has(strike) and board._strike_attacks.has(strike), "valid pointer drop launches the actual strike card")
-	var landed: Vector3 = board.by_uid[strike].global_position
-	_check(board._strike_attacks[strike].delivered and landed.is_equal_approx(board._strike_attacks[strike].to), "manual drag stays at the target instead of throwing again from home")
-	_check(is_equal_approx(state.pending_strikes[strike].remaining, state.config.rules.strike.flight_seconds) and people.all(func(uid): return not state.is_striking(uid)), "manual delivery retains the full authoritative response window")
-	state.advance(float(state.config.rules.strike.flight_seconds) * 0.5)
-	board.sync_state(state)
-	_check(board.by_uid[strike].global_position.is_equal_approx(landed) and people.all(func(uid): return not state.is_striking(uid)), "the delivered card remains still while the original response clock advances")
-	state.advance(float(state.config.rules.strike.flight_seconds) * 0.5)
-	board.sync_state(state)
-	for event in state.drain_events(): board.play_event(event)
-	_check(not state.cards.has(strike), "valid pointer strike consumes only on impact")
+	_check(not state.cards.has(strike) and not state.pending_strikes.has(strike), "valid pointer drop immediately consumes the delivered strike without a flight timer")
+	_check(not board._strike_attacks.has(strike) and not board.by_uid.has(strike), "manual delivery clears its pending visual without replaying a throw")
+	_check(state.time == drop_time and people.all(func(uid): return state.is_striking(uid)), "all target personnel are struck on release without advancing the game clock")
+	_check(people.all(func(uid): return state.cards[uid].remaining == state.config.rules.strike.duration_seconds), "the strike duration starts at the actual manual impact")
+	var strike_events := state.drain_events()
+	_check(strike_events.filter(func(event): return event.kind == "strike").size() == 1
+		and strike_events.all(func(event): return event.kind != "strike_launch"), "manual delivery emits exactly one impact and no automatic launch")
+	for event in strike_events: board.play_event(event)
 	_check(board._strike_dancers.size() == people.size(), "all present enemy personnel enter independent dance motion")
 	for uid in people:
 		var card: OffWorkCard = board.by_uid[uid]
@@ -124,14 +123,15 @@ func _manual_network_drop() -> void:
 				and board.rest_pos(board.by_uid[strike]).distance_to(home) < 0.02, "rejected drop releases its lock and restores its original place")
 		else:
 			var authoritative := state.fork_for_bot(73)
-			_check(authoritative.activate(strike, target), "server rules accept the same manual strike command")
+			_check(authoritative.deliver_strike(strike, target), "server rules accept the manual delivery command")
 			var world := {}
 			for key in OffWorkState.WORLD_FIELDS: world[key] = authoritative.get(key)
 			transport.frame_received.emit({"world":world, "rng":authoritative._rng.state,
 				"events":authoritative.drain_events(), "round":1, "paused":false})
-			_check(state.pending_strikes.has(strike) and board._strike_attacks[strike].phase == "attack"
-				and board._strike_attacks[strike].delivered, "LAN acknowledgement preserves the manual-delivery source")
-			_check(board.by_uid[strike].global_position.is_equal_approx(dropped) and not state.is_striking(victim), "acknowledgement neither rethrows nor settles damage early")
+			_check(not state.cards.has(strike) and not state.pending_strikes.has(strike)
+				and not board._strike_attacks.has(strike), "LAN acknowledgement consumes the delivery without starting a second flight")
+			_check(not board.by_uid.has(strike) and state.is_striking(victim)
+				and state.cards[victim].remaining == state.config.rules.strike.duration_seconds, "authority confirmation immediately presents the full strike effect")
 	main.lan.net = null
 	transport.close()
 

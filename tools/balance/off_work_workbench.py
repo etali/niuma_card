@@ -361,7 +361,27 @@ class OffWorkWorkbench(ThreadingHTTPServer):
     def bootstrap(self):
         config = self.configuration()
         with self.lock:
-            return {**config, "library": self.library_info(), "history": self.history(None)}
+            # Built-in defaults can change between releases without any editor
+            # input. Give those defaults a free name instead of asking users to
+            # overwrite an older, independently saved configuration on first run.
+            defaults = {"cards": ("cards", "项目默认", config["cards"]),
+                        "q": ("bot", "标准策略", config["default_profiles"]["balance"]["a"]),
+                        "a": ("bot", "策略 A", config["default_profiles"]["bot"]["a"]),
+                        "b": ("bot", "策略 B", config["default_profiles"]["bot"]["b"])}
+            names = {slot: self._default_config_name(*entry) for slot, entry in defaults.items()}
+            return {**config, "default_names": names, "library": self.library_info(), "history": self.history(None)}
+
+    def _default_config_name(self, kind, base, data):
+        key = self._content_id(kind, data)
+        entries = self.catalog[kind]
+        existing = next((name for name, entry in entries.items() if entry["id"] == key), None)
+        if existing is not None:
+            return existing
+        name, version = base, 1
+        while name in entries:
+            name = base + ("（新版）" if version == 1 else "（新版 %d）" % version)
+            version += 1
+        return name
 
     def playtest(self, body):
         if set(body) != {"cards"} or not isinstance(body["cards"], dict):

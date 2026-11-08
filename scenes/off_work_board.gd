@@ -60,6 +60,7 @@ class IncomeBoard extends Board:
 
 signal work_groups_changed()
 signal tool_activated(id: int, target_group: int)
+signal strike_delivered(id: int, target_group: int)
 signal offer_bought(offer_id: int)
 signal dismiss_requested(ids: Array)
 signal ingredient_requested(id: int, target_group: int, person: int)
@@ -588,7 +589,7 @@ func _end_drag() -> void:
 			_detach_drag()
 			_picked_ids.clear()
 			_begin_strike_attack(strike_id, int(_state.cards[strike_id].group), target_gid, true, "pending")
-			tool_activated.emit(strike_id, target_gid)
+			strike_delivered.emit(strike_id, target_gid)
 			var awaiting_ack: bool = _strike_attacks.get(strike_id, {}).get("awaiting_ack", false)
 			if _state.cards.has(strike_id) and not _state.pending_strikes.has(strike_id) and not awaiting_ack:
 				_release_strike_attack(strike_id, false)
@@ -2417,8 +2418,8 @@ func _sync_strike_attacks() -> void:
 		if _strike_attacks.has(uid):
 			var existing: Dictionary = _strike_attacks[uid]
 			if existing.phase == "pending":
-				# The local hand already delivered this card. A LAN acknowledgement
-				# starts only the authoritative response clock, not a second throw.
+				# Preserve an already delivered pose if an older in-flight snapshot
+				# is restored. New manual deliveries settle in the authority's reply.
 				existing.phase = "attack"
 				existing.awaiting_ack = false
 				existing.to = _strike_attack_target(int(attack.target_group))

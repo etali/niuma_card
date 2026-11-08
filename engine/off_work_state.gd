@@ -438,6 +438,13 @@ func move_cards(ids: Array, target_group: int = -1, target_card: int = -1) -> in
 	return target_group
 
 func activate(tool_id: int, target_group: int = -1, target_card: int = -1) -> bool:
+	return _activate_tool(tool_id, target_group, target_card, false)
+
+## A pointer drop has already delivered the card; only automatic throws fly.
+func deliver_strike(tool_id: int, target_group: int) -> bool:
+	return _activate_tool(tool_id, target_group, -1, true)
+
+func _activate_tool(tool_id: int, target_group: int, target_card: int, delivered: bool) -> bool:
 	last_error = ""
 	if winner >= 0:
 		return _fail("已经下班了")
@@ -445,6 +452,8 @@ func activate(tool_id: int, target_group: int = -1, target_card: int = -1) -> bo
 		return _fail("工具已经不在桌上")
 	var tool: Dictionary = cards[tool_id]
 	var kind: String = str(tool.type)
+	if delivered and kind != "strike":
+		return _fail("只能直接送达罢工牌")
 	if config.category(kind) not in ["tool", "ingredient"]:
 		return _fail("这张牌不是可用工具或材料")
 	if str(tool.status) != "ready" and not (kind == "slack" and tool.status == "active"):
@@ -458,7 +467,7 @@ func activate(tool_id: int, target_group: int = -1, target_card: int = -1) -> bo
 	if kind == "strike":
 		if target_owner == owner:
 			return _fail("罢工要交给对面的工作组")
-		return _activate_strike(tool_id, target_group)
+		return _activate_strike(tool_id, target_group, delivered)
 	if target_owner != owner:
 		return _fail("这张工具只能给己方使用")
 	if kind in ["meeting", "transfer", "slack", "outsource"] and not _accepts_function(target_group, kind):
@@ -881,12 +890,12 @@ func can_strike_group(group: int, attacker_owner: int) -> bool:
 			return true
 	return false
 
-func _activate_strike(tool_id: int, group: int) -> bool:
+func _activate_strike(tool_id: int, group: int, delivered := false) -> bool:
 	var owner: int = int(cards[tool_id].owner)
 	if not can_strike_group(group, owner):
 		return _fail("罢工需要对方正在处理工作或摸鱼的组合，且组内有人员")
 	var flight_seconds := float(config.rules.strike.get("flight_seconds", 0.0))
-	if flight_seconds <= 0.0:
+	if delivered or flight_seconds <= 0.0:
 		_apply_strike(tool_id, group)
 		return true
 	var flight := {"source": tool_id, "owner": owner, "group": int(cards[tool_id].group),

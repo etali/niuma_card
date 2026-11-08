@@ -67,7 +67,9 @@ extends RefCounted
 ## 服务端事务，恢复不再把尚未播完的展示快照与最新阶段拼在一起。
 ## v9：同类数值 Buff 按张数叠乘，避免与只应用一次倍率的旧客户端混用。
 ## v10：对手座位标识统一为 bot，拒绝与旧座位编码的客户端混用。
-const VERSION := 10
+## v11：下班手动送达罢工使用独立权威命令，落点合法便立即命中。
+## 普通 activate 仍保留飞行窗口；旧端不识别送达语义，握手时拒绝混用。
+const VERSION := 11
 ## 仅录像里的权威快照恢复标记，不是玩家可提交的 OnWorkIntent。
 const RECOVERY_STEP := "recovery"
 

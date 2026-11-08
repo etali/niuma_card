@@ -161,7 +161,8 @@ function harness() {
     presets:Object.fromEntries(Object.entries(defaults.preferences.presets).map(([key,strength]) => [key,mapping(strength)])),
     strengthProfiles:Object.fromEntries(Array.from({length:101},(_,index) => [(index/100).toFixed(2),mapping(index/100)])),
     presetLabels:{low:'偏低',mid:'标准'}, fieldLabels:{decision_budget_ms:'固定思考时限（毫秒）'},
-    activeView:'balance', loading:false, projectCardsId:'project', sourceId:'alternate',
+    activeView:'balance', loading:false, projectCardsId:'project', projectCardsName:'项目默认', sourceId:'alternate',
+    defaultStrategyNames:{q:'标准策略',a:'策略 A',b:'策略 B'},
     library:{cards:[{id:'alternate',name:'候选卡表'}],bot:[]},
     historyItems:[{id:'old',kind:'balance',status:'done',configs:{cards:'project'}},
       {id:'new',kind:'bot',status:'done',configs:{cards:'alternate'}}], comparableRecords:[],
@@ -530,6 +531,37 @@ test('one run request saves both sides and restores the canonical names of reuse
   assert.deepEqual(copy(ui.profiles),submittedPolicies,'reuse does not alter either edited strategy');
   assert.match(ui.$('message').textContent,/BOT A.*已存深搜.*BOT B.*已存快速/);
   assert.match(ui.$('message').textContent,/一条对战记录/);
+});
+
+test('untouched current defaults use version-safe names on first run and after reselecting', async () => {
+  const {ui,requests} = harness();
+  const config = {project_cards_id:'project', cards:copy(cards), bot:copy(defaults),
+    presets:copy(ui.presets),strength_profiles:copy(ui.strengthProfiles),legacy_default_budget_ms:12,
+    default_profiles:{balance:{a:copy(ui.profiles.q)},bot:{a:copy(ui.profiles.a),b:copy(ui.profiles.b)}},
+    default_options:{seed:1001,pairs:1,max_seconds:60},library:copy(ui.library),history:{items:[]},
+    default_names:{cards:'项目默认（新版）',q:'标准策略（新版）',a:'策略 A（新版 2）',b:'策略 B'}};
+  const api = ui.api;
+  Object.assign(ui,{location:{protocol:'http:'},rateFormula:'',balanceMeasures:{},acquisitionFormula:'',
+    storageWarnings() {},acceptHistory() {},loadLinkedRecords:async () => {},
+    api:async () => copy(config)});
+  loadFunctions(ui,['init']);
+  await ui.init();
+  assert.equal(ui.$('error').textContent,'');
+  assert.equal(ui.$('cardName').value,config.default_names.cards);
+  assert.equal(ui.strategyNames.q,config.default_names.q);
+  assert.equal(ui.strategyNames.a,config.default_names.a);
+  ui.api = api;
+  ui.window.confirm = () => {throw Error('untouched defaults must not ask for an overwrite');};
+  await ui.run();
+  assert.equal(requests.at(-1).body.card_name,config.default_names.cards);
+  assert.equal(requests.at(-1).body.a_name,config.default_names.q);
+  await ui.selectBotCards('alternate');
+  await ui.selectBotCards('project');
+  assert.equal(ui.$('cardName').value,config.default_names.cards,'returning to current built-ins keeps the safe name');
+  await ui.view('bot');
+  await ui.run();
+  assert.equal(requests.at(-1).body.a_name,config.default_names.a);
+  assert.equal(requests.at(-1).body.b_name,config.default_names.b);
 });
 
 test('legacy BOT comparison links open one duel and reject mismatched shared cards', async () => {

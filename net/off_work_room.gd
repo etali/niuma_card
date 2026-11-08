@@ -125,5 +125,10 @@ func _apply_action(owner: int, action: Dictionary) -> bool:
 					and world.cards[target].group == group and world.cards[target].owner == owner:
 				return world.move_cards([id], group, target) >= 0
 			return world.activate(id, group, target)
+		"deliver_strike":
+			# The connection owns the action. A drag only selects the delivery
+			# command; the authoritative state still validates the actual strike.
+			if not world.cards.has(id) or world.cards[id].owner != owner: return false
+			return world.deliver_strike(id, group)
 		"resign": return world.resign(owner)
 	return false

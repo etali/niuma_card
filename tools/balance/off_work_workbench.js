@@ -13,6 +13,7 @@ let comparableRecords = [];
 let historyItems = [];
 const chosenBots = {};
 let projectCardsId;
+let projectCardsName = "项目默认";
 let loading = false;
 let activeView = "balance";
 let library = {cards:[], bot:[]};
@@ -1092,7 +1093,7 @@ function renderBotCards() {
 }
 async function selectBotCards(id) {
   if (!id) return;
-  const record = id === projectCardsId ? {id,name:"项目默认",data:baseline} : await api("/api/library/" + id);
+  const record = id === projectCardsId ? {id,name:projectCardsName,data:baseline} : await api("/api/library/" + id);
   await selectCards(record);
   await refreshComparison();
   $("message").textContent = "BOT 双方已共用卡表「" + record.name + "」。";
@@ -1305,7 +1306,7 @@ $("card-search").oninput = filterCards;
 $("card-kind").onchange = filterCards;
 $("source").onchange = () => busy(async () => {
   const id = $("source").value;
-  const record = id === projectCardsId ? {id,name:"项目默认",data:baseline} : await api("/api/library/" + id);
+  const record = id === projectCardsId ? {id,name:projectCardsName,data:baseline} : await api("/api/library/" + id);
   await selectCards(record);
   $("message").textContent = "已载入卡表「" + record.name + "」。";
 });
@@ -1482,6 +1483,10 @@ async function init() {
     if (location.protocol === "file:") throw Error("请从仓库中的「启动手动调参.command」打开工作台。");
     const config = await api("/api/bootstrap");
     projectCardsId = config.project_cards_id;
+    projectCardsName = config.default_names?.cards || "项目默认";
+    for (const side of ["q","a","b"]) {
+      if (config.default_names?.[side]) defaultStrategyNames[side] = config.default_names[side];
+    }
     bot = config.bot;
     presets = config.presets;
     strengthProfiles = config.strength_profiles || {};
@@ -1504,7 +1509,7 @@ async function init() {
     library = config.library;
     storageWarnings(library.warnings);
     acceptHistory(config.history);
-    await selectCards({id:projectCardsId,name:"项目默认",data:baseline});
+    await selectCards({id:projectCardsId,name:projectCardsName,data:baseline});
     renderProfiles();
     await view("balance");
     $("message").textContent = "已载入下班卡表和 BOT 策略。";
