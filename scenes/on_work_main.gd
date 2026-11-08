@@ -4353,7 +4353,7 @@ func _show_game_over() -> void:
 ## 终局时牌桌上的谢幕；留在桌上直到开下一局（_teardown_for_new_game 清场）。
 var _finale_fx: Node3D
 
-## 赢家的牌从左到右依次蹦一下，输家的牌往后一仰；再按胜因在牌桌上补一笔：
+## 赢家的牌从左到右依次蹦一下，输家的牌轻轻起伏后落回原位；再按胜因在牌桌上补一笔：
 ## 冲线在赢家的现金堆上盖「上市」章，破产在输家的现金堆上贴封条，用户清零就让输家的用户跑光。
 func _play_table_finale(finale: Dictionary) -> void:
 	_clear_table_finale()
@@ -4371,6 +4371,7 @@ func _play_table_finale(finale: Dictionary) -> void:
 	for card: CardEntity in entities.values():
 		if not is_instance_valid(card) or card.is_market or card._visual == null:
 			continue
+		card.reset_interaction_visual()
 		var delay := 0.35 + clampf((card.global_position.x + 11.0) / 22.0, 0.0, 1.0) * 0.6
 		var bow := card.create_tween()
 		bow.tween_interval(delay)
@@ -4378,7 +4379,10 @@ func _play_table_finale(finale: Dictionary) -> void:
 			bow.tween_property(card._visual, "position:y", 0.32, 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 			bow.tween_property(card._visual, "position:y", 0.0, 0.18).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
 		else:
-			bow.tween_property(card._visual, "rotation_degrees:x", -9.0, 0.28).set_trans(Tween.TRANS_SINE)
+			# 绕牌心后仰会把标题带压进桌布；逐张抬高再转也会颠倒展开摞的遮挡。
+			# 保持纸面平行，只做短促起伏，整张牌与原有层序一起回到静置状态。
+			bow.tween_property(card._visual, "position:y", 0.04, 0.09).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+			bow.tween_property(card._visual, "position:y", 0.0, 0.19).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 func _clear_table_finale() -> void:
 	if is_instance_valid(_finale_fx):
