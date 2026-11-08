@@ -220,6 +220,7 @@ func _ready() -> void:
 
 func set_shift_hidden(hidden: bool) -> void:
 	_shift_hidden = hidden
+	if is_instance_valid(hud): hud.set_off_work_finale_hidden(hidden)
 	if hidden: _live_bot.cancel()
 	if is_instance_valid(table_hands): table_hands.set_shift_hidden(hidden)
 	if is_instance_valid(_effect_layer): _effect_layer.visible = not hidden
@@ -468,7 +469,10 @@ func _present(event: Dictionary) -> void:
 	var kind: String = str(event.kind)
 	if kind == "win":
 		audio.stop_all()
-		audio.play("win" if state.winner != 1 else "lose")
+		if practice.is_empty(): hud.begin_off_work_finale(int(state.winner))
+		# 赢方响下班铃；输方先留白，泄气尾音留到加班章落定。
+		if state.winner != 1: audio.play("win")
+		elif not practice.is_empty(): audio.play("lose")
 		if board.has_method("play_event"): board.play_event(event)
 		return
 	if kind in ["conveyor", "new_game"]: return

@@ -1752,6 +1752,16 @@
           "db": -18,
           "pitch": 1.0
         },
+        "off_work_result_stamp": {
+          "file": "stamp.wav",
+          "db": -14,
+          "pitch": 0.85
+        },
+        "off_work_result_tail": {
+          "file": "trombone.wav",
+          "db": -18,
+          "pitch": 0.9
+        },
         "deny": {
           "file": "deny.wav",
           "db": -18,

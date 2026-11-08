@@ -18,6 +18,8 @@ const ResourceView = preload("res://scenes/resource_hud.gd")
 const LogView = preload("res://scenes/msg_log.gd")
 const ColorView = preload("res://scenes/palette_panel.gd")
 const BotView = preload("res://scenes/bot_panel.gd")
+const OffWorkResultFx = preload("res://scenes/off_work_result_fx.gd")
+const OffWorkResultHero = preload("res://scenes/off_work_result_hero.gd")
 var host: Node
 var board: Node
 var state: RefCounted
@@ -44,6 +46,9 @@ var mine: Label
 var opponent: Label
 var message: Label
 var result_layer: CanvasLayer
+var _off_work_finale_layer: CanvasLayer
+var _off_work_finale: Control
+var _off_work_result_animation: Tween
 var _practice_panel: PanelContainer
 var _practice_gesture: WorkLessonGesture
 
@@ -737,47 +742,154 @@ func draw_result_taunt(winner: int) -> String:
 	preload("res://engine/json_store.gd").save(path, history)
 	return line
 
-func show_result(winner: int, work_left: int, restart: Callable, taunt := "") -> CanvasLayer:
+func begin_off_work_finale(winner: int) -> void:
+	if is_instance_valid(_off_work_finale) and _off_work_finale.winner == winner: return
 	clear_result()
 	close_panels()
+	_off_work_finale_layer = CanvasLayer.new()
+	_off_work_finale_layer.name = "OffWorkFinale"
+	_off_work_finale_layer.layer = 8
+	host.add_child(_off_work_finale_layer)
+	_off_work_finale = OffWorkResultFx.new()
+	_off_work_finale_layer.add_child(_off_work_finale)
+	_off_work_finale.configure(winner, _off_work_result_focus)
+	register_result_panel(_off_work_finale_layer)
+	if host._shift_hidden: _suspend_panel(_off_work_finale_layer)
+
+func set_off_work_finale_hidden(hidden: bool) -> void:
+	for canvas in [_off_work_finale_layer, result_layer]:
+		if not is_instance_valid(canvas): continue
+		if hidden and canvas.visible:
+			_suspend_panel(canvas)
+		elif not hidden and not _table_panels_blocked() and canvas in _suspended_panels:
+			_suspended_panels.erase(canvas)
+			canvas.show()
+
+func _off_work_result_focus() -> Vector2:
+	# 失败时把冷光留在最大的真实待办堆上；不改牌局和卡牌位置。
+	var target := -1
+	var largest := 0
+	for gid in state.groups:
+		if int(state.groups[gid].owner) != 0: continue
+		var count: int = state.group_work(int(gid)).size()
+		if count > largest:
+			largest = count
+			target = int(gid)
+	if target >= 0: return host.board.camera.unproject_position(host.board.get_group_position(target))
+	return get_viewport().get_visible_rect().size * Vector2(0.5, 0.72)
+
+func show_result(winner: int, work_left: int, restart: Callable, taunt := "") -> CanvasLayer:
+	# 恢复存档或认输也走同一终帧。已有离场气氛不重新从零播放。
+	if not is_instance_valid(_off_work_finale) or _off_work_finale.winner != winner:
+		begin_off_work_finale(winner)
+	else:
+		_clear_off_work_result_panel()
+	_off_work_finale.age = maxf(_off_work_finale.age, 1.6)
+	close_panels()
 	result_layer = CanvasLayer.new()
+	result_layer.name = "OffWorkResult"
 	result_layer.layer = 10
 	host.add_child(result_layer)
 	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.name = "OffWorkResultCenter"
+	# 自动换行的首帧最小高度不能把全屏容器撑大；始终围绕固定中心排版。
+	center.use_top_left = true
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	result_layer.add_child(center)
-	var frame := PanelContainer.new()
-	frame.add_theme_stylebox_override("panel", _style(Palette.get_color("world", "table_frame"), int(hud_config.result.margin)))
+	var frame := VBoxContainer.new()
+	frame.name = "ResultPanel"
+	frame.add_theme_constant_override("separation", 4)
 	center.add_child(frame)
+	var hero := OffWorkResultHero.new()
+	hero.name = "OffWorkResultHero"
+	hero.configure(winner)
+	frame.add_child(hero)
+	var receipt := PanelContainer.new()
+	receipt.name = "OffWorkResultReceipt"
+	receipt.set_meta("drawer_margin_base", 16)
+	frame.add_child(receipt)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", int(hud_config.result.gap))
-	frame.add_child(column)
-	var title := _label(str(hud_config.result.win) if winner == 0 else (str(hud_config.result.tie) if winner == 2 else str(hud_config.result.lose)), int(hud_config.result.title_font))
+	column.add_theme_constant_override("separation", 10)
+	receipt.add_child(column)
+	var title := _label(str(hud_config.result.win) if winner == 0 else (str(hud_config.result.tie) if winner == 2 else str(hud_config.result.lose)), 20)
+	title.name = "ResultTitle"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(title)
+	var summary := _label(str(hud_config.result.complete) if work_left == 0 else str(hud_config.result.remaining) % work_left, 18)
+	summary.name = "ResultSummary"
+	summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(summary)
 	if winner in [0, 1]:
 		var quote := _label(taunt if not taunt.is_empty() else str(hud_config.result["win_taunts" if winner == 0 else "lose_taunts"][0]))
 		quote.name = "ResultMessage"
-		quote.custom_minimum_size.x = minf(460.0, get_viewport().get_visible_rect().size.x * 0.68)
 		quote.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		quote.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		column.add_child(quote)
-	var summary := _label(str(hud_config.result.complete) if work_left == 0 else str(hud_config.result.remaining) % work_left)
-	summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	column.add_child(summary)
 	var again := _button(str(hud_config.restart))
+	again.name = "ResultRestart"
 	again.set_meta("ui_role", "primary")
 	again.pressed.connect(restart)
 	column.add_child(again)
 	register_result_panel(result_layer)
+	if host._shift_hidden: _suspend_panel(result_layer)
+	# 首次点击主视觉只落定演出，不误触重开；按钮始终可直接使用。
+	hero.mouse_filter = Control.MOUSE_FILTER_STOP
+	hero.gui_input.connect(func(event: InputEvent) -> void:
+		if (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed) \
+				or (event is InputEventScreenTouch and event.pressed):
+			hero.finish()
+			_off_work_finale.finish()
+			hero.accept_event())
+	_off_work_result_animation = result_layer.create_tween()
+	_off_work_result_animation.tween_interval(0.18)
+	_off_work_result_animation.tween_callback(func(): host.audio.play("off_work_result_stamp"))
+	if winner == 1:
+		_off_work_result_animation.tween_interval(0.25)
+		_off_work_result_animation.tween_callback(func(): host.audio.play("off_work_result_tail"))
+	result_layer.visibility_changed.connect(_sync_off_work_result_animation)
+	_sync_off_work_result_animation()
 	return result_layer
 
-func clear_result() -> void:
+func _sync_off_work_result_animation() -> void:
+	if _off_work_result_animation == null or not _off_work_result_animation.is_valid(): return
+	if is_instance_valid(result_layer) and result_layer.visible:
+		_off_work_result_animation.play()
+	else:
+		_off_work_result_animation.pause()
+
+func _theme_external_panel(panel: CanvasLayer) -> void:
+	super._theme_external_panel(panel)
+	if panel == _off_work_finale_layer and is_instance_valid(_off_work_finale):
+		# relayout 最后才更新 3D 相机；下一次空闲时再取待办堆的新投影。
+		_off_work_finale.call_deferred("refresh_focus")
+	if panel != result_layer or not is_instance_valid(result_layer): return
+	var center := panel.get_node("OffWorkResultCenter") as CenterContainer
+	var frame := center.get_node("ResultPanel") as VBoxContainer
+	var hero := frame.get_node("OffWorkResultHero") as Control
+	var area := _content
+	if area.size.x <= 0 or area.size.y <= 0: area = get_viewport().get_visible_rect()
+	center.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	center.position = area.get_center()
+	frame.custom_minimum_size.x = minf(_px(540), maxf(180.0, area.size.x - _px(24)))
+	hero.custom_minimum_size = Vector2(0, minf(frame.custom_minimum_size.x * 0.43, area.size.y * 0.40))
+	frame.queue_sort()
+
+func _clear_off_work_result_panel() -> void:
+	if _off_work_result_animation != null and _off_work_result_animation.is_valid(): _off_work_result_animation.kill()
+	_off_work_result_animation = null
 	if is_instance_valid(result_layer):
 		result_layer.get_parent().remove_child(result_layer)
 		result_layer.queue_free()
 	result_layer = null
+
+func clear_result() -> void:
+	_clear_off_work_result_panel()
+	if is_instance_valid(_off_work_finale_layer):
+		_off_work_finale_layer.get_parent().remove_child(_off_work_finale_layer)
+		_off_work_finale_layer.queue_free()
+	_off_work_finale_layer = null
+	_off_work_finale = null
 
 func _setup_window_controller() -> void:
 	if mobile_mode:

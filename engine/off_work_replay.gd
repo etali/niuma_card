@@ -130,7 +130,11 @@ func seek(host: Node, seconds: float) -> void:
 	host.conveyor.reset()
 	host.effects.clear()
 	host.audio.stop_all()
+	# 倒带后不能把上一次终局的暖光/暗场留在未结束的牌局上。
+	host.hud.clear_result()
+	host.result_layer = null
 	advance(host, 0.0)
+	if host.state.winner >= 0: host.hud.begin_off_work_finale(int(host.state.winner))
 
 func end(host: Node) -> void:
 	if not playing: return
