@@ -15,6 +15,8 @@ func _run() -> void:
 	game.set_process(false)
 	game.audio.muted = true
 	game.sfx.user_muted = true
+	# Activation tests need an affordable purchase at each fresh opening.
+	game.state.config.rules.conveyor.pool = {"employee":1}
 	game._new_game()
 	await _settle()
 	var enemy_before := _owner_cards(1)

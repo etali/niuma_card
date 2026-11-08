@@ -147,7 +147,7 @@ class ManualBalanceTest(unittest.TestCase):
             root=pathlib.Path(tmp)
             for relative in ['tools/on_work_bot_duel.gd','tools/on_work_bot_duel_report.gd','tools/on_work_bot_decision_stats.gd','tools/on_work_eval_report.gd','data/on_work_bot.json','data/on_work_card_config_schema.json',
                              'tools/balance/on_work_report.html','tools/balance/on_work_report.js','tools/balance/report.css',
-                             'tools/balance/storage.py','tools/balance/off_work_workbench.py','tools/balance/off_work_run.gd',
+                             'tools/balance/storage.py','tools/balance/playtest_launcher.py','tools/balance/off_work_workbench.py','tools/balance/off_work_run.gd',
                              'tools/balance/off_work_workbench.html','tools/balance/off_work_workbench.js','tools/balance/off_work_workbench.css']:
                 path=root/relative
                 path.parent.mkdir(parents=True,exist_ok=True)
@@ -157,6 +157,10 @@ class ManualBalanceTest(unittest.TestCase):
                 (root/'data/on_work_card_config_schema.json').write_text('changed validation contract')
                 self.assertNotEqual(source,mb.source_version())
                 self.assertNotEqual(engine,mb.engine_fingerprint())
+                source,engine=mb.source_version(),mb.engine_fingerprint()
+                (root/'tools/balance/playtest_launcher.py').write_text('changed interactive runtime selection')
+                self.assertNotEqual(source,mb.source_version())
+                self.assertEqual(engine,mb.engine_fingerprint())
 
     def test_pawn_overrides_and_editable_metadata(self):
         pawn_fields={f['card']:f for f in mb.mutable_fields(self.base) if f['field']=='pawn'}
@@ -337,6 +341,9 @@ class WorkbenchStorageTest(unittest.TestCase):
 class WorkbenchPlayTest(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(prefix='试玩 空格 ')
+        self.runtime=pathlib.Path(self.tmp.name)/'牛马牌.app/Contents/MacOS/牛马牌'
+        runtime=mock.patch('tools.balance.playtest_launcher.macos_executable',return_value=self.runtime)
+        runtime.start();self.addCleanup(runtime.stop)
         self.base=json.loads((ROOT/'data/on_work_cards.json').read_text())
         with mock.patch.object(mb.OnWorkWorkbench,'profile',return_value={'schema':[],'parameters':{}}):
             self.app=mb.OnWorkWorkbench(pathlib.Path(self.tmp.name)/'配置 存档','/应用 程序/Godot')
@@ -350,7 +357,7 @@ class WorkbenchPlayTest(unittest.TestCase):
         """模拟两进程管道；真实跨服务退出的管道由独立行为用例覆盖。"""
         pending={}
         def launch(command,**kwargs):
-            if command[0]==self.app.godot:
+            if command[0] in (self.app.godot,str(self.runtime)):
                 self.assertEqual(kwargs['stdout'],subprocess.PIPE)
                 stream=io.StringIO()
                 proc=launch_game(command,**{**kwargs,'stdout':stream})
@@ -374,11 +381,10 @@ class WorkbenchPlayTest(unittest.TestCase):
             self.assertIs(kwargs['shell'],False)
             self.assertTrue(kwargs['start_new_session'])
             self.assertEqual(kwargs['cwd'],str(ROOT))
-            self.assertEqual(command[:4],[self.app.godot,'--path','.','--'])
-            self.assertEqual(len(command),5)
+            expected=[str(self.runtime),'--'] if sys.platform=='darwin' else [self.app.godot,'--path',str(ROOT),'--']
+            self.assertEqual(command[:-1],expected)
             snapshot=pathlib.Path(command[-1].removeprefix('--cards-config='))
-            self.assertFalse(snapshot.is_absolute())
-            snapshot=(ROOT/snapshot).resolve()
+            self.assertTrue(snapshot.is_absolute())
             self.assertIn('试玩 空格 ',str(snapshot))
             self.assertEqual(json.loads(snapshot.read_text()),self.config['cards'])
             kwargs['stdout'].write('CARDS_CONFIG_READY: '+str(snapshot)+'\n')
@@ -457,6 +463,8 @@ print('LATE_HOME: '+str(pathlib.Path.home()/'late-event.txt'),flush=True)
 import json,pathlib,sys
 sys.path.insert(0,str(pathlib.Path(sys.argv[1])/'tools'))
 import manual_balance as mb
+from tools.balance import playtest_launcher
+playtest_launcher.macos_executable=lambda root: pathlib.Path(sys.argv[3])
 mb.OnWorkWorkbench.profile=lambda self,strength: {'schema':[],'parameters':{}}
 spawn=mb.subprocess.Popen
 filters=[]

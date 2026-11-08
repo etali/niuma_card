@@ -23,7 +23,7 @@ const strengthChoice = {};
 const strategyNames = {q:"标准策略", a:"策略 A", b:"策略 B"};
 const fieldLabels = {
   price:"价格", purchasable:"可购买", description:"牌面说明", name:"牌名",
-  work_seconds:"工作耗时（秒）", work_capacity:"每批处理上限", work_income_multiplier:"工作收入倍率",
+  work_seconds:"每份工作基础耗时（秒）", work_capacity:"每批处理上限", work_income_multiplier:"工作收入倍率",
   can_work:"可处理工作", refund:"开除返还", transfer_capacity:"甩锅数量",
   can_be_meeting_target:"可被拉会", can_be_strike_target:"可受罢工影响", meeting_multiplier:"开会人数倍率",
   max_per_owner:"每方持有上限", cost_per_employee:"每名员工招聘费用", recruitment:"老板招聘",
@@ -33,13 +33,13 @@ const fieldLabels = {
   minimum_targets:"最少目标数", base_targets:"基础目标数", duration_seconds:"持续时间（秒）",
   recovery_seconds:"冷却时间（秒）", auto_repeat:"自动重复", coffee_per_person:"每人产咖啡数",
   cost_per_work:"每份工作成本", minimum_people:"最低保留人数", slots:"传送带槽位",
-  interval_seconds:"刷新间隔（秒）", employee_every:"每隔几张出员工", opening:"开局顺序",
+  interval_seconds:"刷新间隔（秒）",
   pool:"掉落权重", purchase_priority:"采购优先级", tool_priority:"工具优先级",
   first_action_seconds:"首次行动时间（秒）", max_tool_copies:"同类工具上限",
   max_support_people:"辅助人员上限", production_reserve_people:"生产预留人员",
   transfer_batch_size:"每批交接工作数", max_card_copies:"各卡持有上限",
   decision_budget_ms:"固定思考时限（毫秒）", decision_budget_ratio:"思考时间占行动间隔的比例",
-  initial:"开局资源", conveyor:"传送带", fire:"开除", destination_policy:"目标选择规则"
+  initial:"开局资源", conveyor:"传送带", fire:"开除"
 };
 const presetLabels = {min:"最低",low:"偏低",mid:"标准",high:"偏高",max:"最高"};
 const statusLabels = {running:"运行中",done:"完成",error:"失败",cancelled:"已停止",interrupted:"已中断"};
@@ -116,6 +116,7 @@ function valid(container) {
 }
 function controls() {
   const dirty = candidate && !same(sourceCards,candidate);
+  const marketIssue = marketPoolIssue();
   $("dirty").textContent = dirty ? "当前卡表含未保存的修改。" : "参数与载入的卡表一致。";
   document.querySelectorAll("[data-edit]").forEach(node => {node.disabled = !baseline || loading;});
   $("run").textContent = activeView === "bot" ? "保存卡表及 A、B 策略并对战" : "保存并运行当前配置";
@@ -123,11 +124,15 @@ function controls() {
     ? "将保存共用卡表「" + currentCardsName() + "」、BOT A「" + strategyNames.a + "」和 BOT B「" + strategyNames.b + "」，再启动一条对战记录。相同参数复用已有配置；同名修改会先确认覆盖。"
     : "将保存当前卡表和双方共用的 BOT 策略，再启动一条评估记录。相同参数复用已有配置；同名修改会先确认覆盖。";
   $("duelCards").textContent = "双方共用当前卡表「" + currentCardsName() + "」" + (dirty ? "，含未保存的修改；运行时会自动保存。" : "，本次对战只比较 BOT A 与 BOT B。");
+  if (marketIssue) $("duelCards").textContent += " 购牌区权重无效：" + marketIssue + " 请点击“编辑这份卡表”修正。";
   renderBotCards();
   $("playtest").textContent = "试玩当前配置 · " + currentCardsName();
   $("notesStatus").textContent = dirty ? "保存当前卡表后可记录其试玩感受。" :
     (sourceId && notesReady ? "备注随载入的卡表保存。" : "载入已保存卡表后可编辑备注。");
   $("saveNotes").disabled = loading || !sourceId || dirty || $("notes").value === savedNotes || !notesReady;
+  for (const id of ["saveCards","export","run","playtest"]) {
+    $(id).disabled = !baseline || loading || !!marketIssue;
+  }
 }
 function caption(label, key) {
   const node = element("span",undefined,"field-name");
@@ -139,10 +144,14 @@ function field(parent, object, key, options = {}) {
   const label = element("label");
   label.append(caption(options.label || displayName(key), options.path || key));
   const compound = typeof original === "object" && original !== null;
-  const input = element(compound || key === "description" ? "textarea" : "input");
+  const input = element(options.choices ? "select" : compound || key === "description" ? "textarea" : "input");
   input.dataset.edit = "";
   input.dataset.path = options.path || key;
-  if (compound) {
+  if (options.choices) {
+    input.append(...options.choices.map(([value,text]) => new Option(text,value)));
+    input.value = original;
+    input.required = true;
+  } else if (compound) {
     input.rows = key === "groups" ? 3 : 2;
     input.value = JSON.stringify(original);
   } else if (typeof original === "boolean") {
@@ -163,6 +172,7 @@ function field(parent, object, key, options = {}) {
     }
   }
   if (input.tagName === "TEXTAREA") label.className = "wide";
+  if (options.positive && !(Number(original) > 0)) input.setCustomValidity("请输入大于 0 的数值");
   label.append(input);
   if (options.hint) label.append(element("small",options.hint,"field-hint"));
   parent.append(label);
@@ -181,27 +191,127 @@ function field(parent, object, key, options = {}) {
     } else if (input.type === "number") value = input.valueAsNumber;
     else if (input.type === "checkbox") value = input.checked;
     else value = input.value;
+    if (options.positive && !(value > 0)) input.setCustomValidity("请输入大于 0 的数值");
+    if (options.choices && !options.choices.some(([key]) => key === value)) input.setCustomValidity("请选择有效选项");
     if (input.validity.valid) {
       object[key] = value;
       options.change?.();
     }
     controls();
   });
+  return input;
 }
 function fields(parent, values, path, excluded = []) {
   for (const key of Object.keys(values)) {
     if (key.startsWith("_") || excluded.includes(key)) continue;
-    field(parent,values,key,{path:path + "." + key});
+    const options = {path:path + "." + key};
+    if (key === "work_seconds" && path === "cards.work") {
+      Object.assign(options,{label:"每份工作基础耗时（秒）",min:0,positive:true,
+        hint:"员工及各升级等级共用；加班会影响实际工作速度。"});
+    } else if (path === "rules.recruitment" && key === "cost_per_employee") {
+      Object.assign(options,{label:"每名员工招聘费用",kind:"int",min:1,hint:"须高于购牌区员工价格。"});
+    } else if (path === "rules.recruitment" && key === "seconds") {
+      Object.assign(options,{label:"招聘耗时（秒）",min:0,positive:true});
+    } else if (key === "destination_policy" && path === "rules.income") {
+      Object.assign(options,{label:"收入放置位置",choices:[
+        ["oldest_cash_pile","最早创建的现金堆"],["newest_cash_pile","最新创建的现金堆"]]});
+    } else if (key === "destination_policy" && path === "rules.transfer") {
+      Object.assign(options,{label:"甩锅落点",choices:[
+        ["largest_work_queue","工作最多的对方牌组"],["new_group","对方新建牌组"]]});
+    }
+    field(parent,values,key,options);
   }
+}
+function marketPoolIssue() {
+  if (!candidate) return "";
+  for (const input of $("market-fields").querySelectorAll("input")) {
+    if (!input.validity.valid || !Number.isFinite(input.valueAsNumber) || input.valueAsNumber < 0) {
+      return "出场权重须为大于或等于 0 的有限数值，支持小数。";
+    }
+  }
+  const weights = Object.entries(candidate.cards).filter(([,card]) => card.purchasable)
+    .map(([id]) => candidate.rules.conveyor.pool[id] ?? 0);
+  if (weights.some(value => typeof value !== "number" || !Number.isFinite(value) || value < 0)) {
+    return "出场权重须为大于或等于 0 的有限数值，支持小数。";
+  }
+  const total = weights.reduce((sum,value) => sum + value,0);
+  if (!Number.isFinite(total)) return "出场总权重过大，请减小权重后重试。";
+  return total > 0 ? "" : "至少一张可购买牌的出场权重必须大于 0。";
+}
+function updateMarketProbabilities() {
+  const issue = marketPoolIssue();
+  const entries = Object.entries(candidate.cards).filter(([,card]) => card.purchasable);
+  const total = entries.reduce((sum,[id]) => sum + (candidate.rules.conveyor.pool[id] ?? 0),0);
+  for (const output of $("market-fields").querySelectorAll("output")) {
+    const weight = candidate.rules.conveyor.pool[output.dataset.card] ?? 0;
+    const percent = weight / total * 100;
+    output.textContent = issue ? "—" : weight > 0 && percent < .01 ? "< 0.01%" : percent.toLocaleString("zh-CN",{maximumFractionDigits:2}) + "%";
+  }
+  $("market-total").textContent = issue ? "暂时无法计算出现概率" :
+    entries.length + " 种可购买牌 · 总权重 " + total.toLocaleString("zh-CN",{maximumSignificantDigits:12});
+  $("market-error").textContent = issue;
+  $("market-error").hidden = !issue;
+  controls();
+}
+function renderMarketPool() {
+  const container = $("market-fields");
+  container.replaceChildren();
+  const pool = candidate.rules.conveyor.pool;
+  for (const [id,card] of Object.entries(candidate.cards)) {
+    if (!card.purchasable) continue;
+    const row = element("div",undefined,"market-pool-row");
+    const weight = {[id]:pool[id] ?? 0};
+    const input = field(row,weight,id,{label:card.name,path:"rules.conveyor.pool." + id,min:0,
+      change:() => {pool[id] = weight[id];}});
+    input.addEventListener("input",updateMarketProbabilities);
+    const probability = element("output");
+    probability.dataset.card = id;
+    probability.setAttribute("aria-label",card.name + "出现概率");
+    row.append(probability);
+    container.append(row);
+  }
+  updateMarketProbabilities();
+}
+function validCards() {
+  const issue = marketPoolIssue();
+  if (issue) {errorText(issue); valid($("cardsView")); return false;}
+  return valid($("cardsView"));
+}
+function renderInitialFields(parent) {
+  const initial = candidate.rules.initial;
+  fields(parent,initial,"rules.initial",["groups"]);
+  const workFields = element("div",undefined,"global-grid wide");
+  const advanced = element("details",undefined,"wide");
+  advanced.append(element("summary","高级开局牌组"));
+  parent.append(workFields,advanced);
+  const refreshWork = () => {
+    workFields.replaceChildren();
+    if (!Array.isArray(initial.groups)) return;
+    const groups = initial.groups.map((group,index) => ({group,index})).filter(({group}) =>
+      group && !Array.isArray(group) && typeof group.work === "number");
+    for (const {group,index} of groups) {
+      field(workFields,group,"work",{
+        label:"每方起始工作数量" + (groups.length > 1 ? " · 第 " + (index + 1) + " 组" : ""),
+        path:"rules.initial.groups." + index + ".work",kind:"int",min:groups.length > 1 ? 0 : 1,
+        hint:groups.length > 1 ? "双方在本组各自获得的工作数量；各组总数须大于 0。" : "双方开局各自获得的工作数量。",
+        change:() => {groupInput.value = JSON.stringify(initial.groups); groupInput.setCustomValidity("");}
+      });
+    }
+  };
+  const groupInput = field(advanced,initial,"groups",{label:"开局牌组",path:"rules.initial.groups",
+    hint:"按组设置开局卡牌；与上方工作数量同步，修改后保留各组布局。",change:refreshWork});
+  refreshWork();
 }
 function renderCards() {
   const root = $("fields");
   root.replaceChildren();
   const grid = $("global-fields");
   grid.replaceChildren();
-  for (const key of ["initial","conveyor","fire","income"]) {
-    fields(grid,candidate.rules[key],"rules." + key,key === "conveyor" ? ["pool"] : []);
+  renderInitialFields(grid);
+  for (const key of ["conveyor","fire","income"]) {
+    fields(grid,candidate.rules[key],"rules." + key,key === "conveyor" ? ["pool","employee_every","opening"] : []);
   }
+  renderMarketPool();
   const rows = [];
   for (const [id,card] of Object.entries(candidate.cards)) {
     const identity = element("span",undefined,"card-identity-text");
@@ -209,16 +319,9 @@ function renderCards() {
     identity.append(element("small",card.purchasable ? "可购买" : "合成 / 初始牌"));
     const values = element("div",undefined,"card-fields");
     fields(values,card,"cards." + id,["name","description","art","category","purchasable"]);
-    const pool = candidate.rules.conveyor.pool;
-    if (card.purchasable) {
-      const weight = {[id]:pool[id] ?? 0};
-      field(values,weight,id,{
-        label:"购牌区出场权重",path:"rules.conveyor.pool." + id,min:0,
-        change:() => {pool[id] = weight[id];}
-      });
-    }
-    if (candidate.roles[id]) fields(values,candidate.roles[id],"roles." + id);
+    if (candidate.roles[id]) fields(values,candidate.roles[id],"roles." + id,["work_seconds"]);
     if (candidate.rules[id]) fields(values,candidate.rules[id],"rules." + id,["upgrades"]);
+    if (id === "boss" && candidate.rules.recruitment) fields(values,candidate.rules.recruitment,"rules.recruitment");
     const upgrade = candidate.rules.coffee.upgrades[id];
     if (upgrade) {
       field(values,upgrade,"cost",{
@@ -784,7 +887,7 @@ async function busy(operation) {
   finally {loading = false; controls();}
 }
 async function saveVersion(kind,name,data,side) {
-  if (!valid(kind === "cards" ? $("cardsView") : $("profile-" + side))) return;
+  if (!(kind === "cards" ? validCards() : valid($("profile-" + side)))) return;
   await busy(async () => {
     const record = await saveWithConfirmation("/api/library/" + kind,{name:name.trim(),data:clone(data)});
     if (!record) return;
@@ -807,9 +910,17 @@ function renderSources() {
   for (const side of ["q","a","b"]) options($("source-" + side),library.bot,chosenBots[side],new Option("项目默认 · " + defaultStrategyNames[side],""));
 }
 async function selectCards(record) {
+  const data = clone(record.data);
+  const conveyor = data.rules?.conveyor || {};
+  const legacy = !Object.hasOwn(data.cards?.work || {},"work_seconds") ||
+    Object.values(data.roles || {}).some(role => Object.hasOwn(role,"work_seconds")) ||
+    Object.hasOwn(conveyor,"employee_every") || Object.hasOwn(conveyor,"opening");
+  // A running service can still hold an older snapshot in memory. Ask the
+  // engine to migrate its data before editing, preserving the archive and ID.
+  const normalized = legacy ? await normalizedCards(data) : data;
   sourceId = record.id;
-  sourceCards = clone(record.data);
-  candidate = clone(record.data);
+  sourceCards = clone(normalized);
+  candidate = clone(normalized);
   $("cardName").value = record.name;
   $("playStatus").textContent = "";
   renderSources();
@@ -1335,7 +1446,7 @@ function downloadJson(name,data) {
   setTimeout(() => URL.revokeObjectURL(url),1000);
 }
 $("export").onclick = async () => {
-  if (!valid($("cardsView"))) return;
+  if (!validCards()) return;
   try {
     const cards = await normalizedCards(clone(candidate));
     downloadJson("off_work_cards.json",cards);
@@ -1367,7 +1478,7 @@ function currentCardsName() {
   return $("cardName").value.trim() || "未命名卡表";
 }
 function playCurrentCards(statusId) {
-  if (!valid($("cardsView"))) return;
+  if (!validCards()) return;
   return startPlaytest("当前配置「" + currentCardsName() + "」",statusId,() => clone(candidate));
 }
 $("playtest").onclick = () => playCurrentCards("playStatus");
@@ -1384,7 +1495,7 @@ $("budgetForm").oninput = budgetNote;
 $("budgetForm").onsubmit = event => {event.preventDefault(); run();};
 async function run() {
   if (loading || !candidate || !valid($("budgetForm"))) return;
-  if ($("cardsView").querySelector(":invalid")) {await view("balance"); valid($("cardsView")); return;}
+  if (marketPoolIssue() || $("cardsView").querySelector(":invalid")) {await view("balance"); validCards(); return;}
   const kind = activeView;
   if (!valid($(kind === "balance" ? "sharedProfile" : "profiles"))) return;
   const seed = $("seed").valueAsNumber;

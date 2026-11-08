@@ -44,6 +44,10 @@ var _refresh_age := 0.0
 var _result_age := 0.0
 var _result_started := false
 var _positions: Dictionary = {}
+var _activity_group_cache := {}
+var _activity_group_revision := -1
+var _activity_group_membership := -1
+var _activity_group_state := 0
 var _shot_elapsed := 0.0
 var _shot_pending := false
 var _shot_spec: PackedStringArray
@@ -209,7 +213,7 @@ func _ready() -> void:
 	get_window().files_dropped.connect(func(files: PackedStringArray):
 		if can_process() and is_visible_in_tree(): hud.handle_card_config_files(files))
 	if not playtest_hash.is_empty():
-		print("WORK_PLAYTEST_READY " + playtest_hash)
+		LaunchConfig.report_playtest_ready("WORK_PLAYTEST_READY " + playtest_hash)
 	if OS.has_environment("WORK_SHOT"):
 		_shot_spec = OS.get_environment("WORK_SHOT").split(",")
 	if setup: setup.finish(self)
@@ -291,17 +295,26 @@ func _on_groups_changed() -> void:
 func _capture_player_activity() -> Dictionary:
 	var local_owner := int(board._settings.local_owner)
 	var snapshot := {"groups": {}, "tools": {}, "people": {}}
+	var membership: int = state.membership_version()
+	if _activity_group_state != state.get_instance_id() or _activity_group_revision != state.revision or _activity_group_membership != membership:
+		_activity_group_cache.clear()
+		_activity_group_state = state.get_instance_id()
+		_activity_group_revision = state.revision
+		_activity_group_membership = membership
 	for person in state.tasks:
 		if not state.cards.has(person) or int(state.cards[person].owner) != local_owner: continue
 		var gid := int(state.cards[person].group)
-		var members: Array = state.group_cards(gid)
-		members.sort()
-		snapshot.groups[gid] = members
-	for id in state.cards:
+		if snapshot.groups.has(gid): continue
+		if not _activity_group_cache.has(gid):
+			var members: Array = state.group_cards(gid)
+			members.sort()
+			_activity_group_cache[gid] = members
+		snapshot.groups[gid] = _activity_group_cache[gid]
+	for id in state.activity_card_ids(local_owner):
 		var card: Dictionary = state.cards[id]
-		if int(card.owner) == local_owner and state.config.is_person(str(card.type)):
+		if state.config.is_person(str(card.type)):
 			snapshot.people[id] = str(card.type)
-		if int(card.owner) == local_owner and state.config.category(str(card.type)) in ["tool", "ingredient"]:
+		else:
 			snapshot.tools[id] = str(card.status)
 	return snapshot
 
@@ -367,7 +380,6 @@ func _process(delta: float) -> void:
 		if _shift_save_elapsed >= 5.0:
 			_shift_save_elapsed = 0.0
 			save_shift_session()
-	_cache_positions()
 	if state.winner == -1 and (lan == null or not lan.live()):
 		# Existing keyframes contain structural events through the previous
 		# update. Unrecorded player input invalidates that observation.
@@ -380,6 +392,7 @@ func _process(delta: float) -> void:
 	else:
 		_live_bot.cancel()
 	var events: Array = state.drain_events()
+	_cache_positions(events)
 	replay.record(self, events, _live_bot.needs_keyframe)
 	_refresh_age += delta
 	if (state.winner == -1 and _refresh_age >= float(settings.hud.refresh_interval)) or not events.is_empty():
@@ -411,9 +424,21 @@ func _process(delta: float) -> void:
 	# Natural task/timer changes are never counted as a later player gesture.
 	_remember_player_activity()
 
-func _cache_positions() -> void:
-	for id in board.by_uid:
-		_positions[id] = board.screen_position(id)
+func _cache_positions(events: Array = []) -> void:
+	# Effects need the previous position of their actual sources and targets,
+	# not a projection of every buried sheet on every render frame. Capture
+	# before sync_state retires/moves those views; newly created money resolves
+	# from the board after that sync. The board retains retired world positions.
+	_positions.clear()
+	var ids := {}
+	for event in events:
+		for key in ["source", "person", "money_id"]:
+			var id := int(event.get(key, -1))
+			if id >= 0: ids[id] = true
+		for id in event.get("targets", []): ids[int(id)] = true
+	for id in ids:
+		if board.by_uid.has(id) or board._previous_positions.has(id):
+			_positions[id] = board.screen_position(id)
 
 func _coalesce_events(events: Array) -> Array:
 	# Simultaneous members of one transfer share a single visual batch. Their
@@ -434,7 +459,7 @@ func _coalesce_events(events: Array) -> Array:
 
 func _at(id: int, group := -1) -> Vector2:
 	if _positions.has(id): return _positions[id]
-	if board.by_uid.has(id): return board.screen_position(id)
+	if board.by_uid.has(id) or board._previous_positions.has(id): return board.screen_position(id)
 	if group >= 0:
 		return board.camera.unproject_position(board.get_group_position(group))
 	return get_viewport().get_visible_rect().size * 0.5
@@ -495,7 +520,6 @@ func _activate(id: int, group: int, target_card := -1, delivered := false) -> vo
 		lan.submit({"op":"deliver_strike" if delivered else "activate", "id":id, "group":group, "target":target_card})
 		return
 	if get_tree().paused: return
-	_cache_positions()
 	var actor := int(state.cards[id].owner) if state.cards.has(id) else -1
 	var kind := str(state.cards[id].type) if state.cards.has(id) else ""
 	var activated := false
@@ -519,6 +543,7 @@ func _activate(id: int, group: int, target_card := -1, delivered := false) -> vo
 		board.set_targeting(false)
 		_message_age = float(settings.hud.message_hold)
 	_remember_player_activity()
+	_cache_positions(state._events)
 	board.sync_state(state)
 	_update_hud()
 
@@ -552,7 +577,6 @@ func _on_dismiss(ids: Array) -> void:
 		lan.submit({"op":"dismiss", "ids":ids})
 		return
 	if state.winner != -1: return
-	_cache_positions()
 	var owner := int(board._settings.local_owner)
 	var before: int = state.money(owner)
 	if state.dismiss_people(ids, owner):
@@ -720,6 +744,10 @@ func _clear_table_presenters() -> void:
 	_result_age = 0
 	_selected_tool = -1
 	_positions.clear()
+	_activity_group_cache.clear()
+	_activity_group_revision = -1
+	_activity_group_membership = -1
+	_activity_group_state = 0
 	table_hands.clear()
 	effects.clear()
 	audio.stop_all()

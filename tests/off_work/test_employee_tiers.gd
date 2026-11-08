@@ -55,7 +55,7 @@ func _config_contract() -> void:
 		check(cfg.is_person(kind) and cfg.can_work(kind) and cfg.can_be_meeting_target(kind), kind + " is a working, meeting-eligible person")
 		check(is_equal_approx(cfg.work_rate(kind, 0), 0.1) and int(cfg.roles[kind].work_income_multiplier) == int(pow(2, i)), kind + " changes income without changing work speed")
 		if i > 0:
-			check(not cfg.can_purchase(kind) and not cfg.rules.conveyor.pool.has(kind) and not cfg.rules.conveyor.opening.has(kind), kind + " cannot be bought")
+			check(not cfg.can_purchase(kind) and not cfg.rules.conveyor.pool.has(kind), kind + " cannot be bought")
 		if i < 3:
 			check(cfg.coffee_upgrade(kind).to == kinds[i + 1] and cfg.coffee_upgrade(kind).cost == int(pow(2, i)) and cfg.coffee_seconds(kind) == 5.0, kind + " upgrades exactly one tier with configured cost and time")
 	check(cfg.coffee_upgrade("leader").is_empty() and cfg.coffee_upgrade("work_emperor").is_empty(), "leader and maximum tier do not consume coffee")

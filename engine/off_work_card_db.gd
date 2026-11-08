@@ -39,7 +39,7 @@ static func configure(off_work_config: OffWorkConfig) -> void:
 		def["plate_slot"] = OffWorkUI.section("card_plates").get(id, "plate_t1_money")
 		if not def.has("source_art_id"):
 			def["art_file"] = "work/%s.svg" % str(def.art)
-		def["weight"] = int(config.rules.conveyor.pool.get(id, 0))
+		def["weight"] = float(config.rules.conveyor.pool.get(id, 0))
 		def["tier"] = 1
 		if config.category(str(id)) == "person":
 			# Personnel still use the original product layout, but only workers
@@ -74,7 +74,7 @@ static func _description(id: String) -> String:
 	var role: Dictionary = config.roles[id]
 	if config.can_work(id):
 		words += " 无加班时每 %s 秒最多处理 %d 份工作，每份赚 %d 钱。" % [
-			role.work_seconds, role.work_capacity, config.income_per_work(id)]
+			config.work_seconds(), role.work_capacity, config.income_per_work(id)]
 	else:
 		words += " 不处理普通工作。"
 	words += " 每批甩锅 %d 份，主持会议最多拉 %d 人。" % [role.transfer_capacity, config.meeting_capacity(id)]

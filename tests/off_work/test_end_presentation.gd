@@ -59,7 +59,7 @@ func _normal_ending(winner: int) -> void:
 	state.drain_events()
 	await create_timer(0.25).timeout
 	if winner == 0: await _capture("before")
-	state.advance(float(state.config.roles.employee.work_seconds))
+	state.advance(state.config.work_seconds())
 	game._process(0.0)
 	_check(state.winner == winner, "real work completion yields expected winner " + str(winner))
 	await _verify_departure(winner, "player" if winner == 0 else ("opponent" if winner == 1 else "tie"))

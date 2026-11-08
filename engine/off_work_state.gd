@@ -30,20 +30,102 @@ var _conveyor_elapsed: float = 0.0
 var _supply_count: int = 0
 var _rng := RandomNumberGenerator.new()
 var _bot_branch := false
-# Queries made during a simulation step share a membership index. It never
-# survives advance(): editor/test fixtures may alter public records between
-# steps, and status/progress/participants must always be read live.
+# These flags retain the command-local query scope used by BOT search. The
+# membership cache below survives frames; status/progress are still read live.
 var _index_queries := false
 # Search commands may reuse membership queries without postponing any normal
 # card refresh. Keep this separate from advance()'s event batching flag.
 var _search_queries := false
 var _group_index: Dictionary = {}
+var _membership_index: Dictionary = {}
+var _owner_index: Dictionary = {}
+var _type_index: Dictionary = {}
+var _activity_ids: Array = []
+var _people_ids: Array = []
+var _indexed_card_count := -1
+var _indexed_group_count := -1
+var _membership_card_count := -1
+var _membership_group_count := -1
+var _membership_generation := 0
+var _schedule_dirty := true
+var _scheduled_config := 0
+var _active_groups: Dictionary = {"work": [], "transfer": [], "slack": []}
 
+## Restore/import callers use this same invalidation as ordinary mutations.
+## Derived indexes are never serialized or copied into a BOT branch.
 func _invalidate_group_index() -> void:
+	_membership_generation += 1
 	_group_index.clear()
+	_membership_index.clear()
+	_owner_index.clear()
+	_type_index.clear()
+	_activity_ids.clear()
+	_people_ids.clear()
+	_indexed_card_count = -1
+	_indexed_group_count = -1
+	_membership_card_count = cards.size()
+	_membership_group_count = groups.size()
+	_schedule_dirty = true
+
+func _ensure_membership_shape() -> void:
+	if _membership_card_count != cards.size() or _membership_group_count != groups.size():
+		_invalidate_group_index()
+
+func _ensure_membership_index() -> void:
+	_ensure_membership_shape()
+	if _indexed_card_count == cards.size() and _indexed_group_count == groups.size(): return
+	# A single-group query may already have rebuilt that group's membership
+	# since the last mutation. Building owner/type indexes must not discard it.
+	for id in cards:
+		var card: Dictionary = cards[id]
+		var kind := str(card.type)
+		var owner := int(card.owner)
+		if not _type_index.has(kind): _type_index[kind] = []
+		_type_index[kind].append(id)
+		if not _owner_index.has(owner): _owner_index[owner] = {"types": {}, "people": [], "activity": []}
+		var entry: Dictionary = _owner_index[owner]
+		if not entry.types.has(kind): entry.types[kind] = []
+		entry.types[kind].append(id)
+		var category: String = config.category(kind)
+		if category == "person":
+			_people_ids.append(id)
+			entry.people.append(id)
+		if category in ["person", "tool", "ingredient"]:
+			_activity_ids.append(id)
+			entry.activity.append(id)
+	_indexed_card_count = cards.size()
+	_indexed_group_count = groups.size()
+
+## Local cache lifetime, separate from gameplay/replay revision. Transfers and
+## restored snapshots can change membership without increasing that revision.
+func membership_version() -> int:
+	_ensure_membership_index()
+	return _membership_generation
+
+## UI and timers need only personnel/tools/materials, never every queued file
+## or cash card. Return a copy so a caller cannot mutate the shared index.
+func activity_card_ids(owner: int = -1) -> Array:
+	_ensure_membership_index()
+	return _activity_ids.duplicate() if owner < 0 else _owner_index.get(owner, {}).get("activity", []).duplicate()
+
+func _cards_of_type(kind: String) -> Array:
+	_ensure_membership_index()
+	return _type_index.get(kind, []).duplicate()
+
+func _config_schedule_signature() -> int:
+	return hash([config.cards, config.roles, config.rules])
+
+func _rebuild_active_groups() -> void:
+	_active_groups = {"work": [], "transfer": [], "slack": []}
+	for task in tasks.values():
+		if _active_groups.has(task.kind) and not _active_groups[task.kind].has(task.group):
+			_active_groups[task.kind].append(task.group)
 
 func _indexed_group(group: int) -> Dictionary:
-	if _group_index.has(group): return _group_index[group]
+	# Group queries never need the global owner/type tables. In particular,
+	# settling one pile must not rescan every card before crediting its income.
+	_ensure_membership_shape()
+	if _membership_index.has(group): return _membership_index[group]
 	var entry := {"types": {}, "people": [], "tools": [], "actions": []}
 	if groups.has(group):
 		for id in groups[group].cards:
@@ -55,7 +137,8 @@ func _indexed_group(group: int) -> Dictionary:
 			if category == "person": entry.people.append(id)
 			if category == "tool": entry.tools.append(id)
 			if category in ["tool", "ingredient"]: entry.actions.append(id)
-	_group_index[group] = entry
+	_membership_index[group] = entry
+	if _index_queries or _search_queries: _group_index[group] = entry
 	return entry
 
 func _init(config_override: RefCounted = null) -> void:
@@ -94,6 +177,7 @@ func mask_search_market(known_offer_end: int) -> void:
 			offers[index] = {}
 
 func new_game(seed_value: int = 0) -> void:
+	_invalidate_group_index()
 	if not config.validate():
 		last_error = "配置错误：\n" + "\n".join(config.errors)
 		return
@@ -124,10 +208,9 @@ func new_game(seed_value: int = 0) -> void:
 				for _index in range(int(initial[kind])):
 					add_card(str(kind), owner, group)
 		_credit(owner, config.integer("initial", "money"))
-	var opening: Array = config.rules.conveyor.opening
 	for index in range(config.integer("conveyor", "slots")):
-		offers.append(_make_offer(str(opening[index])) if index < opening.size() else _new_offer())
-	_sync_schedule()
+		offers.append(_new_offer())
+	_reschedule()
 	_emit("new_game", {"seed": _rng.seed})
 	revision += 1
 
@@ -135,6 +218,7 @@ func create_group(owner: int) -> int:
 	var id: int = _next_group
 	_next_group += 1
 	groups[id] = {"id": id, "owner": owner, "cards": [], "job": "work", "function": ""}
+	_schedule_dirty = true
 	return id
 
 ## A production combination keeps its first function while its defining cards
@@ -207,9 +291,7 @@ func can_person_be_struck(person: int) -> bool:
 
 func money(owner: int) -> int:
 	var result := 0
-	for card in cards.values():
-		if int(card.owner) == owner and card.type == "money":
-			result += int(card.amount)
+	for id in _owner_type(owner, "money"): result += int(cards[id].amount)
 	return result
 
 ## Outsourcing owns reserved currency until its batch settles or is dismantled.
@@ -236,25 +318,18 @@ func available_money(owner: int) -> int:
 	return available
 
 func work_count(owner: int) -> int:
-	return _owner_type(owner, "work").size()
+	_ensure_membership_index()
+	return _owner_index.get(owner, {}).get("types", {}).get("work", []).size()
 
 func people_count(owner: int) -> int:
-	var count := 0
-	for card in cards.values():
-		if int(card.owner) == owner and config.is_person(str(card.type)):
-			count += 1
-	return count
+	_ensure_membership_index()
+	return _owner_index.get(owner, {}).get("people", []).size()
 
 func group_cards(group: int) -> Array:
 	return groups[group].cards.duplicate() if groups.has(group) else []
 
 func group_people(group: int) -> Array:
-	if _index_queries or _search_queries: return _indexed_group(group).people.duplicate()
-	var result: Array = []
-	for id in group_cards(group):
-		if config.is_person(str(cards[id].type)):
-			result.append(id)
-	return result
+	return _indexed_group(group).people.duplicate()
 
 func group_has_union(group: int) -> bool:
 	return not _group_type(group, "union").is_empty()
@@ -342,16 +417,10 @@ func group_slack_rate(group: int) -> float:
 	return 0.0 if group_slack_participants(group).is_empty() else config.slack_rate(_group_type(group, "slack").size())
 
 func group_tools(group: int) -> Array:
-	if _index_queries or _search_queries: return _indexed_group(group).tools.duplicate()
-	var result: Array = []
-	for id in group_cards(group):
-		if config.category(str(cards[id].type)) == "tool":
-			result.append(id)
-	return result
+	return _indexed_group(group).tools.duplicate()
 
 func group_actions(group: int) -> Array:
-	if _index_queries or _search_queries: return _indexed_group(group).actions.duplicate()
-	return group_cards(group).filter(func(id): return config.category(str(cards[id].type)) in ["tool", "ingredient"])
+	return _indexed_group(group).actions.duplicate()
 
 func move_cards(ids: Array, target_group: int = -1, target_card: int = -1) -> int:
 	last_error = ""
@@ -420,7 +489,7 @@ func move_cards(ids: Array, target_group: int = -1, target_card: int = -1) -> in
 		groups[target_group].cards.append(id)
 	_invalidate_group_index()
 	_cleanup_groups()
-	_sync_schedule(false)
+	_reschedule(false)
 	# New combinations may start ready tools. Meetings additionally repeat after
 	# cooling down; moving a complete group keeps its current task and timer.
 	var moved_tools: Array = []
@@ -445,6 +514,7 @@ func deliver_strike(tool_id: int, target_group: int) -> bool:
 	return _activate_tool(tool_id, target_group, -1, true)
 
 func _activate_tool(tool_id: int, target_group: int, target_card: int, delivered: bool) -> bool:
+	_schedule_dirty = true
 	last_error = ""
 	if winner >= 0:
 		return _fail("已经下班了")
@@ -481,7 +551,7 @@ func _activate_tool(tool_id: int, target_group: int, target_card: int, delivered
 	if kind == "overtime" and group_has_union(target_group):
 		return _fail("工会组合不能使用加班牌")
 	if kind in ["overtime", "union"]:
-		_sync_schedule()
+		_reschedule()
 		return true
 	if kind == "slack":
 		return _activate_slack(tool_id, target_group)
@@ -527,8 +597,9 @@ func _advance_events(delta: float, deadline_usec: int, cancelled: Callable = Cal
 	if not config.errors.is_empty() or winner >= 0 or delta <= 0.0:
 		return config.errors.is_empty()
 	_index_queries = true
-	_invalidate_group_index()
-	_sync_schedule()
+	if _scheduled_config != _config_schedule_signature(): _invalidate_group_index()
+	_ensure_membership_index()
+	if _schedule_dirty: _reschedule()
 	var left: float = delta
 	var iterations := 0
 	# epsilon controls event settlement, while the clock must consume every
@@ -536,14 +607,15 @@ func _advance_events(delta: float, deadline_usec: int, cancelled: Callable = Cal
 	while left > 0.0 and winner < 0:
 		if deadline_usec >= 0 and (Time.get_ticks_usec() >= deadline_usec or (cancelled.is_valid() and cancelled.call())):
 			_index_queries = false
-			_invalidate_group_index()
+			_group_index.clear()
 			return false
 		iterations += 1
 		if iterations > config.integer("simulation", "maximum_events_per_advance"):
 			push_error("模拟事件超过配置预算；检查零时长配置")
 			break
 		var step: float = minf(left, config.number("conveyor", "interval_seconds") - _conveyor_elapsed)
-		for card in cards.values():
+		for id in activity_card_ids():
+			var card: Dictionary = cards[id]
 			if _has_timer(card):
 				step = minf(step, maxf(0.0, float(card.remaining)))
 		for meeting in meetings.values():
@@ -554,15 +626,15 @@ func _advance_events(delta: float, deadline_usec: int, cancelled: Callable = Cal
 			step = minf(step, maxf(0.0, float(flight.remaining)))
 		for batch in recruitment.values():
 			step = minf(step, maxf(0.0, float(batch.remaining)))
-		for group in groups:
+		for group in _active_groups.work:
 			var rate := group_work_rate(int(group))
 			if rate > 0.0:
 				step = minf(step, maxf(0.0, 1.0 - group_work_progress(int(group))) / rate)
-		for group in groups:
+		for group in _active_groups.transfer:
 			var rate := group_transfer_rate(int(group))
 			if rate > 0.0:
 				step = minf(step, maxf(0.0, 1.0 - group_transfer_progress(int(group))) / rate)
-		for group in groups:
+		for group in _active_groups.slack:
 			var rate := group_slack_rate(int(group))
 			if rate > 0.0:
 				step = minf(step, maxf(0.0, 1.0 - group_slack_progress(int(group))) / rate)
@@ -575,11 +647,11 @@ func _advance_events(delta: float, deadline_usec: int, cancelled: Callable = Cal
 		left -= step
 		_settle_due()
 		_check_winner()
-		if winner < 0:
-			_sync_schedule()
+		if winner < 0 and _schedule_dirty:
+			_reschedule()
 	_refresh_card_views()
 	_index_queries = false
-	_invalidate_group_index()
+	_group_index.clear()
 	return winner >= 0 or left <= 0.0
 
 func drain_events() -> Array:
@@ -611,7 +683,7 @@ func _transfer_work(group: int) -> Array:
 func _sync_transfer_groups() -> void:
 	for person in tasks.keys():
 		if tasks[person].kind == "transfer": tasks.erase(person)
-	for id in cards:
+	for id in _cards_of_type("transfer"):
 		var card: Dictionary = cards[id]
 		if card.type == "transfer" and card.status == "active" and int(card.get("transfer_group", -1)) != int(card.group):
 			card.status = "ready"
@@ -748,7 +820,8 @@ func _activate_meeting(tool_id: int, group: int, selected_host: int) -> bool:
 
 func meeting_candidates(owner: int) -> Array:
 	var candidates: Array = []
-	for id in cards:
+	_ensure_membership_index()
+	for id in _people_ids:
 		var card: Dictionary = cards[id]
 		if int(card.owner) == owner or not config.can_be_meeting_target(str(card.type)) or _is_paused(int(id)):
 			continue
@@ -759,7 +832,7 @@ func meeting_candidates(owner: int) -> Array:
 
 func _restart_ready_meetings() -> void:
 	if winner >= 0 or not bool(config.rules.meeting.auto_repeat): return
-	for id in cards:
+	for id in _cards_of_type("meeting"):
 		var card: Dictionary = cards[id]
 		if card.type != "meeting" or card.status != "ready" or not bool(card.get("meeting_repeat", false)):
 			continue
@@ -952,7 +1025,7 @@ func _apply_strike(tool_id: int, group: int) -> void:
 		cards[person].remaining = duration
 	_consume(tool_id)
 	_cleanup_groups()
-	_sync_schedule()
+	_reschedule()
 	_emit("strike", {"source": tool_id, "owner": owner, "group": source_group,
 		"target_group": group, "targets": affected, "ids": affected, "duration": duration})
 
@@ -985,7 +1058,7 @@ func dismiss_people(ids: Array, owner: int) -> bool:
 		var money_id: int = int(money_ids[0]) if not money_ids.is_empty() else -1
 		_emit("fire", {"source": person, "owner": owner, "group": group, "targets": [person], "amount": refund,
 			"money_ids": money_ids, "money_id": money_id, "money_group": int(cards[money_id].group) if money_id >= 0 else -1})
-	_sync_schedule()
+	_reschedule()
 	return true
 
 func _activate_outsource(tool_id: int, group: int) -> bool:
@@ -1037,7 +1110,7 @@ func _sync_outsource_groups() -> void:
 		batch.amount += int(additions.amount)
 	# Valid combinations start as soon as ingredients or the recovered tool
 	# become available, including after a cancelled batch has been rebuilt.
-	for tool_id in cards:
+	for tool_id in _cards_of_type("outsource"):
 		var tool: Dictionary = cards[tool_id]
 		if tool.type != "outsource" or tool.status != "ready": continue
 		var group: int = int(tool.group)
@@ -1117,7 +1190,7 @@ func _sync_recruitment_groups() -> void:
 		batch.count += int(additions.count)
 		batch.amount += int(additions.amount)
 		for id in additions.payments: batch.payments[id] = int(batch.payments.get(id, 0)) + int(additions.payments[id])
-	for boss_id in cards:
+	for boss_id in _cards_of_type("boss"):
 		if cards[boss_id].type != "boss" or tasks.has(boss_id) or recruitment.has(boss_id): continue
 		var group := int(cards[boss_id].group)
 		if str(groups[group].job) != "work": continue
@@ -1185,7 +1258,14 @@ func _complete_recruitment(boss_id: int) -> void:
 		"count": batch.count, "amount": batch.count, "spent": batch.amount, "ids": employees,
 		"person_ids": employees, "person_group": destination})
 
+## Explicit reconciliation remains available to importers/editor fixtures that
+## change public records directly. Internal events already invalidate exactly
+## when they mutate membership and must reuse the indexes built in that event.
 func _sync_schedule(start_coffee := true) -> void:
+	_invalidate_group_index()
+	_reschedule(start_coffee)
+
+func _reschedule(start_coffee := true) -> void:
 	_eject_union_overtime()
 	for group in groups: _sync_group_function(int(group))
 	_validate_outsource_batches()
@@ -1263,19 +1343,22 @@ func _sync_schedule(start_coffee := true) -> void:
 	# advance publishes views after the event loop. Intermediate schedules only
 	# change task assignments; repeatedly publishing every card is redundant.
 	if not _index_queries: _refresh_card_views()
+	_rebuild_active_groups()
+	_scheduled_config = _config_schedule_signature()
+	_schedule_dirty = false
 
 func _progress_time(delta: float) -> void:
 	# Advance each production group exactly once, independent of its size.
-	for group in groups:
+	for group in _active_groups.work:
 		var rate := group_work_rate(int(group))
 		if rate <= 0.0: continue
 		var progress := minf(1.0, group_work_progress(int(group)) + rate * delta)
 		groups[group]["work_progress"] = progress
 		for work in group_work(int(group)): cards[work].progress = progress
-	for group in groups:
+	for group in _active_groups.transfer:
 		var rate := group_transfer_rate(int(group))
 		if rate > 0.0: groups[group]["transfer_progress"] = minf(1.0, group_transfer_progress(int(group)) + rate * delta)
-	for group in groups:
+	for group in _active_groups.slack:
 		var rate := group_slack_rate(int(group))
 		if rate > 0.0: groups[group]["slack_progress"] = minf(1.0, group_slack_progress(int(group)) + rate * delta)
 	for person in tasks:
@@ -1288,7 +1371,8 @@ func _progress_time(delta: float) -> void:
 			task.progress = group_slack_progress(int(task.group))
 		else:
 			task.progress = minf(1.0, _task_progress(int(person)) + _task_rate(int(person)) * delta)
-	for card in cards.values():
+	for id in activity_card_ids():
+		var card: Dictionary = cards[id]
 		if _has_timer(card):
 			card.remaining = maxf(0.0, float(card.remaining) - delta)
 	for meeting in meetings.values():
@@ -1307,16 +1391,16 @@ func _settle_due() -> void:
 	var epsilon: float = config.number("simulation", "epsilon")
 	# Resolve production before releasing timed states at the same instant.
 	var completed_groups: Array = []
-	for group in groups:
+	for group in _active_groups.work:
 		if group_work_progress(int(group)) >= 1.0 - epsilon and not group_work_participants(int(group)).is_empty():
 			completed_groups.append(group)
 	for group in completed_groups: _complete_work_group(int(group))
 	var transfer_groups: Array = []
-	for group in groups:
+	for group in _active_groups.transfer:
 		if group_transfer_progress(int(group)) >= 1.0 - epsilon and not group_transfer_participants(int(group)).is_empty(): transfer_groups.append(group)
 	for group in transfer_groups: _complete_transfer_group(int(group))
 	var slack_groups: Array = []
-	for group in groups:
+	for group in _active_groups.slack:
 		if group_slack_progress(int(group)) >= 1.0 - epsilon and not group_slack_participants(int(group)).is_empty(): slack_groups.append(group)
 	for group in slack_groups: _complete_slack_group(int(group))
 	var completed: Array = []
@@ -1336,9 +1420,10 @@ func _settle_due() -> void:
 		if float(recruitment[boss_id].remaining) <= epsilon: _complete_recruitment(int(boss_id))
 	for tool_id in pending_strikes.keys():
 		if float(pending_strikes[tool_id].remaining) <= epsilon: _resolve_strike(int(tool_id))
-	for id in cards.keys():
+	for id in activity_card_ids():
 		var card: Dictionary = cards[id]
 		if _has_timer(card) and float(card.remaining) <= epsilon:
+			_schedule_dirty = true
 			if str(card.status) == "striking":
 				_emit("strike_end", {"source": id, "person": id, "owner": card.owner, "group": card.group})
 			if str(card.status) == "active":
@@ -1347,7 +1432,7 @@ func _settle_due() -> void:
 				card.status = "ready"
 				card.remaining = 0.0
 				card.total = 0.0
-	_finish_empty_batches()
+	if _schedule_dirty: _finish_empty_batches()
 	if _conveyor_elapsed >= config.number("conveyor", "interval_seconds") - epsilon:
 		_conveyor_elapsed = 0.0
 		conveyor_progress = 0.0
@@ -1476,6 +1561,7 @@ func _finish_empty_batches() -> void:
 		_sync_group_function(int(group))
 
 func _end_meeting(tool_id: int) -> void:
+	_schedule_dirty = true
 	if not meetings.has(tool_id):
 		return
 	var meeting: Dictionary = meetings[tool_id]
@@ -1489,6 +1575,7 @@ func _end_meeting(tool_id: int) -> void:
 		_sync_group_function(int(meeting.group))
 
 func _recover(tool_id: int) -> void:
+	_schedule_dirty = true
 	if not cards.has(tool_id):
 		return
 	var tool: Dictionary = cards[tool_id]
@@ -1526,7 +1613,7 @@ func _cancel_group_work(group: int) -> void:
 
 func _refresh_card_views() -> void:
 	var group_rates: Dictionary = {}
-	for id in cards:
+	for id in activity_card_ids():
 		var card: Dictionary = cards[id]
 		if config.is_person(str(card.type)):
 			card.activity = "idle"
@@ -1545,7 +1632,7 @@ func _refresh_card_views() -> void:
 				if tasks[id].kind == "work":
 					var group: int = int(tasks[id].group)
 					if not group_rates.has(group): group_rates[group] = group_work_rate(group)
-					card.rate_multiplier = 0.0 if bool(card.paused) else float(group_rates[group]) * float(config.roles[effective_work_kind(str(card.type), group)].work_seconds)
+					card.rate_multiplier = 0.0 if bool(card.paused) else float(group_rates[group]) * config.work_seconds()
 				elif tasks[id].kind in ["transfer", "slack", "coffee"]:
 					card.rate_multiplier = _task_rate(int(id)) * config.number(str(tasks[id].kind), "seconds")
 		elif config.category(str(card.type)) in ["tool", "ingredient"]:
@@ -1664,19 +1751,11 @@ func _transfer_destination(owner: int) -> int:
 	return create_group(owner)
 
 func _group_type(group: int, kind: String) -> Array:
-	if _index_queries or _search_queries: return _indexed_group(group).types.get(kind, []).duplicate()
-	var result: Array = []
-	for id in group_cards(group):
-		if cards.has(id) and cards[id].type == kind:
-			result.append(id)
-	return result
+	return _indexed_group(group).types.get(kind, []).duplicate()
 
 func _owner_type(owner: int, kind: String) -> Array:
-	var result: Array = []
-	for id in cards:
-		if int(cards[id].owner) == owner and cards[id].type == kind:
-			result.append(id)
-	return result
+	_ensure_membership_index()
+	return _owner_index.get(owner, {}).get("types", {}).get(kind, []).duplicate()
 
 func _opponent(owner: int) -> int:
 	for value in config.rules.simulation.owners:
@@ -1712,19 +1791,14 @@ func _make_offer(kind: String) -> Dictionary:
 
 func _new_offer() -> Dictionary:
 	_supply_count += 1
-	if _supply_count % config.integer("conveyor", "employee_every") == 0:
-		return _make_offer("employee")
-	var pool: Dictionary = config.rules.conveyor.pool
-	var total := 0.0
-	for weight in pool.values():
-		total += float(weight)
-	var choice: float = _rng.randf() * total
+	var probabilities: Dictionary = config.conveyor_probabilities()
+	var choice := _rng.randf()
 	var last_available := ""
-	for kind in pool:
-		var weight := float(pool[kind])
-		if weight <= 0.0: continue
+	for kind in probabilities:
+		var chance := float(probabilities[kind])
+		if chance <= 0.0: continue
 		last_available = str(kind)
-		choice -= weight
+		choice -= chance
 		if choice <= 0.0:
 			return _make_offer(str(kind))
 	return _make_offer(last_available)

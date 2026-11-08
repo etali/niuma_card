@@ -23,6 +23,12 @@ func _fixture(role := "employee", can_compete_for_recipes := true) -> RefCounted
 	var config := Config.new()
 	config.rules.initial.groups = [{role: 1, "work": 200}]
 	config.rules.initial.money = 40 if can_compete_for_recipes else 0
+	# This recipe/return regression has a fixed command clock and completes
+	# the whole root comparison; preset tuning must not change its opportunities.
+	config.rules.bot.think_seconds = 2.0
+	config.rules.bot.decision_budget_ratio = 0.5
+	config.rules.bot.search_max_depth = 1
+	config.cards.work.work_seconds = 10.0
 	# Make each promotion valuable for this long production queue.
 	config.roles.grinder.work_capacity = 2
 	config.roles.workaholic.work_capacity = 4
@@ -81,7 +87,7 @@ func _collect_complete_stage(role: String, next: String, cost: int) -> void:
 	_check(state.tasks.get(person, {}).get("kind") == "work" and not state.group_work(state.cards[person].group).is_empty(),
 		"bot returns the promoted worker to waiting work through a real action")
 	var work_before: int = state.work_count(0)
-	state.advance(state.config.roles[next].work_seconds)
+	state.advance(state.config.work_seconds())
 	_check(work_before-state.work_count(0)>=int(state.config.roles[next].work_capacity),
 		"redeployed promoted worker completes a real full-capacity production batch")
 
@@ -106,9 +112,9 @@ func _purchase_fourth_cup() -> void:
 
 func _full_bot_progression() -> void:
 	var state := _fixture("employee", false)
-	# The final promotion must beat the real alternative of carrying partial
-	# progress into a fresh four-file batch at every action opportunity.
-	state.config.roles.work_emperor.work_seconds = 2.0
+	# Preserve a valuable final investment through batch capacity, not a
+	# tier-specific clock: forty documents in the same ten-second work cycle.
+	state.config.roles.work_emperor.work_capacity = 40
 	var person := _person(state, "employee")
 	# Publish the entire finite 1 + 2 + 4 recipe before the first decision.
 	# Nothing refills behind the search's back, and the opponent cannot buy.
@@ -117,13 +123,25 @@ func _full_bot_progression() -> void:
 	var bot := Bot.new(state, 0)
 	bot.start()
 	var transitions: Array = []
+	var decisions: Array = []
+	var previous_serial := -1
 	for step in 400:
 		bot.advance(0.2)
+		if bot.decision_serial != previous_serial:
+			previous_serial = bot.decision_serial
+			decisions.append({"time":state.time, "role":state.cards[person].type,
+				"coffee":state._owner_type(0, "coffee").size(), "kind":bot.last_decision.get("kind"),
+				"depth":bot.last_decision.get("search_depth"), "complete":bot.last_decision.get("root_complete"),
+				"elapsed_us":bot.last_decision.get("elapsed_us"), "reason":bot.last_decision.get("reason")})
 		state.advance(0.2)
 		for event in state.drain_events():
 			if event.kind == "coffee_upgrade" and int(event.person) == person:
 				transitions.append(str(state.cards[person].type))
 		if str(state.cards[person].type) == "work_emperor": break
+	if str(state.cards[person].type) != "work_emperor":
+		printerr("PROGRESSION_DIAGNOSTIC ", JSON.stringify({"time":state.time, "transitions":transitions, "decisions":decisions}))
+	_check(not decisions.is_empty() and decisions.all(func(entry): return entry.complete),
+		"fixed recipe fixture completes every root comparison instead of relying on a budget-truncated prefix")
 	_check(transitions == ["grinder", "workaholic", "work_emperor"], "real bot loop buys, accumulates and completes all three stages in order")
 	_check(str(state.cards[person].type) == "work_emperor", "real bot loop reaches maximum level without manual activation")
 	if str(state.cards[person].type) != "work_emperor": return
@@ -131,7 +149,7 @@ func _full_bot_progression() -> void:
 	bot.advance(0.0)
 	_check(state.tasks.get(person, {}).get("kind") == "work", "the final promotion returns to real production")
 	var work_before: int = state.work_count(0)
-	state.advance(state.config.roles.work_emperor.work_seconds)
+	state.advance(state.config.work_seconds())
 	_check(work_before - state.work_count(0) >= state.config.roles.work_emperor.work_capacity,
 		"the completed investment processes a full emperor batch through the real clock")
 

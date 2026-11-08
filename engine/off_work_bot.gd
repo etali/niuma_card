@@ -106,6 +106,9 @@ func decide_action(deadline_usec: int = -1, cancelled: Callable = Callable(), se
 		incumbent.report.completed_candidates = completed.completed_candidates
 		incumbent.report.root_unobserved = completed.root_unobserved
 		incumbent.report.cleanup_reserve_us = completed.cleanup_reserve_us
+		for key in ["root_ordinary_us","root_production_us","root_production_candidates","root_production_serviced",
+				"root_production_complete","root_evaluated_intents","root_economic_us","root_economic_completed","evaluation_layer"]:
+			incumbent.report[key] = completed[key]
 	var report: Dictionary = incumbent.report
 	report.elapsed_us = Time.get_ticks_usec() - started
 	report.overrun = int(report.elapsed_us) > available

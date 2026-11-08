@@ -69,6 +69,11 @@ class Element {
   reportValidity() { return this.validity.valid; }
   focus() { this.ownerDocument.activeElement = this; }
   setAttribute(key, value) { this.attributes[key] = String(value); }
+  get classList() { return {add:(...names) => {this.className = [this.className || '',...names].join(' ');}}; }
+  createTHead() { const head = new Element('thead'); head.rows = []; this.append(head); return head; }
+  createTBody() { const body = new Element('tbody'); body.rows = []; (this.tBodies ??= []).push(body); this.append(body); return body; }
+  insertRow() { const row = new Element('tr'); row.cells = []; this.rows.push(row); this.append(row); return row; }
+  insertCell() { const cell = new Element('td'); this.cells.push(cell); this.append(cell); return cell; }
   addEventListener(type, listener) { (this.listeners[type] ??= []).push(listener); }
   async dispatch(type) {
     const event = {type, target:this, preventDefault() {}};
@@ -79,6 +84,8 @@ class Element {
     if (selector === '*') return true;
     if (selector === ':invalid') return !this.validity.valid;
     if (selector.startsWith('#')) return this.id === selector.slice(1);
+    const qualified = selector.match(/^([a-z]+)(\[.*\])$/);
+    if (qualified) return this.matches(qualified[1]) && this.matches(qualified[2]);
     const attr = selector.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/);
     if (attr) {
       const value = attr[1].startsWith('data-') ? this.dataset[attr[1].slice(5)] : this.attributes[attr[1]];
@@ -151,7 +158,7 @@ function harness() {
   };
   const plain = copy(defaults.bot);
   delete plain.owner;
-  const context = vm.createContext({document, structuredClone, Number, Date, console,
+  const context = vm.createContext({document, structuredClone, Number, Date, console,Node:Element,
     $:id => document.getElementById(id), clone:structuredClone,
     Option:function(text, value) { const node = new Element('option'); node.textContent = text; node.value = value; return node; },
     bot:copy(defaults), candidate:copy(alternate), sourceCards:copy(alternate), baseline:copy(cards), profiles:{}, legacyBudgetMs:12,
@@ -186,6 +193,7 @@ function harness() {
     context.$('cardName').value = record.name;
   };
   loadFunctions(context,['element','same','displayName','caption','field','details','number','profilePreset','profileStrength','budgetText','setProfile',
+    'fields','table','filterCards','renderInitialFields','renderCards','marketPoolIssue','updateMarketProbabilities','renderMarketPool','validCards','playCurrentCards','startPlaytest',
     'renderProfiles','valid','api','busy','saveWithConfirmation','saveVersion','currentCardsName','run',
     'availableCards','botCardsId','renderBotCards','selectBotCards','matchingConditions','comparisonChoices',
     'populateRecords','selection','swapComparison','loadLinkedComparison','refreshComparison','view']);
@@ -235,6 +243,269 @@ test('loading sparse and complete archived policies fills defaults while preserv
   assert.equal(input(ui,'b','decision_budget_ratio'),null);
   assert.ok(input(ui,'q','decision_budget_ratio'));
   assert.equal(input(ui,'q','decision_budget_ms'),null);
+});
+
+test('purchase probabilities expose each purchasable card once and save exact fractional weights', async () => {
+  const {ui,requests} = harness();
+  ui.renderCards();
+  const inputs = ui.$('market-fields').querySelectorAll('input');
+  const purchasable = Object.entries(ui.candidate.cards).filter(([,card]) => card.purchasable).map(([id]) => id);
+  assert.equal(inputs.length,11);
+  assert.deepEqual(inputs.map(input => input.dataset.path.split('.').at(-1)),purchasable);
+  for (const old of ['employee_every','opening']) {
+    assert.equal(ui.$('global-fields').querySelector(`[data-path="rules.conveyor.${old}"]`),null);
+  }
+  assert.equal(ui.$('fields').querySelectorAll('input').filter(input => input.dataset.path.startsWith('rules.conveyor.pool.')).length,0);
+  const weight = id => inputs.find(input => input.dataset.path.endsWith('.'+id));
+  const chance = id => ui.$('market-fields').querySelectorAll('output').find(output => output.dataset.card === id).textContent;
+  for (const input of inputs) {input.value = '0'; await input.dispatch('input');}
+  assert.match(ui.$('market-error').textContent,/至少一张/);
+  weight('employee').value = '.5'; await weight('employee').dispatch('input');
+  weight('leader').value = '1.5'; await weight('leader').dispatch('input');
+  assert.equal(chance('employee'),'25%');
+  assert.equal(chance('leader'),'75%');
+  assert.equal(chance('strike'),'0%');
+  assert.equal(ui.$('market-error').hidden,true);
+  assert.match(ui.$('market-total').textContent,/总权重 2$/);
+  const expected = copy(ui.candidate.rules.conveyor.pool);
+  await ui.saveVersion('cards','分数权重',ui.candidate);
+  assert.equal(requests.at(-1).url,'api/library/cards');
+  assert.deepEqual(requests.at(-1).body.data.rules.conveyor.pool,expected);
+  await ui.run();
+  assert.equal(requests.at(-1).url,'api/run');
+  assert.deepEqual(requests.at(-1).body.cards.rules.conveyor.pool,expected);
+  await ui.playCurrentCards('playStatus');
+  assert.equal(requests.at(-1).url,'api/playtest');
+  assert.deepEqual(requests.at(-1).body.cards.rules.conveyor.pool,expected);
+  const imported = copy(ui.candidate);
+  imported.rules.conveyor.pool.employee = 1.5;
+  imported.rules.conveyor.pool.leader = .5;
+  ui.candidate = imported;
+  ui.renderCards();
+  assert.equal(chance('employee'),'75%','loading another card document recalculates probabilities');
+  assert.equal(chance('leader'),'25%');
+});
+
+test('zero or invalid purchase weights block save, both evaluations and current-card playtests', async () => {
+  const {ui,requests} = harness();
+  ui.renderCards();
+  const inputs = ui.$('market-fields').querySelectorAll('input');
+  const first = inputs[0];
+  for (const input of inputs) {input.value = '0'; await input.dispatch('input');}
+  loadFunctions(ui,['controls']);
+  for (const value of ['0','','-1','Infinity','NaN']) {
+    first.value = value; await first.dispatch('input');
+    assert.notEqual(ui.marketPoolIssue(),'');
+    assert.equal(ui.$('market-error').hidden,false);
+    for (const id of ['saveCards','run','playtest','export']) assert.equal(ui.$(id).disabled,true);
+    const count = requests.length;
+    await ui.saveVersion('cards','无效权重',ui.candidate);
+    for (const mode of ['balance','bot']) {await ui.view(mode); await ui.run();}
+    await ui.playCurrentCards('playStatus');
+    assert.equal(requests.length,count,'invalid weights never reach a write or launch endpoint');
+  }
+  first.value = '.01'; await first.dispatch('input');
+  assert.equal(ui.marketPoolIssue(),'');
+  assert.equal(ui.$('run').disabled,false);
+  // Individually finite weights can still overflow their total.
+  for (const input of inputs.slice(0,2)) {input.value = '1e308'; await input.dispatch('input');}
+  assert.match(ui.marketPoolIssue(),/总权重过大/);
+});
+
+test('income placement and transfer destination use Chinese choices with stable saved enum values', async () => {
+  const {ui,requests} = harness();
+  ui.renderCards();
+  for (const [path,label,choices] of [
+    ['rules.income.destination_policy','收入放置位置', [['oldest_cash_pile','最早创建的现金堆'],['newest_cash_pile','最新创建的现金堆']]],
+    ['rules.transfer.destination_policy','甩锅落点', [['largest_work_queue','工作最多的对方牌组'],['new_group','对方新建牌组']]],
+  ]) {
+    const select = ui.$('cardsView').querySelector(`[data-path="${path}"]`);
+    assert.equal(select.tagName,'SELECT');
+    assert.ok(select.parentElement.textContent.includes(label));
+    assert.deepEqual(select.options.map(option => [option.value,option.textContent]),choices);
+    select.value = choices[1][0]; await select.dispatch('input');
+    assert.equal(ui.candidate.rules[path.split('.')[1]].destination_policy,choices[1][0]);
+  }
+  await ui.saveVersion('cards','落点选项',ui.candidate);
+  assert.equal(requests.at(-1).body.data.rules.income.destination_policy,'newest_cash_pile');
+  assert.equal(requests.at(-1).body.data.rules.transfer.destination_policy,'new_group');
+});
+
+test('initial work is directly editable, shares the group document and reaches save, both evaluations and playtest', async () => {
+  const {ui,requests} = harness();
+  ui.renderCards();
+  const workInput = index => ui.$('global-fields').querySelector(`[data-path="rules.initial.groups.${index}.work"]`);
+  const work = workInput(0);
+  assert.equal(work.value,'200');
+  assert.equal(work.type,'number');
+  assert.equal(work.step,'1');
+  assert.equal(work.min,1);
+  assert.ok(work.parentElement.textContent.includes('每方起始工作数量'));
+  const original = copy(ui.candidate.rules.initial.groups);
+  work.value = '73'; await work.dispatch('input');
+  const expected = copy(original); expected[0].work = 73;
+  assert.deepEqual(copy(ui.candidate.rules.initial.groups),expected);
+  const advanced = ui.$('global-fields').querySelector('[data-path="rules.initial.groups"]');
+  assert.deepEqual(JSON.parse(advanced.value),expected);
+  for (const value of ['0','-1','1.5','','Infinity']) {
+    work.value = value; await work.dispatch('input');
+    assert.equal(work.validity.valid,false);
+    assert.equal(ui.candidate.rules.initial.groups[0].work,73);
+    const count = requests.length;
+    await ui.playCurrentCards('playStatus');
+    assert.equal(requests.length,count,'invalid initial count cannot launch a game');
+  }
+  work.value = '73'; await work.dispatch('input');
+  await ui.saveVersion('cards','73份起始工作',ui.candidate);
+  assert.deepEqual(requests.at(-1).body.data.rules.initial.groups,expected);
+  for (const mode of ['balance','bot']) {
+    await ui.view(mode); await ui.run();
+    assert.equal(requests.at(-1).url,'api/run');
+    assert.deepEqual(requests.at(-1).body.cards.rules.initial.groups,expected);
+  }
+  await ui.playCurrentCards('playStatus');
+  assert.equal(requests.at(-1).url,'api/playtest');
+  assert.deepEqual(requests.at(-1).body.cards.rules.initial.groups,expected);
+
+  // Advanced imported layouts remain authoritative; editing either control
+  // must update the same group, not retain a stale object or collapse stacks.
+  const grouped = [{work:12,employee:1},{overtime:2},{work:61}];
+  advanced.value = JSON.stringify(grouped); await advanced.dispatch('input');
+  assert.equal(workInput(0).value,'12');
+  assert.equal(workInput(2).value,'61');
+  assert.ok(workInput(2).parentElement.textContent.includes('第 3 组'));
+  advanced.value = '['; await advanced.dispatch('input');
+  assert.equal(advanced.validity.valid,false);
+  workInput(2).value = '0'; await workInput(2).dispatch('input');
+  grouped[2].work = 0;
+  assert.equal(advanced.validity.valid,true);
+  assert.deepEqual(JSON.parse(advanced.value),grouped);
+  assert.deepEqual(copy(ui.candidate.rules.initial.groups),grouped);
+  ui.renderCards();
+  assert.equal(workInput(0).value,'12');
+  assert.equal(workInput(2).value,'0');
+});
+
+test('one work duration and both boss recruitment settings render, edit and reach every card payload', async () => {
+  const {ui,requests} = harness();
+  assert.equal(ui.candidate.cards.work.work_seconds,10);
+  assert.ok(Object.values(ui.candidate.roles).every(role => !Object.hasOwn(role,'work_seconds')),
+    'installed card data has a single duration source');
+  ui.renderCards();
+  const inputs = ui.$('cardsView').querySelectorAll('input');
+  const work = ui.$('cardsView').querySelector('[data-path="cards.work.work_seconds"]');
+  assert.deepEqual(inputs.filter(input => input.dataset.path?.endsWith('.work_seconds')),[work]);
+  assert.ok(work.parentElement.textContent.includes('每份工作基础耗时（秒）'));
+  assert.ok(work.parentElement.textContent.includes('员工及各升级等级共用；加班会影响实际工作速度。'));
+  const fee = ui.$('cardsView').querySelector('[data-path="rules.recruitment.cost_per_employee"]');
+  const seconds = ui.$('cardsView').querySelector('[data-path="rules.recruitment.seconds"]');
+  for (const [input,label] of [[fee,'每名员工招聘费用'],[seconds,'招聘耗时（秒）']]) {
+    assert.ok(input.parentElement.textContent.includes(label));
+    let row = input;
+    while (row && row.tagName !== 'TR') row = row.parentElement;
+    assert.equal(row?.dataset.card,'boss','recruitment controls belong to the boss row');
+  }
+  assert.equal(fee.step,'1');
+  assert.equal(fee.min,1);
+  assert.ok(fee.parentElement.textContent.includes('须高于购牌区员工价格。'));
+  for (const [input,value] of [[work,2.5],[fee,7],[seconds,3.5]]) {
+    input.value = String(value); await input.dispatch('input');
+    assert.equal(input.validity.valid,true);
+  }
+  const checkPayload = data => {
+    assert.equal(data.cards.work.work_seconds,2.5);
+    assert.equal(data.rules.recruitment.cost_per_employee,7);
+    assert.equal(data.rules.recruitment.seconds,3.5);
+    assert.ok(Object.values(data.roles).every(role => !Object.hasOwn(role,'work_seconds')));
+  };
+  await ui.saveVersion('cards','统一工时与招聘',ui.candidate);
+  assert.equal(requests.at(-1).url,'api/library/cards'); checkPayload(requests.at(-1).body.data);
+  for (const mode of ['balance','bot']) {
+    await ui.view(mode); await ui.run();
+    assert.equal(requests.at(-1).url,'api/run'); checkPayload(requests.at(-1).body.cards);
+  }
+  await ui.playCurrentCards('playStatus');
+  assert.equal(requests.at(-1).url,'api/playtest'); checkPayload(requests.at(-1).body.cards);
+  // Even before server migration, an archived role duration is never offered
+  // as a second editor control. Normal imports are migrated by the engine.
+  ui.candidate.roles.employee.work_seconds = 99;
+  ui.renderCards();
+  assert.equal(ui.$('cardsView').querySelector('[data-path="roles.employee.work_seconds"]'),null);
+});
+
+test('work and recruitment durations must be positive and employee recruitment fees positive integers', async () => {
+  const {ui,requests} = harness();
+  ui.renderCards();
+  for (const [path,invalid,valid] of [
+    ['cards.work.work_seconds',['0','-1','','NaN'],'.01'],
+    ['rules.recruitment.seconds',['0','-1','','Infinity'],'.01'],
+    ['rules.recruitment.cost_per_employee',['0','-1','1.5',''], '1'],
+  ]) {
+    const input = ui.$('cardsView').querySelector(`[data-path="${path}"]`);
+    const keys = path.split('.');
+    const object = keys.slice(0,-1).reduce((object,key) => object[key],ui.candidate);
+    const before = object[keys.at(-1)];
+    for (const value of invalid) {
+      input.value = value; await input.dispatch('input');
+      assert.equal(input.validity.valid,false,path+' rejects '+JSON.stringify(value));
+      assert.equal(object[keys.at(-1)],before,'invalid input never replaces the effective parameter');
+      const count = requests.length;
+      await ui.saveVersion('cards','无效参数',ui.candidate);
+      await ui.run();
+      await ui.playCurrentCards('playStatus');
+      assert.equal(requests.length,count,'invalid parameters cannot save or start a game');
+    }
+    input.value = valid; await input.dispatch('input');
+    assert.equal(input.validity.valid,true);
+    assert.equal(object[keys.at(-1)],Number(valid));
+  }
+});
+
+test('selecting an archived card snapshot migrates through the engine and preserves its identity and original data', async () => {
+  const {ui,requests} = harness();
+  loadFunctions(ui,['normalizedCards','selectCards','loadNotes','bindSavedCards']);
+  const archived = {id:'old-schema',name:'旧版卡表',data:copy(cards)};
+  delete archived.data.cards.work.work_seconds;
+  archived.data.roles.employee.work_seconds = 4.75;
+  archived.data.roles.grinder.work_seconds = 2.25;
+  archived.data.rules.conveyor.employee_every = 3;
+  archived.data.rules.conveyor.opening = ['employee'];
+  const original = copy(archived);
+  const normalized = copy(cards);
+  normalized.cards.work.work_seconds = 7.125; // Only the endpoint chooses migration values.
+  ui.fetch = async (url,options) => {
+    const body = options.body ? JSON.parse(options.body) : undefined;
+    requests.push({url,body});
+    if (url === 'api/validate') return {ok:true,json:async () => ({cards:copy(normalized)})};
+    if (url.startsWith('api/notes/')) return {ok:true,json:async () => ({id:url.split('/').at(-1),text:'原卡表备注'})};
+    if (url === 'api/library/cards') return {ok:true,json:async () => ({id:'new-schema',name:body.name,data:body.data})};
+    throw Error('unexpected request '+url);
+  };
+  await ui.selectCards(archived);
+  assert.equal(requests.filter(request => request.url === 'api/validate').length,1);
+  assert.deepEqual(requests[0].body.cards,original.data,'the engine receives the intact archived document');
+  assert.equal(ui.sourceId,'old-schema','normalization preserves the original note association');
+  assert.equal(ui.$('notes').value,'原卡表备注');
+  assert.deepEqual(copy(ui.sourceCards),normalized);
+  assert.deepEqual(copy(ui.candidate),normalized);
+  assert.notEqual(ui.sourceCards,ui.candidate,'edits cannot mutate the normalized baseline');
+  assert.equal(ui.$('cardsView').querySelector('[data-path="cards.work.work_seconds"]').value,'7.125');
+  assert.equal(ui.$('cardsView').querySelector('[data-path="roles.employee.work_seconds"]'),null);
+  assert.equal(ui.same(ui.sourceCards,ui.candidate),true,'migration alone is not presented as a user edit');
+  assert.deepEqual(archived,original,'the saved snapshot is never rewritten in place');
+  await ui.saveVersion('cards','迁移卡表',ui.candidate);
+  assert.deepEqual(requests.find(request => request.url === 'api/library/cards').body.data,normalized);
+  assert.equal(requests.filter(request => request.url === 'api/validate').length,1,
+    'current-schema save responses do not start another migration');
+  for (const field of ['role','employee_every','opening']) {
+    const data = copy(normalized);
+    if (field === 'role') data.roles.employee.work_seconds = 99;
+    else data.rules.conveyor[field] = field === 'opening' ? ['employee'] : 3;
+    const before = requests.filter(request => request.url === 'api/validate').length;
+    await ui.selectCards({id:'legacy-'+field,name:'旧卡表',data});
+    assert.equal(requests.filter(request => request.url === 'api/validate').length,before+1);
+    assert.deepEqual(copy(ui.candidate),normalized);
+  }
 });
 
 test('A B and shared Q expose every policy field with Chinese label and English identifier', async () => {

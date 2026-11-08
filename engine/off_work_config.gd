@@ -7,6 +7,7 @@ extends RefCounted
 const MAX_CARD_ALLOCATION := 4096
 const MAX_CONVEYOR_SLOTS := 64
 const MAX_EXACT_INTEGER := 9007199254740991
+const MAX_FINITE_NUMBER := 1.7976931348623157e308
 const LEGACY_DECISION_BUDGET_MS := 12
 const MIN_DECISION_BUDGET_RATIO := 0.01
 const DEFAULT_DECISION_BUDGET_RATIO := 0.5
@@ -142,6 +143,11 @@ static func normalize_balance_document(document: Variant) -> Variant:
 	if not definitions is Dictionary:
 		return normalized
 	var rule_sections: Variant = normalized.get("rules")
+	if rule_sections is Dictionary and rule_sections.get("conveyor") is Dictionary:
+		# Opening offers and every subsequent offer now share the same weights.
+		# Discard the two retired overrides when loading an older card document.
+		rule_sections.conveyor.erase("employee_every")
+		rule_sections.conveyor.erase("opening")
 	if rule_sections is Dictionary and rule_sections.get("simulation") is Dictionary:
 		var simulation: Dictionary = rule_sections.simulation
 		if definitions.get("work") is Dictionary and simulation.has("work_income"):
@@ -150,10 +156,15 @@ static func normalize_balance_document(document: Variant) -> Variant:
 			simulation.erase("work_income")
 	var role_sections: Variant = normalized.get("roles")
 	if role_sections is Dictionary:
+		if definitions.get("work") is Dictionary and not definitions.work.has("work_seconds"):
+			var employee: Variant = role_sections.get("employee")
+			if employee is Dictionary and employee.has("work_seconds"):
+				definitions.work.work_seconds = employee.work_seconds
 		for kind in role_sections:
 			var role: Variant = role_sections[kind]
 			if not role is Dictionary or not definitions.get(kind) is Dictionary:
 				continue
+			role.erase("work_seconds")
 			if role.has("refund"):
 				if not definitions[kind].has("refund"):
 					definitions[kind].refund = role.refund
@@ -164,7 +175,7 @@ static func normalize_balance_document(document: Variant) -> Variant:
 func balance_document() -> Dictionary:
 	var balance_rules := rules.duplicate(true)
 	balance_rules.erase("bot")
-	return {"cards": cards.duplicate(true), "roles": roles.duplicate(true), "rules": balance_rules}
+	return normalize_balance_document({"cards": cards.duplicate(true), "roles": roles.duplicate(true), "rules": balance_rules})
 
 func _section(document: Variant, key: String, path: String) -> Dictionary:
 	if not document is Dictionary or not document.get(key) is Dictionary:
@@ -206,6 +217,7 @@ func validate() -> bool:
 		_number_field(card, "price", "cards." + str(kind), 0.0, expected[kind] == "person", true)
 		if kind == "work":
 			_number_field(card, "income", "cards.work", 0.0, true, true)
+			_number_field(card, "work_seconds", "cards.work", 0.0, true)
 		if expected[kind] == "person" and _number_field(card, "refund", "cards." + str(kind), 0.0, false, true):
 			if _is_number(card.get("price")) and float(card.refund) >= float(card.price):
 				errors.append("cards.%s.refund：必须低于购入价" % kind)
@@ -218,7 +230,6 @@ func validate() -> bool:
 				errors.append("roles.%s.%s：必须是布尔值" % [role, field])
 		if spec.has("can_be_strike_target") and not spec.can_be_strike_target is bool:
 			errors.append("roles.%s.can_be_strike_target：必须是布尔值" % role)
-		_number_field(spec, "work_seconds", "roles." + role, 0.0, true)
 		_number_field(spec, "work_capacity", "roles." + role, 0.0, true, true)
 		_number_field(spec, "work_income_multiplier", "roles." + role, 0.0, true, true)
 		_number_field(spec, "meeting_multiplier", "roles." + role, 0.0)
@@ -255,7 +266,7 @@ func validate() -> bool:
 		_number_field(rules[section], "recovery_seconds", section, 0.0, true)
 	for pair in [["strike", "duration_seconds"], ["coffee", "seconds"], ["outsource", "seconds"], ["transfer", "seconds"], ["meeting", "duration_seconds"], ["slack", "seconds"], ["conveyor", "interval_seconds"], ["bot", "think_seconds"]]:
 		_number_field(rules[pair[0]], pair[1], pair[0], 0.0, true)
-	for pair in [["simulation", "maximum_events_per_advance"], ["meeting", "base_targets"], ["meeting", "minimum_targets"], ["outsource", "cost_per_work"], ["conveyor", "slots"], ["conveyor", "employee_every"]]:
+	for pair in [["simulation", "maximum_events_per_advance"], ["meeting", "base_targets"], ["meeting", "minimum_targets"], ["outsource", "cost_per_work"], ["conveyor", "slots"]]:
 		_number_field(rules[pair[0]], pair[1], pair[0], 0.0, true, true)
 	for pair in [["initial", "money"], ["fire", "minimum_people"], ["simulation", "default_seed"]]:
 		_number_field(rules[pair[0]], pair[1], pair[0], 0.0, false, true)
@@ -449,15 +460,6 @@ func _validate_conveyor() -> void:
 			sum_weight += float(pool[kind])
 	if sum_weight <= 0.0 or not is_finite(sum_weight):
 		errors.append("conveyor.pool：总权重必须为正且有限")
-	if not can_purchase("employee"):
-		errors.append("conveyor.employee_every：定期补给的员工必须可购买")
-	var opening: Variant = rules.conveyor.get("opening")
-	if not opening is Array:
-		errors.append("conveyor.opening：必须是卡种列表")
-		return
-	for kind in opening:
-		if not kind is String or not cards.has(kind) or not can_purchase(str(kind)):
-			errors.append("conveyor.opening：无效商品 %s" % str(kind))
 
 func _object(parent: Dictionary, key: String, path: String) -> Dictionary:
 	if not parent.get(key) is Dictionary:
@@ -527,10 +529,28 @@ func work_batch_size(kind: String, available: int) -> int:
 func income_per_work(kind: String) -> int:
 	return int(cards.work.income) * int(roles[kind].work_income_multiplier)
 
+## Every working personnel tier uses the same task duration from the work card.
+func work_seconds() -> float:
+	return float(cards.work.work_seconds)
+
+func overtime_multiplier(overtime_count: int) -> float:
+	# Apply every card; saturate only at the floating-point representation limit.
+	return minf(MAX_FINITE_NUMBER, pow(number("overtime", "speed_multiplier"), maxi(0, overtime_count)))
+
 func work_rate(kind: String, overtime_count: int) -> float:
 	if not can_work(kind):
 		return 0.0
-	return pow(number("overtime", "speed_multiplier"), maxi(0, overtime_count)) / float(roles[kind].work_seconds)
+	return overtime_multiplier(overtime_count) / work_seconds()
+
+## Shared public distribution for actual draws and BOT arrival forecasts.
+func conveyor_probabilities() -> Dictionary:
+	var pool: Dictionary = rules.conveyor.pool
+	var total := 0.0
+	for weight in pool.values(): total += float(weight)
+	if total <= 0.0 or not is_finite(total): return {}
+	var probabilities := {}
+	for kind in pool: probabilities[kind] = float(pool[kind]) / total
+	return probabilities
 
 func slack_rate(tool_count: int) -> float:
 	if tool_count < 1: return 0.0

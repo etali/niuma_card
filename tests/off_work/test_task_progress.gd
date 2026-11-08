@@ -71,7 +71,7 @@ func _run() -> void:
 	_check(state.pending_strikes.has(strike) and state.cards.has(strike), "attack is visible during its reaction window")
 	var flight: float = config.number("strike", "flight_seconds")
 	state.advance(flight)
-	var retained: float = 0.025 + flight / config.roles.employee.work_seconds
+	var retained: float = 0.025 + flight / config.work_seconds()
 	_refresh()
 	_check(not worker._task_progress.visible and not state.cards.has(strike), "strike hides the ejected person's bar and consumes its card")
 	state.advance(config.number("strike", "duration_seconds"))

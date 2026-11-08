@@ -50,11 +50,32 @@ var _multimesh: MultiMesh
 var _capacity := 0
 var _last_data: Array = []
 var _last_positions := PackedVector3Array()
+## Hidden stack sheets stay registered, but never enter the per-frame scan.
 var _prepared_cards := {}
+var _visible_cards := {}
+var _card_visuals := {}
+var _registration_order := {}
+var _next_order := 0
+var _visible_order: Array = []
+var _visible_order_dirty := false
 
 func bind(board: Board) -> void:
+	_disconnect_board()
 	_board = board
 	name = "TableContactShadows"
+	if _instances == null:
+		_create_mesh()
+	_board.card_registered.connect(_register_card)
+	_board.card_unregistered.connect(_unregister_card)
+	# This is the only full registration scan, including when restoring or
+	# binding a presenter whose cards have already been built.
+	for card in _board.cards:
+		_register_card(card)
+	# 牌的位置补间/物理已经跑完再取坐标，拖牌时阴影不会落后一帧。
+	process_priority = 80
+	refresh()
+
+func _create_mesh() -> void:
 	# 阴影只接收深度遮挡，不再把自身送进光照投影。
 	_instances = MultiMeshInstance3D.new()
 	_instances.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -73,9 +94,6 @@ func bind(board: Board) -> void:
 		_contact_material.shader = shader
 		_contact_material.render_priority = -32
 	_instances.material_override = _contact_material
-	# 牌的位置补间/物理已经跑完再取坐标，拖牌时阴影不会落后一帧。
-	process_priority = 80
-	refresh()
 
 ## 同一物理列里的重叠卡只投一次影；用实际位置而不是规则组，玩家/BOT/
 ## 联网拖动和飞入动画都走同一条路径。每列按 z 排序，分开的两摞不会被
@@ -151,19 +169,109 @@ func _disable_mesh_shadows(node: Node) -> void:
 	for child in node.get_children():
 		_disable_mesh_shadows(child)
 
-func _forget_card(instance_id: int) -> void:
-	_prepared_cards.erase(instance_id)
+func _register_card(card: CardEntity) -> void:
+	if not is_instance_valid(card): return
+	var id := card.get_instance_id()
+	if _prepared_cards.has(id): return
+	_prepared_cards[id] = card
+	_registration_order[id] = _next_order
+	_next_order += 1
+	_disable_mesh_shadows(card)
+	card.visibility_changed.connect(_sync_card_visibility.bind(id))
+	card.tree_entered.connect(_sync_card_visibility.bind(id))
+	card.tree_exiting.connect(_card_exiting.bind(id))
+	card.child_entered_tree.connect(_card_child_entered.bind(id))
+	_track_visual(id)
+	_sync_card_visibility(id)
 
-func _prepare_new_cards() -> void:
-	for card in _board.cards:
-		if not is_instance_valid(card):
-			continue
-		var id := card.get_instance_id()
-		if _prepared_cards.has(id):
-			continue
-		_disable_mesh_shadows(card)
-		_prepared_cards[id] = true
-		card.tree_exiting.connect(_forget_card.bind(id), CONNECT_ONE_SHOT)
+func _unregister_card(card: CardEntity) -> void:
+	if is_instance_valid(card): _forget_card(card.get_instance_id())
+
+func _forget_card(id: int) -> void:
+	_hide_card(id)
+	_untrack_visual(id)
+	var card = _prepared_cards.get(id)
+	if is_instance_valid(card):
+		card.visibility_changed.disconnect(_sync_card_visibility.bind(id))
+		card.tree_entered.disconnect(_sync_card_visibility.bind(id))
+		card.tree_exiting.disconnect(_card_exiting.bind(id))
+		card.child_entered_tree.disconnect(_card_child_entered.bind(id))
+	_prepared_cards.erase(id)
+	_registration_order.erase(id)
+
+func _track_visual(id: int) -> void:
+	var card: CardEntity = _prepared_cards.get(id)
+	if not is_instance_valid(card): return
+	var visual := card._visual
+	if _card_visuals.get(id) == visual: return
+	_untrack_visual(id)
+	if not is_instance_valid(visual): return
+	_card_visuals[id] = visual
+	_disable_mesh_shadows(visual)
+	visual.visibility_changed.connect(_sync_card_visibility.bind(id))
+	visual.tree_entered.connect(_sync_card_visibility.bind(id))
+	visual.tree_exiting.connect(_visual_exiting.bind(id))
+	visual.child_entered_tree.connect(_visual_child_entered)
+
+func _untrack_visual(id: int) -> void:
+	var visual = _card_visuals.get(id)
+	if is_instance_valid(visual):
+		visual.visibility_changed.disconnect(_sync_card_visibility.bind(id))
+		visual.tree_entered.disconnect(_sync_card_visibility.bind(id))
+		visual.tree_exiting.disconnect(_visual_exiting.bind(id))
+		visual.child_entered_tree.disconnect(_visual_child_entered)
+	_card_visuals.erase(id)
+
+func _card_child_entered(child: Node, id: int) -> void:
+	_track_visual(id)
+	_visual_child_entered(child)
+	_sync_card_visibility(id)
+
+func _visual_child_entered(child: Node) -> void:
+	_disable_mesh_shadows(child)
+	# Deferred printed faces add their nested mesh children after attaching the
+	# container. Finish this one new subtree once construction has completed.
+	_finish_new_subtree.call_deferred(weakref(child))
+
+func _finish_new_subtree(reference: WeakRef) -> void:
+	var node: Node = reference.get_ref()
+	if is_instance_valid(node): _disable_mesh_shadows(node)
+
+func _sync_card_visibility(id: int) -> void:
+	var card: CardEntity = _prepared_cards.get(id)
+	if is_instance_valid(card) and card.is_visible_in_tree() \
+			and (card._visual == null or card._visual.is_visible_in_tree()):
+		if not _visible_cards.has(id): _visible_order_dirty = true
+		_visible_cards[id] = card
+	else:
+		_hide_card(id)
+
+func _hide_card(id: int) -> void:
+	if _visible_cards.erase(id): _visible_order_dirty = true
+
+func _visual_exiting(id: int) -> void:
+	_hide_card(id)
+
+func _card_exiting(id: int) -> void:
+	_hide_card(id)
+	# Reparenting may leave/re-enter the tree without changing registration.
+	# Keep those subscriptions; discard objects that actually got freed.
+	_forget_freed_card.call_deferred(id)
+
+func _forget_freed_card(id: int) -> void:
+	if _prepared_cards.has(id) and not is_instance_valid(_prepared_cards[id]):
+		_forget_card(id)
+
+func _disconnect_board() -> void:
+	if is_instance_valid(_board):
+		_board.card_registered.disconnect(_register_card)
+		_board.card_unregistered.disconnect(_unregister_card)
+	for id in _prepared_cards.keys(): _forget_card(id)
+	_next_order = 0
+	_board = null
+
+func _exit_tree() -> void:
+	_disconnect_board()
 
 func _process(_delta: float) -> void:
 	refresh()
@@ -173,10 +281,14 @@ func _process(_delta: float) -> void:
 func refresh() -> void:
 	if not is_instance_valid(_board) or _multimesh == null:
 		return
-	# Compatibility 下保留光源原有的 shadow pass，桌面受光/原色才一致；
-	# 只让卡的网格退出硬投影。每张卡新建时做一次，后续帧无需遍历子节点。
-	_prepare_new_cards()
-	var positions := _contact_positions(_board.cards)
+	if _visible_order_dirty:
+		_visible_order = _visible_cards.values()
+		# Preserve board registration order, even after an older sheet is
+		# revealed again. Sorting happens only when candidate membership changes.
+		_visible_order.sort_custom(func(a: CardEntity, b: CardEntity) -> bool:
+			return int(_registration_order[a.get_instance_id()]) < int(_registration_order[b.get_instance_id()]))
+		_visible_order_dirty = false
+	var positions := _contact_positions(_visible_order)
 	if positions == _last_positions:
 		return
 	_last_positions = positions

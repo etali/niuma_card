@@ -22,15 +22,15 @@ func _market_state() -> OffWorkState:
 	config.rules.initial.groups = [{"employee":1,"work":80}]
 	config.rules.initial.money = 20
 	config.rules.conveyor.slots = 2
-	config.rules.conveyor.opening = ["coffee","overtime"]
 	config.rules.conveyor.interval_seconds = 1.0
-	config.rules.conveyor.employee_every = 1
+	config.rules.conveyor.pool = {"employee":1}
 	config.rules.bot.first_action_seconds = 1.0
 	config.rules.bot.think_seconds = 2.8
 	config.rules.bot.decision_budget_ratio = 0.5
 	config.rules.bot.search_max_depth = 1
 	var state := OffWorkState.new(config)
 	state.new_game(9137)
+	state.offers = [state._make_offer("coffee"), state._make_offer("overtime")]
 	return state
 
 func _background_prediction(recorded: bool) -> void:

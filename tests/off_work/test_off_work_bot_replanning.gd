@@ -29,6 +29,11 @@ func run() -> void:
 	root.add_child(host)
 	await process_frame
 	host.set_process(false)
+	# Both public offers must be affordable from the fixture's eight coins;
+	# this tests invalidating a sold quote, not random opening prices or caps.
+	host.state.offers[0] = host.state._make_offer("employee")
+	host.state.offers[1] = host.state._make_offer("coffee")
+	host.board.sync_state(host.state)
 	Preferences.set_pref_strength(1.0)
 	host.bot.start()
 	for trigger in ["groups_changed", "human_action"]:

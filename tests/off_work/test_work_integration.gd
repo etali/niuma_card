@@ -39,9 +39,9 @@ func _small_config() -> RefCounted:
 
 func _configuration_changes_real_behavior() -> void:
 	var slow := _small_config()
-	slow.roles.employee.work_seconds = 20.0
+	slow.cards.work.work_seconds = 20.0
 	var fast := _small_config()
-	fast.roles.employee.work_seconds = 5.0
+	fast.cards.work.work_seconds = 5.0
 	var a := State.new(slow)
 	var b := State.new(fast)
 	a.new_game(23)
@@ -69,6 +69,7 @@ func _configuration_changes_real_behavior() -> void:
 
 	var priced := _small_config()
 	priced.cards.employee.price = 3
+	priced.rules.conveyor.pool = {"employee": 1}
 	a = State.new(priced)
 	a.new_game(31)
 	var before := a.money(0)

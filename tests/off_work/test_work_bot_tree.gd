@@ -32,7 +32,7 @@ func _race(conveyor_seconds := 40.0) -> OffWorkState:
 	config.rules.initial.money = 6
 	config.rules.bot.search_root_width = 3
 	config.rules.bot.search_reply_width = 2
-	config.roles.employee.work_seconds = 3.0
+	config.cards.work.work_seconds = 3.0
 	config.rules.conveyor.interval_seconds = conveyor_seconds
 	var state := OffWorkState.new(config)
 	state.new_game(110)

@@ -40,6 +40,8 @@ func _fixture(work_count: int, amounts: Array) -> Dictionary:
 	config.rules.bot.enabled = false
 	# These rule cases inspect fixed purchase prices independently of supply cadence.
 	config.rules.conveyor.interval_seconds = 100.0
+	# Reservation tests require a four-coin purchase with two coins left over.
+	config.rules.conveyor.pool = {"employee":1}
 	var state := OffWorkState.new(config)
 	state.new_game(20261031)
 	var tool := state.add_card("outsource", 0)

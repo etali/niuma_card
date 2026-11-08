@@ -55,7 +55,7 @@ func _branching_game() -> OffWorkState:
 	config.rules.initial.groups = [{"employee":1}]
 	for count in range(1, 5): config.rules.initial.groups.append({"work":count})
 	config.rules.initial.money = 0
-	config.roles.employee.work_seconds = 60.0
+	config.cards.work.work_seconds = 60.0
 	config.rules.conveyor.interval_seconds = 1000.0
 	var game := OffWorkState.new(config)
 	game.new_game(719)

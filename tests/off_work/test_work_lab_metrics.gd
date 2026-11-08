@@ -48,8 +48,33 @@ func _initialize() -> void:
 		{"kind":"strike_launch"},{"kind":"strike_blocked"}],report,hiring)
 	_check(hiring.acquisitions == {"employee":4} and hiring.tool_generations == 0,"recruited employees count as acquired personnel, not generated tools")
 	_check(hiring.interferences == 0,"launched or blocked strikes are not successful interference")
+	_end_state_diagnostics()
 	print("WORK_LAB_METRICS %s (%d checks)" % ["PASS" if failures == 0 else "FAIL", checks])
 	quit(1 if failures else 0)
+
+func _end_state_diagnostics() -> void:
+	var config := OffWorkConfig.new()
+	config.rules.initial.groups=[{"employee":1,"work":100},{"employee":1},{"coffee":3},{"outsource":1}]
+	config.rules.initial.money=8
+	var state := OffWorkState.new(config)
+	state.new_game(1001)
+	var before := []
+	for key in OffWorkState.WORLD_FIELDS: before.append(state.get(key).duplicate(true) if state.get(key) is Dictionary or state.get(key) is Array else state.get(key))
+	var summary: Dictionary = Lab._end_state_summary(state,0)
+	_check(summary.work==100 and summary.available_money==8 and summary.ready_coffee==3 and summary.ready_outsource==1,
+		"end diagnostics record real work, spendable cash and ready inventory")
+	_check(summary.workers_by_task=={"work":1,"idle":1} and summary.unrestricted_idle_workers==1,
+		"end diagnostics distinguish assigned workers from genuinely idle personnel")
+	var unchanged := []
+	for key in OffWorkState.WORLD_FIELDS: unchanged.append(state.get(key))
+	_check(var_to_bytes(before)==var_to_bytes(unchanged),"end diagnostics never mutate the game state")
+	var working: int = state._owner_type(0,"employee")[0]
+	var strike: int = state.add_card("strike",1)
+	state.activate(strike,int(state.cards[working].group))
+	state.advance(config.number("strike","flight_seconds"))
+	summary=Lab._end_state_summary(state,0)
+	_check(summary.striking_workers==1 and summary.unrestricted_idle_workers==1,
+		"struck idle-looking employees are excluded from unrestricted idle count")
 
 func _match(outcome: String, seconds: float, a_seat: int, first_seat: int) -> Dictionary:
 	return {"winner":outcome,"seconds":seconds,"a_seat":a_seat,"first_seat":first_seat,

@@ -75,7 +75,6 @@ func run() -> void:
 	var config_path := SavePaths.recordings_dir().path_join("custom-work-cards.json")
 	var document := live.config.balance_document() as Dictionary
 	document.rules.conveyor.slots = 4
-	document.rules.conveyor.opening = document.rules.conveyor.opening.slice(0, 4)
 	var store := preload("res://engine/json_store.gd")
 	store.save(config_path, document)
 	check(host.hud.handle_card_config_files(PackedStringArray([config_path])), "accepts named card file")

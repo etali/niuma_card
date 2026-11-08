@@ -17,7 +17,7 @@ class OffWorkVirtualClock(unittest.TestCase):
     def setUp(self):
         self.cards = json.loads((ROOT / "data/off_work_cards.json").read_text())
         self.cards["rules"]["initial"] = {"money": 0, "groups": [{"work": 2}, {"employee": 1}]}
-        self.cards["roles"]["employee"]["work_seconds"] = 3600
+        self.cards["cards"]["work"]["work_seconds"] = 3600
         self.cards["rules"]["conveyor"]["interval_seconds"] = 900
         self.profile = {"think_seconds": 30, "decision_budget_ms": 12, "evaluation_max_seconds": 7200}
 
@@ -84,7 +84,7 @@ class OffWorkVirtualClock(unittest.TestCase):
 
     def test_slow_work_and_market_settle_at_the_same_instant(self):
         self.cards["rules"]["initial"]["groups"] = [{"employee": 1, "work": 2}]
-        self.cards["roles"]["employee"]["work_seconds"] = 2000000
+        self.cards["cards"]["work"]["work_seconds"] = 2000000
         self.cards["rules"]["conveyor"]["interval_seconds"] = 4000000
         disabled = {"enabled": False}
         result = self.simulate(disabled, disabled, 10000000)
@@ -98,7 +98,7 @@ class OffWorkVirtualClock(unittest.TestCase):
 
     def test_first_opportunity_includes_wait(self):
         self.cards["rules"]["initial"]["groups"] = [{"work":1, "employee":1}]
-        self.cards["roles"]["employee"]["work_seconds"] = 1
+        self.cards["cards"]["work"]["work_seconds"] = 1
         result = self.simulate(self.profile, {**self.profile, "first_action_seconds":2}, 3)
         self.assertEqual(result["draws"], 2)
         self.assertEqual([m["first_seat"] for m in result["matches"]], [0, 1])

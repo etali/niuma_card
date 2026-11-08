@@ -9,6 +9,7 @@ extends RefCounted
 const WIN := 1000000.0
 const AttackPlans = preload("res://engine/off_work_bot_attack_plans.gd")
 const Economy = preload("res://engine/off_work_bot_economy.gd")
+const ProductionPlans = preload("res://engine/off_work_bot_production_plans.gd")
 var _deadline := -1
 var _complete := true
 var _config: RefCounted
@@ -27,7 +28,41 @@ var cache_misses := 0
 var _cashout_enabled := true
 var _supply_wait := INF
 
-func evaluate(world: OffWorkState, owner: int, policy: Dictionary, until: int = -1, next_actions: Array = []) -> Dictionary:
+func evaluate(world: OffWorkState, owner: int, policy: Dictionary, until: int = -1,
+		next_actions: Array = [], production_chains := true) -> Dictionary:
+	var ordinary := _evaluate_existing(world, owner, policy, until, next_actions)
+	return extend_production(world,owner,policy,until,next_actions,ordinary) if production_chains else ordinary
+
+func _evaluate_existing(world: OffWorkState, owner: int, policy: Dictionary, until: int, next_actions: Array) -> Dictionary:
+	var prepared := _prepare_evaluation(world,owner,policy,until,next_actions)
+	if prepared.has("value"): return prepared.value
+	var models: Array = prepared.models
+	var forecasts := _economic_continuations(world,models)
+	if not _complete: return _incomplete()
+	var continuation := [forecasts[0]._continuation,forecasts[1]._continuation]
+	var base_pair := _forecast_pair(continuation)
+	if not _complete: return _incomplete()
+	for side in 2: forecasts[side].merge(base_pair[side],true)
+	forecasts = _attack_continuations(world,models,continuation,forecasts)
+	return _evaluation_result(forecasts,owner)
+
+## The same ETA model without enumerating additional hypothetical investments
+## or attacks. Existing paid tasks, command slots, wages and the final funded
+## outsource closure remain identical to the complete economic evaluator.
+func evaluate_current(world: OffWorkState, owner: int, policy: Dictionary, until: int = -1,
+		next_actions: Array = []) -> Dictionary:
+	var prepared := _prepare_evaluation(world,owner,policy,until,next_actions)
+	if prepared.has("value"): return prepared.value
+	var forecasts := _forecast_pair(prepared.models)
+	if not _complete: return _incomplete()
+	for side in 2:
+		var model: Dictionary = prepared.models[side]
+		forecasts[side].merge({"work":model.work,"current_rate":model.current_rate,"idle_pending":model.idle_pending,
+			"committed_work":model.pending_work,"pending_strikes":model.pending_strikes,"free_cash":model.free_cash,
+			"public_investment":{}},true)
+	return _evaluation_result(forecasts,owner)
+
+func _prepare_evaluation(world: OffWorkState, owner: int, policy: Dictionary, until: int, next_actions: Array) -> Dictionary:
 	_deadline = until
 	_complete = true
 	_config = world.config
@@ -40,29 +75,25 @@ func evaluate(world: OffWorkState, owner: int, policy: Dictionary, until: int = 
 	_period = maxf(0.001, float(policy.get("think_seconds", world.config.rules.bot.think_seconds)))
 	_next_actions = next_actions.duplicate() if next_actions.size() == 2 else [_period, _period]
 	_horizon = maxf(_period, float(policy.get("evaluation_max_seconds", 1800.0)))
-	_base_cycle = maxf(0.001, float(_config.roles.employee.work_seconds))
+	_base_cycle = _config.work_seconds()
 	if world.winner >= 0:
 		var score := 0.0
 		if world.winner != _config.integer("simulation", "tie_winner"):
 			score = (WIN - minf(1000.0, world.time * 0.001)) * (1.0 if world.winner == owner else -1.0)
-		return {"score":score, "tie_score":0.0, "complete":true, "detail":{"terminal":true, "winner":world.winner}}
-	if not _open(): return _incomplete()
+		return {"value":{"score":score, "tie_score":0.0, "complete":true, "detail":{"terminal":true, "winner":world.winner}}}
+	if not _open(): return {"value":_incomplete()}
 	var index := _index(world)
-	if not _complete: return _incomplete()
+	if not _complete: return {"value":_incomplete()}
 	var models := [_model(world, 0, index), _model(world, 1, index)]
-	if not _complete: return _incomplete()
+	if not _complete: return {"value":_incomplete()}
 	_cashout_enabled = true
 	for model in models:
 		for group in model.groups.values():
 			if group.mode=="transfer" and not group.workers.is_empty(): _cashout_enabled=false
 	_supply_wait=Economy.expected_supply_wait(_config,"outsource")
-	var forecasts := _economic_continuations(world,models)
-	if not _complete: return _incomplete()
-	var continuation := [forecasts[0]._continuation,forecasts[1]._continuation]
-	var base_pair := _forecast_pair(continuation)
-	if not _complete: return _incomplete()
-	for side in 2: forecasts[side].merge(base_pair[side],true)
-	forecasts = _attack_continuations(world,models,continuation,forecasts)
+	return {"models":models}
+
+func _evaluation_result(forecasts: Array, owner: int) -> Dictionary:
 	for forecast in forecasts:
 		forecast.erase("_continuation")
 		forecast.erase("_required_commands")
@@ -72,6 +103,114 @@ func evaluate(world: OffWorkState, owner: int, policy: Dictionary, until: int = 
 	return {"score":clampf(score, -WIN * 0.5, WIN * 0.5),
 		"tie_score":int(forecasts[1-owner].required_actions) - int(forecasts[owner].required_actions), "complete":true,
 		"detail":{"terminal":false, "sides":forecasts, "scale":"relative completion time", "projection_seconds":_horizon}}
+
+## An optional complete-rule extension of an already valid ordinary estimate.
+## Search publishes each complete ordinary candidate before extending it;
+## this pass must never invalidate that incumbent or publish an unfinished recipe.
+func has_production_continuation(world: OffWorkState, commitments: Dictionary = {}) -> bool:
+	for side in 2:
+		if not ProductionPlans.available(world,side): continue
+		for id in world._owner_type(side,"slack"):
+			var gid := int(world.cards[id].group)
+			if commitments.has(id) or (str(world.groups[gid].get("function",""))=="slack" and not world.group_people(gid).is_empty()): return true
+	return false
+
+func extend_production(world: OffWorkState, owner: int, policy: Dictionary, until: int,
+		next_actions: Array, ordinary: Dictionary, root_action: Dictionary = {}, cancelled: Callable = Callable(),
+		production_commitments: Dictionary = {}, current_only := false) -> Dictionary:
+	if not ordinary.get("complete",false) or ordinary.get("detail",{}).get("terminal",true): return ordinary
+	var forecasts: Array = ordinary.detail.sides.duplicate(true)
+	var period := maxf(0.001,float(policy.get("think_seconds",world.config.rules.bot.think_seconds)))
+	var clock := next_actions if next_actions.size()==2 else [period,period]
+	var order := [0,1] if float(clock[0])<=float(clock[1]) else [1,0]
+	# Reuse the ordinary tail's existing exact-model caches across staffing
+	# equivalents. It never recursively invents another production chain.
+	var tail_evaluator: RefCounted = get_script().new()
+	var extension := {"complete":true,"plans":0,"examined":0}
+	for side in order:
+		if not ProductionPlans.available(world,int(side)): continue
+		var options := {}
+		if not root_action.is_empty():
+			# Ordinary root actions already enumerate buying and staffing. Their
+			# extra continuation only needs to cross the recipe's delayed payoff,
+			# not recursively enumerate another shop and another staffing search.
+			# Actual purchases remain commitments after an opponent reply. Only
+			# these paid identities need a delayed assembly continuation; all
+			# previously owned tools have ordinary assembly candidates already.
+			var idle_tool: bool = production_commitments.keys().any(func(id):
+				if not world.cards.has(id) or int(world.cards[id].owner)!=int(side) or str(world.cards[id].type)!="slack": return false
+				var gid := int(world.cards[id].group)
+				return str(world.groups[gid].get("function",""))!="slack" or world.group_people(gid).is_empty())
+			options = {"allow_purchase":false,"allow_assembly":idle_tool}
+		var status: Dictionary = ProductionPlans.visit(world,int(side),policy,until,clock,func(plan):
+			var held: Dictionary = forecasts[1-int(side)].get("forecast_purchases",{})
+			# Keep the opponent's already committed public opportunity available.
+			# A later search node can contest it by actually buying first; a leaf
+			# must not grant both continuations the same unique quote.
+			if plan.purchases.keys().any(func(quote): return held.has(quote)): return
+			var candidate: Dictionary
+			var opponent: Dictionary = forecasts[1-int(side)].duplicate(true)
+			if plan.world.winner >= 0:
+				if int(plan.world.winner) != int(side): return
+				candidate = forecasts[int(side)].duplicate(true)
+				candidate.eta = float(plan.elapsed)
+				candidate.remaining = 0
+				candidate.stalled = false
+				candidate.unreachable = false
+				candidate.required_actions = 0
+				candidate.forecast_purchases = {}
+			else:
+				var tail: Dictionary = tail_evaluator.evaluate_current(plan.world,owner,policy,until,plan.next_actions) if current_only \
+					else tail_evaluator.evaluate(plan.world,owner,policy,until,plan.next_actions,false)
+				if not tail.get("complete",false):
+					extension.complete = false
+					return
+				# Both tail clocks refer to the projected world. Translate before
+				# comparing with any ETA rooted at the original observation.
+				var translated: Array = tail.detail.sides.duplicate(true)
+				for forecast in translated: _offset_forecast(forecast,float(plan.elapsed))
+				candidate = translated[int(side)]
+				# A prefix is a declared unilateral plan, not a claim that the
+				# opponent will wait. Preserve the opponent's faster pre-prefix
+				# continuation, and also account for any benefit it actually gains
+				# in the same rule-state prefix (e.g. stopping work transfers).
+				if float(translated[1-int(side)].eta)<float(opponent.eta): opponent=translated[1-int(side)]
+				if candidate.get("forecast_purchases",{}).keys().any(func(quote): return held.has(quote)): return
+			candidate.forecast_purchases.merge(plan.purchases,true)
+			candidate.required_actions = int(candidate.required_actions) + plan.commands.size()
+			candidate["production_chain"] = {"kind":plan.kind,"seconds":plan.elapsed,"person":plan.person,
+				"commands":plan.commands.duplicate(true),"purchases":plan.purchases.duplicate(true),
+				"opponent_assumption":"prefix advances existing natural events only; opponent ETA is bounded by its faster pre-prefix continuation",
+				"opponent_eta":opponent.eta}
+			var pair: Array = forecasts.duplicate()
+			pair[int(side)] = candidate
+			pair[1-int(side)] = opponent
+			if _race(pair,int(side))>_race(forecasts,int(side))+1e-8:
+				forecasts[0] = pair[0]
+				forecasts[1] = pair[1],
+			cancelled,options)
+		extension.plans += int(status.plans)
+		extension.examined += int(status.examined)
+		if not status.complete or not extension.complete:
+			extension.complete = false
+			break
+	var result: Dictionary = ordinary.duplicate(true)
+	result["production_extension"] = extension
+	# Enumeration can stop after a valid winner has already been evaluated.
+	# Each adopted forecast above has a complete real prefix and complete tail;
+	# losing a later alternative must not erase that finished candidate.
+	result.detail.sides = forecasts
+	result.score = clampf(1000.0 * _race(forecasts,owner),-WIN*0.5,WIN*0.5)
+	result.tie_score = int(forecasts[1-owner].required_actions)-int(forecasts[owner].required_actions)
+	return result
+
+func _offset_forecast(forecast: Dictionary, elapsed: float) -> void:
+	forecast.eta = float(forecast.eta)+elapsed
+	for purchase in forecast.get("forecast_purchases",{}).values(): purchase.at = float(purchase.at)+elapsed
+	for name in ["cashout","public_investment"]:
+		var detail: Dictionary = forecast.get(name,{})
+		for key in ["at","eta","purchase_at","funding_at","usable_at"]:
+			if detail.has(key): detail[key] = float(detail[key])+elapsed
 
 func _open() -> bool:
 	if _deadline >= 0 and Time.get_ticks_usec() >= _deadline: _complete = false
@@ -120,7 +259,7 @@ func _unit(kind: String, count: int, union: bool, transfer: bool) -> Dictionary:
 	if union and _config.can_work(kind): kind = str(_config.rules.union.work_role)
 	var role: Dictionary = _config.roles[kind]
 	return {"role":original_kind, "count":count, "capacity":int(role.transfer_capacity if transfer else role.work_capacity),
-		"speed":1.0 / maxf(0.001,float(_config.rules.transfer.seconds if transfer else role.work_seconds)),
+		"speed":1.0 / maxf(0.001,_config.number("transfer","seconds")) if transfer else _config.work_rate(kind, 0),
 		"income":0 if transfer else _config.income_per_work(kind), "strikeable":bool(_config.roles[original_kind].get("can_be_strike_target",true))}
 
 func _model(world: OffWorkState, side: int, index: Dictionary) -> Dictionary:
@@ -246,7 +385,11 @@ func _model(world: OffWorkState, side: int, index: Dictionary) -> Dictionary:
 			if card.type == "outsource":
 				var ready := float(card.remaining) if card.status == "recovering" else 0.0
 				if world.outsourcing.has(id): ready = float(world.outsourcing[id].remaining) + _config.number("outsource", "recovery_seconds")
-				model.facilities.append({"kind":"outsource", "ready":ready})
+				# Identical owned facilities generate the exact same single-batch
+				# continuation. Keep their inventory count in types, but do not
+				# solve the same funding/command schedule once per physical copy.
+				var facility := {"kind":"outsource", "ready":ready}
+				if not model.facilities.has(facility): model.facilities.append(facility)
 		for id in row.people:
 			if world.cards[id].type == "boss" and not world.recruitment.has(id): model.facilities.append({"kind":"recruitment", "ready":0.0})
 	if loose_overtime > 0 and not target.union:
@@ -323,9 +466,7 @@ func _stats(group: Dictionary) -> Dictionary:
 		left -= output
 	var multiplier := 1.0
 	if group.mode != "transfer" and not group.union:
-		# Every actual overtime card participates. Exponent clipping only avoids
-		# floating overflow; it is far beyond the allocation limit's useful speed.
-		multiplier = exp(minf(600.0, int(group.overtime) * log(_config.number("overtime", "speed_multiplier"))))
+		multiplier = _config.overtime_multiplier(int(group.overtime))
 	return {"rate":speed / maxi(1, people) * multiplier, "batch":batch, "income":income}
 
 func _advance_group(group: Dictionary, seconds: float) -> Dictionary:
@@ -512,8 +653,7 @@ func _apply_forecast_event(context: Dictionary, event: Dictionary) -> void:
 				group.present.erase(event.id)
 		"strike":
 			var target: Dictionary = groups[event.group]
-			var valid: bool = float(_stats(target).rate) > 0.0 or time < float(target.strike_until)
-			if valid and not target.union:
+			if _strike_eligible(target,time):
 				var affected := {}
 				for id in target.present:
 					if bool(target.present[id].strikeable):affected[id]=target.present[id]
@@ -856,7 +996,9 @@ func _attack_continuations(world: OffWorkState, original: Array, continuation: A
 	var order := forced_order if not forced_order.is_empty() else ([0,1] if float(_next_actions[0])<=float(_next_actions[1]) else [1,0])
 	for side in order:
 		if not _open(): return forecasts
-		var generated: Dictionary = AttackPlans.plans(world,int(side),_deadline)
+		var future_targets := _future_strike_targets(world,models[1-int(side)])
+		if not _open(): return forecasts
+		var generated: Dictionary = AttackPlans.plans(world,int(side),_deadline,future_targets)
 		if not generated.complete:
 			_complete=false
 			return forecasts
@@ -900,6 +1042,42 @@ func _attack_continuations(world: OffWorkState, original: Array, continuation: A
 
 	return forecasts
 
+func _strike_eligible(group: Dictionary, at: float) -> bool:
+	return not bool(group.union) and (float(_stats(group).rate)>0.0 or at<float(group.strike_until)) \
+		and group.present.values().any(func(unit): return bool(unit.strikeable))
+
+func _future_strike_targets(world: OffWorkState, model: Dictionary) -> Array:
+	var context := _context(model)
+	var found := {}
+	# The same scheduled events and success checks used by the ETA projection
+	# determine when an automatic assembly actually exposes a working group.
+	for index in context.scheduled.events.size():
+		var event: Dictionary = context.scheduled.events[index]
+		if not _open() or float(event.at)>=_horizon: break
+		_advance_context(context,float(event.at))
+		_apply_forecast_event(context,event)
+		if index+1<context.scheduled.events.size() and float(context.scheduled.events[index+1].at)==float(event.at): continue
+		for gid in context.groups:
+			if not _open(): break
+			if found.has(gid) or not world.groups.has(gid): continue
+			var group: Dictionary = context.groups[gid]
+			if not _strike_eligible(group,float(context.time)): continue
+			var targets := []
+			for id in group.present:
+				if id is int and world.cards.has(id) and bool(group.present[id].strikeable): targets.append(id)
+			if not targets.is_empty(): found[gid]={"target_group":gid,"targets":targets,"target_ready_seconds":float(context.time)}
+	return found.values()
+
+func _strike_ready_at(model: Dictionary, group: int, at: float) -> bool:
+	var context := _context(model)
+	for event in context.scheduled.events:
+		if not _open(): return false
+		if float(event.at)>at: break
+		_advance_context(context,float(event.at))
+		_apply_forecast_event(context,event)
+	_advance_context(context,at)
+	return context.groups.has(group) and _strike_eligible(context.groups[group],at)
+
 ## A later opposing plan may interrupt the earnings or host that an earlier
 ## plan relied on. Recheck the actual command prefix and remove its cross-side
 ## effect when that purchase/use no longer happens; paid purchases stay spent.
@@ -923,6 +1101,7 @@ func _gate_attacks(source: Array) -> Array:
 					valid=valid and context.groups.values().any(func(group):return group.present.has(plan.host))
 				break
 			_apply_forecast_event(context,event)
+		if valid and plan.kind=="strike": valid=_strike_ready_at(models[1-side],int(plan.target_group),float(plan.use_at))
 		if valid: continue
 		var replacement: Dictionary = models[side]._without_attack.duplicate(true)
 		# Keep newly introduced enemy effects and any money already committed.
@@ -983,6 +1162,9 @@ func _attack_candidate(world: OffWorkState, model: Dictionary, opponent: Diction
 		own.events.append({"at":at+_period,"kind":"spend","amount":float(plan.price),"action":true,"operation":purchase,"offer":plan.offer,"expires":plan.expires})
 		at+=_period
 	var operation := "attack:%s:%s" % [plan.kind,plan.get("tool",plan.get("offer",-1))]
+	# A tool may be bought earlier, but cannot be launched at a currently empty
+	# pile merely because a future automatic work assignment will fill it.
+	at=maxf(at,float(plan.get("target_ready_seconds",0.0)))
 	var use := {"at":at+_period,"kind":"commit_attack","action":true,"operation":operation,"after":purchase,"lag":_period}
 	if natural_restart:
 		use.at=float(plan.ready_seconds)
@@ -996,6 +1178,8 @@ func _attack_candidate(world: OffWorkState, model: Dictionary, opponent: Diction
 	if not _open(): return {}
 	if plan.has("offer") and float(scheduled.operations.get(purchase,INF))>=float(plan.expires):return {}
 	var use_at := float(scheduled.operations[operation])
+	if plan.kind=="strike":
+		if not _strike_ready_at(other,int(plan.target_group),use_at): return {}
 	if plan.kind=="meeting":
 		var available := _context(own)
 		if not _open(): return {}

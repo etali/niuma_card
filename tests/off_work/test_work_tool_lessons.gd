@@ -153,7 +153,7 @@ func _meeting_lesson() -> void:
 		"meeting summons and pauses actual opponent personnel")
 	_check(state.tasks.get(worker, {}).get("kind") == "work" and not state.cards[worker].paused,
 		"the other own employee keeps working while the independent host runs the meeting")
-	main._process(float(state.config.roles.employee.work_seconds) + 0.01)
+	main._process(state.config.work_seconds() + 0.01)
 	_check(main.lesson.complete() and state.work_count(0) < work_before
 		and state.work_count(1) == enemy_work and state.meetings.has(meeting),
 		"own production settles during the active meeting while the opponent's work remains")
@@ -193,7 +193,7 @@ func _transfer_lesson() -> void:
 	_check(state.cards[tool].group != gid and state.tasks.get(worker, {}).get("kind") == "work",
 		"extracting only the transfer tool immediately resumes the original work group")
 	var remaining: int = state.work_count(0)
-	main._process(float(state.config.roles.employee.work_seconds) + 0.01)
+	main._process(state.config.work_seconds() + 0.01)
 	_check(main.lesson.complete() and state.work_count(0) < remaining and state.money(0) > cash,
 		"resumed work actually settles income and completes the transfer course")
 	_check(not main.lesson.used_demo, "transfer and restoration complete through original drag input")

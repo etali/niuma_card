@@ -66,7 +66,7 @@ func _run() -> void:
 	var normal := Economy.expected_supply_wait(market.config,"outsource")
 	market.config.rules.conveyor.pool.outsource*=2
 	check(Economy.expected_supply_wait(market.config,"outsource")<normal,"公开供应概率增加才会缩短预计到货等待")
-	market.config.rules.conveyor.employee_every=1
+	market.config.rules.conveyor.pool={"employee":1}
 	check(not is_finite(Economy.expected_supply_wait(market.config,"outsource")),"全部到货固定为员工时不能虚构外包供应")
 	check(not _value(market).detail.sides[0].has("cashout"),"无外包工具也无供应时回到真实自然生产，不奖励无用途现金")
 	var limited := _world()

@@ -475,7 +475,7 @@ func _ready() -> void:
 		_rebuild_pipe()
 		_sync_round()
 	if OnWorkCardConfig.has_launch_override():
-		print("CARDS_CONFIG_READY: " + OnWorkCardDB.loaded_from)
+		LaunchConfig.report_playtest_ready("CARDS_CONFIG_READY: " + OnWorkCardDB.loaded_from)
 	# 启动参数里指定了服务器/房间码就直接进联网局（需求 5，网页版靠这条走）。
 	# 放在 _sync_round 之后：联机入座时可能替换当前牌局，需要先完成初始化
 	_apply_launch_config()

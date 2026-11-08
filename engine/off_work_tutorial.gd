@@ -48,11 +48,10 @@ func make_config() -> OffWorkConfig:
 	config.rules.conveyor.interval_seconds = 60.0
 	config.rules.initial.groups = [{"work": 12}, {"employee": 1}]
 	config.rules.initial.money = int(config.cards.employee.price) - 1
-	config.roles.employee.work_seconds = 2.0
+	config.cards.work.work_seconds = 2.0
 	match lesson.id:
 		"first":
-			config.rules.conveyor.opening.fill("employee")
-			config.rules.conveyor.employee_every = 1
+			config.rules.conveyor.pool = {"employee": 1}
 		"extract":
 			config.rules.initial.groups = [{"work":200,"employee":3,"overtime":1}]
 		"meeting":

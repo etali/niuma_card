@@ -144,6 +144,16 @@ func _income_reservations() -> void:
 	_check(_enemy_positions() == before, "moving income arcs do not make settled group targets wander")
 
 func _strike_reservations() -> void:
+	# Test strike landing reservations on a desk with room for all footprints.
+	# The earlier long-stack/meeting/income cases retain their own assertions;
+	# accumulating all of them plus three loose strikers exceeds the default
+	# spacing capacity of this shallow desk and tests a different packing limit.
+	var previous_opening: Array = state.config.rules.initial.groups.duplicate(true)
+	state.config.rules.initial.groups = [{"employee": 3, "work": 25, "overtime": 1},
+		{"employee": 1, "work": 12}, {"leader": 1}, {"coffee": 2}]
+	game._new_game()
+	state.config.rules.initial.groups = previous_opening
+	await _settle()
 	var target := _working_group(1)
 	if not _check(state.can_strike_group(target, 0), "fixture offers a working opponent strike target"): return
 	var strike := state.add_card("strike", 0)
@@ -161,7 +171,11 @@ func _working_group(owner: int) -> int:
 
 func _idle_person(kind: String, owner: int) -> int:
 	for uid in state.cards:
-		if state.cards[uid].type == kind and int(state.cards[uid].owner) == owner and not state.tasks.has(uid): return int(uid)
+		# A transfer host may have no current task while its combination still
+		# owns the transfer function. The meeting fixture needs the loose host.
+		if state.cards[uid].type == kind and int(state.cards[uid].owner) == owner and not state.tasks.has(uid) \
+				and state.group_cards(int(state.cards[uid].group)).size() == 1 \
+				and not state.is_meeting_target(int(uid)): return int(uid)
 	return -1
 
 func _kind(kind: String, owner: int) -> int:

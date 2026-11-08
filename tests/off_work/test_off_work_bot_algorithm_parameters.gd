@@ -193,11 +193,16 @@ func _long_and_short_queues() -> void:
 	var queue := world([{"employee":1,"work":2},{"employee":1,"work":40}])
 	var projected: Dictionary = value(queue).detail.sides[1]
 	check(projected.eta < 400.0 and projected.required_actions == 1, "短队列完成后人员可真实转入长队列，转岗有行动时隙")
-	var heterogeneous := world([{"employee":1,"grinder":1,"work":3}])
-	heterogeneous.config.roles.grinder.work_seconds = 20.0
+	var heterogeneous := world([{"employee":1,"grinder":1,"work":4}])
+	heterogeneous.config.cards.work.work_seconds = 20.0
+	heterogeneous.config.roles.grinder.work_capacity = 2
 	heterogeneous._sync_schedule()
 	var exact: Dictionary = value(heterogeneous).detail.sides[1]
-	check(is_equal_approx(exact.eta,10.0 / 0.75 + 10.0), "自定义异速人员共享批次后，末份工作按实际参与顺序重算周期")
+	check(is_equal_approx(exact.eta,40.0), "不同容量人员共用20秒周期，三份满批与一份尾批需两个真实周期")
+	heterogeneous.advance(20.0)
+	check(heterogeneous.work_count(1) == 1, "真实第一周期按员工与卷王容量完成三份，保留尾批")
+	heterogeneous.advance(20.0)
+	check(heterogeneous.work_count(1) == 0, "真实尾批完工时间与统一周期预测一致")
 	var near := world([{"employee":1,"work":1},{"employee":10}])
 	near.advance(9.0); near.offers.clear()
 	check(value(near).detail.sides[1].required_actions == 0, "冲线之后才可执行的闲置派工不计必要命令")
@@ -265,7 +270,7 @@ func _exact_forecast_cache() -> void:
 	check(var_to_bytes(cached.evaluate(game,1,game.config.rules.bot,-1,[0.0,1.0]))==first_bytes, "返回结果为独立副本，调用者不能污染缓存")
 	var phase := cached.evaluate(game,1,game.config.rules.bot,-1,[0.0,2.0])
 	check(phase.detail.sides[1].eta > first_value.detail.sides[1].eta, "同牌面不同合法行动相位不能误中缓存")
-	game.config.roles.employee.work_seconds = 20.0
+	game.config.cards.work.work_seconds = 20.0
 	game._sync_schedule()
 	var changed := cached.evaluate(game,1,game.config.rules.bot,-1,[0.0,1.0])
 	check(changed.detail.sides[1].eta > phase.detail.sides[1].eta, "同config对象的规则修改也使缓存失效")

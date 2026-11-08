@@ -202,7 +202,17 @@ class ShiftWorkbench(unittest.TestCase):
             atomic_json(off_store/old_job/'request.json', old_request)
             atomic_json(off_store/old_job/'result.json', {'games':2, 'timeouts':2})
             env = {**os.environ, 'CARD_DATA_DIR':str(temp/'on-player'), 'WORK_DATA_DIR':str(temp/'off-player')}
-            command = [sys.executable, str(ROOT/'tools/manual_balance.py'), '--port', '0', '--store', str(store),
+            # Exercise the same service and launcher, substituting only its
+            # macOS binary lookup so this integration test remains headless and
+            # does not require or open the developer's real exported App.
+            bootstrap = temp / 'service.py'
+            bootstrap.write_text('import sys\nfrom pathlib import Path\n'
+                                 + 'sys.path.insert(0, '+repr(str(ROOT))+')\n'
+                                 + 'from tools import manual_balance\n'
+                                 + 'from tools.balance import playtest_launcher\n'
+                                 + 'playtest_launcher.macos_executable=lambda root: Path('+repr(str(engine))+')\n'
+                                 + 'manual_balance.main()\n')
+            command = [sys.executable, str(bootstrap), '--port', '0', '--store', str(store),
                        '--godot', str(engine)]
             with (temp/'service.log').open('w+') as log, subprocess.Popen(command, env=env, stdout=log, stderr=log) as service:
                 try:

@@ -7,6 +7,8 @@ extends Node3D
 
 var card_catalog: Script = OnWorkCardDB
 var combo_rules: Script = OnWorkComboRules
+# Modes without the native recipe/effect badges own their progress elsewhere.
+var native_recipe_progress_enabled := true
 
 ## 自由桌面：管理卡牌拖拽、堆叠成组、配方进度显示
 ## 规则：拖任意卡到另一组上 = 并入该组；拖组顶卡离开 = 整组移动；
@@ -33,6 +35,10 @@ var cards: Array[CardEntity] = []
 var groups: Array = []          # Array of {cards: Array[CardEntity], label: Label3D}
 var _drag_cards: Array[CardEntity] = []
 var _drag_offsets: Array[Vector3] = []
+# Covered stack layers can share exactly the same location. Keep each real
+# offset for placement, but clamp/project each distinct geometric point once.
+var _drag_bounds_source: Array[Vector3] = []
+var _drag_bounds: Array[Vector3] = []
 ## 手上这摞是不是收拢态。整摞拎起来时原组会被销毁（remain 空），
 ## 收拢标记得先存下来，落桌重建新组时照原样还回去——
 ## 否则「双击收拢 → 挪个位置」会把牌又摊开，等于双击白点了
@@ -73,6 +79,10 @@ var hover_description_enabled := true
 var camera: Camera3D
 
 signal card_picked(card: CardEntity)
+## Presentation systems follow registration, not physical parenting (enemy
+## cards may live beneath the main board while belonging to another Board).
+signal card_registered(card: CardEntity)
+signal card_unregistered(card: CardEntity)
 ## 在任何拆组或抬牌之前通知控制层；只提供事务边界，不改变原拖牌行为。
 signal card_pick_started(card: CardEntity)
 signal card_stacked(completed: bool)  # 并入某组；completed=这次并入凑满了配方
@@ -160,6 +170,12 @@ func cancel_pointer() -> void:
 	else:
 		cancel_drag()
 	_reset_click_track()
+
+## Real-time tables own all card positions; releasing a gesture must not
+## briefly activate thousands of overlapping rigid bodies before re-stacking.
+## The original table continues to use physics for released loose cards.
+func _release_keeps_frozen(_card: CardEntity) -> bool:
+	return false
 
 ## 同一个松手入口供鼠标、触摸及GUI消费事件后的兜底使用。
 func release_pointer(at: Vector2) -> void:
@@ -387,6 +403,7 @@ func _physics_process(_delta: float) -> void:
 
 func register_card(card: CardEntity) -> void:
 	cards.append(card)
+	card_registered.emit(card)
 	# 点击拾取统一由 Board 在 _unhandled_input 里做物理射线（冻结刚体的 input_event 不可靠）
 
 ## 一张牌当场离场（被攻击点掉）：从组里摘掉，剩下的**立刻合上空档**。
@@ -412,6 +429,8 @@ func unregister_card(card: CardEntity) -> void:
 		_set_hover_card(null)
 	card.reset_interaction_visual()
 	cards.erase(card)
+	# A bulk reset can clear cards before calling this per-card cleanup.
+	card_unregistered.emit(card)
 	_stop_move(card, false)   # 归位补间还在飞的话会写已释放实例
 	# 在手的牌被释放时也要摘掉，否则 _process 会写已释放实例
 	var di := _drag_cards.find(card)
@@ -744,7 +763,7 @@ func _process(delta: float) -> void:
 		return
 	# 展开牌列以抓住的首牌为交互锚点，尾部可临时伸出屏幕；
 	# 否则列越长，首牌越够不到底部目标。收拢摞继续按整体约束。
-	var held_bounds: Array = _drag_offsets if _drag_compact else _drag_offsets.slice(0, 1)
+	var held_bounds: Array = _held_stack_bounds()
 	var anchor := clamp_stack_anchor(target + _grab_offset, held_bounds, table_bounds)
 	anchor.y = DRAG_HEIGHT
 	if screen_position_clamper.is_valid():
@@ -874,7 +893,7 @@ func _restore_press() -> void:
 		if is_instance_valid(c):
 			c.dragging = false
 			c.pulse_landed()
-			c.freeze = false
+			c.freeze = _release_keeps_frozen(c)
 	_drag_cards = []
 	_drag_offsets.clear()
 	_drag_compact = false
@@ -896,7 +915,7 @@ func _restore_press() -> void:
 			_stop_move(c0, false)
 			c0.global_position = snap["pos"]
 			c0.rotation_degrees = snap["rot"]
-			c0.freeze = c0.is_market
+			c0.freeze = c0.is_market or _release_keeps_frozen(c0)
 			if c0.is_market:
 				c0.linear_velocity = snap["linear_velocity"]
 				c0.angular_velocity = snap["angular_velocity"]
@@ -1236,15 +1255,18 @@ func cancel_drag() -> void:
 		return
 	_clamp_drag_to_player()
 	_press_snap = {}   # 强制中止：这一击不再有「原样放回」的机会，快照作废
+	var grouped := {}
+	for group in groups:
+		for card in group.cards: grouped[card] = true
 	for c in _drag_cards:
 		if is_instance_valid(c):
 			c.dragging = false
 			c.pulse_landed()
-			c.freeze = false
+			c.freeze = _release_keeps_frozen(c)
 			# 这条路不重建组（牌是散着落回桌面的）。整摞拎起来时进度是跟着牌
 			# 走的（见 _remove_group 的 keep_progress），到这儿组没了，
 			# 留着的数字就成了「不属于任何组的 3/3」，退回 0/N
-			if group_of(c) == null:
+			if native_recipe_progress_enabled and not grouped.has(c):
 				reset_recipe_progress(c)
 	_drag_cards = []
 	_drag_offsets.clear()
@@ -1404,7 +1426,7 @@ func _end_drag() -> void:
 			if mr["merged"]:
 				card_stacked.emit(mr["completed"])
 			else:
-				c0.freeze = false  # 恢复刚体，自然落定
+				c0.freeze = _release_keeps_frozen(c0)
 			# 并进组也好、落回空桌也好，都是「牌落到桌上」，一律一声闷响。
 			# 成组不另配咔哒 —— 那一声留给双击摞牌（见 pile_toggled）
 			card_dropped_table.emit()
@@ -1541,7 +1563,7 @@ func prune_groups() -> void:
 ## 「金色凑满高亮还在，进度却写着 0/3」
 func _remove_group(g, keep_progress := false) -> void:
 	_clear_side(g)
-	if not keep_progress:
+	if not keep_progress and native_recipe_progress_enabled:
 		# 组散了，留在牌面上的进度数字就没有意义了，退回 0/N
 		for c in g["cards"]:
 			if is_instance_valid(c):
@@ -1572,6 +1594,7 @@ func _mods() -> Dictionary:
 	return mods if mods is Dictionary else {}
 
 func _update_group_progress(g, eval: Dictionary) -> void:
+	if not native_recipe_progress_enabled: return
 	_push_recipe_progress(g, _group_progress(g), eval["valid"])
 	_push_effect_mult(g)
 
@@ -2043,8 +2066,26 @@ func _group_origin(g) -> Vector3:
 ## 会跟 _process 的拖拽定位对着写，牌在手上一路往桌面沉
 var _move_tw := {}
 
+func _held_stack_bounds() -> Array[Vector3]:
+	# Expanded stacks deliberately constrain only the grabbed first layer.
+	if not _drag_compact: return _drag_offsets.slice(0, 1)
+	# Compare the exact source, including y; callers may edit offsets in place.
+	# This cheap packed-value comparison also avoids relying on hash collisions.
+	if _drag_bounds_source != _drag_offsets:
+		_drag_bounds_source = _drag_offsets.duplicate()
+		_drag_bounds.clear()
+		var seen := {}
+		for offset in _drag_offsets:
+			if seen.has(offset): continue
+			seen[offset] = true
+			_drag_bounds.append(offset)
+	return _drag_bounds
+
 func _move_to(c: CardEntity, to: Vector3) -> void:
 	_stop_move(c, false)
+	# Still cancel prior/internal motion first. A settled slot needs no new
+	# tween; every nonzero move keeps the same 0.18-second landing animation.
+	if c.global_position == to: return
 	# 保持原有理牌速度与回弹节奏；穿模由浮层高度和深度测试处理。
 	var tw := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.tween_property(c, "global_position", to, 0.18)
@@ -2228,8 +2269,9 @@ func refresh_group(g, top_pos := Vector3.INF) -> bool:  # 返回: 这次更新�
 		g["was_valid"] = false
 		g["upgrade_target"] = ""
 		# 这两条提前返回都不会走到 _update_group_progress，D 位得在这里自己退回 0/N
-		for c in g["cards"]:
-			reset_recipe_progress(c)
+		if native_recipe_progress_enabled:
+			for c in g["cards"]:
+				reset_recipe_progress(c)
 		return false
 	# 无核心卡（纯资源摞/整理摞）：没有配方可言，不写进度
 	var has_core := false
@@ -2242,8 +2284,9 @@ func refresh_group(g, top_pos := Vector3.INF) -> bool:  # 返回: 这次更新�
 		_set_group_highlight(g, false)
 		g["was_valid"] = false
 		g["upgrade_target"] = ""
-		for c in g["cards"]:
-			reset_recipe_progress(c)
+		if native_recipe_progress_enabled:
+			for c in g["cards"]:
+				reset_recipe_progress(c)
 		return false
 	var data: Array = []
 	for c in g["cards"]:

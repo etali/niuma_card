@@ -34,6 +34,14 @@
           <div class="controls notes-actions"><button id="saveNotes" disabled>保存备注</button><p id="notesStatus" class="muted" role="status"></p></div>
         </div>
         <div class="play-controls"><button class="primary" id="playtest" data-edit disabled>用当前卡表试玩</button><p class="muted" id="playStatus" role="status"></p></div>
+        <section class="market-pool" aria-labelledby="market-title">
+          <h3 id="market-title">购牌区出现概率</h3>
+          <p class="muted">开局和后续补牌统一按权重抽取，出现概率 = 本牌权重 ÷ 总权重。支持小数，0 表示不出现；工作、金钱和升级牌不参与购牌抽取。</p>
+          <div class="market-pool-heading"><span>卡牌 / 出场权重</span><span>出现概率</span></div>
+          <div id="market-fields"></div>
+          <p id="market-total" class="muted" role="status" aria-live="polite"></p>
+          <p id="market-error" class="notice error" role="alert" hidden></p>
+        </section>
         <h3>全局参数</h3><div id="global-fields" class="global-grid"></div>
         <div class="controls"><label class="grow">查找卡牌<input id="card-search" type="search" placeholder="输入卡名或英文标识"></label><label>卡牌类型<select id="card-kind"></select></label></div>
         <div id="fields"></div>

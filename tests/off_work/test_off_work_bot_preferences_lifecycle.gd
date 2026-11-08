@@ -23,7 +23,6 @@ func run() -> void:
 
 	var cards: Dictionary = host.state.config.balance_document()
 	cards.rules.conveyor.slots = 4
-	cards.rules.conveyor.opening = cards.rules.conveyor.opening.slice(0, 4)
 	var path := SavePaths.settings_file("off_work_lifecycle_cards.json")
 	preload("res://engine/json_store.gd").save(path, cards)
 	check(host.choose_card_config(path).ok and host.apply_selected_card_config().ok, "真实卡表选择流程仍可重开")

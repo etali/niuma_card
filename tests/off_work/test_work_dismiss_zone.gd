@@ -171,7 +171,7 @@ func _changed_during_drag() -> void:
 	var origin := board.rest_origin(group)
 	await _begin_drag(group.cards[0])
 	await _move_to_zone()
-	state.advance(float(state.config.roles.employee.work_seconds))
+	state.advance(state.config.work_seconds())
 	board.sync_state(state)
 	_check(state.work_count(0) == 199, "real task completes while source pile is in pointer")
 	var destination := await _move_to_zone()

@@ -22,28 +22,37 @@ class IncomeBoard extends Board:
 	func _init() -> void:
 		card_catalog = OffWorkCardDB
 		combo_rules = OffWorkComboRules
+		native_recipe_progress_enabled = false
 
 	var income_move: Callable
 	var income_side: Callable
 	var front_order: Callable
 	var stack_layout: Callable
+	var stack_changed: Callable
+	var side_refresh_deferred: Callable
+	var compact_sync_layout: Callable
 	var rest_height: float
 	var defer_record_refresh := false
 	var terminal_sides_hidden := false
 	func group_mods(group_cards: Array) -> Dictionary:
 		return OffWorkBoard.balance_group_mods(group_cards)
 	func refresh_group(group, top_pos := Vector3.INF) -> bool:
+		if stack_changed.is_valid(): stack_changed.call()
 		return false if defer_record_refresh else super.refresh_group(group, top_pos)
 	func _core_first(group) -> void:
 		super._core_first(group)
 		if front_order.is_valid(): group.cards = front_order.call(group)
 	func _layout_group(group, origin := Vector3.INF) -> bool:
+		if stack_changed.is_valid(): stack_changed.call()
 		if front_order.is_valid():
 			var ordered: Array = front_order.call(group)
 			if ordered != group.cards and origin == Vector3.INF:
 				origin = rest_origin(group)
 				origin.y = rest_height
 			group.cards = ordered
+		if compact_sync_layout.is_valid():
+			var result: Variant = compact_sync_layout.call(self, group, origin)
+			if result != null: return bool(result)
 		return super._layout_group(group, origin)
 	func _move_to(card: CardEntity, destination: Vector3) -> void:
 		if income_move.is_valid() and bool(income_move.call(card, destination)): return
@@ -52,6 +61,7 @@ class IncomeBoard extends Board:
 		if stack_layout.is_valid(): return stack_layout.call(group, index, self)
 		return super._stack_offset(group, index)
 	func _layout_side(group, at: Vector3, pin_y := false) -> void:
+		if side_refresh_deferred.is_valid() and bool(side_refresh_deferred.call()): return
 		if terminal_sides_hidden:
 			_clear_side(group)
 			return
@@ -89,6 +99,13 @@ var _assembling := false
 var _stack_representatives: Dictionary = {}
 var _thin_stack_cards: Dictionary = {}
 var _muted_stack_titles: Dictionary = {}
+var _stack_layout_revision := 0
+var _stack_occlusion_dependencies: Array = []
+var _record_sync_key: Array = []
+var _record_cards: Dictionary = {}
+var _record_groups: Dictionary = {}
+var _group_progress_cards: Dictionary = {}
+var _debug_timer_cards: Dictionary = {}
 var _spawned_by_owner: Dictionary = {}
 var _picked_ids: Array = []
 var _dismiss_pick_snapshot: Dictionary = {}
@@ -129,11 +146,14 @@ var _terminal_pose_locked := false
 var side_extract: RefCounted
 var _defer_record_refresh := false
 var _record_removal_groups: Array = []
+var _defer_side_refresh := false
+var _syncing_structure := false
 
 func _init(read_user_preferences := true) -> void:
 	align_stack_layers = _align_stack_layers
 	card_catalog = OffWorkCardDB
 	combo_rules = OffWorkComboRules
+	native_recipe_progress_enabled = false
 	_interaction_preferences = InteractionPreferences.new(_settings.snapping, read_user_preferences)
 	_debug_preferences = DebugPreferences.new(_settings.debug_mode, read_user_preferences)
 
@@ -164,6 +184,9 @@ func _ensure_enemy_board() -> void:
 	(enemy_board as IncomeBoard).income_side = _update_cash_side
 	(enemy_board as IncomeBoard).front_order = _stack_face_order
 	(enemy_board as IncomeBoard).stack_layout = _work_stack_offset
+	(enemy_board as IncomeBoard).stack_changed = _invalidate_stack_occlusion
+	(enemy_board as IncomeBoard).side_refresh_deferred = _side_refresh_is_deferred
+	(enemy_board as IncomeBoard).compact_sync_layout = _try_compact_sync_layout
 	(enemy_board as IncomeBoard).rest_height = float(_settings.rest_y)
 	enemy_board.name = "OpponentOriginalBoard"
 	add_child(enemy_board)
@@ -173,6 +196,9 @@ func _ensure_enemy_board() -> void:
 	enemy_board.set_physics_process(false)
 	enemy_board.set_process_input(false)
 	enemy_board.set_process_unhandled_input(false)
+
+func _side_refresh_is_deferred() -> bool:
+	return _defer_side_refresh
 
 func setup(view_camera: Camera3D, drawer := false) -> void:
 	_ensure_enemy_board()
@@ -263,6 +289,13 @@ func _pick_card(screen_pos: Vector2) -> CardEntity:
 		return group.cards[_top_index(group)] if group != null and not group.cards.is_empty() else null
 	return card
 
+func _pick_price_tag(screen_pos: Vector2) -> CardEntity:
+	# Only offers have price tags. Hidden work still has a real physics identity,
+	# but must not be visited once per mouse-hover frame to look for a shop tag.
+	for card in offers_by_id.values():
+		if _price_tag_contains(card, screen_pos): return card
+	return null
+
 func _set_hover_card(card: CardEntity) -> void:
 	if side_extract != null and side_extract.is_open(): card = null
 	var changed := card != _hover_card
@@ -339,6 +372,9 @@ func _restore_dismiss_pick() -> void:
 				or int(_state.cards[card.uid].owner) != int(_settings.local_owner): snap = {}
 	_press_snap = snap
 	cancel_pointer()
+
+func _release_keeps_frozen(_card: CardEntity) -> bool:
+	return true
 
 func cancel_pointer() -> void:
 	if side_extract != null: side_extract.close()
@@ -494,14 +530,16 @@ func _nearest_group(pos: Vector3, exclude: Array):
 		if attack != null: return attack
 	var best: Variant = null
 	var best_distance := INF
+	var excluded := {}
+	for card in exclude: excluded[card] = true
 	for group in groups:
-		if group.cards.any(func(card): return exclude.has(card)): continue
+		if group.cards.any(func(card): return excluded.has(card)): continue
 		var targets: Array = group.cards
 		if bool(group.get("compact", false)):
 			# Buried cards must not extend the visible top card's snap region.
 			# Incoming cash is away from the pile, so its next settled member
 			# is the visible front until it lands.
-			targets = targets.filter(func(card): return is_instance_valid(card) and not card.has_meta("income_flight") and not card.has_meta("delivery_flight")).slice(0, 1)
+			targets = _settled_front(targets)
 		for card in targets:
 			var distance := _snap_distance(at, card)
 			if distance < best_distance:
@@ -519,13 +557,26 @@ func _nearest_loose_card(pos: Vector3, exclude: Array) -> CardEntity:
 	var at: Vector3 = _drag_cards[0].global_position if not _drag_cards.is_empty() else pos
 	var best: CardEntity = null
 	var best_distance := INF
+	var excluded := {}
+	for card in exclude: excluded[card] = true
+	# group_of() scans the whole pile for each card. A membership set keeps a
+	# loose-card query linear even while dragging beside thousands of work UIDs.
+	var grouped := {}
+	for group in groups:
+		for card in group.cards: grouped[card] = true
 	for card in cards:
-		if exclude.has(card) or not is_instance_valid(card) or group_of(card) != null: continue
+		if excluded.has(card) or not is_instance_valid(card) or grouped.has(card): continue
 		var distance := _snap_distance(at, card)
 		if distance < best_distance:
 			best_distance = distance
 			best = card
 	return best
+
+func _settled_front(members: Array) -> Array:
+	for card in members:
+		if is_instance_valid(card) and not card.has_meta("income_flight") and not card.has_meta("delivery_flight"):
+			return [card]
+	return []
 
 func try_merge(card: CardEntity) -> Dictionary:
 	if card.has_meta("income_flight") or card.has_meta("delivery_flight") or _is_striking_card(card): return {"merged": false, "completed": false}
@@ -557,7 +608,7 @@ func _nearest_strike_group(at: Vector3) -> Variant:
 		if not _state.can_strike_group(gid, int(_settings.local_owner)): continue
 		var targets: Array = group.cards
 		if bool(group.get("compact", false)):
-			targets = targets.filter(func(card): return is_instance_valid(card) and not card.has_meta("income_flight") and not card.has_meta("delivery_flight")).slice(0, 1)
+			targets = _settled_front(targets)
 		for card in targets:
 			if not is_instance_valid(card) or _meeting_visitors.has(card.uid) or _strike_dancers.has(card.uid) \
 				or card.has_meta("income_flight") or card.has_meta("delivery_flight"): continue
@@ -764,6 +815,25 @@ func _payment_amount(payment: Array) -> int:
 			amount += _state.available_cash_amount(int(card.uid))
 	return amount
 
+func _record_structure_key() -> Array:
+	var actors: Array = []
+	for uid in _state.activity_card_ids():
+		var card: Dictionary = _state.cards[uid]
+		actors.append([uid, card.type, card.owner, card.group, card.status, card.activity])
+	var visitors: Array = []
+	for uid in _meeting_visitors: visitors.append([uid, _meeting_visitors[uid].phase == "return"])
+	return [_state.get_instance_id(), _state.config.get_instance_id(), _state.revision, _state.membership_version(),
+		_state.cards.size(), _state.groups.size(), _state.winner, _settings.local_owner,
+		groups.size(), enemy_board.groups.size(),
+		player_bounds, enemy_board.player_bounds, _settings.opponent_layout.hash(),
+		actors, visitors, _strike_dancers.keys(), _strike_attacks.keys(),
+		_interacting(), _drop_pending, _stack_layout_revision]
+
+func _update_record(card: OffWorkCard, record: Dictionary) -> void:
+	card.update_record(record)
+	card.draggable = _state.winner < 0 and int(record.owner) == int(_settings.local_owner) and not _cash_flights.has(card.uid) and not _delivery_flights.has(card.uid) and not _strike_in_flight(card.uid)
+	card.is_market = false
+
 func sync_state(state: Object, setup: RefCounted = null) -> void:
 	var rebuilding := _state == null
 	if _state == null:
@@ -771,12 +841,23 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 	_state = state
 	if not is_inside_tree(): return
 	_ensure_enemy_board()
+	# Timers do not change membership. Keep personnel/tools and real group bars
+	# live without revisiting thousands of unchanged work entities every 100 ms.
+	# Dictionary identity also detects a replay/LAN snapshot replacing records
+	# while retaining the same State instance and revision.
+	if setup == null and is_same(_record_cards, state.cards) and is_same(_record_groups, state.groups) \
+		and _record_structure_key() == _record_sync_key:
+		for uid in state.activity_card_ids():
+			if by_uid.has(uid): _update_record(by_uid[uid], state.cards[uid])
+		_sync_live_presentation()
+		return
 	if state.winner >= 0: _freeze_terminal_layout()
 	_effect_tweens = _effect_tweens.filter(func(tween): return tween != null and tween.is_valid())
 	# A single production tick can retire hundreds of files. Unregister all
 	# affected cards first, then close each surviving stack only once.
 	_record_removal_groups.clear()
 	_defer_record_refresh = state.winner < 0
+	_defer_side_refresh = state.winner < 0
 	(enemy_board as IncomeBoard).defer_record_refresh = _defer_record_refresh
 	for uid in by_uid.keys():
 		var card: OffWorkCard = by_uid[uid]
@@ -814,9 +895,13 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 		var record: Dictionary = state.cards[uid]
 		var card: OffWorkCard = by_uid.get(uid)
 		if card == null:
+			_invalidate_stack_occlusion()
 			card = CardView.new()
-			var defer_face: bool = record.type == "work" and state.winner < 0 and state.groups[record.group].cards.size() > int(_settings.stack_display.expanded_visible_layers)
+			var defer_face: bool = record.type in ["work", "money"] and state.winner < 0 and state.groups[record.group].cards.size() > int(_settings.stack_display.expanded_visible_layers)
 			card.configure(record, state.config.cards[record.type], false, defer_face)
+			# Enter the physics world as the stationary body this table actually
+			# owns, not as a temporary dynamic body overlapping every prior UID.
+			card.freeze = true
 			if defer_face: _stack_occluded[uid] = true
 			add_child(card)
 			by_uid[uid] = card
@@ -838,12 +923,12 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 			_presenter(int(record.owner)).register_card(card)
 		if _cash_flights.has(uid) and int(_cash_flights[uid].group) != int(record.group):
 			_cancel_cash_flight(card)
-		card.update_record(record)
-		card.draggable = state.winner < 0 and int(record.owner) == int(_settings.local_owner) and not _cash_flights.has(uid) and not _delivery_flights.has(uid) and not _strike_in_flight(uid)
-		card.is_market = false
+		if card.group_id != int(record.group) or card.type != str(record.type): _invalidate_stack_occlusion()
+		_update_record(card, record)
 	_assembling = false
 	_defer_record_refresh = false
 	(enemy_board as IncomeBoard).defer_record_refresh = false
+	_syncing_structure = true
 	for pending in _record_removal_groups:
 		var presenter: Board = pending.presenter
 		var group: Dictionary = pending.group
@@ -851,6 +936,7 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 			presenter._layout_group(group, pending.origin)
 	_record_removal_groups.clear()
 	if state.winner >= 0:
+		_syncing_structure = false
 		_sync_group_task_progress()
 		_restore_terminal_stationary_faces()
 		return
@@ -861,6 +947,18 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 	if not _interacting() and not _drop_pending: _sync_owner_groups(int(_settings.local_owner), self)
 	_sync_owner_groups(int(_settings.opponent_owner), enemy_board)
 	_placing_snapshot = false
+	_syncing_structure = false
+	# Membership/layout may have changed more than once while retiring cards and
+	# reconciling authoritative groups. Resolve side counts and height once,
+	# after every destination is known, as the ordinary final resync already did.
+	_defer_side_refresh = false
+	for presenter in [self, enemy_board]: presenter.resync_sides()
+	_sync_live_presentation()
+	_record_cards = state.cards
+	_record_groups = state.groups
+	_record_sync_key = _record_structure_key()
+
+func _sync_live_presentation() -> void:
 	_sync_stack_occlusion()
 	_sync_market()
 	_sync_group_task_progress()
@@ -871,6 +969,7 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 	_advance_deliveries(0.0)
 
 func refresh_group(group, top_pos := Vector3.INF) -> bool:
+	_invalidate_stack_occlusion()
 	return false if _defer_record_refresh else super.refresh_group(group, top_pos)
 
 func _unregister_record_card(card: OffWorkCard) -> void:
@@ -985,8 +1084,25 @@ func _departure_clearance(card: OffWorkCard) -> float:
 
 ## Repeated material shares bounded visual slots. Every actual UID stays in
 ## the group; only one real face draws at each slot, including a held suffix.
+func _invalidate_stack_occlusion() -> void:
+	_stack_layout_revision += 1
+
+func _occlusion_dependencies() -> Array:
+	# Moving an intact pile changes world positions, not its relative slots.
+	# Layout/recipe entry points invalidate membership/order. Only the small
+	# moving sets and a held suffix need inspection between structural changes.
+	return [_stack_layout_revision, by_uid.size(), groups.size(),
+		enemy_board.groups.size() if is_instance_valid(enemy_board) else 0,
+		player_bounds, enemy_board.player_bounds if is_instance_valid(enemy_board) else Rect2(),
+		_settings.stack_display.hash(), _drag_compact, _drag_cards.hash(), _drag_offsets.hash(),
+		_cash_flights.keys(), _delivery_flights.keys(), _meeting_visitors.keys(),
+		_strike_dancers.keys(), _strike_attacks.keys()]
+
 func _sync_stack_occlusion() -> void:
 	if _terminal_pose_locked: return
+	var dependencies := _occlusion_dependencies()
+	if dependencies == _stack_occlusion_dependencies: return
+	_stack_occlusion_dependencies = dependencies
 	var hidden: Dictionary = {}
 	var representatives: Dictionary = {}
 	var thin: Dictionary = {}
@@ -1060,6 +1176,9 @@ func _has_external_pose(uid: int) -> bool:
 ## Keep source stacking order and expose one authoritative work bar per group.
 ## Meeting/coffee retain their own timers; they never borrow a work countdown.
 func _sync_group_task_progress() -> void:
+	for uid in _group_progress_cards:
+		if by_uid.has(uid) and _state.cards.has(uid): by_uid[uid].update_record(_state.cards[uid])
+	_group_progress_cards.clear()
 	if _state != null and _state.winner >= 0:
 		_clear_terminal_progress()
 		return
@@ -1073,19 +1192,19 @@ func _sync_group_task_progress() -> void:
 			if outsource >= 0:
 				if not top.has_dedicated_progress():
 					var timer: Dictionary = _state.cards[outsource]
-					top.set_task_progress(1.0 - float(timer.remaining) / float(timer.total), true, false, "outsource")
+					_set_group_progress(top, 1.0 - float(timer.remaining) / float(timer.total), false, "outsource")
 				continue
 			var gid := int(top.group_id)
 			if _state.groups.has(gid) and str(_state.groups[gid].job) == "slack":
 				var representative := _work_progress_card(group, presenter, "slack")
 				if representative != null:
-					representative.set_task_progress(_state.group_slack_progress(gid), true,
+					_set_group_progress(representative, _state.group_slack_progress(gid),
 						_state.group_slack_participants(gid).is_empty(), "slack")
 				continue
 			if _state.groups.has(gid) and str(_state.groups[gid].job) == "transfer":
 				var representative := _work_progress_card(group, presenter, "transfer")
 				if representative != null and not _state.group_work(gid).is_empty():
-					representative.set_task_progress(_state.group_transfer_progress(gid), true,
+					_set_group_progress(representative, _state.group_transfer_progress(gid),
 						_state.group_transfer_participants(gid).is_empty(), "transfer")
 				continue
 			var work_person := -1
@@ -1100,7 +1219,7 @@ func _sync_group_task_progress() -> void:
 				var representative := _work_progress_card(group, presenter)
 				if representative != null:
 					var work_group := int(_state.cards[work_person].group)
-					representative.set_task_progress(_state.group_work_progress(work_group), true,
+					_set_group_progress(representative, _state.group_work_progress(work_group),
 						_state.group_work_participants(work_group).is_empty(), "work")
 				continue
 			if _state.tasks.has(top.uid) or top.has_dedicated_progress(): continue
@@ -1116,8 +1235,12 @@ func _sync_group_task_progress() -> void:
 					break
 			if participant >= 0:
 				var data: Dictionary = _state.cards[participant]
-				top.set_task_progress(float(data.progress), true, bool(data.paused), str(data.activity), participant)
+				_set_group_progress(top, float(data.progress), bool(data.paused), str(data.activity), participant)
 	_sync_debug_timers()
+
+func _set_group_progress(card: OffWorkCard, progress: float, paused: bool, phase: String, source := -1) -> void:
+	card.set_task_progress(progress, true, paused, phase, source)
+	_group_progress_cards[card.uid] = true
 
 func _clear_terminal_progress() -> void:
 	# Both sides stop at the result, including the opponent's unfinished jobs.
@@ -1129,11 +1252,19 @@ func _clear_terminal_progress() -> void:
 
 func _sync_debug_timers() -> void:
 	var enabled := get_debug_mode() and _state != null and int(_state.winner) < 0
-	for card: OffWorkCard in by_uid.values():
+	var current := _group_progress_cards.duplicate()
+	if _state != null:
+		for uid in _state.activity_card_ids(): current[uid] = true
+	for uid in _debug_timer_cards:
+		if not current.has(uid) and by_uid.has(uid): by_uid[uid].set_debug_timer(false, -1.0)
+	for uid in current:
+		if not by_uid.has(uid): continue
+		var card: OffWorkCard = by_uid[uid]
 		var remaining := -1.0
 		if enabled and card._task_progress_active:
 			remaining = ProgressClock.remaining(_state, card._task_progress_source, card._task_progress_phase, card._task_progress_value)
 		card.set_debug_timer(enabled, remaining)
+	_debug_timer_cards = current
 
 func _work_progress_card(group: Dictionary, presenter: Board, kind := "work") -> OffWorkCard:
 	var candidates: Array = [group.cards[presenter._top_index(group)]] + group.cards
@@ -1177,6 +1308,9 @@ func _align_stack_layers(members: Array, offsets: Array) -> void:
 			base_y = minf(base_y, card.global_position.y - (offsets[i] as Vector3).y)
 	if base_y == INF: return
 	base_y = maxf(base_y, float(_settings.rest_y))
+	_align_stack_layers_at(members, offsets, base_y)
+
+func _align_stack_layers_at(members: Array, offsets: Array, base_y: float) -> void:
 	for i in members.size():
 		var card: CardEntity = members[i]
 		if _has_external_pose(card.uid): continue
@@ -1262,12 +1396,68 @@ func _core_first(group) -> void:
 	group.cards = _stack_face_order(group)
 
 func _layout_group(group, origin := Vector3.INF) -> bool:
+	_invalidate_stack_occlusion()
 	var ordered := _stack_face_order(group)
 	if ordered != group.cards and origin == Vector3.INF:
 		origin = rest_origin(group)
 		origin.y = float(_settings.rest_y)
 	group.cards = ordered
+	var result: Variant = _try_compact_sync_layout(self, group, origin)
+	if result != null: return bool(result)
 	return super._layout_group(group, origin)
+
+## During authoritative reconciliation a capped pile usually loses only a few
+## sheets. Its thousands of covered UIDs retain exactly the same bottom slot.
+## Reuse the original clamp/alignment/motion rules, but apply them only to cards
+## whose position or motion actually differs. Pointer edits and expanded piles
+## continue through the full shared Board layout.
+func _try_compact_sync_layout(presenter: Board, group: Dictionary, origin: Vector3) -> Variant:
+	if not _syncing_structure or _placing_snapshot or _interacting() or _drop_pending \
+		or origin == Vector3.INF or not bool(group.get("compact", false)) \
+		or presenter.align_stack_layers != _align_stack_layers \
+		or not Board.has_table_bounds(presenter.player_bounds) \
+		or absf(origin.y - float(_settings.rest_y)) > 0.0000001: return null
+	var members: Array = group.cards
+	var count := members.size()
+	var available := maxf(0.0, presenter.player_bounds.size.y - CardEntity.CARD_SIZE.z - Board.BOUNDS_PAD * 2.0)
+	var cap := mini(Board.BOUNDED_COMPACT_LAYERS, maxi(1, int(floor(available / Board.COMPACT_GAP.z)) + 1))
+	if not members.is_empty() and members[0].def_id == "money" and members.all(func(card): return card.def_id == "money"):
+		cap = mini(int(_settings.stack_display.money_visible_layers), maxi(1, int(floor(available / Board.COMPACT_GAP.z)) + 1))
+	if count <= cap: return null
+	group.z_gap = minf(Board.STACK_GAP.z, available / maxf(count - 1, 1))
+	group.bounded_compact_cap = cap
+	var distinct: Array = []
+	for index in cap: distinct.append(Board.capped_offset(count, index, cap))
+	var base := origin
+	# Recover the canonical table height after float32 top-minus-offset
+	# cancellation (e.g. 0.0500000119 instead of 0.05). The guard admits only
+	# sub-micrometre roundoff; raised piles keep the ordinary full layout.
+	base.y = float(_settings.rest_y)
+	base = presenter.clamp_player_position(base, distinct)
+	var changed: Array = []
+	var changed_offsets: Array = []
+	var base_y := INF
+	for index in count:
+		var card: CardEntity = members[index]
+		var offset: Vector3 = distinct[index] if index < cap else Vector3.ZERO
+		var at := card.global_position
+		var external := _has_external_pose(card.uid)
+		# Board retains completed tween records for rest-position queries. Their
+		# presence alone does not mean this settled UID needs motion again.
+		var move: Variant = presenter._move_tw.get(card)
+		var moving: bool = move != null and move.tw != null and is_instance_valid(move.tw) and move.tw.is_running()
+		if not external: base_y = minf(base_y, at.y - offset.y)
+		if at != base + offset or not card.freeze or moving \
+			or external or card.has_meta("dest_pos") or card.has_meta("fly_tw"):
+			changed.append(card)
+			changed_offsets.append(offset)
+	if base_y != INF and not changed.is_empty():
+		_align_stack_layers_at(changed, changed_offsets, maxf(base_y, float(_settings.rest_y)))
+	for index in changed.size():
+		var card: CardEntity = changed[index]
+		card.freeze = true
+		presenter._move_to(card, base + (changed_offsets[index] as Vector3))
+	return presenter.refresh_group(group, base + (distinct[0] as Vector3))
 
 func _sync_owner_groups(owner_value: int, presenter: Board) -> void:
 	var desired: Dictionary = {}
@@ -1734,6 +1924,7 @@ func _advance_paper_disposal(delta: float) -> void:
 	if is_instance_valid(_paper_disposal): _paper_disposal.advance(delta)
 
 func _layout_side(group, at: Vector3, pin_y := false) -> void:
+	if _defer_side_refresh: return
 	if _terminal_pose_locked:
 		_clear_side(group)
 		group["extract_rows"] = []
@@ -1895,13 +2086,26 @@ func _make_cash_note(card: OffWorkCard) -> Node3D:
 func _start_cash_flight(event: Dictionary) -> void:
 	# A shared production cycle is one event, but each currency unit is a real
 	# draggable card. All of those UIDs must follow the same protected stream.
+	var counts := _cash_flight_counts()
 	for uid in event.get("money_ids", [int(event.get("money_id", -1))]):
-		_start_cash_card_flight(event, int(uid))
+		_start_cash_card_flight(event, int(uid), counts)
 
-func _start_cash_card_flight(event: Dictionary, uid: int) -> void:
+func _cash_flight_counts() -> Dictionary:
+	var counts := {}
+	for flight in _cash_flights.values():
+		var owner_value := int(flight.owner)
+		if not counts.has(owner_value): counts[owner_value] = {"active": 0, "decorations": 0}
+		counts[owner_value].active += 1
+		counts[owner_value].decorations += flight.samples.size()
+	return counts
+
+func _start_cash_card_flight(event: Dictionary, uid: int, counts: Dictionary = {}) -> void:
 	if not by_uid.has(uid) or _state == null or not _state.cards.has(uid): return
 	var card: OffWorkCard = by_uid[uid]
 	if card.dragging or card.type != "money" or _cash_flights.has(uid): return
+	# Income has an actual moving face even when it is destined for a covered
+	# cash slot. Build it before capturing the original opacity materials.
+	card.reveal_stack_face()
 	var owner_value := int(event.get("owner", card.card_owner))
 	var source := int(event.get("source", -1))
 	var from: Vector3 = _previous_positions.get(source, get_card_position(source))
@@ -1909,12 +2113,10 @@ func _start_cash_card_flight(event: Dictionary, uid: int) -> void:
 	var destination := presenter.rest_pos(card)
 	presenter._stop_move(card, false)
 	var spec: Dictionary = _settings.income_motion
-	var active := 0
-	var decorations := 0
-	for other in _cash_flights.values():
-		if int(other.owner) == owner_value:
-			active += 1
-			decorations += other.samples.size()
+	if counts.is_empty(): counts.merge(_cash_flight_counts())
+	if not counts.has(owner_value): counts[owner_value] = {"active": 0, "decorations": 0}
+	var active := int(counts[owner_value].active)
+	var decorations := int(counts[owner_value].decorations)
 	if active == 0:
 		_cash_emission_serial[owner_value] = 0
 		_cash_stream_width[owner_value] = 0.0
@@ -1934,6 +2136,8 @@ func _start_cash_card_flight(event: Dictionary, uid: int) -> void:
 	var samples: Array = []
 	for index in range(1, count):
 		samples.append({"node": _make_cash_note(card), "delay": delays[index], "sequence": serial + index})
+	counts[owner_value].active += 1
+	counts[owner_value].decorations += samples.size()
 	var flight := {"group": int(_state.cards[uid].group), "owner": owner_value,
 		"kind": str(event.get("kind", "work_complete")), "from": from, "to": destination,
 		"elapsed": 0.0, "delay": delays[0], "last_delay": delays.max(), "sequence": serial,
@@ -2659,19 +2863,33 @@ func reset_view() -> void:
 	for tween in _effect_tweens:
 		if tween != null and tween.is_valid(): tween.kill()
 	_effect_tweens.clear()
+	# All groups are leaving together. Removing one UID at a time would refresh
+	# the shrinking group (labels/layout) for every remaining member: O(n²).
+	# Retain unregister_card's per-card interaction/motion cleanup, but empty
+	# group and registration indexes once before running that cleanup.
+	var registrations := {}
+	for group in groups.duplicate(): _remove_group(group)
+	for card in cards: registrations[card] = self
+	cards.clear()
+	if is_instance_valid(enemy_board):
+		for group in enemy_board.groups.duplicate(): enemy_board._remove_group(group)
+		for card in enemy_board.cards: registrations[card] = enemy_board
+		enemy_board.cards.clear()
 	for node in by_uid.values() + offers_by_id.values() + _retired_cards.values():
 		if is_instance_valid(node):
-			if node in cards: unregister_card(node)
-			if is_instance_valid(enemy_board) and node in enemy_board.cards: enemy_board.unregister_card(node)
+			if registrations.has(node): registrations[node].unregister_card(node)
 			node.hide()
 			node.queue_free()
 	for tag in _prices.values():
 		if is_instance_valid(tag): tag.queue_free()
-	for group in groups.duplicate(): _remove_group(group)
-	if is_instance_valid(enemy_board):
-		for group in enemy_board.groups.duplicate(): enemy_board._remove_group(group)
 	by_uid.clear()
 	_stack_occluded.clear()
+	_stack_occlusion_dependencies.clear()
+	_record_sync_key.clear()
+	_record_cards = {}
+	_record_groups = {}
+	_group_progress_cards.clear()
+	_debug_timer_cards.clear()
 	_stack_representatives.clear()
 	_thin_stack_cards.clear()
 	_muted_stack_titles.clear()

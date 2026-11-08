@@ -24,6 +24,7 @@ func _run() -> void:
 	state.config.rules.bot.enabled = false
 	state.config.rules.initial.groups = [{"employee": 1, "work": 4}, {"employee": 1, "work": 4}, {"overtime": 1}, {"coffee": 1}]
 	state.config.rules.initial.money = 16
+	state.config.rules.conveyor.pool = {"employee": 1}
 	main._new_game()
 	await _settle()
 	_check(board.get_script().get_base_script().resource_path == "res://scenes/board.gd", "OffWorkBoard inherits original Board")

@@ -16,6 +16,9 @@ func _run() -> void:
 	state.config.rules.bot.enabled = false
 	state.config.rules.initial.groups = [{"employee": 1}, {"work": 12}, {"outsource": 1}]
 	state.config.rules.initial.money = 8
+	# This reservation fixture supplies eight free coins for a four-coin hire.
+	# A weighted opening may otherwise offer a boss costing more than that wallet.
+	state.config.rules.conveyor.pool = {"employee": 1}
 	main._new_game()
 	var tool := _owned("outsource")
 	var wallet := _owned("money")

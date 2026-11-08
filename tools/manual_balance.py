@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 from tools.balance import off_work_workbench as off_work
 from tools.balance.storage import read_json, atomic_json
 from tools.balance.service import PageSessions, resolve_listener, store_key
+from tools.balance.playtest_launcher import playtest_command
 
 WEB = ROOT / 'tools/balance'
 DEFAULT_STORE = ROOT / 'reports/manual_balance'
@@ -61,7 +62,7 @@ def source_version():
              Path(__file__).with_name('legacy_names.py')]
     files.extend(WEB.glob('mode-nav.*'))
     files.append(Path(__file__).resolve().parent/'balance/service.py')
-    files.extend(WEB / name for name in ('storage.py', 'off_work_workbench.py', 'off_work_run.gd', 'off_work_workbench.html', 'off_work_workbench.js', 'off_work_workbench.css'))
+    files.extend(WEB / name for name in ('storage.py', 'playtest_launcher.py', 'off_work_workbench.py', 'off_work_run.gd', 'off_work_workbench.html', 'off_work_workbench.js', 'off_work_workbench.css'))
     return hashlib.sha256(b''.join(p.read_bytes() for p in files)).hexdigest()[:16]
 
 
@@ -372,8 +373,7 @@ class OnWorkWorkbench:
         folder.mkdir(parents=True)
         cards_path,log_path = folder/'cards.json',folder/'godot.log'
         atomic_json(cards_path,cards)
-        # 直接运行当前项目源码；导出的 App 可能仍含旧卡牌加载逻辑。
-        command = [self.godot,'--path','.','--','--cards-config='+relative_path(cards_path,ROOT)]
+        command = playtest_command(ROOT, self.godot, cards_path)
         proc,log_filter = None,None
         with log_path.open('w',encoding='utf-8') as log:
             try:

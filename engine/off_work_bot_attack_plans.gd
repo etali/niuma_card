@@ -10,7 +10,7 @@ extends RefCounted
 ## affordable yet: the caller's cash forecast decides whether they can occur.
 ## Owned tools carry ready_seconds. A meeting additionally occupies its host
 ## for duration_seconds; its sampled targets are one legal public hypothesis.
-static func plans(world: OffWorkState, owner: int, until: int = -1) -> Dictionary:
+static func plans(world: OffWorkState, owner: int, until: int = -1, future_targets: Array = []) -> Dictionary:
 	var result := {"plans":[], "complete":true}
 	if not _open(until):
 		result.complete = false
@@ -71,6 +71,11 @@ static func plans(world: OffWorkState, owner: int, until: int = -1) -> Dictionar
 					return result
 				if world.can_person_be_struck(int(id)): targets.append(int(id))
 			strike_targets.append({"target_group":int(gid), "targets":targets})
+		# Only the evaluator supplies scheduled, validated future targets. Live
+		# action generation still exposes exclusively the current real table.
+		for target in future_targets:
+			if not strike_targets.any(func(row): return row.target_group==target.target_group):
+				strike_targets.append(target.duplicate(true))
 	var meeting_targets := world.meeting_candidates(owner) if not hosts.is_empty() else []
 	meeting_targets.sort()
 	# The actual meeting draws without replacement. Reproduce that mechanism

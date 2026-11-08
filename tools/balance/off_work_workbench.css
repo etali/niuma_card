@@ -8,6 +8,16 @@
   gap: 8px 12px;
 }
 .global-grid { margin-bottom: 18px; }
+.market-pool { margin: 20px 0; padding: 16px; border: 2px solid var(--accent, #2454b8); border-radius: 12px; background: var(--bg); }
+.market-pool h3 { margin: 0 0 8px; }
+.market-pool-heading, .market-pool-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px; align-items: center; gap: 16px; }
+.market-pool-heading { font-weight: 600; padding: 8px 0; }
+.market-pool-row { padding: 6px 0; border-top: 1px solid var(--line, #ddd); }
+.market-pool-row label { display: grid; grid-template-columns: minmax(0, 1fr) 120px; align-items: center; gap: 12px; min-width: 0; }
+.market-pool-row input { width: 100%; min-width: 0; }
+.market-pool-row output { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.market-pool-heading > :last-child { text-align: right; }
+.market-pool .notice { margin-bottom: 0; }
 .global-grid .wide, .card-fields .wide { grid-column: span 2; }
 .field-name, .stacked-cell, .card-identity-text { display: grid; gap: 1px; }
 .field-name code, .card-identity-text code {
@@ -45,6 +55,9 @@ input[type="checkbox"] { justify-self: start; min-height: auto; }
 @media (max-width: 650px) {
   .global-grid .wide { grid-column: 1/-1; }
   #definitions article { grid-template-columns: 1fr; gap: 2px; }
+  .market-pool { padding: 12px; }
+  .market-pool-heading, .market-pool-row { grid-template-columns: minmax(0, 1fr) 76px; gap: 10px; }
+  .market-pool-row label { grid-template-columns: minmax(0, 1fr) 80px; gap: 6px; }
 }
 
 .off-work-overall-strength { display: grid; gap: 6px; margin: 16px 0; max-width: 520px; }

@@ -7,7 +7,8 @@
       "price": 0,
       "art": "work",
       "purchasable": false,
-      "income": 1
+      "income": 1,
+      "work_seconds": 10.0
     },
     "employee": {
       "name": "员工",
@@ -139,7 +140,6 @@
   },
   "roles": {
     "employee": {
-      "work_seconds": 10.0,
       "meeting_multiplier": 1.0,
       "can_work": true,
       "work_income_multiplier": 1,
@@ -148,7 +148,6 @@
       "work_capacity": 1
     },
     "leader": {
-      "work_seconds": 10.0,
       "meeting_multiplier": 2.0,
       "can_work": false,
       "work_income_multiplier": 1,
@@ -157,7 +156,6 @@
       "work_capacity": 1
     },
     "grinder": {
-      "work_seconds": 10.0,
       "meeting_multiplier": 0.5,
       "can_work": true,
       "work_income_multiplier": 2,
@@ -166,7 +164,6 @@
       "work_capacity": 1
     },
     "workaholic": {
-      "work_seconds": 10.0,
       "meeting_multiplier": 0.5,
       "can_work": true,
       "work_income_multiplier": 4,
@@ -175,7 +172,6 @@
       "work_capacity": 1
     },
     "work_emperor": {
-      "work_seconds": 10.0,
       "meeting_multiplier": 0.5,
       "can_work": true,
       "work_income_multiplier": 8,
@@ -184,7 +180,6 @@
       "work_capacity": 1
     },
     "boss": {
-      "work_seconds": 10.0,
       "meeting_multiplier": 2.0,
       "can_work": false,
       "work_income_multiplier": 1,
@@ -273,15 +268,6 @@
     "conveyor": {
       "slots": 6,
       "interval_seconds": 2.0,
-      "employee_every": 3,
-      "opening": [
-        "employee",
-        "coffee",
-        "overtime",
-        "meeting",
-        "leader",
-        "transfer"
-      ],
       "pool": {
         "employee": 4,
         "leader": 1,

@@ -47,9 +47,8 @@ func _test_visible_reply() -> void:
 
 func _mixed_partial_batches() -> void:
 	var config := OffWorkConfig.new()
-	config.roles.employee.work_seconds = 20
+	config.cards.work.work_seconds = 20
 	config.roles.employee.work_capacity = 1
-	config.roles.grinder.work_seconds = 2
 	config.roles.grinder.work_capacity = 4
 	config.rules.initial.groups = [{"grinder":1,"employee":1,"work":5},{"employee":1,"work":3}]
 	config.rules.initial.money = 0
@@ -58,7 +57,7 @@ func _mixed_partial_batches() -> void:
 	world.offers.clear()
 	var groups: Array = world.groups.keys().filter(func(gid): return world.groups[gid].owner == 0 and not world.group_work(gid).is_empty())
 	var person: int = world._owner_type(0,"grinder")[0]
-	check(world.move_cards([person],int(groups[1])) >= 0, "混合工时人员真正重派到较小工作批次")
+	check(world.move_cards([person],int(groups[1])) >= 0, "不同容量人员真正重派到较小工作批次")
 	var expected := 0.0
 	for gid in groups:
 		var assigned := 0
@@ -66,8 +65,11 @@ func _mixed_partial_batches() -> void:
 		expected += world.group_work_rate(gid) * assigned
 	var forecast := Evaluation.new().evaluate(world,0,config.rules.bot)
 	check(forecast.complete and is_equal_approx(forecast.detail.sides[0].current_rate, expected),
-		"统一评价按实际分配份数和参与者平均速度计算吞吐，不按名义总容量计分")
-	check(is_equal_approx(world.group_work_rate(groups[1])*3,0.825), "卷王仅获余下两份，组时钟匹配 20 与 2 秒的真实规则")
+		"统一评价按实际分配份数和公共工作周期计算吞吐，不按名义总容量计分")
+	check(is_equal_approx(world.group_work_rate(groups[1])*3,0.15), "卷王仅获余下两份，三份尾批共用20秒周期")
+	world.advance(config.work_seconds())
+	check(world.group_work(groups[1]).is_empty() and world.work_count(0) == 4,
+		"真实统一周期完成三份尾批及另一组一份工作，不按卷王名义容量多扣工作")
 
 func _snapshot(world: OffWorkState) -> String:
 	return JSON.stringify([world.revision,world.time,world.cards,world.groups,world.tasks,world.offers,world._rng.state])

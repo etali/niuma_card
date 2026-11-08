@@ -99,8 +99,12 @@ func _run() -> void:
 	hud._bot._slider.grab_focus()
 	await _key(KEY_HOME)
 	for _step in 37: await _key(KEY_RIGHT)
-	_check(is_equal_approx(game.state.config.rules.bot.think_seconds, 6.024)
-		and OffWorkConfig.decision_budget_ms(game.state.config.rules.bot) == 1374,
+	# 0.37 is 48% between the installed 0.25 (12 s / 500 ms) and
+	# 0.50 (6 s / 700 ms) anchors. Native controls must retain this fraction.
+	_check(is_equal_approx(hud._bot._slider.value, 0.37)
+		and is_equal_approx(game.state.config.rules.bot.think_seconds, 9.12)
+		and is_equal_approx(game.state.config.rules.bot.decision_budget_ratio, 596.0 / 9120.0)
+		and OffWorkConfig.decision_budget_ms(game.state.config.rules.bot) == 596,
 		"intermediate keyboard strength preserves exact mapped values through native control refresh")
 	await _close_utility()
 	game._notify("HUD 真实输入测试")

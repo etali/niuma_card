@@ -61,7 +61,7 @@ func _protection_and_production() -> void:
 	var person := working_person(s)
 	var group := work_group(s)
 	s.cards[person].type = "work_emperor"
-	s.config.roles.work_emperor.work_seconds = 2.0
+	s.config.cards.work.work_seconds = 10.0
 	s.config.roles.work_emperor.work_capacity = 3
 	var protection := s.add_card("union", 0)
 	s.move_cards([protection], group)
@@ -72,8 +72,8 @@ func _protection_and_production() -> void:
 	var attack := s.add_card("strike", 1)
 	check(not s.can_strike_group(group, 1) and not s.activate(attack, group) and s.cards.has(attack) and s.pending_strikes.is_empty(), "pre-existing protection rejects strike without consuming or launching it")
 	s.move_cards([protection])
-	check(s.tasks[person].work_ids.size() == 3 and is_equal_approx(s.group_work_rate(group), 0.5), "removing union restores original effective capacity")
-	s.advance(2.0)
+	check(s.tasks[person].work_ids.size() == 3 and is_equal_approx(s.group_work_rate(group), 0.1), "removing union restores original capacity while retaining the shared work clock")
+	s.advance(s.config.work_seconds())
 	check(s.work_count(0) == 96 and s.money(0) == 25, "restored emperor earns original income")
 	var leader := s.add_card("leader", 0, group)
 	s.move_cards([protection], group)

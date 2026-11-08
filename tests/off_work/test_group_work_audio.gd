@@ -119,7 +119,7 @@ func _group_identity_and_speed() -> void:
 	_sync(s)
 	check(_voice(group) == player and is_equal_approx(audio._typing_speeds[group], 1.0), "removing overtime restores base speed on the same player")
 	s.config.rules.overtime.speed_multiplier = 1.5
-	s.config.roles.employee.work_seconds = 7.0
+	s.config.cards.work.work_seconds = 7.0
 	s.move_cards([buff, second], group)
 	_sync(s)
 	check(is_equal_approx(audio._typing_speeds[group], 2.25), "audio derives stacked speed from configuration, not hardcoded 1.2 or ten seconds")

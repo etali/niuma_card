@@ -32,7 +32,7 @@ func _initialize() -> void:
 	quit(1 if failed else 0)
 
 func _test_invalid_config() -> void:
-	for pair in [["outsource", "cost_per_work"], ["outsource", "seconds"], ["transfer", "seconds"], ["slack", "seconds"], ["conveyor", "employee_every"], ["conveyor", "interval_seconds"], ["meeting", "recovery_seconds"], ["bot", "think_seconds"]]:
+	for pair in [["outsource", "cost_per_work"], ["outsource", "seconds"], ["transfer", "seconds"], ["slack", "seconds"], ["conveyor", "interval_seconds"], ["meeting", "recovery_seconds"], ["bot", "think_seconds"]]:
 		var config := Config.new()
 		config.rules[pair[0]][pair[1]] = 0.0
 		_check(not config.validate() and "\n".join(config.errors).contains(str(pair[0])), "零除数或零时长明确拒绝：%s.%s" % pair)
@@ -53,7 +53,7 @@ func _test_invalid_config() -> void:
 	missing_capability.roles.leader.erase("can_work")
 	_check(not missing_capability.validate(), "缺失工作能力配置明确拒绝")
 	var role := Config.new()
-	role.roles.employee.erase("work_seconds")
+	role.roles.employee.erase("work_capacity")
 	_check(not role.validate(), "缺失角色字段明确拒绝")
 	var malformed := Config.new()
 	malformed.rules.coffee = []
@@ -63,7 +63,7 @@ func _test_invalid_config() -> void:
 	_check(not invalid_category.validate(), "咖啡材料类别不能改成人员")
 	var overflowing := Config.new()
 	overflowing.rules.overtime.speed_multiplier = 1e308
-	overflowing.roles.employee.work_seconds = 0.1
+	overflowing.cards.work.work_seconds = 0.1
 	_check(not overflowing.validate(), "组合倍率溢出被拒绝")
 	var state := State.new(zero)
 	state.new_game()

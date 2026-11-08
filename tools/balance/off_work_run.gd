@@ -300,7 +300,28 @@ func _match(config: RefCounted, profiles: Dictionary, match_seed: int, a_seat: i
 		else: outcome = "a" if state.winner == a_seat else "b"
 	return game.merged({"seed": match_seed, "a_seat": a_seat, "winner": outcome, "seconds": state.time,
 		"a_work": state.work_count(a_seat), "b_work": state.work_count(1 - a_seat),
-		"a_money": state.money(a_seat), "b_money": state.money(1 - a_seat)})
+		"a_money": state.money(a_seat), "b_money": state.money(1 - a_seat),
+		"end_state":{"a":_end_state_summary(state,a_seat),"b":_end_state_summary(state,1-a_seat)}})
+
+## Small read-only end diagnostics distinguish unfinished investment, disabled
+## personnel and actual idle stalls without retaining per-decision snapshots.
+static func _end_state_summary(state: RefCounted, owner: int) -> Dictionary:
+	var summary := {"seat":owner,"work":state.work_count(owner),"available_money":state.available_money(owner),
+		"ready_coffee":0,"ready_outsource":0,"workers_by_task":{},"unrestricted_idle_workers":0,
+		"meeting_locked_workers":0,"striking_workers":0}
+	for id in state.activity_card_ids(owner):
+		var card: Dictionary = state.cards[id]
+		if card.type=="coffee" and card.status=="ready": summary.ready_coffee+=1
+		if card.type=="outsource" and card.status=="ready": summary.ready_outsource+=1
+		if not state.config.can_work(str(card.type)): continue
+		var task := str(state.tasks.get(id,{}).get("kind","idle"))
+		summary.workers_by_task[task]=int(summary.workers_by_task.get(task,0))+1
+		var meeting: bool = state.is_meeting_target(id)
+		var striking: bool = state.is_striking(id)
+		summary.meeting_locked_workers+=int(meeting)
+		summary.striking_workers+=int(striking)
+		if task=="idle" and not meeting and not striking: summary.unrestricted_idle_workers+=1
+	return summary
 
 func _record_decision(report: Dictionary, side: String, seat: int, seed_value: int,
 		game_seconds: float, decision: Dictionary) -> void:
@@ -336,6 +357,13 @@ func _record_decision(report: Dictionary, side: String, seat: int, seed_value: i
 		"search_depth": depth, "search_nodes": decision.get("search_nodes", 0), "discarded_late": discarded_late,
 		"root_complete": decision.get("root_complete", false),
 		"root_candidates": decision.get("root_candidates", 0), "completed_candidates": decision.get("completed_candidates", 0),
+		"root_ordinary_us":decision.get("root_ordinary_us",0),"root_production_us":decision.get("root_production_us",0),
+		"root_production_candidates":decision.get("root_production_candidates",0),
+		"root_production_serviced":decision.get("root_production_serviced",0),
+		"root_production_complete":decision.get("root_production_complete",0),
+		"root_evaluated_intents":decision.get("root_evaluated_intents",{}),
+		"root_economic_us":decision.get("root_economic_us",0),"root_economic_completed":decision.get("root_economic_completed",0),
+		"evaluation_layer":decision.get("evaluation_layer","unknown"),
 		"principal_variation": decision.get("principal_variation", []),
 		"candidates": decision.get("candidates", []).slice(0, 5)})
 

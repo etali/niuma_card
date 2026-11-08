@@ -94,7 +94,7 @@ func _run() -> void:
 	# Fast-forward to the final real job without creating every intermediate animation.
 	for id in game.state._owner_type(0, "work").slice(1): game.state._consume(id)
 	game.state.move_cards(game.state._owner_type(0, "employee"), game.state.cards[game.state._owner_type(0, "work")[0]].group)
-	game._process(float(stock.roles.employee.work_seconds) + 0.1)
+	game._process(stock.work_seconds() + 0.1)
 	check(game.lesson.complete() and Progress.course("solo",true).status == "completed" and not is_instance_valid(game.result_layer),"获胜进入课末反馈，不弹正式结算")
 	game.finish_practice()
 	check(game.state == original and game.state.time == prior_time and original._rng.state == prior_rng, "回到被暂存的牌局、时钟与随机状态")

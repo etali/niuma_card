@@ -69,7 +69,8 @@ extends RefCounted
 ## v10：对手座位标识统一为 bot，拒绝与旧座位编码的客户端混用。
 ## v11：下班手动送达罢工使用独立权威命令，落点合法便立即命中。
 ## 普通 activate 仍保留飞行窗口；旧端不识别送达语义，握手时拒绝混用。
-const VERSION := 11
+## v12：下班开局与补牌统一按权重，工作耗时统一由工作牌定义。
+const VERSION := 12
 ## 仅录像里的权威快照恢复标记，不是玩家可提交的 OnWorkIntent。
 const RECOVERY_STEP := "recovery"
 

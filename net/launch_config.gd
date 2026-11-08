@@ -20,6 +20,11 @@ const KEYS_PORT := ["port", "p"]
 ## 启动器可以将参数放在 Godot 的 -- 分隔符之前或之后。
 const FLAG_PREFIXES := ["--server=", "--room=", "--port=", "--host", "--off-work-playtest", "--cards-config=", "--cards-config"]
 
+## Release builds buffer stdout when launched by the workbench. stderr is
+## flushed immediately and joins the same launch log, so readiness must use it.
+static func report_playtest_ready(marker: String) -> void:
+	printerr(marker)
+
 # ---------- 解析 ----------
 
 ## 把一份 { 参数名: 值 } 解析成启动配置。

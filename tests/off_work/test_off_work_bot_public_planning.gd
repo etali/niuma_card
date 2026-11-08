@@ -46,7 +46,7 @@ func _run() -> void:
 	check(not _value(reachable).detail.sides[0].unreachable,"现有公开人员的实际报价也能证明可恢复")
 	var slow := _world()
 	slow.add_card("employee",0,slow.cards[slow._owner_type(0,"work")[0]].group)
-	slow.config.roles.employee.work_seconds=1000
+	slow.config.cards.work.work_seconds=1000
 	slow.config.rules.bot.evaluation_max_seconds=30
 	slow._sync_schedule()
 	check(not _value(slow).detail.sides[0].unreachable,"超出估计窗口的慢生产不是资源死局")
@@ -65,7 +65,7 @@ func _run() -> void:
 	dying.config.rules.bot.think_seconds=1.0
 	dying.config.rules.bot.decision_budget_ratio=0.9
 	dying.config.rules.bot.search_max_depth=2
-	dying.config.rules.conveyor.employee_every=1
+	dying.config.rules.conveyor.pool={"employee":1}
 	dying.offers=[{},{},{},{},{},dying._make_offer("overtime")]
 	dying.advance(1.0) # The second ply crosses the next unknown market arrival.
 	var policy: Dictionary = dying.config.rules.bot
@@ -78,7 +78,7 @@ func _run() -> void:
 	choice=Search.new().search(dying,0,policy,Time.get_ticks_usec()+3000000)
 	check(not (choice.action.kind=="dismiss" and worker in choice.action.ids),
 		"不能靠尚未公开的未来员工为开除最后一名员工提供确定性保证")
-	dying.config.rules.conveyor.employee_every=999
+	dying.config.rules.conveyor.pool=OffWorkConfig.new().rules.conveyor.pool.duplicate()
 	var before := var_to_bytes([dying.cards,dying.groups,dying.offers,dying._rng.state,dying.time])
 	var a := dying.fork_for_bot(11)
 	var b := dying.fork_for_bot(92319)

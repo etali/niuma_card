@@ -140,9 +140,6 @@ func _no_market_grinder() -> void:
 	config.rules.conveyor.pool.grinder = 1
 	check(not config.validate(), "configuration rejects grinder in conveyor pool")
 	config = OffWorkConfig.new()
-	config.rules.conveyor.opening[0] = "grinder"
-	check(not config.validate(), "configuration rejects grinder in opening")
-	config = OffWorkConfig.new()
 	config.rules.coffee.seconds = 0
 	check(not config.validate(), "instant upgrade duration is rejected")
 	config = OffWorkConfig.new()
@@ -170,7 +167,9 @@ func _frame_independence() -> void:
 	var bot_state := state()
 	var bp := person(bot_state)
 	var bc := bot_state.add_card("coffee", 0)
-	bot_state.config.rules.bot.buy_chance = 0.0
+	# Keep this upgrade-command test independent of randomly offered purchases.
+	bot_state.offers.clear()
+	bot_state.config.rules.conveyor.pool = {"employee":1}
 	# Give the promotion a real production benefit in this cash-rich fixture,
 	# so the public BOT chooses it when comparing against continued work.
 	bot_state.config.roles.grinder.work_capacity = 2

@@ -20,10 +20,9 @@ func _config() -> OffWorkConfig:
 	var config := OffWorkConfig.new()
 	config.rules.bot.think_seconds = 1.0
 	config.rules.conveyor.interval_seconds = 2.0
-	config.rules.conveyor.employee_every = 3
-	# Same 1/18 public outsource probability as the audited default. No
+	# Preserve the audited fixture's actual 1/27 outsource arrival chance. No
 	# future RNG/offer is consulted by the forecast or supplied to the policy.
-	config.rules.conveyor.pool = {"employee":17, "outsource":1}
+	config.rules.conveyor.pool = {"employee":26, "outsource":1}
 	config.cards.outsource.price = 6
 	config.cards.strike.price = 7
 	config.rules.outsource.cost_per_work = 1
@@ -45,7 +44,7 @@ func _spending_before_supply() -> void:
 	var config := _config()
 	config.rules.initial.groups = [{"work_emperor":1, "work":6}]
 	config.rules.initial.money = 12
-	config.roles.work_emperor.work_seconds = 10.0
+	config.cards.work.work_seconds = 10.0
 	config.roles.work_emperor.work_income_multiplier = 8
 	config.rules.strike.duration_seconds = 45.0
 	check(config.validate(), "晚到工资的外包回归使用合法公开规则")
@@ -178,6 +177,7 @@ func _later_planned_payment() -> void:
 	config.cards.employee.price = 100
 	config.rules.recruitment.cost_per_employee = 101
 	config.rules.conveyor.pool = {"outsource":1}
+	config.rules.conveyor.interval_seconds = 3.0
 	if not need(config.validate(), "后续已计划采购回归使用合法公开价格与供应规则"):
 		return
 	var world := OffWorkState.new(config)

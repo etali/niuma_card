@@ -63,12 +63,15 @@ func _reflow_motion() -> void:
 			presenter._layout_group(group, origin)
 			var pinned := true
 			for card: CardEntity in group.cards:
-				presenter._move_tw[card].tw.pause()
+				# Cards already in their final slot need no position tween. They
+				# still participate in every real screen/depth assertion below.
+				if presenter._move_tw.has(card): presenter._move_tw[card].tw.pause()
 				pinned = pinned and board.camera.unproject_position(card.global_position).distance_to(start_pixels[card]) < 0.05
 			_check(pinned, "switching layer order preserves each card's starting screen position")
 			var stable := true
 			for frame in 18:
-				for card: CardEntity in group.cards: presenter._move_tw[card].tw.custom_step(0.01)
+				for card: CardEntity in group.cards:
+					if presenter._move_tw.has(card): presenter._move_tw[card].tw.custom_step(0.01)
 				for i in range(1, group.cards.size()):
 					var previous: CardEntity = group.cards[i - 1]
 					var next: CardEntity = group.cards[i]

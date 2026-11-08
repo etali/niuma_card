@@ -1,0 +1,529 @@
+{
+  "bot": {
+    "bot": {
+      "decision_budget_ratio": 0.116666666666667,
+      "decision_publish_reserve_ratio": 0.2,
+      "decision_publish_reserve_us": 1000.0,
+      "enabled": true,
+      "evaluation_max_seconds": 1800.0,
+      "first_action_seconds": 0.0,
+      "live_fallback_budget_us": 1500.0,
+      "live_snapshot_card_limit": 2048.0,
+      "live_snapshot_group_limit": 512.0,
+      "owner": 1.0,
+      "search_max_depth": 4.0,
+      "search_reply_width": 3.0,
+      "search_root_width": 6.0,
+      "think_seconds": 6.0
+    },
+    "compatibility": {
+      "algorithm_defaults": {
+        "decision_publish_reserve_ratio": 0.2,
+        "decision_publish_reserve_us": 1000.0,
+        "evaluation_max_seconds": 1800.0,
+        "live_fallback_budget_us": 1500.0,
+        "live_snapshot_card_limit": 2048.0,
+        "live_snapshot_group_limit": 512.0
+      }
+    },
+    "model": "race_search_v2",
+    "preferences": {
+      "default_strength": 0.5,
+      "fields": [],
+      "help": "各强度使用同一套合法动作与完工时间评价。\n整体强度只改变行动间隔和思考预算，不限制人员、工具或材料数量。\n根动作统一评价后逐层推演，未完成的新层保留上一完整结果。",
+      "knobs": [
+        {
+          "group": "对手设置",
+          "hint": "是否让该座位的 BOT 获得行动机会。",
+          "key": "enabled",
+          "kind": "bool",
+          "label": "启用对手"
+        },
+        {
+          "group": "对手设置",
+          "hint": "两次行动机会间隔的游戏秒数，也用于换算实际计算预算；搜索中双方错开半个间隔行动。",
+          "key": "think_seconds",
+          "kind": "float",
+          "label": "行动间隔（游戏秒）",
+          "max": 30.0,
+          "min": 0.2,
+          "step": 0.1
+        },
+        {
+          "group": "对手设置",
+          "hint": "BOT 开始后等待多少游戏秒获得第一次行动机会；0 表示立即。",
+          "key": "first_action_seconds",
+          "kind": "float",
+          "label": "首次行动延迟（游戏秒）",
+          "max": 86400.0,
+          "min": 0.0,
+          "step": 0.1
+        },
+        {
+          "group": "决策时限",
+          "hint": "单次计算的实际毫秒上限 = 行动间隔 × 1000 × 占比；深度未完成时保留上一完整层。",
+          "key": "decision_budget_ratio",
+          "kind": "float",
+          "label": "决策预算占行动间隔的比例",
+          "max": 0.9,
+          "min": 0.01,
+          "step": 0.01
+        },
+        {
+          "group": "搜索范围",
+          "hint": "双方交替行动的推演步数；整层比较结束后才替换上一层选择。",
+          "key": "search_max_depth",
+          "kind": "int",
+          "label": "最大搜索深度（单方动作步）",
+          "max": 16.0,
+          "min": 1.0,
+          "step": 1.0
+        },
+        {
+          "group": "搜索范围",
+          "hint": "全部根动作经同一完工时间评价后，保留用于多步推演的候选数；不会在评价前按人数或材料上限删除动作。",
+          "key": "search_root_width",
+          "kind": "int",
+          "label": "首步候选宽度",
+          "max": 16.0,
+          "min": 1.0,
+          "step": 1.0
+        },
+        {
+          "group": "搜索范围",
+          "hint": "后续每个决策点先评价合法动作，再保留的分支数；等待作为独立选择保留。",
+          "key": "search_reply_width",
+          "kind": "int",
+          "label": "后续候选宽度",
+          "max": 16.0,
+          "min": 1.0,
+          "step": 1.0
+        },
+        {
+          "group": "局面评价",
+          "hint": "在公开人员、任务、资源和报价下估算双方清空工作时间的上限，不限制实际牌局时长。",
+          "key": "evaluation_max_seconds",
+          "kind": "float",
+          "label": "完工估计时间上限（秒）",
+          "max": 7200.0,
+          "min": 30.0,
+          "step": 10.0
+        },
+        {
+          "group": "计算分配",
+          "hint": "实际预留=min(上限,剩余时限×比例)，用于安全发布已经完成的方案。",
+          "key": "decision_publish_reserve_us",
+          "kind": "int",
+          "label": "结果发布预留上限（微秒）",
+          "max": 100000.0,
+          "min": 0.0,
+          "step": 100.0
+        },
+        {
+          "group": "计算分配",
+          "hint": "从剩余决策时限中预留的比例，同时受结果发布预留上限约束。",
+          "key": "decision_publish_reserve_ratio",
+          "kind": "float",
+          "label": "结果发布预留比例",
+          "max": 0.9,
+          "min": 0.0,
+          "step": 0.01
+        },
+        {
+          "group": "实战性能",
+          "hint": "后台方案失效时前台决策的附加时限，仍不得超过BOT总时限。",
+          "key": "live_fallback_budget_us",
+          "kind": "int",
+          "label": "实战保底决策时限（微秒）",
+          "max": 10000.0,
+          "min": 100.0,
+          "step": 100.0
+        },
+        {
+          "group": "实战性能",
+          "hint": "超过此数量后在后台解析已有冻结帧，不排除卡牌或动作。",
+          "key": "live_snapshot_card_limit",
+          "kind": "int",
+          "label": "同步快照卡牌阈值",
+          "max": 4096.0,
+          "min": 1.0,
+          "step": 1.0
+        },
+        {
+          "group": "实战性能",
+          "hint": "超过此数量后在后台解析已有冻结帧，不排除牌组或动作。",
+          "key": "live_snapshot_group_limit",
+          "kind": "int",
+          "label": "同步快照牌组阈值",
+          "max": 4096.0,
+          "min": 1.0,
+          "step": 1.0
+        }
+      ],
+      "model_label": "完工竞速搜索",
+      "model_version": 2.0,
+      "presets": {
+        "high": 0.75,
+        "low": 0.25,
+        "max": 1.0,
+        "mid": 0.5,
+        "min": 0.0
+      },
+      "strength_curves": {
+        "decision_budget_ratio": [
+          [
+            0.0,
+            0.01
+          ],
+          [
+            0.25,
+            0.0416666666666667
+          ],
+          [
+            0.5,
+            0.116666666666667
+          ],
+          [
+            0.75,
+            0.266666666666667
+          ],
+          [
+            1.0,
+            0.9
+          ]
+        ],
+        "think_seconds": [
+          [
+            0.0,
+            24.0
+          ],
+          [
+            0.25,
+            12.0
+          ],
+          [
+            0.5,
+            6.0
+          ],
+          [
+            0.75,
+            3.0
+          ],
+          [
+            1.0,
+            2.0
+          ]
+        ]
+      }
+    }
+  },
+  "cards": {
+    "cards": {
+      "boss": {
+        "art": "boss",
+        "category": "person",
+        "description": "不亲自工作，也不参加开会或罢工。与金钱组堆，每 {seconds} 秒按每人 {cost_per_employee} 钱批量招募员工；读条期间可补钱，每方最多一名老板。",
+        "max_per_owner": 1.0,
+        "name": "老板",
+        "price": 10.0,
+        "purchasable": true,
+        "refund": 6.0
+      },
+      "coffee": {
+        "art": "coffee",
+        "category": "ingredient",
+        "description": "把人员从工作堆拆出，与咖啡单独组堆，按员工、卷王、肝帝、打工皇帝的顺序逐级提升卷度。每段进度读满时消耗该级所需的咖啡。同堆有工作时会先处理工作。",
+        "name": "咖啡",
+        "price": 3.0,
+        "purchasable": true
+      },
+      "employee": {
+        "art": "employee",
+        "category": "person",
+        "description": "与工作组堆可处理工作。拆出后与咖啡单独组堆，可以逐级提升卷度。",
+        "name": "员工",
+        "price": 4.0,
+        "purchasable": true,
+        "refund": 2.0
+      },
+      "grinder": {
+        "art": "grinder",
+        "category": "person",
+        "description": "员工喝咖啡提升卷度后变成卷王。",
+        "name": "卷王",
+        "price": 8.0,
+        "purchasable": false,
+        "refund": 4.0
+      },
+      "leader": {
+        "art": "leader",
+        "category": "person",
+        "description": "可主持会议、组织甩锅或带队摸鱼。",
+        "name": "领导",
+        "price": 6.0,
+        "purchasable": true,
+        "refund": 4.0
+      },
+      "meeting": {
+        "art": "meeting",
+        "category": "tool",
+        "description": "主持人召集对方可参会人员，最多人数见主持人的卡面说明。会议持续 {duration_seconds} 秒，散会后冷却 {recovery_seconds} 秒。",
+        "name": "开会",
+        "price": 6.0,
+        "purchasable": true
+      },
+      "money": {
+        "art": "money",
+        "category": "money",
+        "description": "买人员和工具，也能付钱外包。",
+        "name": "金钱",
+        "price": 0.0,
+        "purchasable": false
+      },
+      "outsource": {
+        "art": "outsource",
+        "category": "tool",
+        "description": "与金钱和工作同组，每份工作支付 {cost_per_work} 钱。读条 {seconds} 秒，期间补入的材料可加入本批次。完成后冷却 {recovery_seconds} 秒。",
+        "name": "外包",
+        "price": 6.0,
+        "purchasable": true
+      },
+      "overtime": {
+        "art": "overtime",
+        "category": "tool",
+        "description": "同组每张加班使工作速度乘 {speed_multiplier}，倍率持续叠加，移走后失效。",
+        "name": "加班",
+        "price": 5.0,
+        "purchasable": true
+      },
+      "slack": {
+        "art": "slack",
+        "category": "tool",
+        "description": "与人员组队持续生产咖啡。基础周期 {seconds} 秒，每多一张摸鱼速度乘 {speed_multiplier}。每批每名在场人员产 {coffee_per_person} 杯。",
+        "name": "摸鱼",
+        "price": 4.0,
+        "purchasable": true
+      },
+      "strike": {
+        "art": "strike",
+        "category": "tool",
+        "description": "拖到对方有人员在场的工作或摸鱼组合，成功后消耗。被弹出人员罢工 {duration_seconds} 秒，期间能移动或开除，无法工作或组合。",
+        "name": "罢工",
+        "price": 7.0,
+        "purchasable": true
+      },
+      "transfer": {
+        "art": "transfer",
+        "category": "tool",
+        "description": "人员与工作同组时，每 {seconds} 秒按在场人员的甩锅份数把工作交给对手。甩锅不产生收入。",
+        "name": "甩锅",
+        "price": 6.0,
+        "purchasable": true
+      },
+      "union": {
+        "art": "union",
+        "category": "tool",
+        "description": "保护本组免受罢工；人员按普通员工产能工作，牌型不变。加入时弹出全部加班，本组不能加入加班。",
+        "name": "工会",
+        "price": 4.0,
+        "purchasable": true
+      },
+      "work": {
+        "art": "work",
+        "category": "work",
+        "description": "交给员工，处理完赚钱。",
+        "income": 1.0,
+        "name": "工作",
+        "price": 0.0,
+        "purchasable": false,
+        "work_seconds": 10.0
+      },
+      "work_emperor": {
+        "art": "work_emperor",
+        "category": "person",
+        "description": "肝帝喝咖啡提升卷度后变成打工皇帝，卷度已满。",
+        "name": "打工皇帝",
+        "price": 32.0,
+        "purchasable": false,
+        "refund": 4.0
+      },
+      "workaholic": {
+        "art": "workaholic",
+        "category": "person",
+        "description": "卷王喝咖啡提升卷度后变成肝帝。",
+        "name": "肝帝",
+        "price": 16.0,
+        "purchasable": false,
+        "refund": 4.0
+      }
+    },
+    "roles": {
+      "boss": {
+        "can_be_meeting_target": false,
+        "can_be_strike_target": false,
+        "can_work": false,
+        "meeting_multiplier": 2.0,
+        "transfer_capacity": 2.0,
+        "work_capacity": 1.0,
+        "work_income_multiplier": 1.0
+      },
+      "employee": {
+        "can_be_meeting_target": true,
+        "can_work": true,
+        "meeting_multiplier": 1.0,
+        "transfer_capacity": 1.0,
+        "work_capacity": 1.0,
+        "work_income_multiplier": 1.0
+      },
+      "grinder": {
+        "can_be_meeting_target": true,
+        "can_work": true,
+        "meeting_multiplier": 0.5,
+        "transfer_capacity": 1.0,
+        "work_capacity": 1.0,
+        "work_income_multiplier": 2.0
+      },
+      "leader": {
+        "can_be_meeting_target": false,
+        "can_work": false,
+        "meeting_multiplier": 2.0,
+        "transfer_capacity": 2.0,
+        "work_capacity": 1.0,
+        "work_income_multiplier": 1.0
+      },
+      "work_emperor": {
+        "can_be_meeting_target": true,
+        "can_work": true,
+        "meeting_multiplier": 0.5,
+        "transfer_capacity": 1.0,
+        "work_capacity": 2.0,
+        "work_income_multiplier": 4.0
+      },
+      "workaholic": {
+        "can_be_meeting_target": true,
+        "can_work": true,
+        "meeting_multiplier": 0.5,
+        "transfer_capacity": 1.0,
+        "work_capacity": 1.0,
+        "work_income_multiplier": 4.0
+      }
+    },
+    "rules": {
+      "coffee": {
+        "seconds": 5.0,
+        "upgrades": {
+          "employee": {
+            "cost": 1.0,
+            "to": "grinder"
+          },
+          "grinder": {
+            "cost": 2.0,
+            "to": "workaholic"
+          },
+          "workaholic": {
+            "cost": 4.0,
+            "to": "work_emperor"
+          }
+        }
+      },
+      "conveyor": {
+        "interval_seconds": 2.0,
+        "pool": {
+          "boss": 1.0,
+          "coffee": 2.0,
+          "employee": 4.0,
+          "leader": 1.0,
+          "meeting": 2.0,
+          "outsource": 1.0,
+          "overtime": 2.0,
+          "slack": 1.5,
+          "strike": 1.0,
+          "transfer": 2.0,
+          "union": 1.0
+        },
+        "slots": 6.0
+      },
+      "fire": {
+        "minimum_people": 0.0
+      },
+      "income": {
+        "destination_policy": "oldest_cash_pile"
+      },
+      "initial": {
+        "groups": [
+          {
+            "work": 200.0
+          },
+          {
+            "employee": 1.0
+          },
+          {
+            "overtime": 1.0
+          },
+          {
+            "coffee": 1.0
+          }
+        ],
+        "money": 8.0
+      },
+      "meeting": {
+        "auto_repeat": true,
+        "base_targets": 2.0,
+        "duration_seconds": 12.0,
+        "minimum_targets": 1.0,
+        "recovery_seconds": 24.0
+      },
+      "outsource": {
+        "cost_per_work": 1.0,
+        "recovery_seconds": 18.0,
+        "seconds": 10.0
+      },
+      "overtime": {
+        "speed_multiplier": 1.2
+      },
+      "recruitment": {
+        "cost_per_employee": 5.0,
+        "seconds": 6.0
+      },
+      "simulation": {
+        "default_seed": 20261027.0,
+        "epsilon": 0.000001,
+        "maximum_events_per_advance": 10000.0,
+        "owners": [
+          0.0,
+          1.0
+        ],
+        "tie_winner": 2.0
+      },
+      "slack": {
+        "coffee_per_person": 1.0,
+        "seconds": 14.0,
+        "speed_multiplier": 1.2
+      },
+      "strike": {
+        "duration_seconds": 20.0,
+        "flight_seconds": 1.2
+      },
+      "transfer": {
+        "destination_policy": "largest_work_queue",
+        "seconds": 8.0
+      },
+      "union": {
+        "work_role": "employee"
+      }
+    }
+  },
+  "description": "2026-11-08 candidate B, seed 1001, second leg, game t306; generated experiment states before each seat decision.",
+  "states": [
+    {
+      "bytes": 147960,
+      "gzip_base64": "H4sIAAAAAAAAE+3d53dUhd7F8QmWi72houBVESs2RKoodqVJ7yWEZAhDkpkwM0kIvffeO1ioonQFpIN6ca2rf4D+AeLbu5Zvn2cm2SMDd2azM1eeB3O3y1lfOSdz8jufOWVIIDYJBAKNEo8bE4+GiUc0XJwfCwaLGiT+++INtctvSS2PF8SDif9uEMgLlDXud2Ft7J1/pp5XGAnHg+PisaY16wOBJonHDdju7YlHcTRSUZ5fWBGNRaIN8DHJdTcnHlWRaEkwWrtsR17t8huxPLnsQ2F7bbJsr3uDf99eQ3yOm5JzF0SLYtj+rrza56Q+3+14XnJZqOjSutT24tXlwfRtp7YZqQonP33NxwcClz5XzcxYnpdmXh6NFEeDsdgNiaXt/7W4T7z5951S+5I0r4hd2kY0WFBUHUh7XYJlBaFwKFwMn/TPF4/EC0qvWJ7cZkFZpCIcv3y+5BwFhfFQZShendqnUFFpMPWc8oKKWLCodu7Uc+5Kfv7EIZFfVlEaD5WXhhJ7nfpcyW13Jo6d7Sg7diGOXewoO3Yljl3tKDt2I47d7Cg7dieO3e0oO35EHD+yo+zYgzj2sKPs2JM49rSj7NiLOPayo+zYmzj2tqPs2Ic49rGj7NiXOPa1o+zYjzj2s6Ps2J849rej7DiAOA6wo+w4kDgOtKPsOIg4DrKj7DiYOA62o+w4hDgOsaPsOJQ4DrWj7DiMOA6zo+w4nDgOt6PsmE8c8+0oO44gjiPsKDsWEMcCO8qOI4njSDvKjoXEsdCOsmMRcSyyo+wYJI5BO8qOo4jjKDvKjsXEsdiOsuNo4jjajrJjiDiG7Cg7jiGOY+woO5YQxxI7yo6lxLHUjrJjGXEss6PsGCaOYTvKjhHiGLGj7FhOHMvtKDuOJY5j7Sg7Rolj1I6yY+rvyWVyjNlRdowTx7gdZccK4lhhR9mxkjhW2lF2rCKOVXaUHccRx3F2lB2riWNqH+x4dcfxxHG8HWXHCcRxgh1lx4nEcaIdZcdJxHGSHWXHycRxsh1lxynEcYodZcepxHGqHWXHacRxmh1lx+nEcbodZccZxHGGHWXHmcRxph1lx1nEcZYdZcfZxHG2HWXHOcRxjh1lx7nEca4dZcd5xHGeHWXH+cRxvh1lxwXEcYEdZceFxHGhHWXHRcRxkR1lx8XEcbEdZcclxHGJHWXHpcRxqR1lx2XEcZkdZcflxHG5HWXHFcRxhR1lx5XEcaUdZcdVxHGVHWXH1cRxtR1lxzXEcY0dZce1xHGtHWXHdcRxnR1lx/XEcb0dZccNxHGDHWXHjcRxox1lx03EcZMdZcfNxHGzHWXHLcRxix1lx63EcasdZcePiePHdpQdPyGOn9hRdvyUOH5qR9nxM+L4mR1lx23EcZsdZcftxHG7HWXHHcRxhx1lx53EcacdZcddxHGXHWXH3cRxtx1lx8+J4+d2lB33EMc9dpQdvyCOX9hRdvySOH5pR9lxL3Hca0fZcR9x3GdH2XE/cdxvR9nxAHE8YEfZ8SBxPGhH2fEQcTxkR9nxMHE8bEfZ8Svi+JUdZceviePXdpQdjxDHI3aUHY8Sx6N2lB2PEcdjdpQdvyGO39hRdjxOHI/bUXY8QRxP2FF2PEkcT9pRdjxFHE/ZUXY8TRxP21F2PEMcz9hRdjxLHM/aUXY8RxzP2VF2PE8cz9tRdvyWOH5rR9nxO+L4nR1lxwvE8UIGx1vhWDA6UhoqvLQfime7jJ6X7/df2fIHYvlDBsvkDJHKYDQeKgv+58dl/XFsmJfdMbmuLud2yupKw5szGuYFbrv4VMuGe47Xi3P7FuJ4ix1lx1uJ4612lB1vI4632VF2vJ043m5H2fEO4niHHWXHO4njnXaUHe8ijnfZUXa8mzjebUfZ8R7ieI8dZcd7ieO9dpQd7yOO99lRdmxEHBvZUXa8nzjeb0fZ8QHi+IAdZccHieODdpQdGxPHxnaUHR8ijg/ZUXZ8mDg+bEfZsQlxbGJH2bEpcWxqR9nxEeL4iB1lx78Tx7/bUXZ8lDg+akfZ8THi+JgdZcfHiePjdpQdmxHHZnaUHZ8gjk/YUXZsThyb21F2fJI4PmlH2fEp4viUHWXHp4nj03aUHZ8hjs/YUXZ8ljg+a0fZ8Tni+JwdZccWxLGFHWXH54nj83aUHV8gji/YUXZ8kTi+aEfZ8SXi+JIdZceXiePLdpQdWxLHlnaUHV8hjq/YUXZsRRxb2VF2fJU4vmpH2bE1cWxtR9mxDXFsY0fZsS1xbGtH2bEdcWxnR9mxPXFsb0fZsQNx7GBH2fE14viaHWXHjsSxox1lx9eJ4+t2lB3fII5v2FF27EQcO9lRdnyTOL5pR9nxLeL4lh1lx7eJ49t2lB3fIY7v2FF2fJc4vmtH2fE94vieHWXH94nj+3aUHT8gjh/YUXb8kDh+aEfZsTNx7GxH2bELcexiR9mxK3HsakfZsRtx7GZH2bE7cexuR9nxI+L4kR1lxx7EsYcdZceexLGnHWXHXsSxlx1lx97EsbcdZcc+xLGPHWXHvsSxrx1lx37EsZ8dZcf+xLG/HWXHAcRxgB1lx4HEcaAdZcdBxHGQHWXHwcRxsB1lxyHEcYgdZcehxHGoHWXHYcRxmB1lx+HEcbgdZcd84phvR9lxBHEcYUfZsYA4FthRdhxJHEfaUXYsJI6FdpQdi4hjkR1lxyBxDNpRdhxFHEfZUXYsJo7FdpQdRxPH0XaUHUPEMWRH2XEMcRxjR9mxhDiW2FF2LCWOpXaUHcuIY5kdZccwcQzbUXaMEMeIHWXHcuJYbkfZcSxxHGtH2TFKHKN2lB1jxDFmR9kxThzjdpQdK4hjhR1lx0riWGlH2bGKOFbZUXYcRxzH2VF2rCaO1XaUHccTx/F2lB0nEMcJdpQdJxLHiXaUHScRx0l2lB0nE8fJdpQdpxDHKXaUHacSx6l2lB2nEcdpdpQdpxPH6XaUHWcQxxl2lB1nEseZdpQdZxHHWXaUHWcTx9l2lB3nEMc5dpQd5xLHuXaUHecRx3l2lB3nE8f5dpQdFxDHBXaUHRcSx4V2lB0XEcdFdpQdFxPHxXaUHZcQxyV2lB2XEseldpQdlxHHZXaUHZcTx+V2lB1XEMcVdpQdVxLHlXaUHVcRx1V2lB1XE8fVdpQd1xDHNXaUHdcSx7V2lB3XEcd1dpQd1xPH9XaUHTcSx40ZHP9WYxQKFyW2UxfLV7JYLm/eOfHv2f93y+TzY6UFhSVpz6ub59ROye1vIp6bMngm54hUBqPxUFnwPz82L9/vv/JxuYM47sjhuEzft3THdvXccSdx3JnB8crz4Fqe3zen9jfILN98K7PliLf+ry13EctdOVimHyfplo0zWl5+/NTdccQ1d0wdG1dz3E0cd2dwTH5c8t6dHywrD0Yj0bocl63qaPlXO78PEsuDWe43CcbSSHUw4/0mfd/+m66TR4jjEd+3ZcdTxPFUDsfjf/v7yQvE84I96+z5I/H8MYNn8vMURkaNCgbrdg9vltHz8v3+K5/nPxHHn3xc1vm4/Jl4/pzD/Sd9/9I9U8719bj8hTj+kuX8jsWjoZIs53e24/LJeu74K3H81e8rZceLxPFilq9jlAWD8eTe1MXx2Xru+Btx/M33mzrfb34nnr/7fiM41m77pgbZHZPrrnRM7k+kIh6LVEQLg2n7oVi+UM8tGxHLRhksfc/J7NiUODa1o+zYgji2sKPs2JY4ts3gmJy5LBIOpvZPvXe3uA4c0+93f7ZjO+LYzo6yY3vi2N6OsmMH4tghg+PVfq+dvm/pji2vA8fU8mvh2I04dsviWJrYvyRcXRxfreeO3Ylj9xzu19nO69b13LEnceyZw/Uxfd/SHR+6Dhyv5fWxF3HsZUfZsTdx7G1H2bEPcexjR9mxL3Hsa0fZsR9x7GdH2bE/cexvR9lxAHEcYEfZcSBxHGhH2XEQcRxkR9lxMHEcbEfZcQhxHGJH2XEocRxqR9lxGHEcZkfZcThxHG5H2TGfOObbUXYcQRxH2FF2LCCOBXaUHUcSx5F2lB0LiWOhHWXHIuJYlMHxan+HIdv3udpcB46p5dfCMUgcg3aUHUcRx1F2lB2LiWOxHWXH0cRxtB1lxxBxDPl+LTuOIY5j7Cg7lhDHEjvKjqXEsdSOsmMZcSyzo+wYJo5hO8qOEeIYsaPsWE4cyzM4Kn+nK9t7yPbXgWVq+bWwHEssx/qYlB2jxDFqR9kxRhxjdpQd48QxbkfZsYI4VthRdqwkjpV2lB2riGOVHWXHccRxnL8GKTtWE8dqO8qO44njeDvKjhOI4wQ7yo4TieNEO8qOk4jjJN+vZcfJxHGyHWXHKcRxih1lx6nEcaodZcdpxHGaHWXH6cRxuh1lxxnEcYYdZceZxHGmHWXHWcRxlh1lx9nEcbYdZcc5xHGOHWXHucRxrh1lx3nEcZ4dZcf5xHG+HWXHBcRxgR1lx4XEcaEdZcdFxHFRBsdcf+Zeh+vAMbX8WjguJo6LfTzKjkuI4xI7yo5LieNSO8qOy4jjMjvKjsuJ4/IMjv5+YWbHFcRxhR1lx5XEcaUdZcdVxHGVHWXH1cRxtR1lxzXEcU0Gx+RjZCQWq8u9+rV6briWGK7NYHi1/+dZtmOxYz13XEcc1/mclh3XE8f1dpQdNxDHDXaUHTcSx412lB03EcdNdpQdNxPHzXV8z5PN8PV6briFGG7JYHi1r4On71u64xv13HErcdz6J7537FTPHT8mjh/72ig7fkIcP7Gj7PgpcfzUjrLjZ8TxMzvKjtuI4zY7yo7bieN2O8qOO4jjDjvKjjuJ4047yo67iOMuO8qOu4njbjvKjp8Tx8/tKDvuIY577Cg7fkEcv7Cj7PglcfzSjrLjXuK4146y4z7iuM+OsuN+4rjfjrLjAeJ4wI6y40HieNCOsuMh4njIjrLjYeJ42I6y41fE8Ss7yo5fE8ev7Sg7HiGOR+woOx4ljkftKDseI47H7Cg7fkMcv7Gj7HicOB63o+x4gjiesKPseJI4nrSj7HiKOJ6yo+x4mjietqPseIY4nrGj7HiWOJ61o+x4jjies6PseJ44nrej7PgtcfzWjrLjd8TxOzvKjt8Tx+/tKDv+gzj+w46SY+p5Nfsbq/V8MM2jCdZf6Ztule3vchUWRIsSmww0TTymY/2HaGe0C9oV7YZ2Rz9Ce6A90V5ob7QP2hfth/ZHB6AD0UHoYHQIOhQdhg5H89ERaAE6Ei1Ei9AgOgotRkenHNExaAlaipahYTSCpo7JsWjKPYbG0Qq0Eq1Cx6HV6Hh0AjoRnYRORqegU9FpaOp1nYHORGehs9E56Fx0HjofXYAuRBehi9El6FJ0GbocXYGuRFehq9E16Fp0Hboe3YBuRDehm9Et6Fb0Y/QT9FP0M3Qbuh3dge5Ed6G70c/RPegX6JfoXnQfuh89gB5ED6GH0a/Qr9Ej6FH0GPoNehw9gZ5ET6Gn0TPoWfQceh79Fv0O/QH9Oa+2v+fVXieS16ExkZF/XKurItGS1HVuVEU4caWLhJO/DmD9HfiY/NSFuGYbeYH2/1rcJ978+07JbSevV9muW6ll7Nqfft1KHUcNMfct6K3obejt6B3onehd6N3oPei96H1oI/R+9AH0QbQx+hD6MNoEbYo+gv4dfRR9DH0cbYY+gTZHn0SfQp9Gn0GfRZ9DW6DPoy+gL6IvoS+jLdFX0Fboq2hrtA3aFm2Htkc7oK+hHdHX0TfQTuib6Fvo2+g76Lvoe+j76Afoh2hntAvaFe2Gdkc/QnugPdFeaG+0D9oX7Yf2RwegA9FB6GB0CDoUHYYOR/PREWgBOhItRIvQIDoKLUZHoyF0DFqClqJlaBiNoOXoWDSKxtA4WoFWolXoOLQaHY9OQCeik9DJ6BR0KjoNnY7OQGeis9DZ6Bx0LjoPnY8uQBeii9DF6BJ0KboMXY6uQFeiq9DV6Bp0LboOXY9uQo/k/bnX09suPtWy4Z7jNdfTxoHs19PGgbq9D8zD+l0Z5k1+bKy0oLAkcOm9bvrMV66/M/XrtOHTf3/wEOa+KcPcDwXqNncbrO/ZAOcx2hvtg/ZF+6H90QHoQHQQOhgdgg5Fh6HD0Xx0BFqAjkQL0RA6Bi1BS9EyNIxG0LFoFI2hcbQCrUSr0EnoZHQKOhWdhk5HZ6Az0VnobHQOOhedh85HF6AL0cXoEnQpmvp5o3U5H5LPa0aOmWY5Hus/5nBuJp/3JJnlySyz5F1lll9ynOVZMsuzObpczHGWFmSWFnV0uQHr2+K4aYe2z/H4eYHM9kKOTjflOEtLMkvLHGfpkOMsrwSy30NeqeNrdjPW78S9byN6Cr2A/oT+ds3uNXmB5c07J/49W3OfbEW8W9VxH1Peu3M8R14ls7ya42vfLcfXvjWZpXWOLt1znKUNmaVNHWfpiPVFuGYE0VFoMToaHYdWo+PRCehEdDm6Al2JrkJXo+vQ9egGdCO6Cf0Y/QT9FP0M3YZuR3egO9Fd6G70c3QP+gX6JboX3YfuRw+gB9FD6GH0K/Rr9Ah6FD2GfoMeR0+gJ9FT6Gn0DHoWPYeeR79Fv0O/R1NfQ67rMdaOHGPtshxjgSzH2N+w/gK6A9e0g+ivaCPM3BRtkePs7cns7bPMfrVztTzHWTqQWTrkOMuiHGd5jczyWpZZsr2mqVnW5DhLRzJLx0BuLmtznOV1MsvrOc6yOcdZ3iCzvJFllqu9RltynKUTmaVTIDeXrTnMktpevCBWEkubKbm95Pum9BmTj5JQuCjT+58rvyeWes+WvD7FI5HS/MTO1dwz8i4tr/m6Apb/T+Kf1IyXvod2+funU9fZPBeus3l+us7m+e06mie1Dj8fMdYk7fi/LfGIVMRjkYpoYfI7sOnrkt8bLQ+GixLL82PxaKgkGAtc+dxosDBaEYqXBcPxy9Ylfx+S/HZyNHbp9yXJ9TcE/v2cX59mlP7/P7nSqDwaKkx97/BGsr0NGbaX6edsqtvbmGF7mX7eZPr22P5uyjJfpDIYjYfKMs53E9ne5gzbSz7SfzZr+rZuJdvakuNsqde8KhSuuWinH5c120o8t/brj+veSf76nkDyzxuEK4PVkejlX1+9dAw1rDm+KkOxxDW75jW6sXZ5cv78cHBcPD95J8B7wAaXjsnadbVnVHLdm4Er19UcmbX3DaxLzpP/x0DB0oLymj8qcNk8ya8H58cqystLqxMfWvPHD/4w+1992BPC+EECAA==",
+      "owner": 0
+    },
+    {
+      "bytes": 147960,
+      "gzip_base64": "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",
+      "owner": 1
+    }
+  ]
+}

@@ -17,6 +17,7 @@ import uuid
 from datetime import datetime, timezone
 from http.server import ThreadingHTTPServer
 from .storage import read_json, atomic_json
+from .playtest_launcher import playtest_command
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -394,10 +395,14 @@ class OffWorkWorkbench(ThreadingHTTPServer):
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         marker = ("WORK_PLAYTEST_READY " + digest).encode()
         log_path = folder / "godot.log"
-        command = [self.engine, "--path", str(ROOT), "--", "--off-work-playtest", "--cards-config=" + str(path)]
+        command = playtest_command(ROOT, self.engine, path, off_work=True)
         with log_path.open("wb") as log:
-            proc = subprocess.Popen(command, cwd=ROOT, start_new_session=True, stdin=subprocess.DEVNULL,
-                                    stdout=log, stderr=subprocess.STDOUT)
+            try:
+                proc = subprocess.Popen(command, cwd=ROOT, start_new_session=True, stdin=subprocess.DEVNULL,
+                                        stdout=log, stderr=subprocess.STDOUT)
+            except OSError as error:
+                log.write((str(error) + "\n").encode())
+                raise ValueError(f"无法启动试玩游戏，请先构建游戏后重试。日志见 {log_path}") from error
         try:
             deadline = time.monotonic() + PLAYTEST_START_TIMEOUT
             with log_path.open("rb") as output:

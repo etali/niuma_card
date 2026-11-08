@@ -8,6 +8,12 @@ func _init() -> void:
 	card_catalog = OffWorkCardDB
 	combo_rules = OffWorkComboRules
 
+func _ready() -> void:
+	super._ready()
+	# Godot enables scripted _process on entry even when configure() ran before
+	# add_child(). Apply the covered-material policy after entering the tree.
+	_sync_material_processing()
+
 var type: String = "work"
 var card_owner: int = 0
 var group_id: int = -1
@@ -31,6 +37,9 @@ var _task_progress_source := -1
 var _meeting_participant := false
 var _strike_participant := false
 var _task_completion_hold := 0.0
+# Work/money have no intrinsic activity. Their generic idle visuals only need
+# rebuilding after a real visual write, while record/ownership always rebind.
+var _material_record_visuals_current := false
 var _elapsed := 0.0
 var _retired := false
 var face_deferred := false
@@ -72,6 +81,10 @@ func configure(data: Dictionary, card_definition: Dictionary, offer := false, de
 	uid = int(data.id)
 	def_id = type
 	_build_collision()
+	for child in get_children():
+		if child is CollisionShape3D:
+			_material_collision = child
+			break
 	if defer_face:
 		# Keep a real physics/picking identity and a label visibility flag on
 		# each covered sheet. Build the printed face when its layer is exposed.
@@ -99,6 +112,7 @@ func _on_face_visibility_changed() -> void:
 	if face_deferred and _visual.visible: _build_printed_face()
 
 func _build_printed_face() -> void:
+	_material_record_visuals_current = false
 	face_deferred = false
 	if _visual and _visual.visibility_changed.is_connected(_on_face_visibility_changed):
 		_visual.visibility_changed.disconnect(_on_face_visibility_changed)
@@ -110,7 +124,22 @@ func _build_printed_face() -> void:
 	TitleInk.apply(def_id, label, _plate.material_override)
 	_build_realtime()
 	_apply_color()
-	set_process(true)
+	if not _visual.visibility_changed.is_connected(_sync_material_processing):
+		_visual.visibility_changed.connect(_sync_material_processing)
+	_sync_material_processing()
+
+var _material_collision: CollisionShape3D
+
+func _sync_material_processing() -> void:
+	# Covered inert material has no autonomous clock. Its real record and body
+	# stay alive, and revealing the same UID resumes its ordinary hover feedback.
+	var covered := type in ["work", "money"] and (face_deferred or (_visual != null and not _visual.visible))
+	set_process(not face_deferred and _visual != null and not covered)
+	# Hidden material occupies the exact same stack slot as a visible layer.
+	# Moving thousands of duplicate broadphase shapes adds no pickable surface.
+	# Keep the real body and layer/mask (including flight locks) untouched.
+	if _material_collision != null and _material_collision.disabled != covered:
+		_material_collision.disabled = covered
 
 func card_size() -> Vector2:
 	return CardArt.FRAME_SIZE
@@ -220,6 +249,9 @@ func _render_debug_timer() -> void:
 ## Ordinary work belongs to a combination; Board chooses its one visible bar.
 ## Personnel records retain progress for animation/detail, not separate timers.
 func set_task_progress(value: float, active: bool, paused := false, phase := "work", source_uid := -1) -> void:
+	# A group may project progress onto an otherwise idle material UID. Its next
+	# record refresh must clear that projection before Board selects the new one.
+	_material_record_visuals_current = false
 	if _task_progress_phase != phase: _task_completion_hold = 0.0
 	if not active: _task_completion_hold = 0.0
 	_task_progress_value = clampf(value, 0.0, 1.0)
@@ -237,6 +269,7 @@ func has_dedicated_progress() -> bool:
 func flash_task_completion() -> void:
 	if is_offer or _retired or has_dedicated_progress() or is_meeting_participant(): return
 	if _task_progress_phase == "work" and not _task_progress_active: return
+	_material_record_visuals_current = false
 	_task_completion_hold = OffWorkUI.number("task_progress", "completion_hold_seconds")
 	_render_task_progress()
 
@@ -359,9 +392,15 @@ func update_record(data: Dictionary) -> void:
 	group_id = int(data.get("group", -1))
 	var status := str(data.get("status", "ready"))
 	var activity := str(data.get("activity", "idle"))
-	set_strike_participant(status == "striking" or activity == "striking")
 	var paused := bool(data.get("paused", false))
 	var progress := clampf(float(data.get("progress", 0.0)), 0.0, 1.0)
+	var idle_material := type in ["work", "money"] and status == "ready" and activity == "idle" and not paused
+	if idle_material and _material_record_visuals_current:
+		# Work records retain their group's batch fraction for rule continuity;
+		# it is not an intrinsic visible timer on every sheet.
+		_task_progress_value = progress
+		return
+	set_strike_participant(status == "striking" or activity == "striking")
 	var task_active := activity in ["transfer", "slack", "meeting", "coffee", "recruitment"] or (activity == "work" and _can_work())
 	set_task_progress(progress, _is_person() and task_active and activity not in ["work", "transfer", "slack"], paused, activity)
 	if type in ["meeting", "transfer", "coffee", "slack", "outsource"]:
@@ -377,6 +416,7 @@ func update_record(data: Dictionary) -> void:
 	if _icon != null:
 		_icon.modulate = Color.WHITE.darkened((1.0 - progress) * OffWorkUI.number("animation", "recovery_dim")) if status == "recovering" else Color.WHITE
 	_update_upgrade_fx()
+	_material_record_visuals_current = idle_material
 
 func uses_continuous_animation() -> bool:
 	return OffWorkIconMotion.enabled(type)
@@ -504,6 +544,12 @@ func set_drag_visual(on: bool) -> void:
 		_animation_running = true
 		_sync_illustration_material()
 
+func update_drag_motion(velocity: Vector3, delta: float) -> void:
+	# Board still moves every real collider/UID. Covered material has no visible
+	# tilt to update, and keeps the same pickup/landing animation when exposed.
+	if type in ["work", "money"] and (face_deferred or not _visual.visible): return
+	super.update_drag_motion(velocity, delta)
+
 func pulse_landed() -> void:
 	var elapsed := _hover_elapsed
 	var seconds := _motion_time
@@ -528,6 +574,9 @@ func move_to(at: Vector3, _immediate := false) -> void:
 
 func _process(delta: float) -> void:
 	if face_deferred:
+		set_process(false)
+		return
+	if type in ["work", "money"] and not _visual.visible:
 		set_process(false)
 		return
 	_advance_illustration(delta)
