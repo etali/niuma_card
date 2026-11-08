@@ -71,6 +71,7 @@ var _cover_layer: CanvasLayer
 var _cover: TextureRect
 var _snapshot: ImageTexture
 var _original_disable_3d := false
+var _table_setup: RefCounted
 var _warming := false
 var _open_after_warmup := false
 var _attention_until := -1
@@ -112,6 +113,12 @@ func setup(use_os_window := true, usable_rect := Rect2i()) -> void:
 	_use_os_window = use_os_window and DisplayServer.get_name() != "headless"
 	_screen_rect = usable_rect
 	_enabled = true
+	var table := get_parent()
+	while table != null:
+		if table.has_meta("shift_setup"):
+			_table_setup = table.get_meta("shift_setup")
+			break
+		table = table.get_parent()
 	if ResourceLoader.exists("res://assets/art/app_icon.png"):
 		handle_texture = load("res://assets/art/app_icon.png")
 	if _use_os_window:
@@ -162,7 +169,7 @@ func start_collapsed(prewarm := false) -> void:
 	else:
 		_finish_transition(false)
 
-## 在真实窗口视口预渲染，连原生视口的首次初始化也在启动时完成。
+## 在牌桌所属视口预渲染，让首次展开直接使用完整画面。
 ## 最高层遮罩直接清空输出的 RGBA，牌桌照常绘制但不会闪到桌面上。
 func _prewarm_first_open() -> void:
 	var shader := Shader.new()
@@ -178,6 +185,10 @@ void fragment() { COLOR = vec4(0.0); }
 	_cover.size = Vector2(get_expanded_size())
 	_cover.show()
 	_window.mouse_passthrough = true
+	# 分帧构造时，HUD 可能先于卡牌和存档恢复就绪。保持透明遮罩，
+	# 等当前牌桌完整建好，再预渲染首次展开要用的整张画面。
+	if _table_setup != null and not _table_setup.complete:
+		await _table_setup.finished
 	for i in 3:
 		await RenderingServer.frame_post_draw
 	# 不交换系统窗口的前后缓冲，仅在 GPU 上绘制完整画面并读取快照。
@@ -269,7 +280,9 @@ func set_icon_scale(value: float) -> void:
 		roundi(PEEK_HEIGHT * _display_scale * _icon_scale)))
 
 func _process(_delta: float) -> void:
-	if not _enabled or _warming:
+	# 分帧构造期间鼠标通常还在窗口外；此时自动收起会让后续预热
+	# 只捕获入口尺寸。场景就绪并完成预热后才接管收放与交互。
+	if not _enabled or _warming or (_table_setup != null and not _table_setup.complete):
 		return
 	var now := Time.get_ticks_msec()
 	if _use_os_window:
@@ -289,7 +302,7 @@ func _process(_delta: float) -> void:
 	_tick_at(now)
 
 func _input(event: InputEvent) -> void:
-	if not _enabled or _transitioning or _warming:
+	if not _enabled or _transitioning or _warming or (_table_setup != null and not _table_setup.complete):
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		var pointer := DisplayServer.mouse_get_position() if _use_os_window else Vector2i(event.position)
@@ -601,7 +614,9 @@ func _create_transition_cover() -> void:
 func _capture_snapshot() -> void:
 	if not _use_os_window or _window == null or (_cover and _cover.visible):
 		return
-	var image := _window.get_texture().get_image()
+	# 班次宿主把牌桌绘制在独立 SubViewport 中；首次预热时外层窗口
+	# 可能尚未接上这张纹理。必须读取本桌，不能把透明入口当成展开快照。
+	var image := get_viewport().get_texture().get_image()
 	if image != null and not image.is_empty():
 		_snapshot = ImageTexture.create_from_image(image)
 

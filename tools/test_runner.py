@@ -213,6 +213,7 @@ def run_file(path, root, output_dir, env, timeout, cancelled, takeover_lock):
     kind = file_kind(path)
     relative = path.relative_to(root).as_posix()
     graphical = {"tests/off_work/test_drawer_visual_startup.gd", "tests/off_work/test_moving_card_ink.gd",
+                 "tests/test_drawer_first_open_visual.gd", "tests/off_work/test_off_work_drawer_first_open_visual.gd",
                  "tests/test_shift_visual.gd", "tests/test_preview_mode_switch.gd"}
     engine_args = [] if relative in graphical else ["--headless"]
     command = ([env["GODOT"], *engine_args, "-s", relative] if kind == "gd" else

@@ -708,6 +708,14 @@ func _commit_drop() -> void:
 				target = int(_state.cards[member.uid].group)
 				break
 	var at: Vector3 = rest_origin(visual) if visual != null else rest_pos(by_uid[alive[0]])
+	# 下班散卡始终冻结，原 Board 的松手分支不会靠重力把它降回桌面。
+	# 在保存或提交联机落点前安排归位，也修正曾经叠到悬空散卡上的牌堆。
+	var raised := not is_equal_approx(at.y, float(_settings.rest_y))
+	at.y = float(_settings.rest_y)
+	if visual == null:
+		_move_to(by_uid[alive[0]], at)
+	elif raised:
+		_layout_group(visual, at)
 	# 参会者只是暂离展示；搬动剩余整摞仍是原组的空间移动。
 	var gid := _relocated_meeting_group(alive) if target < 0 else -1
 	if gid < 0 and network_drop.is_valid() and network_drop.call(alive, target, _drop_target_person, at):
@@ -1627,8 +1635,14 @@ func _opponent_layout_snapshot() -> Dictionary:
 	return {"entries": entries, "reserved": reserved}
 
 func _origin_for(gid: int, owner_value: int) -> Vector3:
-	if group_overrides.has(gid): return group_overrides[gid]
-	if _origin_by_gid.has(gid): return _origin_by_gid[gid]
+	if group_overrides.has(gid) or _origin_by_gid.has(gid):
+		# 旧存档可能保存了松手时的拖拽高度；组锚点只记录桌面位置，
+		# 牌堆自身的层高仍由 _stack_offset 负责。
+		var restored: Vector3 = group_overrides.get(gid, _origin_by_gid.get(gid, Vector3.ZERO))
+		restored.y = float(_settings.rest_y)
+		_origin_by_gid[gid] = restored
+		if group_overrides.has(gid): group_overrides[gid] = restored
+		return restored
 	var count: int = int(_state.offers.size()) if _state != null else int(OffWorkCardDB.game_rules()["market_size"])
 	var region := TableRegions.zone_rect(owner_value == int(_settings.local_owner), drawer_mode, count)
 	if _opening_layout_enabled:
