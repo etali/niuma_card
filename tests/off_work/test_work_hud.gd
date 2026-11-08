@@ -79,21 +79,29 @@ func _run() -> void:
 	await _open_menu(1)
 	_check(hud._utility.visible and hud._utility.get_meta("source") == hud._bot, "BOT page mounts original BOTPanel Frame")
 	var old_think: float = game.state.config.rules.bot.think_seconds
-	var old_budget: int = OffWorkConfig.decision_budget_ms(game.state.config.rules.bot)
 	hud._bot._slider.grab_focus()
 	await _key(KEY_END)
-	_check(OffWorkConfig.decision_budget_ms(game.state.config.rules.bot) > old_budget, "strength slider increases the real decision deadline")
-	_check(game.state.config.rules.bot.think_seconds == old_think, "strength preserves the in-game action interval")
+	_check(OffWorkConfig.decision_budget_ms(game.state.config.rules.bot) == 1800, "strength slider applies the mapped real decision deadline")
+	_check(is_equal_approx(game.state.config.rules.bot.think_seconds, 2.0)
+		and game.state.config.rules.bot.think_seconds < old_think
+		and is_equal_approx(game.state.config.rules.bot.decision_budget_ratio, 0.9),
+		"maximum strength updates the real action interval and budget")
 	var budget_label: Label
 	var interval: SpinBox
 	for row in hud._bot._rows:
 		if row.key == "budget_readout": budget_label = row.node
 		if row.key == "think_seconds": interval = row.node
-	_check(budget_label != null and budget_label.text == "2520 毫秒", "native settings show the derived allowance in milliseconds")
+	_check(budget_label != null and budget_label.text == "1800 毫秒", "native settings show the derived allowance in milliseconds")
 	if interval != null and budget_label != null:
 		interval.value = 0.2
 		_check(budget_label.text == "180 毫秒", "editing the interval immediately refreshes the native allowance")
 		interval.value = old_think
+	hud._bot._slider.grab_focus()
+	await _key(KEY_HOME)
+	for _step in 37: await _key(KEY_RIGHT)
+	_check(is_equal_approx(game.state.config.rules.bot.think_seconds, 6.024)
+		and OffWorkConfig.decision_budget_ms(game.state.config.rules.bot) == 1374,
+		"intermediate keyboard strength preserves exact mapped values through native control refresh")
 	await _close_utility()
 	game._notify("HUD 真实输入测试")
 	await _open_menu(2)

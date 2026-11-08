@@ -4,15 +4,15 @@ class_name OffWorkBot
 extends RefCounted
 
 const Config = preload("res://engine/off_work_config.gd")
-const Planner = preload("res://engine/off_work_bot_planner.gd")
-const Reply = preload("res://engine/off_work_bot_reply.gd")
-const TreeSearch = preload("res://engine/off_work_bot_tree.gd")
+const Actions = preload("res://engine/off_work_bot_actions.gd")
+const Search = preload("res://engine/off_work_bot_search.gd")
+const Emergency = preload("res://engine/off_work_bot_emergency.gd")
 
 var state: RefCounted
 var owner: int
 var decision_serial := 0
 var last_decision: Dictionary = {}
-var _planner := Planner.new()
+var _decision_context := {}
 var _next_think: float = INF
 var _started := false
 var _rng := RandomNumberGenerator.new()
@@ -21,9 +21,9 @@ var _policy: Dictionary
 func _init(game_state: RefCounted, player: int = 1, policy: Dictionary = {}, match_seed: int = 0) -> void:
 	state = game_state
 	owner = player
-	# Historical explicit policies retain their budget mode and gain only the
-	# formerly implicit algorithm values, read from the compatibility config.
-	_policy = state.config.rules.bot if policy.is_empty() else state.config.bot_algorithm_defaults.merged(policy, true)
+	# Timing/search overrides use the installed model. Obsolete purchasing
+	# gates cannot silently restrict the new legal action space.
+	_policy = state.config.rules.bot if policy.is_empty() else Config.merge_bot_policy(state.config.rules.bot, policy)
 	var base_seed: int = state.config.integer("simulation", "default_seed") if match_seed == 0 else match_seed
 	_rng.seed = base_seed + owner
 
@@ -56,16 +56,24 @@ func commit_action(action: Dictionary, report: Dictionary) -> bool:
 	if action.has("tool") and (not state.cards.has(action.tool) or state.cards[action.tool].owner != owner):
 		return false
 	if action.get("group", -1) >= 0 and not state.groups.has(action.group): return false
-	if not _planner.apply_action(state, owner, action): return false
+	if not Actions.apply_action(state, owner, action): return false
 	last_decision = report
 	last_decision["applied"] = true
 	decision_serial += 1
 	return true
 
-## Planning is read-only. The chosen command is delivered before the game
-## executes it, so rule settlement and animations do not consume search time.
+## Only bounded dispatch context crosses live-worker/session boundaries. Search
+## trees and hypothetical market states never become persistent game state.
+func export_decision_context() -> Dictionary:
+	return _decision_context.duplicate(true)
+
+func import_decision_context(context: Dictionary) -> void:
+	_decision_context = context.duplicate(true)
+
+## Every full decision uses the same race-search pipeline. The bounded
+## emergency action exists only so a late UI worker cannot stall the game.
 func decide_action(deadline_usec: int = -1, cancelled: Callable = Callable(), search_tree := true,
-		on_choice: Callable = Callable()) -> Dictionary:
+		on_choice: Callable = Callable(), root_action_filter: Callable = Callable()) -> Dictionary:
 	var started := Time.get_ticks_usec()
 	var budget_ms := Config.decision_budget_ms(_policy)
 	var cutoff := started + budget_ms * 1000
@@ -73,38 +81,37 @@ func decide_action(deadline_usec: int = -1, cancelled: Callable = Callable(), se
 	var available := maxi(0, cutoff - started)
 	var reserve := mini(int(_policy.decision_publish_reserve_us), ceili(available * float(_policy.decision_publish_reserve_ratio)))
 	var until := cutoff - reserve
-	var incumbent := {"action":{"kind":"wait"}, "report":{"kind":"wait", "reason":"决策时限已到，保持当前安排",
-		"budget_ms":budget_ms, "selected_after_us":0, "elapsed_us":0, "overrun":false,
-		"fallback":true, "cutoff":true, "discarded_late":false, "candidates":[], "evaluated":0,
-		"depth":0, "search_depth":0, "search_nodes":0, "principal_variation":[]}}
+	var incumbent := {"action":{"kind":"wait"}, "report":{"algorithm":"race_search_v2", "kind":"wait",
+		"reason":"等待有效决策", "budget_ms":budget_ms, "selected_after_us":0, "elapsed_us":0,
+		"overrun":false, "fallback":true, "cutoff":true, "discarded_late":false,
+		"candidates":[], "evaluated":0, "depth":0, "search_depth":0, "search_nodes":0,
+		"principal_variation":[], "root_complete":false}}
 	if Time.get_ticks_usec() < until and not (cancelled.is_valid() and cancelled.call()):
-		var ranked := _planner.choose(state, owner, _policy, _rng, until, cancelled)
-		var summary: Dictionary = ranked.diagnostics
-		summary["depth"] = 0 if summary.fallback else 1
-		summary["cutoff"] = summary.timed_out
-		if _publish(incumbent, ranked.action, summary, started, cutoff, on_choice) and not summary.cutoff and ranked.finalists.size() > 1:
-			var response := Reply.refine(state, owner, _policy, _planner.forecast_context(), ranked.finalists, until)
-			if not response.is_empty():
-				_publish(incumbent, response.action, {"reason":response.reason, "candidates":response.candidates,
-					"depth":1 + int(response.depth)}, started, cutoff, on_choice)
-			if search_tree and Time.get_ticks_usec() < until:
-				var publish_layer := func(layer: Dictionary) -> void:
-					_publish(incumbent, layer.action, {"reason":layer.reason, "candidates":layer.candidates,
-						"principal_variation":layer.principal_variation, "search_depth":layer.search_depth,
-						"search_nodes":layer.search_nodes}, started, until, on_choice)
-				var searched := TreeSearch.new().search(state, owner, _policy, ranked.finalists, until, cancelled, publish_layer)
-				incumbent.report.search_nodes = searched.search_nodes
-				incumbent.report.cutoff = searched.cutoff
-			elif Time.get_ticks_usec() >= until:
-				incumbent.report.cutoff = true
+		var quick_until := mini(until, started + mini(200, maxi(20, available / 8)))
+		var quick: Dictionary = Emergency.choose(state, owner, quick_until, _decision_context)
+		_decision_context = quick.context
+		if quick.action.kind != "wait" and (not root_action_filter.is_valid() or root_action_filter.call(quick.action)):
+			_publish(incumbent, quick.action, {"reason":quick.action.reason}, started, cutoff, on_choice)
+		var publish := func(layer: Dictionary):
+			_publish(incumbent, layer.action, layer, started, cutoff, on_choice)
+		var search := Search.new()
+		var completed: Dictionary = search.search(state, owner, _policy, until, cancelled, publish, search_tree, root_action_filter)
+		# Include forecast-cache destruction in the reported/end-to-end budget.
+		search = null
+		incumbent.report.search_nodes = completed.search_nodes
+		incumbent.report.evaluated = completed.evaluated
+		incumbent.report.cutoff = completed.cutoff
+		incumbent.report.root_complete = completed.root_complete
+		incumbent.report.root_candidates = completed.root_candidates
+		incumbent.report.completed_candidates = completed.completed_candidates
+		incumbent.report.root_unobserved = completed.root_unobserved
+		incumbent.report.cleanup_reserve_us = completed.cleanup_reserve_us
 	var report: Dictionary = incumbent.report
 	report.elapsed_us = Time.get_ticks_usec() - started
 	report.overrun = int(report.elapsed_us) > available
 	last_decision = report
 	return incumbent.action
 
-## A mailbox consumer may use this completed choice even when a subsequent
-## layer is still running. No callback receives a mutable search node or live state.
 func _publish(incumbent: Dictionary, action: Dictionary, evidence: Dictionary, started: int, until: int,
 		on_choice: Callable) -> bool:
 	var ready := Time.get_ticks_usec()
@@ -113,10 +120,11 @@ func _publish(incumbent: Dictionary, action: Dictionary, evidence: Dictionary, s
 		incumbent.report.cutoff = true
 		return false
 	var report: Dictionary = incumbent.report.merged(evidence, true)
+	report.erase("action")
 	report.kind = action.kind
 	report.selected_after_us = ready - started
 	report.elapsed_us = report.selected_after_us
 	incumbent.action = action
 	incumbent.report = report
-	if on_choice.is_valid(): on_choice.call(action, report.duplicate())
+	if on_choice.is_valid(): on_choice.call(action, report.duplicate(true))
 	return true

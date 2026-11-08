@@ -22,6 +22,8 @@ func _check(ok: bool, label: String) -> void:
 
 func _state(contents: Dictionary) -> OffWorkState:
 	var config := OffWorkConfig.new()
+	# This fixture isolates settlement; flight-window timing has its own regression.
+	config.rules.strike.flight_seconds = 0.0
 	config.rules.initial.groups = [contents]
 	config.rules.initial.money = 0
 	var state := OffWorkState.new(config)
@@ -154,8 +156,8 @@ func _meeting_capacity() -> void:
 	var own := _group(single)
 	single.advance(3.0)
 	var host: int = _ids(single, "employee", 1)[0]
-	var tool := single.add_card("meeting", 1, single.cards[host].group)
-	single.activate(tool)
+	var tool := single.add_card("meeting", 1)
+	single.move_cards([host], single.cards[tool].group)
 	single.advance(12.0)
 	_check(is_equal_approx(single.group_work_progress(own), 0.3) and single.money(0) == 0, "group clock freezes if all workers attend a meeting")
 
@@ -201,11 +203,11 @@ func _strike_and_other_jobs() -> void:
 	state.move_cards(people, group)
 	state.advance(6.0)
 	_check(_events(state).size() == 1 and state.money(0) == 3, "regrouped workers complete the remaining shared work exactly once")
-	var transfer := state.add_card("transfer", 0, group)
-	state.activate(transfer)
+	var transfer := state.add_card("transfer", 0)
+	state.move_cards(state.group_cards(group), state.cards[transfer].group)
 	state.drain_events()
 	state.advance(12.0)
-	_check(_events(state).is_empty() and state.money(0) == 3, "switching group to transfer cannot trigger an ordinary work payout")
+	_check(_events(state).is_empty() and state.money(0) == 3, "forming a separate transfer combination cannot trigger an ordinary work payout")
 
 func _step_independence() -> void:
 	var coarse := _state({"employee": 3, "grinder": 2, "work": 200, "overtime": 3})

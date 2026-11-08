@@ -1,0 +1,24 @@
+{
+  "tool": "built-in image_gen",
+  "source": "/Users/Yitan/.codex/generated_images/01a1b639-330d-7ba1-a7af-94555f6a0960/exec-49a31707-7545-4262-a34c-a5a1c9d80327.png",
+  "type": "single_master",
+  "concept": "Angry office worker raising a WLB placard",
+  "postprocessing": "whole-master uniform resize and transparent padding only; original alpha preserved",
+  "source_sha256": "2e045225fbc632a7677a36a2b2a17144c5f3c9267f92def95355ff75dc068756",
+  "master_size": [
+    1254,
+    1254
+  ],
+  "runtime_size": [
+    384,
+    384
+  ],
+  "runtime_alpha_bbox": [
+    43,
+    31,
+    351,
+    360
+  ],
+  "runtime_file": "assets/art/icon/off_work_union.png",
+  "runtime_art_id": "off_work_union"
+}

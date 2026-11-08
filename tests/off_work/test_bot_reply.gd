@@ -1,93 +1,73 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 extends "res://tests/harness.gd"
 
-const Config = preload("res://engine/off_work_config.gd")
-const State = preload("res://engine/off_work_state.gd")
-const Planner = preload("res://engine/off_work_bot_planner.gd")
-const Reply = preload("res://engine/off_work_bot_reply.gd")
+const Search = preload("res://engine/off_work_bot_search.gd")
+const Actions = preload("res://engine/off_work_bot_actions.gd")
+const Evaluation = preload("res://engine/off_work_bot_evaluator.gd")
 
-func _initialize() -> void:
-	var config := Config.new()
-	config.rules.initial.groups = [{"employee":2,"work":50},{"employee":1,"work":50},{"employee":1}]
-	var game := State.new(config)
-	game.new_game(119)
-	game.advance(2.5)
-	var ours := []
-	for gid in game.groups:
-		if game.groups[gid].owner == 0 and not game.group_people(gid).is_empty():
-			ours.append(gid)
-	var worker: int = game.group_people(ours[2])[0]
-	var concentrate := {"kind":"move","ids":[worker],"group":ours[0]}
-	var spread := {"kind":"move","ids":[worker],"group":ours[1]}
-	var finals := [
-		{"kind":"move","action":concentrate,"score":4.2,"reason":"集中派工"},
-		{"kind":"move","action":spread,"score":4.0,"reason":"分摊派工"}]
-	game.offers.clear()
-	var safe := _observe(game)
-	check(_refine(game,safe,finals).action == concentrate, "没有可见干扰时保留收益较高的集中派工")
-	var strike := game.add_card("strike",1)
-	var threatened := _observe(game)
-	var before := _snapshot(game)
-	var answer := _refine(game,threatened,finals)
-	check(answer.depth == 1 and answer.action == spread, "敌方有现成罢工，比较立即罢工后的停产量并转选分散派工")
-	check(answer.candidates[0].reply.contains("罢工") and answer.candidates[0].has("base_score"), "保留原评分和具体回应")
-	check(_snapshot(game) == before and game.cards[strike].status == "ready", "推演不消耗工具、移动牌或查看下一张商品")
-	check(Reply.refine(game,0,config.rules.bot,threatened,finals,Time.get_ticks_usec()).is_empty(), "超时保留前一层所有排名")
+func _initialize() -> void: _run.call_deferred()
 
-	game = State.new(config)
-	game.new_game(119)
-	game.offers = [{"id":91,"type":"employee","price":5}]
-	var buy := {"kind":"buy","offer":91,"card_type":"employee"}
-	var choices := [finals[0],{"kind":"buy","action":buy,"score":4.0,"reason":"抢购员工"}]
-	var market := _observe(game)
-	var contested := _refine(game,market,choices)
-	check(contested.action == buy, "对手能买唯一员工并派工时，阻断该回应可超过单看基础收益的派工")
-	game.offers.append({"id":92,"type":"employee","price":5})
-	check(_refine(game,_observe(game),choices).action == concentrate, "仍有等价雇员时不会虚增抢购收益")
+func _run() -> void:
+	_test_visible_reply()
 	_mixed_partial_batches()
 	finish()
 
+func _test_visible_reply() -> void:
+	var config := OffWorkConfig.new()
+	# Fix this two-ply attack/recovery window independently of preset tuning.
+	config.rules.bot.think_seconds = 2.8
+	config.rules.initial.groups = [{"employee":3,"work":120},{"employee":1,"work":30}]
+	config.rules.initial.money = 0
+	config.rules.conveyor.interval_seconds = 1000
+	config.rules.bot.search_max_depth = 2
+	config.rules.bot.search_root_width = 16
+	config.rules.bot.search_reply_width = 4
+	var world := OffWorkState.new(config)
+	world.new_game(119)
+	world.offers.clear()
+	var safe := Search.new().search(world, 0, config.rules.bot, Time.get_ticks_usec()+10000000)
+	check(safe.root_complete and safe.search_depth == 2, "安全局面完整比较所有首步与真实对方回应")
+	var strike := world.add_card("strike",1)
+	var before := _snapshot(world)
+	var threatened := Search.new().search(world, 0, config.rules.bot, Time.get_ticks_usec()+10000000)
+	check(threatened.root_complete and threatened.search_depth == 2, "持有罢工后的对方回应也完成同层比较")
+	check(threatened.action != safe.action, "公开罢工改变真实根动作，非旧启发式分数覆盖")
+	var line: Array = threatened.principal_variation
+	check(line.size() == 2 and line[1].kind == "activate" and line[1].get("tool") == strike,
+		"最佳防御仍以对方实际罢工回应为依据")
+	var waiting: Array = threatened.candidates.filter(func(row): return row.kind == "wait")
+	check(not waiting.is_empty() and threatened.candidates[0].score > waiting[0].score,
+		"选择的防御在同一完工时间尺度上优于原地等待")
+	var branch := world.fork_for_bot(71)
+	for i in line.size():
+		check(line[i].seat == i and is_equal_approx(line[i].seconds, branch.time), "双方回应按实际推演时刻交替")
+		check(Actions.apply_action(branch,i,line[i]), "回应主变化每一步均能由真实规则执行")
+		branch.advance(config.rules.bot.think_seconds * 0.5)
+	check(_snapshot(world) == before and world.cards[strike].status == "ready", "搜索不消费真人局面中的工具或未来随机流")
+
 func _mixed_partial_batches() -> void:
-	var config := Config.new()
+	var config := OffWorkConfig.new()
 	config.roles.employee.work_seconds = 20
 	config.roles.employee.work_capacity = 1
 	config.roles.grinder.work_seconds = 2
 	config.roles.grinder.work_capacity = 4
 	config.rules.initial.groups = [{"grinder":1,"employee":1,"work":5},{"employee":1,"work":3}]
-	var game := State.new(config)
-	game.new_game(51)
-	var ours := []
-	for gid in game.groups:
-		if game.groups[gid].owner == 0 and not game.group_work(gid).is_empty(): ours.append(gid)
-	var source: int = ours[0]
-	var target: int = ours[1]
-	var worker: int = game.group_people(source).filter(func(id): return game.cards[id].type == "grinder")[0]
-	var ctx := _observe(game)
-	var changed := {}
-	Reply._group_delta(ctx,changed,source,game.cards[worker],-1)
-	Reply._group_delta(ctx,changed,target,game.cards[worker],1)
-	for gid in changed:
-		check(Reply._assign_batch(game,changed[gid],Time.get_ticks_usec()+100000),"两种工时人员重新分配批次")
-	game.move_cards([worker],target)
-	for gid in changed:
+	config.rules.initial.money = 0
+	var world := OffWorkState.new(config)
+	world.new_game(51)
+	world.offers.clear()
+	var groups: Array = world.groups.keys().filter(func(gid): return world.groups[gid].owner == 0 and not world.group_work(gid).is_empty())
+	var person: int = world._owner_type(0,"grinder")[0]
+	check(world.move_cards([person],int(groups[1])) >= 0, "混合工时人员真正重派到较小工作批次")
+	var expected := 0.0
+	for gid in groups:
 		var assigned := 0
-		for id in game.group_work_participants(gid):
-			assigned += game.tasks[id].work_ids.size()
-		var actual: float = game.group_work_rate(gid)*assigned
-		check(changed[gid].capacity == assigned and is_equal_approx(actual,changed[gid].rate),
-			"派出和接收组按实际分配份数 × 参与者平均速度，匹配真实结算")
-	check(changed[target].capacity == 3 and is_equal_approx(changed[target].rate,0.825),
-		"卷王最多四份，本组只分到剩下两份，工作组时钟按 20 和 2 秒工时平均")
+		for id in world.group_work_participants(gid): assigned += world.tasks[id].work_ids.size()
+		expected += world.group_work_rate(gid) * assigned
+	var forecast := Evaluation.new().evaluate(world,0,config.rules.bot)
+	check(forecast.complete and is_equal_approx(forecast.detail.sides[0].current_rate, expected),
+		"统一评价按实际分配份数和参与者平均速度计算吞吐，不按名义总容量计分")
+	check(is_equal_approx(world.group_work_rate(groups[1])*3,0.825), "卷王仅获余下两份，组时钟匹配 20 与 2 秒的真实规则")
 
-func _observe(game: RefCounted) -> Dictionary:
-	var planner := Planner.new()
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 42
-	planner.choose(game,0,game.config.rules.bot,rng,Time.get_ticks_usec()+100000)
-	return planner.forecast_context()
-
-func _refine(game: RefCounted, context: Dictionary, rows: Array) -> Dictionary:
-	return Reply.refine(game,0,game.config.rules.bot,context,rows,Time.get_ticks_usec()+100000)
-
-func _snapshot(game: RefCounted) -> String:
-	return JSON.stringify([game.revision,game.time,game.cards,game.groups,game.tasks,game.offers,game._rng.state])
+func _snapshot(world: OffWorkState) -> String:
+	return JSON.stringify([world.revision,world.time,world.cards,world.groups,world.tasks,world.offers,world._rng.state])

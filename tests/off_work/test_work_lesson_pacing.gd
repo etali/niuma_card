@@ -106,7 +106,7 @@ func _interrupt_after_reading() -> void:
 	game._process(125.0)
 	if not need(game.state.winner < 0, "读罢工目标时对手会留在可打断的生产组"): return
 	game.demonstrate_practice_step()
-	game._process(0.05)
+	game._process(game.state.config.number("strike", "flight_seconds"))
 	game.demonstrate_practice_step()
 	game._process(2.05)
 	check(game.lesson.complete(), "慢读提示后，仍可打断对手并收入结算")

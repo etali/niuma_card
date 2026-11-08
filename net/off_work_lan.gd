@@ -110,6 +110,7 @@ func _bind_connection() -> void:
 	net.frame_received.connect(_accept)
 	net.rejected.connect(func(result: Dictionary):
 		_drop_positions.clear()
+		game.board.reject_manual_strike_drops()
 		game._notify(str(result.reason), true))
 	net.foe_left.connect(func(): game._notify("对手已断线，牌局暂停，等待重新加入"))
 	net.foe_back.connect(func(): game._notify("对手已重新加入"))

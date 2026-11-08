@@ -34,6 +34,7 @@ class Element {
       if (node instanceof Element) {
         if (node.parentElement) node.parentElement.children = node.parentElement.children.filter(item => item !== node);
         node.parentElement = this;
+        node.ownerDocument = this.ownerDocument;
       }
       this.children.push(node);
     }
@@ -66,6 +67,7 @@ class Element {
   }
   setCustomValidity(message) { this.customValidity = message; }
   reportValidity() { return this.validity.valid; }
+  focus() { this.ownerDocument.activeElement = this; }
   setAttribute(key, value) { this.attributes[key] = String(value); }
   addEventListener(type, listener) { (this.listeners[type] ??= []).push(listener); }
   async dispatch(type) {
@@ -96,6 +98,8 @@ class Element {
 }
 function page() {
   const document = new Element('document');
+  document.ownerDocument = document;
+  document.activeElement = null;
   const stack = [document];
   for (const token of html.matchAll(/<!--[\s\S]*?-->|<![^>]*>|<\/?[\w-]+\b[^>]*>|[^<]+/g)) {
     const text = token[0];
@@ -111,7 +115,7 @@ function page() {
     stack.at(-1).append(node);
     if (!/^(input|img|link|meta|br|hr|col)$/i.test(tag)) stack.push(node);
   }
-  document.createElement = tag => new Element(tag);
+  document.createElement = tag => Object.assign(new Element(tag),{ownerDocument:document});
   document.getElementById = id => document.querySelector('#' + id);
   return document;
 }
@@ -132,16 +136,30 @@ function harness() {
     project:{id:'project',name:'项目默认',data:copy(cards)},
     alternate:{id:'alternate',name:'候选卡表',data:alternate},
   };
+  const curve = (strength,points) => {
+    for (let i=1;i<points.length;i++) if (strength <= points[i][0]) {
+      const [x0,y0] = points[i-1], [x1,y1] = points[i];
+      return y0 + (y1-y0) * (strength-x0)/(x1-x0);
+    }
+    return points.at(-1)[1];
+  };
+  const mapping = strength => {
+    const curves = defaults.preferences.strength_curves;
+    const think = curve(strength,curves.think_seconds);
+    const budgets = curves.decision_budget_ratio.map(([point,ratio]) => [point,ratio*curve(point,curves.think_seconds)]);
+    return {think_seconds:think,decision_budget_ratio:curve(strength,budgets)/think};
+  };
   const plain = copy(defaults.bot);
   delete plain.owner;
   const context = vm.createContext({document, structuredClone, Number, Date, console,
     $:id => document.getElementById(id), clone:structuredClone,
     Option:function(text, value) { const node = new Element('option'); node.textContent = text; node.value = value; return node; },
     bot:copy(defaults), candidate:copy(alternate), sourceCards:copy(alternate), baseline:copy(cards), profiles:{}, legacyBudgetMs:12,
-    legacyPolicyDefaults:{search_max_depth:4,search_root_width:3,search_reply_width:2,...copy(defaults.compatibility?.algorithm_defaults || {})},
+    legacyPolicyDefaults:{...Object.fromEntries(['search_max_depth','search_root_width','search_reply_width'].map(key => [key,defaults.bot[key]])),...copy(defaults.compatibility?.algorithm_defaults || {})},
     defaultProfiles:{q:copy(plain),a:copy(plain),b:copy(plain)},
-    strategyNames:{}, chosenBots:{}, presetChoice:{}, comparisonGeneration:0, previousComparison:'',
-    presets:{low:{decision_budget_ratio:.1},mid:{decision_budget_ratio:.5}},
+    strategyNames:{}, chosenBots:{}, presetChoice:{}, strengthChoice:{}, comparisonGeneration:0, previousComparison:'',
+    presets:Object.fromEntries(Object.entries(defaults.preferences.presets).map(([key,strength]) => [key,mapping(strength)])),
+    strengthProfiles:Object.fromEntries(Array.from({length:101},(_,index) => [(index/100).toFixed(2),mapping(index/100)])),
     presetLabels:{low:'偏低',mid:'标准'}, fieldLabels:{decision_budget_ms:'固定思考时限（毫秒）'},
     activeView:'balance', loading:false, projectCardsId:'project', sourceId:'alternate',
     library:{cards:[{id:'alternate',name:'候选卡表'}],bot:[]},
@@ -166,7 +184,7 @@ function harness() {
     context.candidate = copy(record.data);
     context.$('cardName').value = record.name;
   };
-  loadFunctions(context,['element','same','displayName','caption','field','details','number','profilePreset','budgetText','setProfile',
+  loadFunctions(context,['element','same','displayName','caption','field','details','number','profilePreset','profileStrength','budgetText','setProfile',
     'renderProfiles','valid','api','busy','saveWithConfirmation','saveVersion','currentCardsName','run',
     'availableCards','botCardsId','renderBotCards','selectBotCards','matchingConditions','comparisonChoices',
     'populateRecords','selection','swapComparison','loadLinkedComparison','refreshComparison','view']);
@@ -244,7 +262,7 @@ test('archived algorithm defaults survive later project tuning and explicit over
   const {ui} = harness();
   const legacy = defaults.compatibility.algorithm_defaults;
   const keys = Object.keys(legacy);
-  assert.ok(keys.includes('material_batch_limit') && keys.includes('fallback_probe_group_limit'));
+  assert.deepEqual([...keys].sort(),['decision_publish_reserve_ratio','decision_publish_reserve_us','evaluation_max_seconds','live_fallback_budget_us','live_snapshot_card_limit','live_snapshot_group_limit']);
   const archived = copy(defaults.bot);
   for (const key of keys) delete archived[key];
   delete archived.owner;
@@ -262,10 +280,11 @@ test('archived algorithm defaults survive later project tuning and explicit over
   assert.deepEqual(archived,before,'archived input remains immutable');
 });
 
-test('every algorithm coefficient is an editable numeric field and survives save and both run modes', async () => {
+test('every supported evaluator and realtime parameter is editable and survives save and both run modes', async () => {
   const {ui,requests} = harness();
   const keys = Object.keys(defaults.compatibility.algorithm_defaults);
-  assert.ok(keys.length >= 40,'the behavior test covers all configured limits, horizons, and evaluation coefficients');
+  assert.ok(keys.includes('evaluation_max_seconds') && keys.includes('live_fallback_budget_us'),'cover the unified evaluator and real-time protections');
+  assert.ok(keys.every(key => Object.hasOwn(defaults.bot,key)),'compatibility defaults contain only supported v2 parameters');
   for (const side of ['a','b','q']) {
     for (const key of keys) {
       const spec = defaults.preferences.knobs.find(item => item.key === key);
@@ -306,14 +325,14 @@ function numericChange(value,spec) {
   return changed;
 }
 
-test('edited search options and structured policies reach save and run requests', async () => {
+test('edited search and completion-time parameters reach save and run requests', async () => {
   const {ui,requests} = harness();
   for (const [side,depth] of [['a',8],['b',2],['q',6]]) {
     await edit(ui,side,'search_max_depth',depth);
     await edit(ui,side,'search_root_width',5);
     await edit(ui,side,'search_reply_width',3);
-    await edit(ui,side,'purchase_priority',['employee','coffee']);
-    await edit(ui,side,'max_card_copies',{coffee:6});
+    await edit(ui,side,'evaluation_max_seconds',1810);
+    await edit(ui,side,'live_snapshot_card_limit',3000);
     const saveLabel = side === 'q' ? /保存.*共用.*策略/ : new RegExp('保存.*BOT '+side.toUpperCase()+'.*策略');
     const button = ui.$('profile-'+side).querySelectorAll('button').find(node => saveLabel.test(node.textContent));
     assert.ok(button,`${side} identifies exactly which policy is saved`);
@@ -336,20 +355,64 @@ test('edited search options and structured policies reach save and run requests'
   assert.equal(ui.$('error').textContent,'');
 });
 
-test('invalid search ranges and malformed arrays cannot overwrite or submit a policy', async () => {
+test('invalid numeric ranges and incomplete input never overwrite or submit a policy', async () => {
   const {ui,requests} = harness();
-  const before = copy(ui.profiles.a);
-  await edit(ui,'a','search_root_width',0);
-  assert.equal(ui.profiles.a.search_root_width,before.search_root_width);
-  await ui.saveVersion('bot','invalid',ui.profiles.a,'a');
-  assert.equal(requests.length,0);
-  await edit(ui,'a','search_root_width',4);
-  input(ui,'a','purchase_priority').value = '{bad json';
-  await input(ui,'a','purchase_priority').dispatch('input');
-  assert.deepEqual(copy(ui.profiles.a.purchase_priority),before.purchase_priority);
-  await ui.view('bot');
-  await ui.run();
-  assert.equal(requests.length,0);
+  for (const side of ['q','a','b']) {
+    await ui.view(side === 'q' ? 'balance' : 'bot');
+    for (const key of ['search_root_width','evaluation_max_seconds','decision_budget_ratio']) {
+      const spec = defaults.preferences.knobs.find(item => item.key === key);
+      const original = ui.profiles[side][key];
+      const invalid = [spec.min-spec.step,spec.max+spec.step,'','not-a-number'];
+      if (key === 'search_root_width') invalid.push(1.5);
+      for (const value of invalid) {
+        const count = requests.length;
+        await edit(ui,side,key,value);
+        assert.equal(input(ui,side,key).validity.valid,false,side+'.'+key+' rejects '+JSON.stringify(value));
+        assert.equal(ui.profiles[side][key],original,'invalid edits leave the submitted value untouched');
+        await ui.saveVersion('bot','invalid',ui.profiles[side],side);
+        await ui.run();
+        assert.equal(requests.length,count,'invalid numeric input blocks both saving and running');
+        await edit(ui,side,key,original);
+        assert.equal(input(ui,side,key).validity.valid,true,'a corrected value restores validity');
+      }
+    }
+  }
+});
+
+test('obsolete archived heuristic fields are neither rendered nor submitted and the archive stays immutable', async () => {
+  const {ui,requests} = harness();
+  const obsolete = {buy_chance:.48,desired_people:14,min_reserve:3,max_tool_copies:8,
+    max_support_people:2,production_reserve_people:1,material_batch_limit:16,transfer_batch_size:12,
+    purchase_priority:['employee','overtime'],tool_priority:['coffee','meeting'],max_card_copies:{overtime:4},
+    planner_cash_value_cap:.25,planner_partial_progress_weight:.5,planner_upgrade_chain_bonus_cap:1,
+    tree_action_period_floor_seconds:2.8,unknown_future_field:{nested:['preserve','archive']}};
+  const archive = {...copy(defaults.bot),...obsolete,think_seconds:3.7,decision_budget_ratio:.6};
+  const before = copy(archive);
+  const records = [{id:'old-bot',name:'历史完整策略',data:archive}];
+  const beforeRecords = copy(records);
+  // Unknown keys can arrive both from old records and an old bootstrap response.
+  Object.assign(ui.legacyPolicyDefaults,obsolete);
+  for (const side of ['q','a','b']) {
+    ui.setProfile(side,archive,records[0].name,records[0].id);
+    ui.renderProfiles();
+    for (const key of Object.keys(obsolete)) {
+      assert.equal(input(ui,side,key),null,side+' does not expose '+key);
+      assert.equal(Object.hasOwn(ui.profiles[side],key),false,side+' does not retain '+key);
+    }
+    assert.equal(ui.profiles[side].think_seconds,3.7);
+    assert.equal(ui.profiles[side].decision_budget_ratio,.6);
+    await ui.saveVersion('bot','迁移策略 '+side,ui.profiles[side],side);
+    assert.equal(requests.at(-1).url,'api/library/bot');
+    for (const key of Object.keys(obsolete)) assert.equal(Object.hasOwn(requests.at(-1).body.data,key),false,'save excludes '+key);
+    await ui.view(side === 'q' ? 'balance' : 'bot');
+    await ui.run();
+    assert.equal(requests.at(-1).url,'api/run');
+    for (const seat of ['a','b']) {
+      for (const key of Object.keys(obsolete)) assert.equal(Object.hasOwn(requests.at(-1).body[seat],key),false,'run excludes '+key);
+    }
+    assert.deepEqual(archive,before,'editing a migrated copy never rewrites the archived document');
+    assert.deepEqual(records,beforeRecords,'loading and submitting never change archive names, IDs, or data');
+  }
 });
 
 test('BOT tab keeps one duel editor and leaves balance comparison selections in place', async () => {
@@ -555,4 +618,125 @@ test('opening a historical duel expands only that row and never collapses an alr
   assert.deepEqual(scrolls,[{block:'center'},{block:'center'}]);
   ui.$ = id => id === 'historyTable' ? {querySelector:() => null} : originalLookup(id);
   await assert.rejects(ui.openHistoryRecord('duel-1'),/未找到.*历史记录/);
+});
+
+
+test('overall strength sliders update Q A B using engine profiles and retain independent parameters', async () => {
+  const {ui,requests} = harness();
+  for (const side of ['q','a','b']) {
+    await edit(ui,side,'search_root_width',7);
+    const range = ui.$('off-work-strength-'+side);
+    assert.equal(range.type,'range');
+    assert.equal(range.min,'0');
+    assert.equal(range.max,'1');
+    assert.equal(range.step,'0.01');
+    for (const value of ['0.00','0.37','1.00']) {
+      range.value = value;
+      await range.dispatch('input');
+      assert.equal(ui.profiles[side].decision_budget_ratio,ui.strengthProfiles[value].decision_budget_ratio);
+      assert.equal(ui.profiles[side].search_root_width,7,'independent search tuning is retained');
+      assert.equal(ui.$('off-work-strength-value-'+side).textContent,value);
+      assert.equal(input(ui,side,'decision_budget_ratio').value,String(ui.strengthProfiles[value].decision_budget_ratio));
+    }
+    await range.dispatch('change');
+    assert.equal(ui.$('off-work-strength-value-'+side).textContent,'1.00');
+  }
+  assert.equal(requests.length,0,'dragging needs no asynchronous profile request');
+});
+
+test('overall strength upgrades fixed-millisecond policies and detects custom mapped parameters', async () => {
+  const {ui} = harness();
+  ui.setProfile('b',{think_seconds:3.7,decision_budget_ms:24},'旧策略');
+  ui.renderProfiles();
+  assert.equal(ui.$('off-work-strength-value-b').textContent,'自定义');
+  const slider = ui.$('off-work-strength-b');
+  slider.focus();
+  ui.strengthProfiles['0.63'].think_seconds = 3.7;
+  slider.value = '0.63';
+  await slider.dispatch('input');
+  await slider.dispatch('change');
+  assert.equal(ui.profiles.b.decision_budget_ms,undefined);
+  assert.equal(ui.profiles.b.decision_budget_ratio,ui.strengthProfiles['0.63'].decision_budget_ratio);
+  assert.notEqual(ui.$('off-work-strength-b'),slider,'legacy time mode rebuilds the fields on release');
+  assert.equal(ui.document.activeElement,ui.$('off-work-strength-b'),'focus follows the replacement strength slider');
+  assert.equal(ui.profiles.b.think_seconds,3.7);
+  assert.equal(input(ui,'b','decision_budget_ms'),null);
+  await edit(ui,'b','think_seconds',3.8);
+  assert.equal(ui.$('off-work-strength-value-b').textContent,'自定义');
+});
+
+
+test('all 101 real engine profiles preserve exact mappings, focus, save and run values in Q A B', async () => {
+  const os = require('node:os');
+  const {spawnSync} = require('node:child_process');
+  const engine = [process.env.GODOT,'/opt/homebrew/bin/godot','/Applications/Godot.app/Contents/MacOS/Godot'].find(file => file && fs.existsSync(file)) || 'godot';
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(),'off-work-strength-ui-'));
+  try {
+    const request = path.join(directory,'request.json');
+    const result = path.join(directory,'result.json');
+    fs.writeFileSync(request,JSON.stringify({presets_only:true}));
+    const run = spawnSync(engine,['--headless','--path',root,'--script','res://tools/balance/off_work_run.gd','--','--request='+request,'--output='+result],{encoding:'utf8',timeout:20000});
+    assert.equal(run.status,0,run.stdout + run.stderr);
+    assert.doesNotMatch(run.stdout+run.stderr,/SCRIPT ERROR|Parse Error/);
+    const actual = JSON.parse(fs.readFileSync(result,'utf8'));
+    assert.equal(actual.error,undefined);
+    assert.equal(Object.keys(actual.strength_profiles).length,101);
+    const linkedKeys = ['decision_budget_ratio','think_seconds'];
+    for (const parameters of Object.values(actual.strength_profiles)) {
+      assert.deepEqual(Object.keys(parameters).sort(),linkedKeys,'only cadence and actual calculation allowance are linked');
+    }
+    const {ui,requests} = harness();
+    ui.strengthProfiles = actual.strength_profiles;
+    ui.presets = actual.presets;
+    ui.renderProfiles();
+    for (const side of ['q','a','b']) {
+      await edit(ui,side,'search_root_width',7);
+      await edit(ui,side,'evaluation_max_seconds',1810);
+      for (const key of linkedKeys) assert.equal(String(input(ui,side,key).step),'any',key+' keeps full mapping precision');
+      for (const [strength,parameters] of Object.entries(actual.strength_profiles)) {
+        const slider = ui.$('off-work-strength-'+side);
+        slider.focus();
+        slider.value = strength;
+        await slider.dispatch('input');
+        await slider.dispatch('change');
+        assert.equal(ui.$('off-work-strength-'+side),slider,'normal slider interaction does not replace the focused control');
+        assert.equal(ui.document.activeElement,slider,'focus remains available for the next keyboard arrow');
+        for (const [key,value] of Object.entries(parameters)) {
+          assert.equal(ui.profiles[side][key],value,side+' '+strength+' '+key+' matches the engine exactly');
+          assert.equal(Number(input(ui,side,key).value),value,'field preserves engine numeric precision');
+          assert.equal(input(ui,side,key).validity.valid,true,side+' '+strength+' '+key+' has no stepMismatch');
+        }
+        assert.equal(ui.$('profile-'+side).querySelector(':invalid'),null);
+        assert.equal(ui.profiles[side].search_root_width,7);
+        assert.equal(ui.profiles[side].evaluation_max_seconds,1810);
+        assert.equal(ui.$('off-work-strength-value-'+side).textContent,strength);
+        await ui.saveVersion('bot','真实映射 '+side+' '+strength,ui.profiles[side],side);
+        const saved = requests.at(-1);
+        assert.equal(saved.url,'api/library/bot');
+        for (const [key,value] of Object.entries(parameters)) assert.equal(saved.body.data[key],value,'save retains '+side+' '+strength+' '+key);
+        assert.equal(saved.body.data.evaluation_max_seconds,1810);
+        await ui.view(side === 'q' ? 'balance' : 'bot');
+        await ui.run();
+        const submitted = requests.at(-1);
+        assert.equal(submitted.url,'api/run');
+        for (const seat of side === 'q' ? ['a','b'] : [side]) {
+          for (const [key,value] of Object.entries(parameters)) assert.equal(submitted.body[seat][key],value,'run retains '+side+' '+strength+' '+key);
+          assert.equal(submitted.body[seat].search_root_width,7);
+          assert.equal(submitted.body[seat].evaluation_max_seconds,1810);
+        }
+      }
+      for (const linkedKey of linkedKeys) {
+        const slider = ui.$('off-work-strength-'+side);
+        slider.value = '0.50';
+        await slider.dispatch('input');
+        assert.equal(ui.presetChoice[side],'mid');
+        const offset = linkedKey === 'think_seconds' ? .03 : .001;
+        await edit(ui,side,linkedKey,actual.strength_profiles['0.50'][linkedKey]+offset);
+        assert.equal(ui.$('off-work-strength-value-'+side).textContent,'自定义','editing '+linkedKey+' invalidates the overall match');
+        assert.equal(ui.presetChoice[side],'custom');
+      }
+    }
+    assert.equal(requests.filter(row => row.url === 'api/library/bot').length,303,'all 101 points are saved from every editor');
+    assert.equal(requests.filter(row => row.url === 'api/run').length,303,'all 101 points are submitted from every editor');
+  } finally { fs.rmSync(directory,{recursive:true,force:true}); }
 });

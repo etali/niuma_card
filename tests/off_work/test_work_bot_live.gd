@@ -105,6 +105,8 @@ func _large_recording() -> void:
 	config.rules.initial.money = 0
 	config.rules.bot.first_action_seconds = 0.55
 	config.rules.bot.think_seconds = 2.0
+	# This fixture exercises the large snapshot path inside its launch window.
+	config.rules.bot.decision_budget_ratio = 0.5
 	var state := OffWorkState.new(config)
 	state.new_game(415)
 	var bot := OffWorkBot.new(state,0)

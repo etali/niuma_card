@@ -11,7 +11,7 @@ const LEGACY_DECISION_BUDGET_MS := 12
 const MIN_DECISION_BUDGET_RATIO := 0.01
 const DEFAULT_DECISION_BUDGET_RATIO := 0.5
 const MAX_DECISION_BUDGET_RATIO := 0.9
-const BOT_SEARCH_DEFAULTS := {"search_max_depth": 4, "search_root_width": 3, "search_reply_width": 2}
+const BOT_SEARCH_DEFAULTS := {"search_max_depth": 4, "search_root_width": 6, "search_reply_width": 3}
 const MAX_BOT_SEARCH_DEPTH := 16
 const MAX_BOT_SEARCH_WIDTH := 16
 
@@ -44,6 +44,21 @@ func _init(balance_document: Variant = null, bot_document: Variant = null) -> vo
 		_load_errors.append("off_work_cards.json.rules.bot：电脑对手配置应放在 off_work_bot.json.bot")
 	rules.bot = _section(bot, "bot", "off_work_bot.json")
 	bot_preferences = _section(bot, "preferences", "off_work_bot.json")
+	# V2 replaces the former purchasing gates and three conflicting scorers.
+	# Old files remain untouched; only common timing/budget settings migrate.
+	var legacy_model := int(bot_preferences.get("model_version", 1)) < 2
+	if legacy_model:
+		var timing := {}
+		for key in ["enabled", "owner", "think_seconds", "first_action_seconds", "decision_budget_ratio", "decision_budget_ms"]:
+			if rules.bot.has(key): timing[key] = rules.bot[key]
+		if not timing.has("decision_budget_ratio") and not timing.has("decision_budget_ms"):
+			timing.decision_budget_ms = LEGACY_DECISION_BUDGET_MS
+		rules.bot = merge_bot_policy(bundled_bot.bot, timing)
+		bot_preferences = bundled_bot.preferences.duplicate(true)
+	else:
+		var allowed: Array = bundled_bot.bot.keys() + ["decision_budget_ms"]
+		for key in rules.bot.keys():
+			if not allowed.has(key): rules.bot.erase(key)
 	_load_bot_algorithm(bundled_bot)
 	# Earlier strategies used these exact constants. Add their effective values
 	# to the loaded copy without changing the archived document or budget mode.
@@ -88,10 +103,7 @@ func _load_bot_algorithm(document: Dictionary) -> void:
 		if not rules.bot.has(key): rules.bot[key] = bot_algorithm_defaults[key]
 	# Historical documents did not contain these controls. Always use the
 	# installed schema so a supplied label/range cannot weaken validation.
-	if bot_preferences.get("knobs") is Array:
-		bot_preferences.knobs = bot_preferences.knobs.filter(func(knob):
-			return not knob is Dictionary or not bot_algorithm_defaults.has(knob.get("key")))
-		for knob in _bot_algorithm_specs.values(): bot_preferences.knobs.append(knob.duplicate(true))
+	bot_preferences.knobs = preferences.knobs.duplicate(true)
 
 func _validate_bot_algorithm() -> void:
 	for key in _bot_algorithm_specs:
@@ -103,7 +115,9 @@ func _validate_bot_algorithm() -> void:
 
 ## Historical fixed policies and new interval-based policies are mutually exclusive.
 static func merge_bot_policy(base: Dictionary, overrides: Dictionary) -> Dictionary:
-	var merged := base.merged(overrides, true)
+	var merged := base.duplicate(true)
+	for key in overrides:
+		if base.has(key) or key in ["decision_budget_ms", "decision_budget_ratio"]: merged[key] = overrides[key]
 	if overrides.has("decision_budget_ratio") and not overrides.has("decision_budget_ms"):
 		merged.erase("decision_budget_ms")
 	elif overrides.has("decision_budget_ms") and not overrides.has("decision_budget_ratio"):
@@ -113,9 +127,10 @@ static func merge_bot_policy(base: Dictionary, overrides: Dictionary) -> Diction
 static func decision_budget_ms(policy: Dictionary) -> int:
 	if policy.has("decision_budget_ratio"):
 		var ms := float(policy.think_seconds) * 1000.0 * float(policy.decision_budget_ratio)
-		# Two multiplications can land just below a whole millisecond (2.8s × 70%).
-		var rounding_error := minf(0.00000001, absf(ms) * 4.440892098500626e-16)
-		return maxi(1, floori(ms + rounding_error))
+		# JSON's decimal parser plus two multiplications can land just below
+		# a whole millisecond. A fixed 10 ps tolerance preserves that boundary
+		# across transport without rounding genuine fractional milliseconds up.
+		return maxi(1, floori(ms + 0.00000001))
 	return int(policy.get("decision_budget_ms", LEGACY_DECISION_BUDGET_MS))
 
 ## 旧实验和导入卡表在读取时迁移。新字段优先，调用者传入的数据不会被修改。
@@ -173,8 +188,10 @@ func validate() -> bool:
 	_validate_bot_algorithm()
 	var expected: Dictionary = {"work": "work", "money": "money", "employee": "person", "leader": "person", "grinder": "person", "workaholic": "person", "work_emperor": "person",
 		"overtime": "tool", "coffee": "ingredient", "transfer": "tool", "meeting": "tool", "slack": "tool", "outsource": "tool", "strike": "tool"}
+	if cards.has("union"): expected["union"] = "tool"
+	if cards.has("boss"): expected["boss"] = "person"
 	if cards.size() != expected.size():
-		errors.append("cards：卡池必须含约定的 14 种牌")
+		errors.append("cards：卡池含未知卡种或缺少基础牌")
 	for kind in expected:
 		var card: Dictionary = _object(cards, str(kind), "cards")
 		for field in ["name", "description", "art"]:
@@ -192,35 +209,56 @@ func validate() -> bool:
 		if expected[kind] == "person" and _number_field(card, "refund", "cards." + str(kind), 0.0, false, true):
 			if _is_number(card.get("price")) and float(card.refund) >= float(card.price):
 				errors.append("cards.%s.refund：必须低于购入价" % kind)
-	for role in ["employee", "leader", "grinder", "workaholic", "work_emperor"]:
+	var personnel := ["employee", "leader", "grinder", "workaholic", "work_emperor"]
+	if cards.has("boss"): personnel.append("boss")
+	for role in personnel:
 		var spec: Dictionary = _object(roles, role, "roles")
 		for field in ["can_work", "can_be_meeting_target"]:
 			if not spec.get(field) is bool:
 				errors.append("roles.%s.%s：必须是布尔值" % [role, field])
+		if spec.has("can_be_strike_target") and not spec.can_be_strike_target is bool:
+			errors.append("roles.%s.can_be_strike_target：必须是布尔值" % role)
 		_number_field(spec, "work_seconds", "roles." + role, 0.0, true)
 		_number_field(spec, "work_capacity", "roles." + role, 0.0, true, true)
 		_number_field(spec, "work_income_multiplier", "roles." + role, 0.0, true, true)
 		_number_field(spec, "meeting_multiplier", "roles." + role, 0.0)
 		_number_field(spec, "transfer_capacity", "roles." + role, 0.0, true, true)
-	if roles.size() != 5:
-		errors.append("roles：必须正好定义员工、领导、卷王、肝帝、打工皇帝五类人员")
+	if roles.size() != personnel.size():
+		errors.append("roles：必须与卡池中的人员种类一致")
 	for section in ["simulation", "initial", "income", "overtime", "coffee", "transfer", "meeting", "slack", "outsource", "strike", "fire", "conveyor", "bot"]:
 		_object(rules, section, "rules")
+	if cards.has("union"):
+		var protection := _object(rules, "union", "rules")
+		if protection.get("work_role") != "employee": errors.append("union.work_role：必须引用 employee 产能")
+
+	if cards.has("boss"):
+		var recruiting := _object(rules, "recruitment", "rules")
+		_number_field(recruiting, "seconds", "recruitment", 0.0, true)
+		if _number_field(recruiting, "cost_per_employee", "recruitment", 0.0, true, true):
+			var employee: Dictionary = _object(cards, "employee", "cards")
+			if _is_number(employee.get("price")) and float(recruiting.cost_per_employee) <= float(employee.price):
+				errors.append("recruitment.cost_per_employee：招工单价必须高于购牌区员工价格")
+		var boss_card := _object(cards, "boss", "cards")
+		if _number_field(boss_card, "max_per_owner", "cards.boss", 1.0, false, true) and boss_card.max_per_owner != 1:
+			errors.append("cards.boss.max_per_owner：每方最多一名老板")
+		var boss_role := _object(roles, "boss", "roles")
+		if boss_role.get("can_work") != false or boss_role.get("can_be_meeting_target") != false or boss_role.get("can_be_strike_target") != false:
+			errors.append("roles.boss：老板不工作且不参加开会或罢工")
 	# Stop before accessing a malformed object, with a useful path instead of a
 	# runtime conversion error. Values are never silently replaced by defaults.
 	if not errors.is_empty():
 		return false
 	_validate_bot_preferences()
+	if rules.strike.has("flight_seconds"):
+		_number_field(rules.strike, "flight_seconds", "strike", 0.0)
 	for section in ["meeting", "outsource"]:
 		_number_field(rules[section], "recovery_seconds", section, 0.0, true)
 	for pair in [["strike", "duration_seconds"], ["coffee", "seconds"], ["outsource", "seconds"], ["transfer", "seconds"], ["meeting", "duration_seconds"], ["slack", "seconds"], ["conveyor", "interval_seconds"], ["bot", "think_seconds"]]:
 		_number_field(rules[pair[0]], pair[1], pair[0], 0.0, true)
-	for pair in [["simulation", "maximum_events_per_advance"], ["meeting", "base_targets"], ["meeting", "minimum_targets"], ["outsource", "cost_per_work"], ["conveyor", "slots"], ["conveyor", "employee_every"], ["bot", "desired_people"]]:
+	for pair in [["simulation", "maximum_events_per_advance"], ["meeting", "base_targets"], ["meeting", "minimum_targets"], ["outsource", "cost_per_work"], ["conveyor", "slots"], ["conveyor", "employee_every"]]:
 		_number_field(rules[pair[0]], pair[1], pair[0], 0.0, true, true)
-	for pair in [["initial", "money"], ["fire", "minimum_people"], ["bot", "min_reserve"], ["bot", "max_tool_copies"], ["bot", "max_support_people"], ["simulation", "default_seed"]]:
+	for pair in [["initial", "money"], ["fire", "minimum_people"], ["simulation", "default_seed"]]:
 		_number_field(rules[pair[0]], pair[1], pair[0], 0.0, false, true)
-	for field in ["production_reserve_people", "transfer_batch_size"]:
-		_number_field(rules.bot, field, "bot", 1.0, false, true)
 	_number_field(rules.bot, "first_action_seconds", "bot", 0.0)
 	for key in BOT_SEARCH_DEFAULTS:
 		if _number_field(rules.bot, key, "bot", 1.0, false, true):
@@ -243,7 +281,6 @@ func validate() -> bool:
 	_number_field(rules.slack, "speed_multiplier", "slack", 1.0, true)
 	_number_field(rules.slack, "coffee_per_person", "slack", 0.0, true, true)
 	_unit_interval(rules.simulation, "epsilon", "simulation", true)
-	_unit_interval(rules.bot, "buy_chance", "bot")
 	var upgrades: Dictionary = _object(rules.coffee, "upgrades", "coffee")
 	var chain := {"employee": "grinder", "grinder": "workaholic", "workaholic": "work_emperor"}
 	if upgrades.size() != chain.size():
@@ -255,11 +292,6 @@ func validate() -> bool:
 		_number_field(step, "cost", "coffee.upgrades." + kind, 0.0, true, true)
 		if step.has("seconds"):
 			_number_field(step, "seconds", "coffee.upgrades." + kind, 0.0, true)
-	var copy_limits: Dictionary = _object(rules.bot, "max_card_copies", "bot")
-	for kind in copy_limits:
-		if not cards.has(kind) or category(str(kind)) not in ["tool", "ingredient"]:
-			errors.append("bot.max_card_copies：只能配置工具或材料")
-		_number_field(copy_limits, str(kind), "bot.max_card_copies", 0.0, false, true)
 	var owner_list: Variant = rules.simulation.get("owners")
 	if not owner_list is Array or owner_list.size() != 2 or not _is_number(owner_list[0]) or not _is_number(owner_list[1]) or float(owner_list[0]) != 0.0 or float(owner_list[1]) != 1.0:
 		errors.append("simulation.owners：当前为双人对局，必须为 [0, 1]")
@@ -278,18 +310,6 @@ func validate() -> bool:
 		errors.append("bot.owner：必须是 0 或 1")
 	_validate_initial()
 	_validate_conveyor()
-	for field in ["purchase_priority", "tool_priority"]:
-		var priority: Variant = rules.bot.get(field)
-		if not priority is Array:
-			errors.append("bot.%s：必须是卡种列表" % field)
-			continue
-		for kind in priority:
-			if not kind is String or not cards.has(kind) or category(str(kind)) in ["work", "money"]:
-				errors.append("bot.%s：无效卡种 %s" % [field, str(kind)])
-			elif field == "purchase_priority" and not can_purchase(str(kind)):
-				errors.append("bot.purchase_priority：不能购买 %s" % str(kind))
-			elif field == "tool_priority" and category(str(kind)) not in ["tool", "ingredient"]:
-				errors.append("bot.tool_priority：只能包含工具或材料")
 	if errors.is_empty():
 		if integer("conveyor", "slots") > MAX_CONVEYOR_SLOTS:
 			errors.append("conveyor.slots：不能超过 %d 格" % MAX_CONVEYOR_SLOTS)
@@ -317,6 +337,47 @@ func _validate_bot_preferences() -> void:
 			errors.append("%s.%s：必须是文本" % [path, key])
 	if _number_field(bot_preferences, "default_strength", path, 0.0, true) and float(bot_preferences.default_strength) >= 1.0:
 		errors.append(path + ".default_strength：必须小于 1")
+	var curve_errors_before := errors.size()
+	var curves: Variant = bot_preferences.get("strength_curves")
+	var curve_bounds := {"think_seconds":[0.2,30.0], "decision_budget_ratio":[MIN_DECISION_BUDGET_RATIO,MAX_DECISION_BUDGET_RATIO]}
+	if not curves is Dictionary or curves.size() != curve_bounds.size() or not curves.has_all(curve_bounds.keys()):
+		errors.append(path + ".strength_curves：需要行动间隔与预算占比两条曲线")
+	else:
+		for key in curve_bounds:
+			var points: Variant = curves[key]
+			if not points is Array or points.size() < 2:
+				errors.append(path + ".strength_curves." + key + "：至少两个节点")
+				continue
+			var prior := -1.0
+			var previous_value := INF if key == "think_seconds" else -INF
+			for index in points.size():
+				var point: Variant = points[index]
+				if not point is Array or point.size() != 2 or not _is_number(point[0]) or not _is_number(point[1]):
+					errors.append(path + ".strength_curves." + key + "：节点必须是两个有限数值")
+					continue
+				var x := float(point[0])
+				var y := float(point[1])
+				if x <= prior or x < 0.0 or x > 1.0 or (index == 0 and x != 0.0) or (index == points.size()-1 and x != 1.0):
+					errors.append(path + ".strength_curves." + key + "：强度节点必须从0严格递增至1")
+				if y < curve_bounds[key][0] or y > curve_bounds[key][1] or (y > previous_value if key == "think_seconds" else y < previous_value):
+					errors.append(path + ".strength_curves." + key + "：参数须在合法范围并沿强度单调变化")
+				prior = x
+				previous_value = y
+	if errors.size() == curve_errors_before:
+		var last_budget := 0.0
+		for point in curves.decision_budget_ratio:
+			var at := float(point[0])
+			var interval := 0.0
+			for index in range(1, curves.think_seconds.size()):
+				var left: Array = curves.think_seconds[index - 1]
+				var right: Array = curves.think_seconds[index]
+				if at <= float(right[0]):
+					interval = lerpf(float(left[1]), float(right[1]), (at - float(left[0])) / (float(right[0]) - float(left[0])))
+					break
+			var budget := interval * float(point[1])
+			if budget < last_budget - 0.000000001:
+				errors.append(path + ".strength_curves：真实思考预算须随强度单调增加")
+			last_budget = budget
 	var presets := _object(bot_preferences, "presets", path)
 	for key in presets:
 		_unit_interval(presets, str(key), path + ".presets")
@@ -351,6 +412,7 @@ func _validate_initial() -> void:
 	var work := 0
 	var people := 0
 	var total := 0.0
+	var counts: Dictionary = {}
 	if _is_number(rules.initial.get("money")):
 		total = float(rules.initial.money)
 	for index in range(initial_groups.size()):
@@ -364,10 +426,14 @@ func _validate_initial() -> void:
 				continue
 			if _number_field(group, str(kind), "initial.groups[%d]" % index, 0.0, false, true):
 				total += float(group[kind])
+				counts[kind] = int(counts.get(kind, 0)) + int(group[kind])
 				if kind == "work":
 					work += int(group[kind])
 				elif is_person(str(kind)):
 					people += int(group[kind])
+	for kind in counts:
+		if cards[kind].has("max_per_owner") and int(counts[kind]) > int(cards[kind].max_per_owner):
+			errors.append("initial.groups：%s超过每方持有上限" % str(kind))
 	if total > MAX_CARD_ALLOCATION or initial_groups.size() > MAX_CARD_ALLOCATION:
 		errors.append("initial：每方开局的组数与实体牌总数（含现金）不得超过 %d" % MAX_CARD_ALLOCATION)
 	if work <= 0 or people <= 0:
@@ -472,3 +538,18 @@ func slack_rate(tool_count: int) -> float:
 
 func meeting_capacity(kind: String) -> int:
 	return maxi(integer("meeting", "minimum_targets"), int(number("meeting", "base_targets") * float(roles[kind].meeting_multiplier)))
+
+func coffee_rank(kind: String) -> int:
+	# Derive rank from the configured upgrade chain, not from tunable income.
+	var rank := 0
+	var previous := kind
+	for _index in rules.coffee.upgrades.size():
+		var found := false
+		for from_type in rules.coffee.upgrades:
+			if str(rules.coffee.upgrades[from_type].to) == previous:
+				previous = str(from_type)
+				rank += 1
+				found = true
+				break
+		if not found: break
+	return rank

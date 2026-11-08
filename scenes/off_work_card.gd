@@ -221,7 +221,7 @@ func _render_debug_timer() -> void:
 ## Personnel records retain progress for animation/detail, not separate timers.
 func set_task_progress(value: float, active: bool, paused := false, phase := "work", source_uid := -1) -> void:
 	if _task_progress_phase != phase: _task_completion_hold = 0.0
-	if phase == "work" and not active: _task_completion_hold = 0.0
+	if not active: _task_completion_hold = 0.0
 	_task_progress_value = clampf(value, 0.0, 1.0)
 	_task_progress_active = active and not is_offer and not _retired
 	_task_progress_paused = paused
@@ -362,14 +362,14 @@ func update_record(data: Dictionary) -> void:
 	set_strike_participant(status == "striking" or activity == "striking")
 	var paused := bool(data.get("paused", false))
 	var progress := clampf(float(data.get("progress", 0.0)), 0.0, 1.0)
-	var task_active := activity in ["transfer", "slack", "meeting", "coffee"] or (activity == "work" and _can_work())
+	var task_active := activity in ["transfer", "slack", "meeting", "coffee", "recruitment"] or (activity == "work" and _can_work())
 	set_task_progress(progress, _is_person() and task_active and activity not in ["work", "transfer", "slack"], paused, activity)
 	if type in ["meeting", "transfer", "coffee", "slack", "outsource"]:
 		var total := float(data.get("total", 0.0))
 		if total > 0.0:
 			progress = clampf(1.0 - float(data.get("remaining", 0.0)) / total, 0.0, 1.0)
 		elif status == "ready":
-			progress = 1.0 if type == "coffee" else 0.0
+			progress = 0.0
 	if has_dedicated_progress():
 		var timers: Dictionary = OffWorkUI.section("task_progress").dedicated_cards[type]
 		var phase: String = str(timers.get(status, ""))
@@ -543,7 +543,7 @@ func _process(delta: float) -> void:
 		_render_task_progress()
 
 func _can_work() -> bool:
-	return bool(OffWorkCardDB.role_rules().get(type, {}).get("can_work", true))
+	return str(record.get("activity", "idle")) == "work" or bool(OffWorkCardDB.role_rules().get(type, {}).get("can_work", true))
 
 ## One immutable GPT master and continuous sampling map, shared by the real
 ## card, hover interaction and the independent animation viewer.
@@ -595,7 +595,9 @@ func play_event(kind: String) -> void:
 		return
 	if kind in ["work_complete", "completed"]: flash_task_completion()
 	pulse_feedback("attack" if kind in ["meeting_start", "strike"] else "produce")
-	if kind in ["work_complete", "completed", "strike", "meeting_start"]:
+	# The top work face now releases its file illustration as a real paper
+	# ball. A completion stamp over that same icon obscures the whole fold.
+	if kind in ["work_complete", "completed", "strike", "meeting_start"] and not (kind == "work_complete" and def_id == "work"):
 		var word_key := "strike_word" if kind == "strike" else ("meeting_word" if kind == "meeting_start" else "stamp_word")
 		flash_stamp(str(OffWorkUI.section("rig")[word_key]), OffWorkUI.number("interaction", "pulse_duration"))
 func _ensure_stamp() -> void:

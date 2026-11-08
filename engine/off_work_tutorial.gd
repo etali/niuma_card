@@ -58,7 +58,7 @@ func make_config() -> OffWorkConfig:
 		"meeting":
 			config.rules.initial.groups = [{"work":40,"employee":1},{"leader":1},{"meeting":1}]
 		"transfer":
-			config.rules.initial.groups = [{"work":12,"employee":1},{"transfer":1}]
+			config.rules.initial.groups = [{"work":12,"transfer":1},{"employee":1}]
 		"overtime":
 			config.rules.initial.groups = [{"employee":1,"work":30},{"overtime":1}]
 		"upgrade":
@@ -106,6 +106,9 @@ func clock_delta(world: OffWorkState, delta: float) -> float:
 		if tool.status == "recovering": return minf(delta, float(tool.remaining))
 	if target == "meeting_income" and not _meeting_running(world): return 0.0
 	var first := INF
+	if target == "strike":
+		for attack in world.pending_strikes.values():
+			if int(attack.owner) == 0: first = minf(first, float(attack.remaining))
 	for id in world.tasks:
 		if world.cards[id].owner != 0: continue
 		var task: Dictionary = world.tasks[id]
@@ -128,11 +131,11 @@ func observe(world: OffWorkState, events: Array, interaction: Dictionary = {}) -
 	if target == "meeting_income" and (not _meeting_running(world) or not _has_task(world, "work")):
 		return _rewind(0, "开会组合已拆开，开会牌冷却结束后，把它交给独立主持人，并让另一名员工继续工作。")
 	if target == "transfer_sent" and not _transfer_running(world) and not _received_transfer(world, events):
-		return _rewind(0, "甩锅组合已拆开，把人员、工作和甩锅牌重新放在一起。")
+		return _rewind(0, "甩锅组合已拆开。先抽出员工，把工作和甩锅放在一起，再拖入员工。")
 	var has_grinder := not world._owner_type(0, "grinder").is_empty() if target in ["coffee", "upgrade"] else false
 	if target in ["coffee", "upgrade"] and not has_grinder and separate_worker(world) < 0:
 		step = 0
-		last_feedback = "人员和工作又放到一起了，先把人员单独拖出来。"
+		last_feedback = "人员和工作又放到一起了。点击牌堆右侧的员工数量，再把展开的员工单独拖出来。"
 		Progress.record(lesson.id, step, "viewed" if used_demo else "started", true)
 		return true
 	# Moving a card out of an active combination cancels its timer. Show the
@@ -211,10 +214,16 @@ func demonstrate(world: OffWorkState) -> bool:
 		"meeting_income":
 			acted = _meeting_running(world) and _dispatch(world, 0)
 		"transfer_start":
-			_dispatch(world, 0)
 			var people := workers(world, 0)
-			if not people.is_empty() and world.cards.has(_transfer_tool):
-				acted = world.move_cards([_transfer_tool], world.cards[people[0]].group, people[0]) >= 0
+			var jobs := world._owner_type(0, "work")
+			if not people.is_empty() and not jobs.is_empty() and world.cards.has(_transfer_tool):
+				# A running work pile cannot be converted by adding a tool. Also
+				# repair that mistake through real moves before assembling anew.
+				var group: int = world.cards[_transfer_tool].group
+				if str(world.groups[group].get("function", "")) == "work":
+					group = world.move_cards([_transfer_tool])
+				if group >= 0:
+					acted = world.move_cards(people + jobs, group, people[0]) >= 0 and _transfer_running(world)
 		"transfer_sent":
 			acted = _transfer_running(world)
 		"transfer_resume":

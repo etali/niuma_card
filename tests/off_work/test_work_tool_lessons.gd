@@ -18,6 +18,7 @@ func _run() -> void:
 	await _extract_lesson()
 	await _meeting_lesson()
 	await _transfer_lesson()
+	await _transfer_recovery_guidance()
 	main.queue_free()
 	await process_frame
 	await process_frame
@@ -162,17 +163,19 @@ func _transfer_lesson() -> void:
 	if not await _begin_lesson("transfer"): return
 	var tool := _owned("transfer")
 	var worker := _owned("employee")
-	var gid: int = state.cards[worker].group
+	var gid: int = state.cards[tool].group
 	var own_work: int = state.work_count(0)
 	var enemy_work: int = state.work_count(1)
 	var cash: int = state.money(0)
 	var cue: Dictionary = main.hud._practice_gesture.cue
-	_check(cue.get("gesture") == "drag" and cue.get("source") == board.by_uid[tool]
-		and cue.get("target") == board.by_uid[worker], "transfer gesture targets the real own working personnel")
-	await _drag(board.by_uid[tool], _point(board.by_uid[worker]))
+	var pile: Dictionary = board.group_of(board.by_uid[tool])
+	var visible_top: OffWorkCard = pile.cards[board._top_index(pile)]
+	_check(cue.get("gesture") == "drag" and cue.get("source") == board.by_uid[worker]
+		and cue.get("target") == visible_top, "transfer gesture moves the independent employee to the prepared work and tool pile")
+	await _drag(board.by_uid[worker], _point(visible_top))
 	main._process(0.01)
 	if not _check(state.tasks.get(worker, {}).get("kind") == "transfer" and main.lesson.step == 1,
-		"dragging transfer into personnel and work starts the real transfer cycle"): return
+		"dragging personnel into the prepared tool and work pile starts the real transfer cycle"): return
 	main._process(state.config.number("transfer", "seconds") + 0.01)
 	var sent: int = own_work - state.work_count(0)
 	_check(main.lesson.step == 2 and sent > 0 and state.work_count(1) == enemy_work + sent
@@ -194,3 +197,33 @@ func _transfer_lesson() -> void:
 	_check(main.lesson.complete() and state.work_count(0) < remaining and state.money(0) > cash,
 		"resumed work actually settles income and completes the transfer course")
 	_check(not main.lesson.used_demo, "transfer and restoration complete through original drag input")
+
+func _transfer_recovery_guidance() -> void:
+	if not await _begin_lesson("transfer"): return
+	var tool := _owned("transfer")
+	var worker := _owned("employee")
+	var gid: int = state.cards[tool].group
+	state.move_cards([tool])
+	state.move_cards([worker], gid)
+	state.move_cards([tool], gid)
+	board.sync_state(state)
+	main._process(0.01)
+	main.hud._process(0.0)
+	_check(state.tasks.get(worker, {}).get("kind") == "work" and main.lesson.step == 0,
+		"adding transfer after work starts leaves production locked and lesson incomplete")
+	_check_type_cue("employee", false)
+	if not await _open_type(gid, "employee"): return
+	main.hud._process(0.0)
+	_check_type_cue("employee", true)
+	if not await _drag_fan_to_empty(0): return
+	main._process(0.01)
+	main.hud._process(0.0)
+	var cue: Dictionary = main.hud._practice_gesture.cue
+	_check(cue.get("source") == board.by_uid[worker] and cue.get("gesture") == "drag",
+		"after extraction the same setup step updates its cue to the now-independent employee")
+	var destination: Node3D = cue.get("target")
+	if not _check(is_instance_valid(destination), "reassembly points to a real visible tool and work card"): return
+	await _drag(board.by_uid[worker], _point(destination))
+	main._process(0.01)
+	_check(state.tasks.get(worker, {}).get("kind") == "transfer" and main.lesson.step == 1,
+		"guided extraction and reassembly recover from a real locked-work mistake")

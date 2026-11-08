@@ -173,14 +173,16 @@ func _meeting_and_coffee() -> void:
 	s.advance(s.config.number("meeting", "duration_seconds"))
 	_sync(s)
 	check(audio._typing_players.size() == 1, "meeting ending resumes a previously silent working group")
-	# A local meeting host also releases only that host, not their coworkers.
+	# A local employee leaves production to host a separate meeting combination.
 	audio.stop_all()
 	s = _state(2)
 	group = _group(s)
 	_sync(s)
 	player = _voice(group)
-	meeting = s.add_card("meeting", 0, group)
-	check(s.activate(meeting, group), "local worker starts a meeting")
+	meeting = s.add_card("meeting", 0)
+	var host: int = s.group_people(group)[0]
+	s.move_cards([host], s.cards[meeting].group)
+	check(s.meetings.has(meeting) and s.meetings[meeting].host == host, "local worker starts a separate meeting")
 	_sync(s)
 	check(s.group_work_participants(group).size() == 1 and _voice(group) == player, "local meeting host does not silence their working coworker")
 	audio.stop_all()

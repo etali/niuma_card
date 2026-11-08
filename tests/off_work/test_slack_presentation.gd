@@ -82,6 +82,7 @@ func _run() -> void:
 	_check(state.group_slack_participants(group).size() == 3, "all three personnel resume their coffee group after the meeting")
 	var strike := state.add_card("strike", 1)
 	_check(state.activate(strike, group), "strike can target a coffee-only production group")
+	state.advance(state.config.number("strike", "flight_seconds"))
 	board.sync_state(state)
 	bars = _bars(group)
 	_check(bars.size() == 1 and bars[0]._task_progress_paused, "strike leaves the shared production bar paused")

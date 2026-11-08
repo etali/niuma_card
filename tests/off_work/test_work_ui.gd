@@ -132,8 +132,9 @@ func _coffee_grouping() -> void:
 	var coffee := _owned("coffee")
 	var job := _owned("work")
 	var work_group: int = state.cards[job].group
-	await _drag(board.by_uid[worker], _point(board.by_uid[job]))
-	await _drag(board.by_uid[coffee], _point(board.by_uid[worker]))
+	await _drag(board.by_uid[worker], _point(board.by_uid[job]), false, true)
+	var working: Dictionary = board.group_of(board.by_uid[worker])
+	await _drag(board.by_uid[coffee], _point(working.cards[board._top_index(working)]), false, true)
 	_check(state.cards[coffee].group == work_group and state.tasks[worker].kind == "work"
 		and state.cards[coffee].status == "ready", "real pointer input leaves personnel, work and coffee processing work only")
 	state.advance(state.config.coffee_seconds("employee"))
@@ -143,13 +144,11 @@ func _coffee_grouping() -> void:
 		and state.group_work_progress(work_group) > 0.0, "mixed pile advances work while retaining unconsumed coffee")
 	var pile: Dictionary = board.group_of(board.by_uid[worker])
 	if pile.compact: await _click(_point(pile.cards[0]), true)
-	await _drag(board.by_uid[coffee], _empty_point(), true)
 	await _drag(board.by_uid[job], _empty_point(), true)
 	_check(state.cards[worker].group != state.cards[job].group and state.group_work(state.cards[worker].group).is_empty(),
 		"dragging the work suffix away leaves personnel in a separate pile")
-	await _drag(board.by_uid[coffee], _point(board.by_uid[worker]))
 	_check(state.tasks[worker].kind == "coffee" and state.cards[coffee].status == "active",
-		"coffee dragged to separated personnel starts the real coffee timer")
+		"removing the work suffix lets the remaining personnel and coffee start their real timer")
 	var work_before: int = state.work_count(0)
 	state.advance(state.config.coffee_seconds("employee"))
 	board.sync_state(state)
@@ -163,7 +162,42 @@ func _coffee_lesson_input() -> void:
 	var worker := _owned("employee")
 	var coffee := _owned("coffee")
 	var work_group: int = state.cards[worker].group
-	await _drag(board.by_uid[worker], _empty_point(), true)
+	var visual: Dictionary = board.group_of(board.by_uid[worker])
+	var rows: Array = board.side_extract.side_rows(visual)
+	var index := rows.find_custom(func(row): return row.kind == "employee")
+	if not _check(index >= 0, "coffee lesson exposes the employee type beside its deep working pile"): return
+	var label: Node3D = visual.side[index * 2 + 1]
+	await _click(board.camera.unproject_position(label.global_position))
+	main._process(0.01)
+	if not _check(board.side_extract.is_open() and board.side_extract.view.kind == "employee",
+		"real coffee lesson type click opens the employee fan"): return
+	var fan: Control = board.side_extract.view
+	var start: Vector2 = fan.screen_point_for_index(0)
+	var ground: Vector3 = main.hud._practice_gesture.cue.get("target_world", Vector3.INF)
+	if not _check(ground.is_finite(), "coffee lesson points from the employee fan to an empty table destination"): return
+	await _button(start, true)
+	var trigger := InputEventMouseMotion.new()
+	trigger.position = start + Vector2(float(board._settings.side_extract.drag_threshold) + 5.0, 0.0)
+	trigger.global_position = trigger.position
+	trigger.relative = trigger.position - start
+	trigger.button_mask = MOUSE_BUTTON_MASK_LEFT
+	pointer = trigger.position
+	root.push_input(trigger)
+	await process_frame
+	board._process(0.0)
+	if not _check(board.is_dragging(), "dragging the exposed fan starts the real employee extraction"): return
+	var destination := board.camera.unproject_position(Vector3(ground.x - board._grab_offset.x,
+		Board.DRAG_HEIGHT, ground.z - board._grab_offset.z))
+	var motion := InputEventMouseMotion.new()
+	motion.position = destination
+	motion.global_position = destination
+	motion.relative = destination - pointer
+	motion.button_mask = MOUSE_BUTTON_MASK_LEFT
+	pointer = destination
+	root.push_input(motion)
+	await process_frame
+	await _button(destination, false)
+	await _settle()
 	main._process(0.01)
 	if not _check(main.lesson.step == 1 and state.cards[worker].group != work_group
 		and state.group_work(state.cards[worker].group).is_empty(), "real lesson pointer drag takes only the employee and completes its first step"): return
@@ -224,7 +258,7 @@ func _button(at: Vector2, pressed: bool, double_click := false) -> void:
 	root.push_input(event)
 	await process_frame
 
-func _drag(card: CardEntity, destination: Vector2, empty := false) -> void:
+func _drag(card: CardEntity, destination: Vector2, empty := false, align_face := false) -> void:
 	var start := _point(card)
 	if not _check(start != Vector2.INF and destination != Vector2.INF, "drag endpoints reachable"): return
 	var ground := Vector3.ZERO
@@ -252,6 +286,20 @@ func _drag(card: CardEntity, destination: Vector2, empty := false) -> void:
 		pointer = at
 		root.push_input(event)
 		await process_frame
+	if align_face:
+		# Native dragging retains a world-space grip; the held face must
+		# actually reach the target rather than just its mouse pointer.
+		var face_target := destination
+		for correction in 2:
+			destination = pointer + face_target - board.camera.unproject_position(card.global_position)
+			var event := InputEventMouseMotion.new()
+			event.position = destination
+			event.global_position = destination
+			event.relative = destination - pointer
+			event.button_mask = MOUSE_BUTTON_MASK_LEFT
+			pointer = destination
+			root.push_input(event)
+			await process_frame
 	_check(board.is_dragging(), "original pointer path starts dragging")
 	await _button(destination, false)
 	await _settle()

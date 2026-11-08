@@ -55,24 +55,24 @@ func _test_archived_documents(config: OffWorkConfig, document: Dictionary, defau
 
 func _test_imported_schema(config: OffWorkConfig, document: Dictionary, defaults: Dictionary) -> void:
 	var current := document.duplicate(true)
-	current.bot.material_batch_limit = 32
-	current.bot.tree_horizon_work_cycles = 7
-	current.compatibility.algorithm_defaults.material_batch_limit = 999
+	current.bot.live_snapshot_card_limit = 32
+	current.bot.evaluation_max_seconds = 600
+	current.compatibility.algorithm_defaults.live_snapshot_card_limit = 999
 	current.preferences.knobs = []
 	var edited := OffWorkConfig.new(config.balance_document(), current)
 	check(edited.errors.is_empty(), "新参数显式修改可以载入")
-	check(edited.rules.bot.material_batch_limit == 32 and edited.rules.bot.tree_horizon_work_cycles == 7, "修改后的算法数值保持原值")
-	check(edited.bot_algorithm_defaults.material_batch_limit == defaults.material_batch_limit, "导入文档不能修改历史默认值")
+	check(edited.rules.bot.live_snapshot_card_limit == 32 and edited.rules.bot.evaluation_max_seconds == 600, "修改后的算法数值保持原值")
+	check(edited.bot_algorithm_defaults.live_snapshot_card_limit == defaults.live_snapshot_card_limit, "导入文档不能修改历史默认值")
 	var original := JSON.stringify(current)
-	current.bot.erase("material_batch_limit")
+	current.bot.erase("live_snapshot_card_limit")
 	var old := OffWorkConfig.new(config.balance_document(), current)
-	check(old.rules.bot.material_batch_limit == defaults.material_batch_limit, "缺失字段不借用导入文档篡改的历史默认值")
-	current.bot.material_batch_limit = 32
+	check(old.rules.bot.live_snapshot_card_limit == defaults.live_snapshot_card_limit, "缺失字段不借用导入文档篡改的历史默认值")
+	current.bot.live_snapshot_card_limit = 32
 	check(JSON.stringify(current) == original, "加载补齐未修改外部文档")
-	current.bot.material_batch_limit = 0
+	current.bot.live_snapshot_card_limit = 0
 	check(not OffWorkConfig.new(config.balance_document(), current).errors.is_empty(), "删除knobs不能绕过数值下限")
-	current.preferences.knobs = [{"key":"material_batch_limit", "label":"自定义", "kind":"float", "min":-100, "max":1.0e30, "step":0.1}]
-	current.bot.material_batch_limit = 1.5
+	current.preferences.knobs = [{"key":"live_snapshot_card_limit", "label":"自定义", "kind":"float", "min":-100, "max":1.0e30, "step":0.1}]
+	current.bot.live_snapshot_card_limit = 1.5
 	check(not OffWorkConfig.new(config.balance_document(), current).errors.is_empty(), "伪造knobs不能取消整数限制")
-	current.bot.material_batch_limit = 100000000
+	current.bot.live_snapshot_card_limit = 100000000
 	check(not OffWorkConfig.new(config.balance_document(), current).errors.is_empty(), "伪造knobs不能扩大边界")

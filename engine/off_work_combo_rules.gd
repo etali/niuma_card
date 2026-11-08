@@ -30,6 +30,8 @@ static func evaluate(cards: Array, _mods: Dictionary = {}) -> Dictionary:
 	var upgrade_recipes: Array[Dictionary] = []
 	var ingredients: Array[String] = []
 	var work := 0
+	var money := 0
+	var has_boss := false
 	var tools: Array[String] = []
 	var seen: Dictionary = {}
 	for card in cards:
@@ -44,16 +46,21 @@ static func evaluate(cards: Array, _mods: Dictionary = {}) -> Dictionary:
 		match def.get("category", ""):
 			"person":
 				people += 1
+				if id == "boss" and not bool(card.get("paused", false)): has_boss = true
 				var upgrade := OffWorkCardDB.config.coffee_upgrade(id)
-				if not upgrade.is_empty(): upgrade_recipes.append(upgrade)
+				if not upgrade.is_empty():
+					upgrade_recipes.append({"recipe": upgrade, "rank": OffWorkCardDB.config.coffee_rank(id)})
 				if OffWorkCardDB.config.can_work(id):
 					workers.append(id)
 				if result.leader == "": result.leader = id
 			"work": work += 1
+			"money": money += int(card.get("amount", 1))
 			"tool": tools.append(id)
 			"ingredient": ingredients.append(id)
 	var upgrade_target_kind := ""
-	for upgrade in upgrade_recipes:
+	upgrade_recipes.sort_custom(func(a, b): return int(a.rank) > int(b.rank))
+	for candidate in upgrade_recipes:
+		var upgrade: Dictionary = candidate.recipe
 		if ingredients.count("coffee") >= int(upgrade.cost):
 			upgrade_target_kind = str(upgrade.to)
 			break
@@ -69,13 +76,17 @@ static func evaluate(cards: Array, _mods: Dictionary = {}) -> Dictionary:
 		result.type = "production"
 		result.output_res = OffWorkCardDB.RES_CASH
 		for kind in workers:
-			var count := OffWorkCardDB.config.work_batch_size(kind, work)
-			result.output_n += count * OffWorkCardDB.config.income_per_work(kind)
+			var effective_kind: String = str(OffWorkCardDB.config.rules.union.work_role) if tools.has("union") else kind
+			var count := OffWorkCardDB.config.work_batch_size(effective_kind, work)
+			result.output_n += count * OffWorkCardDB.config.income_per_work(effective_kind)
 			result.recipe_pay_n += count
 			work -= count
 			if work == 0: break
 		result.recipe_res = OffWorkCardDB.RES_USER
 	elif work > 0 and tools.has("outsource"):
+		result.valid = true
+		result.type = "activity"
+	elif has_boss and int(_mods.get("off_work_money_amount", money)) >= OffWorkCardDB.config.integer("recruitment", "cost_per_employee"):
 		result.valid = true
 		result.type = "activity"
 	else:

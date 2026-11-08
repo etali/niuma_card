@@ -1,0 +1,7 @@
+Use case: illustration-story
+Asset type: one transparent game-card illustration for the Chinese tabletop game 牛马牌 / 下班.
+Primary request: a visibly angry office worker standing firmly and raising a hand-held placard reading exactly "WLB", expressing work life balance.
+Style: match a simple charming hand-drawn sticker character: very large round cream-colored head, tiny cream shirt with a small ochre tie, short simple dark-brown stick arms and legs, bold rounded dark-brown outlines (#261e16), flat warm cream (#fff1ce) fills with very subtle paper texture, muted sage green placard border. Minimal facial features: thick inward-sloping angry eyebrows, black dot eyes, a determined frown. Full body, planted feet, one arm raised holding the wooden pole of the placard, the other clenched in determination.
+Composition: one isolated complete character and sign, centered within a square canvas with transparent margin around every edge. The sign is above and beside the head and must not cover the face. Keep thick legible strokes that work at small card-icon size.
+Text (verbatim): "WLB" in large bold simple dark lettering, spelled W L B. No other text.
+Constraints: genuinely transparent background; no scene, no floor, no backdrop, no card frame, no title, no watermark, no extra characters or props. Keep the angry expression and WLB sign immediately recognizable.

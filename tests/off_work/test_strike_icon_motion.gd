@@ -19,6 +19,8 @@ func _run() -> void:
 			group = int(state.cards[uid].group)
 	var tool := state.add_card("strike", 1)
 	_check(state.activate(tool, group), "real strike starts against a working group")
+	_check(state.pending_strikes.has(tool) and people.all(func(id): return not state.is_striking(id)), "personnel do not dance before the attack arrives")
+	state.advance(config.number("strike", "flight_seconds"))
 	var snapshots: Dictionary = {}
 	for index in people.size():
 		var uid: int = people[index]

@@ -24,6 +24,7 @@ func _state(contents: Dictionary = {"employee": 3, "leader": 1, "work": 100}) ->
 	var config := OffWorkConfig.new()
 	config.rules.initial.groups = [contents]
 	config.rules.initial.money = 0
+	config.rules.strike.flight_seconds = 0.0
 	var state := OffWorkState.new(config)
 	state.new_game(71)
 	state.drain_events()
@@ -36,7 +37,7 @@ func _group(state: OffWorkState, owner: int) -> int:
 
 func _configuration() -> void:
 	var config := OffWorkConfig.new()
-	_check(config.validate() and config.cards.size() == 14, "current fourteen-card configuration validates")
+	_check(config.validate() and config.cards.has("union"), "current card pool including union validates")
 	_check(not config.cards.has("bonus") and not config.cards.has("rework") and config.cards.has("strike"), "bonus is removed and strike replaces rework")
 	_check(config.rules.initial.groups.any(func(group): return group.has("overtime")) and not config.rules.initial.groups.any(func(group): return group.has("involution")), "opening has overtime rather than involution")
 	_check(is_equal_approx(config.work_rate("employee", 1), 0.12), "one overtime multiplies work speed by 1.2")
@@ -159,19 +160,22 @@ func _other_jobs() -> void:
 	var outsource_group := _group(outsource_state, 1)
 	var cash := outsource_state.add_card("money", 1, outsource_group)
 	outsource_state.cards[cash].amount = 3
-	var outsource := outsource_state.add_card("outsource", 1, outsource_group)
-	outsource_state.activate(outsource)
+	var outsource := outsource_state.add_card("outsource", 1)
+	outsource_state.move_cards([cash], int(outsource_state.cards[outsource].group))
+	outsource_group = outsource_state.move_cards(outsource_state.group_cards(outsource_group), int(outsource_state.cards[outsource].group))
 	var strike := outsource_state.add_card("strike", 0)
 	_check(outsource_state.activate(strike, outsource_group) and outsource_state.outsourcing.has(outsource), "staff present in an active outsourcing group can be ejected without cancelling paid outsourcing")
 	var second := outsource_state.add_card("strike", 0)
 	_check(not outsource_state.activate(second, outsource_group) and outsource_state.cards.has(second), "outsourcing without personnel is not a strike target")
 	var hosted := _state({"employee": 3, "leader": 1, "work": 100})
 	var hosted_group := _group(hosted, 1)
-	var meeting := hosted.add_card("meeting", 1, hosted_group)
-	hosted.activate(meeting)
-	_check(hosted.meetings.has(meeting) and hosted.group_work_rate(hosted_group) > 0.0, "meeting host can share a group with working colleagues")
+	var meeting := hosted.add_card("meeting", 1)
+	hosted_group = hosted.move_cards(hosted.group_cards(hosted_group), int(hosted.cards[meeting].group))
+	_check(hosted.meetings.has(meeting) and is_zero_approx(hosted.group_work_rate(hosted_group)), "meeting combination leaves its other personnel idle")
 	var attack := hosted.add_card("strike", 0)
-	_check(hosted.activate(attack, hosted_group) and not hosted.meetings.has(meeting), "ejecting a host ends its existing meeting and frees its guests")
+	_check(not hosted.activate(attack, hosted_group) and hosted.meetings.has(meeting), "meeting-only combination rejects strike without ending its session")
+	hosted.move_cards([meeting], -1)
+	_check(hosted.activate(attack, hosted_group) and not hosted.meetings.has(meeting), "removing the meeting restores productive work and permits strike")
 	_check(hosted.meeting_candidates(1).size() == 3, "meeting guests regain their original ability after host ejection")
 	var upgrading := _state({"employee": 2, "work": 100})
 	var upgrade_group := _group(upgrading, 1)
@@ -184,8 +188,8 @@ func _other_jobs() -> void:
 func _coffee_separation() -> void:
 	var state := _state({"employee": 2, "work": 100})
 	var group := _group(state, 0)
-	var slack := state.add_card("slack", 0, group)
-	state.activate(slack)
+	var slack := state.add_card("slack", 0)
+	group = state.move_cards(state.group_cards(group), int(state.cards[slack].group))
 	state.advance(state.config.number("slack", "seconds"))
 	var events := state.drain_events().filter(func(event): return event.kind == "slack_complete" and event.owner == 0)
 	_check(events.size() == 1 and events[0].coffee_ids.size() == 2, "slacking combination settles two real coffees in one batch")

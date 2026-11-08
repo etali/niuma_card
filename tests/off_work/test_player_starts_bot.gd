@@ -53,7 +53,7 @@ func _run() -> void:
 	game.bot.start()
 	_check(game.bot._next_think == first_think, "later actions do not postpone or restart BOT")
 	_tick(0.02)
-	_check(_owner_has_task(1), "default zero delay lets BOT act on next logical update")
+	_check(game.bot.decision_serial == 1 and game.bot.last_decision.applied, "default zero delay lets BOT execute a real command on next logical update")
 	game._new_game()
 	await _settle()
 	_check(not game.bot.is_started() and is_inf(game.bot._next_think), "restart resets gate and old scheduling")
@@ -83,12 +83,18 @@ func _run() -> void:
 	game._new_game()
 	_tick(20.0)
 	var action_time: float = game.state.time
-	game._on_buy(int(game.state.offers[0].id))
+	var affordable: Array = game.state.offers.filter(func(item): return not item.is_empty() and int(item.price) <= game.state.money(0))
+	_check(not affordable.is_empty(), "delayed opening exposes a genuinely affordable purchase")
+	if affordable.is_empty():
+		quit(1)
+		return
+	game._on_buy(int(affordable[0].id))
 	_check(is_equal_approx(game.bot._next_think, action_time + 2.0), "configured delay is measured from successful player action")
 	_tick(1.8)
-	_check(not _owner_has_task(1), "BOT respects remaining post-action delay")
+	_check(game.bot.decision_serial == 0, "BOT respects remaining post-action delay")
 	_tick(0.3)
-	_check(_owner_has_task(1), "BOT begins after configured reaction time")
+	_check(game.bot.decision_serial == 1 and game.bot.last_decision.applied,
+		"BOT executes its first legal command after configured reaction time, including a useful purchase")
 	game.state.config.rules.bot.first_action_seconds = 0.0
 	game._new_game()
 	var tool: int = game.state.add_card("outsource", 0)
@@ -119,7 +125,7 @@ func _run() -> void:
 	game.state.move_cards([foe], int(game.state.cards[_owned("work", 1)].group))
 	game.board.sync_state(game.state)
 	game._on_selected(foe)
-	_check(game.bot.is_started() and not game.state.cards.has(tool), "successful one-shot strike unlocks BOT after actual effect")
+	_check(game.bot.is_started() and game.state.pending_strikes.has(tool), "successful strike launch unlocks BOT while the opponent can still defend")
 	game._new_game()
 	game.hud.drawer_window.collapse_now()
 	await create_timer(0.05, true).timeout

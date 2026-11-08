@@ -216,7 +216,7 @@ func _enemy_meeting_upgrade() -> void:
 	_check(board.enemy_board.player_bounds.has_point(Vector2(at.x, at.z)), "local employee physically arrives at enemy desk")
 	_check(state.move_cards([person], -1) < 0 and not state.dismiss_people([person], 0), "captured personnel cannot escape via move or dismissal API")
 	await _drag(board.by_uid[coffee], _point(node))
-	_check(state.cards[person].type == "employee" and state.cards[coffee].status == "active" and state.cards[coffee].group == state.cards[person].group, "coffee joins captured employee's real group and begins a paused upgrade")
+	_check(state.cards[person].type == "employee" and state.cards[coffee].status == "ready" and state.cards[coffee].group == state.cards[person].group and not board.by_uid[coffee]._task_progress.visible, "coffee waits without a progress bar in the captured employee's empty group")
 	_check(state.meetings[tool].targets.has(person) and bool(state.cards[person].paused), "upgrade does not release meeting or change target identity")
 	state.advance(float(state.config.rules.meeting.duration_seconds))
 	board.sync_state(state)
@@ -278,10 +278,11 @@ func _relocate_target_source_stack() -> void:
 		if mode == "split":
 			if group.compact: board.toggle_compact(group.cards[0])
 			await _settle()
+			var prefix: Array = group.cards.slice(0, 2).map(func(card): return card.uid)
 			var suffix: Array = group.cards.slice(2).map(func(card): return card.uid)
 			await _drag(group.cards[2], board.camera.unproject_position(Vector3(-1.5, 0.05, 4.4)), true)
 			_check(int(state.cards[suffix[0]].group) != gid and state.group_work(gid).size() == 2, "real tail split still creates a separate group while coworker is away")
-			_check(not state.tasks.has(person) and state.group_work(gid).has(work) and is_equal_approx(state.group_work_progress(gid), progress), "tail split retains source work and group progress without reserving a visitor's slot")
+			_check(not state.tasks.has(person) and prefix.all(func(uid): return state.group_work(gid).has(uid)) and is_equal_approx(state.group_work_progress(gid), progress), "tail split retains the visible source prefix and shared progress without reserving a visitor's slot")
 		elif mode == "merge":
 			var destination := -1
 			for other in state.groups:
@@ -312,7 +313,7 @@ func _drag_returning_person_with_stack() -> void:
 	var work: int = _ids("work")[0]
 	var gid := int(state.cards[work].group)
 	var group: Dictionary = board.group_of(board.by_uid[work])
-	if group.compact: board.toggle_compact(group.cards[0])
+	if not group.compact: board.toggle_compact(group.cards[board._top_index(group)])
 	await _settle()
 	state.move_cards([person], gid)
 	board.sync_state(state)
@@ -325,7 +326,7 @@ func _drag_returning_person_with_stack() -> void:
 	state.advance(float(state.config.rules.meeting.duration_seconds))
 	board.sync_state(state)
 	group = board.group_of(board.by_uid[work])
-	_check(board._meeting_visitors.has(person) and board._meeting_visitors[person].phase == "return" and group.cards[0].uid != person, "returning employee is in the expanded pile behind its draggable work head")
+	_check(board._meeting_visitors.has(person) and board._meeting_visitors[person].phase == "return" and group.compact and group.cards[0].def_id == "work", "returning employee belongs to the compact pile under its draggable work top")
 	var members: Array = state.group_cards(gid).duplicate()
 	await _drag(group.cards[0], board.camera.unproject_position(Vector3(5.0, 0.05, 4.3)), true, person)
 	_check(not board._meeting_visitors.has(person) and state.group_cards(gid) == members, "whole-pile pickup takes ownership from return animation without splitting logical group")

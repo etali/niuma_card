@@ -74,7 +74,7 @@ func _meeting_random_draw() -> void:
 	for seed_value in range(1, 9):
 		var state := _state({"employee": 8, "work": 200}, seed_value)
 		var host: int = _owned(state, "employee")[0]
-		var group: int = state.cards[host].group
+		var group: int = state.move_cards([host], -1)
 		var meeting := state.add_card("meeting", 0, group)
 		_check(state.activate(meeting, group, host), "employee meeting starts with eligible opponents")
 		var targets: Array = state.meetings[meeting].targets
@@ -86,6 +86,7 @@ func _meeting_random_draw() -> void:
 		draws[str(key)] = true
 		var same := _state({"employee": 8, "work": 200}, seed_value)
 		var same_host: int = _owned(same, "employee")[0]
+		same.move_cards([same_host], -1)
 		var same_tool := same.add_card("meeting", 0, same.cards[same_host].group)
 		same.activate(same_tool, same.cards[same_host].group, same_host)
 		_check(same.meetings[same_tool].targets == targets, "same match seed and commands reproduce the same random meeting")
@@ -97,11 +98,13 @@ func _meeting_random_draw() -> void:
 	_check(leader_state.activate(tool, leader_group, leader) and leader_state.meetings[tool].targets.size() == 4, "leader draws up to four opponents")
 	var one := _state({"employee": 1, "work": 200})
 	var single: int = _owned(one, "employee")[0]
+	one.move_cards([single], -1)
 	var one_tool := one.add_card("meeting", 0, one.cards[single].group)
 	_check(one.activate(one_tool, one.cards[single].group) and one.meetings[one_tool].targets.size() == 1, "one available opponent produces one target")
 	var empty := _state({"employee": 1, "work": 200})
 	empty.dismiss_people(_owned(empty, "employee", 1), 1)
 	var empty_host: int = _owned(empty, "employee")[0]
+	empty.move_cards([empty_host], -1)
 	var empty_tool := empty.add_card("meeting", 0, empty.cards[empty_host].group)
 	_check(not empty.activate(empty_tool, empty.cards[empty_host].group) and empty.meetings.is_empty() and empty.cards[empty_tool].status == "ready", "zero opponents rejects without inventing personnel or spending meeting")
 
@@ -109,7 +112,7 @@ func _meeting_boundaries() -> void:
 	var state := _state({"employee": 2, "work": 200})
 	state.advance(2.0)
 	var host: int = _owned(state, "employee")[0]
-	var group: int = state.cards[host].group
+	var group: int = state.move_cards([host], -1)
 	var enemy: int = _owned(state, "employee", 1)[0]
 	var workplace: int = state.cards[enemy].group
 	var work: int = state.tasks[enemy].work_id
@@ -122,14 +125,16 @@ func _meeting_boundaries() -> void:
 	_check(state.move_cards([target], -1) < 0 and not state.dismiss_people([target], 1), "forced attendees cannot leave by moving or being dismissed")
 	var coffee := state.add_card("coffee", 1, target_group)
 	_check(not state.activate(coffee, target_group) and state.cards.has(coffee), "automatic upgrade never reaches a pulled-away employee through the old group")
-	_check(state.activate(coffee, target_group, target), "explicit upgrade queues a paused drink for an attendee")
+	_check(not state.activate(coffee, target_group, target) and state.cards[coffee].status == "ready", "explicit target cannot reserve coffee for an absent attendee")
 	_check(state.cards[target].type == "employee" and state.cards[target].paused and state.meetings[meeting].targets == targets, "upgrade keeps pause and the exact locked meeting targets")
 	state.advance(4.0)
-	_check(state.tasks[target].kind == "coffee" and state.tasks[target].progress == 0.0 and state.tasks[target].resume_task.is_empty() and is_equal_approx(state.cards[work].progress, 0.2), "paused standalone drink and separate unattended work both preserve their own progress")
+	_check(not state.tasks.has(target) and state.cards[coffee].progress == 0.0 and is_equal_approx(state.cards[work].progress, 0.2), "unattended coffee remains empty while separate work keeps its progress")
 	state.move_cards([host], -1)
 	_check(not state.meetings.has(meeting) and not state.cards[target].paused and state.cards[target].group == target_group, "host departure immediately releases original personnel to original groups")
+	var resumed: int = state.group_people(target_group)[0]
+	_check(state.tasks[resumed].kind == "coffee" and state.tasks[resumed].progress == 0.0, "meeting release starts the stable first available employee from zero")
 	state.advance(state.config.number("coffee", "seconds"))
-	_check(state.cards[target].type == "grinder" and not state.tasks.has(target), "after meeting release coffee finishes in the independent personnel group")
+	_check(state.cards[resumed].type == "grinder" and not state.tasks.has(resumed), "after meeting release coffee finishes in the independent personnel group")
 	state.move_cards(targets, workplace)
 	state.advance(1.0)
 	_check(is_equal_approx(state.cards[work].progress, 0.3), "returning released attendees resumes the original shared work progress")

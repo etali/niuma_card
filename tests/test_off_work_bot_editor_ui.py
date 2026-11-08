@@ -20,6 +20,8 @@ from tools.balance.storage import atomic_json, read_json
 GODOT = shutil.which(os.environ.get('GODOT', 'godot')) or '/Applications/Godot.app/Contents/MacOS/Godot'
 
 
+NODE = shutil.which(os.environ.get('NODE', 'node')) or '/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node'
+
 SEARCH_KEYS = ('search_max_depth', 'search_root_width', 'search_reply_width')
 
 
@@ -29,6 +31,8 @@ def archive_policy(store, mode):
     for key in ('owner', *SEARCH_KEYS, *document['compatibility']['algorithm_defaults']):
         policy.pop(key, None)
     policy['first_action_seconds'] = 10
+    policy.update(buy_chance=.48, desired_people=14, material_batch_limit=16,
+                  purchase_priority=['employee', 'coffee'], max_card_copies={'overtime':4})
     if mode != 'ratio':
         policy.pop('decision_budget_ratio', None)
         if mode == 'fixed_ms':
@@ -47,7 +51,8 @@ def loaded_policy(config, archived):
     # Match the editor's default completion while retaining the archived time mode.
     policy = {**config['bot']['bot'], **config['legacy_search_defaults'],
               **config['legacy_algorithm_defaults'], **archived}
-    policy.pop('owner', None)
+    allowed = set(config['bot']['bot']) | {'decision_budget_ms'}
+    policy = {key:value for key,value in policy.items() if key in allowed and key != 'owner'}
     if 'decision_budget_ratio' not in archived:
         policy.pop('decision_budget_ratio', None)
         policy['decision_budget_ms'] = archived.get('decision_budget_ms', config['legacy_default_budget_ms'])
@@ -57,11 +62,40 @@ def loaded_policy(config, archived):
 
 
 class OffWorkBotEditorUi(unittest.TestCase):
-    @unittest.skipUnless(shutil.which('node'), '网页行为测试需要 Node.js')
+    @unittest.skipUnless(Path(NODE).is_file(), '网页行为测试需要 Node.js')
     def test_editor_events_and_comparison_navigation(self):
-        result = subprocess.run([shutil.which('node'), '--test', str(ROOT / 'tests/test_off_work_bot_editor_ui.cjs')],
+        result = subprocess.run([NODE, '--test', str(ROOT / 'tests/test_off_work_bot_editor_ui.cjs')],
                                 cwd=ROOT, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(Path(GODOT).is_file(), '需要 Godot')
+    def test_legacy_document_import_uses_installed_metadata_without_rewriting_source(self):
+        installed = read_json(ROOT / 'data/off_work_bot.json')
+        legacy = copy.deepcopy(installed)
+        legacy['preferences'].update(model_version=1, model_label='旧启发式策略',
+                                     knobs=[{'key':'buy_chance', 'kind':'float', 'min':0, 'max':1}],
+                                     fields=[{'key':'purchase_priority', 'kind':'array'}])
+        legacy['bot'].update(think_seconds=4.9, buy_chance=.48, desired_people=14,
+                             search_max_depth=9, evaluation_max_seconds=3600)
+        legacy['bot'].pop('decision_budget_ratio')
+        original = copy.deepcopy(legacy)
+        with tempfile.TemporaryDirectory() as folder:
+            store = Path(folder)
+            path = store / 'legacy_bot.json'
+            atomic_json(path, legacy)
+            original_bytes = path.read_bytes()
+            with OffWorkWorkbench(GODOT, 0, handler=BaseHTTPRequestHandler, store=store) as lab:
+                imported = lab.configuration(legacy)
+                self.assertEqual(imported['bot']['preferences'], installed['preferences'])
+                policy = imported['bot']['bot']
+                self.assertEqual(policy['think_seconds'], 4.9)
+                self.assertEqual(policy['decision_budget_ms'], 12)
+                self.assertNotIn('decision_budget_ratio', policy)
+                self.assertFalse(set(policy) & {'buy_chance', 'desired_people'})
+                for key in ('search_max_depth', 'evaluation_max_seconds'):
+                    self.assertEqual(policy[key], installed['bot'][key])
+                self.assertEqual(legacy, original)
+                self.assertEqual(path.read_bytes(), original_bytes)
 
     @unittest.skipUnless(Path(GODOT).is_file(), '需要 Godot')
     def test_saved_search_settings_reach_the_real_simulator(self):
@@ -72,7 +106,7 @@ class OffWorkBotEditorUi(unittest.TestCase):
                     config = lab.configuration()
                     policy = copy.deepcopy(config['default_profiles']['bot']['a'])
                     policy.update(search_max_depth=8, search_root_width=5, search_reply_width=3,
-                                  first_action_seconds=10)
+                                  first_action_seconds=10, evaluation_max_seconds=1810)
                     # Keep this transport regression brief while validating with the
                     # real engine. Search execution itself has dedicated BOT tests.
                     saved = lab.save_config('bot', {'name':'编辑后的搜索参数', 'data':policy})
@@ -195,21 +229,21 @@ class OffWorkBotEditorUi(unittest.TestCase):
             archived, _ = archive_policy(store, 'ratio')
             bot = read_json(ROOT / 'data/off_work_bot.json')
             bot['bot']['search_max_depth'] = 9
-            bot['bot']['material_batch_limit'] = 64
-            bot['bot']['tree_cash_log_weight'] = 5
+            bot['bot']['live_snapshot_card_limit'] = 64
+            bot['bot']['evaluation_max_seconds'] = 3600
             document = store / 'tuned_bot.json'
             atomic_json(document, bot)
             with mock.patch('tools.balance.off_work_workbench.DEFAULT_BOT', document), OffWorkWorkbench(
                     GODOT, 0, handler=BaseHTTPRequestHandler, store=store) as lab:
                 config = lab.configuration()
                 self.assertEqual(config['legacy_search_defaults'], {
-                    'search_max_depth':4, 'search_root_width':3, 'search_reply_width':2})
+                    'search_max_depth':4, 'search_root_width':6, 'search_reply_width':3})
                 historical = loaded_policy(config, archived['data'])
                 self.assertEqual(historical['search_max_depth'], 4)
-                self.assertEqual(historical['material_batch_limit'], 16)
-                self.assertEqual(historical['tree_cash_log_weight'], 2)
-                current = {**historical, 'search_max_depth':9, 'material_batch_limit':64,
-                           'tree_cash_log_weight':5}
+                self.assertEqual(historical['live_snapshot_card_limit'], 2048)
+                self.assertEqual(historical['evaluation_max_seconds'], 1800)
+                current = {**historical, 'search_max_depth':9, 'live_snapshot_card_limit':64,
+                           'evaluation_max_seconds':3600}
                 with self.assertRaises(ConfigConflict) as conflict:
                     lab.save_config('bot', {'name':'旧策略', 'data':current})
                 self.assertEqual(conflict.exception.payload['code'], 'name_conflict')

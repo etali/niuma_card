@@ -19,12 +19,13 @@ static func remaining(state: Object, uid: int, phase: String, progress: float) -
 				if state.cards[card_id].type == "overtime": overtime += 1
 			var contributors := 0
 			for person in people:
-				if not state.config.can_work(str(state.cards[person].type)): continue
+				if not state.can_person_work(int(person)): continue
 				# Scheduling releases work slots while their employee attends a
 				# meeting; the group still owns its suspended cycle.
 				var assigned: bool = state.tasks.has(person) and state.tasks[person].kind == "work"
 				if not assigned and not state.is_meeting_target(int(person)): continue
-				rate += state.config.work_rate(str(state.cards[person].type), overtime)
+				var kind: String = state.effective_work_kind(str(state.cards[person].type), group)
+				rate += state.config.work_rate(kind, overtime)
 				contributors += 1
 			if contributors > 0: rate /= float(contributors)
 		return maxf(0.0, 1.0 - state.group_work_progress(group)) / rate if rate > 0.0 else -1.0
@@ -40,6 +41,8 @@ static func remaining(state: Object, uid: int, phase: String, progress: float) -
 		return maxf(0.0, 1.0 - state.group_slack_progress(group)) / rate if rate > 0.0 else -1.0
 	if phase == "recovering":
 		return maxf(0.0, float(data.remaining))
+	if phase == "recruitment":
+		return maxf(0.0, float(data.remaining)) if str(data.activity) == "recruitment" else -1.0
 	if phase in ["meeting", "outsource"]:
 		var timers: Dictionary = state.meetings if phase == "meeting" else state.outsourcing
 		if timers.has(uid): return maxf(0.0, float(timers[uid].remaining))

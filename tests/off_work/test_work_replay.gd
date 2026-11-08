@@ -1,6 +1,7 @@
 extends SceneTree
 
 const SavePaths = preload("res://engine/save_paths.gd")
+const Preferences = preload("res://engine/off_work_bot_preferences.gd")
 
 var issues: Array[String] = []
 var checks := 0
@@ -19,8 +20,14 @@ func run() -> void:
 	var live: OffWorkState = host.state
 	var uid := live.add_card("coffee", 0)
 	host._process(0.75)
+	Preferences.set_pref_strength(1.0)
 	var path: String = host.replay.save(host)
 	check(FileAccess.file_exists(path), "writes realtime recording")
+	var tape: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path))
+	check(tape.bot.policy == host.bot._policy and tape.bot.model_version == 2,
+		"recording stores the actual match policy and model, independent of the action cadence")
+	Preferences.set_pref_strength(.25)
+	var parked_policy: Dictionary = host.bot._policy.duplicate(true)
 	host._process(1.0)
 	var parked_time := live.time
 	var parked_cards := live.cards.duplicate(true)
@@ -28,6 +35,8 @@ func run() -> void:
 	check(loaded.ok, "can load own recording")
 	if loaded.ok:
 		check(host.replay.playing and host.state != live, "parks the live game")
+		check(host.state.config.rules.bot == tape.bot.policy and Preferences.prefs().get_knob("budget_readout") == "1800 毫秒",
+			"playback parameter panel shows the recorded strategy instead of current defaults or the parked match")
 		host._process(5.0)
 		check(host.state.cards.has(uid), "replays the new card")
 		check(is_equal_approx(host.state.time, parked_time - 1.0), "ends at saved clock")
@@ -35,6 +44,14 @@ func run() -> void:
 		check(is_equal_approx(host.state.time, 0.25), "can seek to an earlier time between actions")
 		host.stop_replay()
 		check(host.state == live and live.cards == parked_cards and live.time == parked_time, "restores exact game and clock")
+		check(host.bot._policy == parked_policy and Preferences.pref_strength() == .25,
+			"closing the recording restores the parked strategy and its selected strength")
+	var legacy_path := path + ".legacy.json"
+	var legacy: Dictionary = tape.duplicate(true)
+	legacy.erase("bot")
+	preload("res://engine/json_store.gd").save(legacy_path, legacy)
+	check(host._load_replay(legacy_path).ok, "recordings without historical BOT metadata remain playable")
+	host.stop_replay()
 	host.begin_practice()
 	check(not host.practice.is_empty() and host.state != live, "practice uses separate state")
 	var person := -1
@@ -67,6 +84,7 @@ func run() -> void:
 	host.choose_card_config("")
 	DirAccess.remove_absolute(config_path)
 	DirAccess.remove_absolute(path)
+	DirAccess.remove_absolute(legacy_path)
 	host.queue_free()
 	await process_frame
 	for issue in issues: push_error(issue)

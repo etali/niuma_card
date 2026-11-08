@@ -4,6 +4,7 @@
 const $ = id => document.getElementById(id);
 const clone = value => structuredClone(value);
 let baseline, candidate, bot, presets, profiles;
+let strengthProfiles = {};
 let sourceCards, sourceId;
 let defaultProfiles, legacyBudgetMs;
 let legacyPolicyDefaults = {};
@@ -17,12 +18,15 @@ let activeView = "balance";
 let library = {cards:[], bot:[]};
 let histories = {bot:[], balance:[]};
 const presetChoice = {};
+const strengthChoice = {};
 const strategyNames = {q:"标准策略", a:"策略 A", b:"策略 B"};
 const fieldLabels = {
   price:"价格", purchasable:"可购买", description:"牌面说明", name:"牌名",
   work_seconds:"工作耗时（秒）", work_capacity:"每批处理上限", work_income_multiplier:"工作收入倍率",
   can_work:"可处理工作", refund:"开除返还", transfer_capacity:"甩锅数量",
-  can_be_meeting_target:"可被拉会", meeting_multiplier:"开会人数倍率",
+  can_be_meeting_target:"可被拉会", can_be_strike_target:"可受罢工影响", meeting_multiplier:"开会人数倍率",
+  max_per_owner:"每方持有上限", cost_per_employee:"每名员工招聘费用", recruitment:"老板招聘",
+  flight_seconds:"罢工飞行时间（秒）", work_role:"工会生产标准",
   income:"每份工作收入", money:"起始金钱", groups:"开局牌组", speed_multiplier:"速度倍率",
   seconds:"耗时（秒）", upgrades:"提升卷度配方", to:"卷度提升后", cost:"咖啡用量",
   minimum_targets:"最少目标数", base_targets:"基础目标数", duration_seconds:"持续时间（秒）",
@@ -293,13 +297,14 @@ function renderProfiles() {
     save.dataset.edit = "";
     save.onclick = () => saveVersion("bot",strategyNames[side],profiles[side],side);
     controlsRow.append(sourceLabel,version,save);
-    const strength = element("label","决策强度（思考时间占比）");
+    const strength = element("label","强度快捷档位");
     const select = element("select");
     const policy = profiles[side];
+    const fixedTimeMode = policy.decision_budget_ms !== undefined;
     select.append(new Option(policy.decision_budget_ms !== undefined ? "固定毫秒（旧策略）" : "自定义","custom"));
     select.options[0].disabled = true;
     for (const [key, preset] of Object.entries(presets)) {
-      select.add(new Option((presetLabels[key] || key) + " · " + number(100*preset.decision_budget_ratio) + "%",key));
+      select.add(new Option((presetLabels[key] || key) + " · " + Number(bot.preferences.presets[key]).toFixed(2),key));
     }
     select.value = presetChoice[side];
     select.dataset.edit = "";
@@ -307,10 +312,65 @@ function renderProfiles() {
       delete policy.decision_budget_ms;
       Object.assign(policy,presets[select.value]);
       presetChoice[side] = select.value;
+      strengthChoice[side] = Number(bot.preferences.presets[select.value]);
       renderProfiles();
     };
     strength.append(select);
     controlsRow.append(strength);
+    const overall = element("label",undefined,"off-work-overall-strength");
+    const heading = element("span",side === "q" ? "双方 BOT 整体强度 " : "BOT " + side.toUpperCase() + " 整体强度 ");
+    const readout = element("output");
+    readout.id = "off-work-strength-value-" + side;
+    readout.setAttribute("for","off-work-strength-" + side);
+    heading.append(readout);
+    const slider = element("input");
+    slider.type = "range";
+    slider.id = "off-work-strength-" + side;
+    slider.min = "0"; slider.max = "1"; slider.step = "0.01";
+    slider.dataset.edit = "";
+    slider.setAttribute("aria-label",side === "q" ? "双方 BOT 整体强度" : "BOT " + side.toUpperCase() + " 整体强度");
+    slider.setAttribute("aria-describedby","off-work-strength-hint-" + side);
+    const hint = element("small","范围 0–1；步长 0.01。联动行动间隔和思考预算；各档使用同一套动作与评价，不限制人员或材料数量。", "input-range");
+    hint.id = "off-work-strength-hint-" + side;
+    overall.append(heading,slider,hint);
+    section.append(overall);
+    const syncStrength = () => {
+      const value = profileStrength(policy,strengthChoice[side] ?? bot.preferences.default_strength);
+      strengthChoice[side] = value;
+      slider.value = value ?? bot.preferences.default_strength;
+      readout.textContent = value === null ? "自定义" : value.toFixed(2);
+      select.value = presetChoice[side] = profilePreset(policy);
+    };
+    slider.value = bot.preferences.default_strength;
+    syncStrength();
+    slider.oninput = () => {
+      const value = Number(slider.value);
+      const parameters = strengthProfiles[value.toFixed(2)];
+      if (!parameters) return;
+      delete policy.decision_budget_ms;
+      Object.assign(policy,clone(parameters));
+      strengthChoice[side] = value;
+      // Keep the range node alive while dragging; commit rebuilds legacy-mode
+      // fields only after the user releases the thumb or presses an arrow key.
+      for (const [key,value] of Object.entries(parameters)) {
+        const node = section.querySelector('[data-path="' + key + '"]');
+        if (!node) continue;
+        if (node.type === "checkbox") node.checked = value;
+        else node.value = typeof value === "object" ? JSON.stringify(value) : value;
+        node.setCustomValidity("");
+      }
+      const oldBudget = section.querySelector('[data-path="decision_budget_ms"]');
+      if (oldBudget) oldBudget.parentElement.hidden = true;
+      syncStrength();
+      budget.textContent = budgetText(policy);
+      controls();
+    };
+    slider.onchange = () => {
+      if (fixedTimeMode) {
+        renderProfiles();
+        $("off-work-strength-" + side)?.focus?.();
+      }
+    };
     const budget = element("p",budgetText(policy),"hint");
     budget.id = "decision-budget-" + side;
     budget.setAttribute("aria-live","polite");
@@ -321,6 +381,10 @@ function renderProfiles() {
     const groups = new Map();
     for (const key of Object.keys(profiles[side])) {
       const options = {...knobs.get(key),path:key};
+      // Interpolated overall-strength values need not be multiples of the
+      // manual spinner's suggested step. Preserve the engine's exact values
+      // and its min/max bounds instead of blocking save/run with stepMismatch.
+      if (options.kind === "float" && Object.values(strengthProfiles).some(profile => Object.hasOwn(profile,key))) options.step = "any";
       const group = options.group || "其他策略";
       if (!groups.has(group)) {
         const block = element("div",undefined,"bot-parameter-group");
@@ -329,13 +393,11 @@ function renderProfiles() {
         all.append(block);
         groups.set(group,grid);
       }
-      if (key === "decision_budget_ms" || key === "decision_budget_ratio" || key === "think_seconds") {
-        if (key === "decision_budget_ms") Object.assign(options,{kind:"int",min:1,max:32});
-        options.change = () => {
-          if (key !== "think_seconds") select.value = presetChoice[side] = profilePreset(policy);
-          budget.textContent = budgetText(policy);
-        };
-      }
+      if (key === "decision_budget_ms") Object.assign(options,{kind:"int",min:1,max:32});
+      options.change = () => {
+        syncStrength();
+        budget.textContent = budgetText(policy);
+      };
       field(groups.get(group),profiles[side],key,options);
     }
     $(side === "q" ? "sharedProfile" : "profiles").append(section);
@@ -345,7 +407,15 @@ function renderProfiles() {
 }
 const defaultStrategyNames = {q:"标准策略",a:"策略 A",b:"策略 B"};
 function profilePreset(policy) {
-  return Object.keys(presets).find(key => policy.decision_budget_ratio === presets[key].decision_budget_ratio) || "custom";
+  if (policy.decision_budget_ms !== undefined) return "custom";
+  return Object.keys(presets).find(key => Object.entries(presets[key]).every(([field,value]) => same(policy[field],value))) || "custom";
+}
+function profileStrength(policy, preferred = bot.preferences.default_strength) {
+  if (policy.decision_budget_ms !== undefined) return null;
+  const matches = parameters => parameters && Object.entries(parameters).every(([key,value]) => same(policy[key],value));
+  if (Number.isFinite(preferred) && matches(strengthProfiles[preferred.toFixed(2)])) return preferred;
+  const key = Object.keys(strengthProfiles).find(key => matches(strengthProfiles[key]));
+  return key === undefined ? null : Number(key);
 }
 function budgetText(policy, measured) {
   if (Number.isFinite(policy?.decision_budget_ratio) && Number.isFinite(policy?.think_seconds)) {
@@ -362,6 +432,9 @@ function setProfile(side, data, name, source = "") {
   // Saved strategies may predate fields added to the current engine. Show the
   // same full policy the run will use, without changing an archived time mode.
   profiles[side] = {...clone(bot.bot),...clone(legacyPolicyDefaults),...clone(data)};
+  for (const key of Object.keys(profiles[side])) {
+    if (!Object.hasOwn(bot.bot,key) && key !== "decision_budget_ms") delete profiles[side][key];
+  }
   if (!Object.hasOwn(data,"decision_budget_ratio")) {
     delete profiles[side].decision_budget_ratio;
     profiles[side].decision_budget_ms = data.decision_budget_ms ?? legacyBudgetMs;
@@ -371,6 +444,7 @@ function setProfile(side, data, name, source = "") {
   delete profiles[side].owner;
   strategyNames[side] = name;
   chosenBots[side] = source;
+  strengthChoice[side] = profileStrength(profiles[side]);
   presetChoice[side] = profilePreset(profiles[side]);
 }
 function table(parent, headers, rows) {
@@ -418,7 +492,7 @@ const legacyMeasures = {
   bilateral_interference_rate: {label:"旧指标 · 双向干扰局占比",sample:"局",formula:"双方均有有效干扰的局数 ÷ 已模拟局数。"}
 };
 const rateFormula = "频率先按每局的次数 ÷ 该局游戏分钟数计算，再按局等权平均。包含平局、超时局和零次事件的局，只计正时长。";
-const acquisitionFormula = "按双方在局中获得的张数统计购买、提升卷度后获得的人员牌和生成的咖啡，占比分母为获得总张数。排除开局发牌、工作和金钱。";
+const acquisitionFormula = "按双方在局中获得的张数统计购买、招聘或提升卷度后获得的人员牌和生成的咖啡，占比分母为获得总张数。排除开局发牌、工作和金钱。";
 function rateNumber(value) {
   return value.toLocaleString("zh-CN",{maximumFractionDigits:4});
 }
@@ -1410,6 +1484,7 @@ async function init() {
     projectCardsId = config.project_cards_id;
     bot = config.bot;
     presets = config.presets;
+    strengthProfiles = config.strength_profiles || {};
     legacyBudgetMs = config.legacy_default_budget_ms;
     legacyPolicyDefaults = {...config.legacy_search_defaults,...config.legacy_algorithm_defaults};
     baseline = config.cards;

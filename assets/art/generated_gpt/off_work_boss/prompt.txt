@@ -1,0 +1,16 @@
+Use case: style-transfer
+Asset type: a replacement transparent boss card icon in an EXISTING cohesive cartoon icon family.
+Input images and priorities:
+Image 1: EMPLOYEE. STRICT style and anatomy reference.
+Image 2: LEADER. STRICT style and anatomy reference.
+Image 3: current BOSS. Edit target. Retain ONLY the idea of a composed, slightly plump, money-loving boss holding one money pouch. DISCARD its detailed human anatomy, costume rendering, hair and facial drawing.
+PRIMARY REQUIREMENT: The new boss must look drawn by exactly the same artist, with exactly the same simple shapes, stroke weight, proportions and flat color treatment as Images 1 and 2. This is much more important than preserving Image 3.
+Redraw the boss from scratch as another member of the employee/leader doodle family:
+- Huge nearly perfect round warm-cream blank head, about 58-60% of total figure height, almost twice the width of the torso, exactly like Image 1. No hair, no wrinkles, no nose, no cheeks or ears, no realistic chin, no beard/mustache, no glasses.
+- Two tiny dark dot eyes. Two SHORT, almost horizontal eyebrow strokes placed slightly lower for a calm shrewd expression; a short, restrained curved closed smile. Use the face vocabulary of Image 2, not a portrait.
+- Tiny rounded cream torso underneath with a modestly wider round belly, only about 15-20% wider than the employee torso. This is sturdy and quietly prosperous, NOT extremely obese. At most two dark vest side shapes, no collar detail, seams, folds, buttons or patterned clothing.
+- Arms and legs are the SAME thick dark-brown single curved strokes and tiny rounded feet as Images 1 and 2. NOT anatomical forearms, hands, fingers, suit sleeves, trouser legs or realistic shoes.
+- Relaxed upright planted stance. One simple dark mitten hand clutches ONE small ochre-gold money pouch at the side of the belly; the other arm rests at his hip or behind his back. Pouch is a plain gold rounded shape with a short cinched neck and two short drawstring strokes, no symbols or text. Its visual complexity should be comparable to the leader's simple megaphone.
+Look: composed, not skinny, money-minded; entirely fictional generic game mascot, not a likeness of a real person.
+Rendering: same very thick rounded near-black brown outlines as employee/leader, same warm cream fill and muted ochre accent. Very flat fills like the references, NO paper grain, NO painterly texture, NO gradients, NO highlights, NO detailed hair or garments. Keep interior line count extremely low.
+Composition: single complete isolated character centered on a square canvas, approximately the SAME subject occupancy and baseline as the reference employee and leader icons. Generous transparent margin on every edge. Real transparent background, no floor, shadow, card frame, text, scenery or extra figures. Output ONE boss only.

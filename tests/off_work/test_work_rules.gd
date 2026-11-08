@@ -22,6 +22,8 @@ func _initialize() -> void:
 
 func _state(people: int = 2, work: int = 20) -> RefCounted:
 	var config := Config.new()
+	# This fixture isolates settlement; flight-window timing has its own regression.
+	config.rules.strike.flight_seconds = 0.0
 	config.rules.initial.groups = [{"employee": people, "work": work}]
 	config.rules.initial.money = 100
 	var state := State.new(config)
@@ -37,6 +39,14 @@ func _group(state: RefCounted, owner: int) -> int:
 
 func _tool(state: RefCounted, kind: String, group: int, owner: int = 0) -> int:
 	return state.add_card(kind, owner, group)
+
+func _tool_group(state: RefCounted, kind: String, group: int, owner: int = 0) -> int:
+	# Put the tool down first, then form its combination. Adding a tool to an
+	# already working group intentionally does not replace that group's function.
+	var tool: int = _tool(state, kind, -1, owner)
+	var destination: int = state.cards[tool].group
+	state.move_cards(state.group_cards(group), destination)
+	return tool
 
 func _check(ok: bool, name: String) -> void:
 	checked += 1
@@ -104,8 +114,9 @@ func _test_meeting() -> void:
 	var group: int = _group(state, 0)
 	var enemy: int = _group(state, 1)
 	state.move_cards(state.group_work(enemy))
-	var meeting: int = _tool(state, "meeting", group)
-	_check(state.activate(meeting, group), "开会能发动")
+	var meeting: int = _tool_group(state, "meeting", group)
+	group = state.cards[meeting].group
+	_check(state.meetings.has(meeting) and state.cards[meeting].status == "active", "组合完成后开会能发动")
 	_check(state.meetings[meeting].targets.size() == 2, "普通主持只拖配置名额")
 	state.advance(3.0)
 	var paused := 0
@@ -121,7 +132,7 @@ func _test_meeting() -> void:
 	for person in state.group_people(group):
 		if state.cards[person].activity == "work" and float(state.cards[person].progress) > 0.0:
 			working += 1
-	_check(working == 2, "自己仅占一位主持人，其他同组人员继续工作")
+	_check(working == 0, "开会组合仅触发开会，其他同组人员不会同时工作")
 	var coffee: int = _tool(state, "coffee", enemy, 1)
 	var attendee: int = int(state.meetings[meeting].targets[0])
 	_check(state.activate(coffee, enemy, attendee), "咖啡可以升级被暂停的指定员工")
@@ -132,7 +143,8 @@ func _test_meeting() -> void:
 	var leaders: RefCounted = _state(5)
 	var lg: int = _group(leaders, 0)
 	leaders.add_card("leader", 0, lg)
-	var lm: int = _tool(leaders, "meeting", lg)
+	var lm: int = _tool_group(leaders, "meeting", lg)
+	lg = leaders.cards[lm].group
 	leaders.activate(lm, lg)
 	_check(leaders.meetings[lm].targets.size() == 4, "领导增加会议名额")
 
@@ -140,8 +152,9 @@ func _test_transfer() -> void:
 	var state: RefCounted = _state(1)
 	var group: int = _group(state, 0)
 	state.add_card("leader", 0, group)
-	var transfer: int = _tool(state, "transfer", group)
-	_check(state.activate(transfer, group), "甩锅组启动")
+	var transfer: int = _tool_group(state, "transfer", group)
+	group = state.cards[transfer].group
+	_check(state.cards[transfer].status == "active" and state.tasks[state.group_people(group)[0]].kind == "transfer", "甩锅组启动")
 	state.advance(2.0)
 	var task_before: Dictionary = state.tasks.duplicate(true)
 	var same_group: int = state.move_cards(state.group_cards(group), -1)
@@ -153,9 +166,11 @@ func _test_transfer() -> void:
 	var paused: RefCounted = _state(1)
 	var own: int = _group(paused, 0)
 	var other: int = _group(paused, 1)
-	var ptransfer: int = _tool(paused, "transfer", own)
+	var ptransfer: int = _tool_group(paused, "transfer", own)
+	own = paused.cards[ptransfer].group
 	paused.activate(ptransfer, own)
-	var meeting: int = _tool(paused, "meeting", other, 1)
+	var meeting: int = _tool_group(paused, "meeting", other, 1)
+	other = paused.cards[meeting].group
 	paused.activate(meeting, other)
 	paused.advance(12.0)
 	_check(paused.cards[ptransfer].status == "active", "交接被暂停时工具不会独立计时提前恢复")
@@ -170,10 +185,12 @@ func _test_other_tools() -> void:
 	_check(state.group_people(enemy).is_empty() and is_equal_approx(state.group_work_progress(enemy), 0.4), "罢工弹出人员但保留原工作进度")
 	state.advance(6.0)
 	_check(state.money(0) == 102, "普通工作只按实际人员能力产钱")
-	var outsourcing: int = _tool(state, "outsource", group)
-	_check(not state.activate(outsourcing, group), "外包不使用组外钱包，必须把现金叠入组合")
+	var outsourcing: int = _tool(state, "outsource", -1)
+	var outsource_group: int = state.cards[outsourcing].group
+	state.move_cards(state.group_work(group), outsource_group)
+	_check(not state.activate(outsourcing, outsource_group), "外包不使用组外钱包，必须把现金叠入组合")
 	var income: Dictionary = state.drain_events().filter(func(event): return event.kind == "work_complete" and event.owner == 0).back()
-	state.move_cards(income.money_ids, group)
+	state.move_cards(income.money_ids, outsource_group)
 	_check(state.cards[outsourcing].status == "active" and state.work_count(0) == 18 and state.money(0) == 102, "外包读条开始不提前消耗工作或费用")
 	state.advance(state.config.number("outsource", "seconds"))
 	_check(state.work_count(0) == 16 and state.money(0) == 100, "外包读满按本组金额一比一清理且不产完成收入")
@@ -182,7 +199,8 @@ func _test_other_tools() -> void:
 	_check(state.cards.has(outsourcing), "开除保留所有工具")
 	var slack_state: RefCounted = _state()
 	var sg: int = _group(slack_state, 0)
-	var slack: int = _tool(slack_state, "slack", sg)
+	var slack: int = _tool_group(slack_state, "slack", sg)
+	sg = slack_state.cards[slack].group
 	var coffee: int = _tool(slack_state, "coffee", sg)
 	slack_state.activate(slack, sg)
 	_check(not slack_state.activate(coffee, sg), "正在摸鱼的人员不能同时喝咖啡升级")
@@ -207,7 +225,8 @@ func _test_transfer_destination() -> void:
 	var existing: Dictionary = {}
 	for person in state.group_people(enemy):
 		existing[person] = state.tasks[person].duplicate(true)
-	var transfer: int = _tool(state, "transfer", group)
+	var transfer: int = _tool_group(state, "transfer", group)
+	group = state.cards[transfer].group
 	state.config.rules.transfer.seconds = 5.0
 	state.activate(transfer, group)
 	state.advance(5.0)
@@ -227,7 +246,8 @@ func _test_transfer_destination() -> void:
 	alternate.config.rules.transfer.destination_policy = "new_group"
 	var ag: int = _group(alternate, 0)
 	var original_enemy: int = _group(alternate, 1)
-	var tool: int = _tool(alternate, "transfer", ag)
+	var tool: int = _tool_group(alternate, "transfer", ag)
+	ag = alternate.cards[tool].group
 	var drink: int = _tool(alternate, "coffee", ag)
 	alternate.activate(tool, ag)
 	alternate.activate(drink, ag)

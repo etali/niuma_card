@@ -5,6 +5,7 @@ extends Node3D
 const ConfigData = preload("res://engine/config_data.gd")
 const State = preload("res://engine/off_work_state.gd")
 const Bot = preload("res://engine/off_work_bot.gd")
+const BotPreferences = preload("res://engine/off_work_bot_preferences.gd")
 const BoardView = preload("res://scenes/off_work_board.gd")
 const Audio = preload("res://scenes/off_work_audio.gd")
 const Effects = preload("res://scenes/off_work_effects.gd")
@@ -265,7 +266,7 @@ func _on_palette_changed(_section: String, _key: String, _color: Color = Color.W
 	effects.setup(settings.effects, settings.text)
 
 func _on_groups_changed() -> void:
-	_live_bot.cancel()
+	_live_bot.replan(bot)
 	if bot != null and not bot.is_started():
 		var current := _capture_player_activity()
 		var meaningful := false
@@ -309,7 +310,7 @@ func _remember_player_activity() -> void:
 
 func _start_opponent_after_action(actor: int) -> void:
 	if bot != null and actor == int(board._settings.local_owner) and actor != bot.owner:
-		_live_bot.cancel()
+		_live_bot.replan(bot)
 		bot.start()
 
 func shift_network_live() -> bool:
@@ -486,6 +487,7 @@ func _on_activate(id: int, target_group: int) -> void:
 func _activate(id: int, group: int, target_card := -1) -> void:
 	if replay.playing: return
 	if lan != null and lan.live():
+		board.await_manual_strike_ack(id)
 		lan.submit({"op":"activate", "id":id, "group":group, "target":target_card})
 		return
 	if get_tree().paused: return
@@ -607,8 +609,8 @@ func save_work_replay() -> void:
 		_notify("练习结束后可保存正式对局录像")
 		return
 	var path := replay.save(self)
-	hud.close_panels()
-	_notify("录像已保存到 " + path if path != "" else "无法保存当前录像", path == "")
+	var count: int = replay.playback.size() if replay.playing else replay.frames.size()
+	hud.show_record_result(ProjectSettings.globalize_path(path) if not path.is_empty() else SavePaths.recordings_dir(), count, path.is_empty())
 
 func open_replay_picker() -> void:
 	if not practice.is_empty() or shift_network_live() or replay.playing:
@@ -662,13 +664,18 @@ func apply_selected_card_config() -> Dictionary:
 	var path := _selected_config if _launch_config.is_empty() else _launch_config
 	var check := _read_card_config(path)
 	if not check.ok: return check
+	var selection := BotPreferences.selection_snapshot()
+	# A rematch changes the card table, not the user's active BOT settings.
+	check.config.rules.bot = state.config.rules.bot.duplicate(true)
+	check.config.bot_preferences = state.config.bot_preferences.duplicate(true)
 	state.config = check.config
 	_active_config = path
-	_use_table_config(check.config)
+	_use_table_config(check.config, selection)
 	_new_game()
 	return {"ok": true, "reason": "已使用所选卡表开局"}
 
-func _use_table_config(config: OffWorkConfig) -> void:
+func _use_table_config(config: OffWorkConfig, selection: Dictionary = {}) -> void:
+	BotPreferences.bind(state, config.bot_preferences, selection)
 	_live_bot.bind_config(config)
 	OffWorkCardDB.configure(config)
 	var slots := int(config.rules.conveyor.slots)
@@ -694,7 +701,8 @@ func park_table() -> Dictionary:
 	save_shift_session()
 	var layout := {}
 	for key in ShiftSession.BOARD_FIELDS: layout[key] = board.get(key).duplicate(true)
-	var original := {"state": state, "bot": bot, "layout": layout, "paused": hud._manual_paused, "selected": _selected_tool}
+	var original := {"state": state, "bot": bot, "layout": layout, "paused": hud._manual_paused, "selected": _selected_tool,
+		"bot_preferences": BotPreferences.selection_snapshot()}
 	_clear_table_presenters()
 	return original
 
@@ -722,7 +730,7 @@ func restore_table(original: Dictionary) -> void:
 	_clear_table_presenters()
 	state = original.state
 	bot = original.bot
-	_use_table_config(state.config)
+	_use_table_config(state.config, original.get("bot_preferences", {}))
 	_selected_tool = original.selected
 	for key in ShiftSession.BOARD_FIELDS: board.set(key, original.layout[key])
 	board.sync_state(state)
@@ -751,15 +759,6 @@ func begin_practice(id := "first") -> void:
 	_new_game()
 	lesson.setup_world(state)
 	board.sync_state(state)
-	if id == "upgrade":
-		var worker = board.by_uid[state._owner_type(0, "employee")[0]]
-		var group = board.group_of(worker)
-		if group != null:
-			if group.get("compact", false): board.toggle_compact(worker)
-			var origin: Vector3 = board.rest_origin(group)
-			group.cards.erase(worker)
-			group.cards.append(worker)
-			board._layout_group(group, origin)
 	_refresh_table_lighting()
 	hud.update_practice_panel()
 

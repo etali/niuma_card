@@ -263,7 +263,9 @@
       "meeting": "assets/art/generated_gpt_v3/meeting/master.png",
       "strike": "assets/art/generated_gpt_v2/strike/master.png",
       "workaholic": "assets/art/generated_gpt_v4/workaholic/master.png",
-      "work_emperor": "assets/art/generated_gpt_v4/work_emperor/master.png"
+      "work_emperor": "assets/art/generated_gpt_v4/work_emperor/master.png",
+      "union": "assets/art/generated_gpt/off_work_union/master.png",
+      "boss": "assets/art/generated_gpt/off_work_boss/master.png"
     }
   }
 }

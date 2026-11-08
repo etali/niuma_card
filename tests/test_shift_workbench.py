@@ -103,13 +103,16 @@ class WorkbenchLegacyMetrics(unittest.TestCase):
 
 @unittest.skipUnless(Path(GODOT).is_file(), '需要 Godot')
 class ShiftWorkbench(unittest.TestCase):
-    def test_legacy_policy_gets_budget_only_in_new_experiment_snapshot(self):
+    def test_legacy_policy_migrates_supported_fields_only_in_new_experiment_snapshot(self):
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)
             old = read_json(ROOT / 'data/off_work_bot.json')['bot']
             old.pop('owner')
             old.pop('decision_budget_ratio')
-            old.update(think_seconds=4.9, buy_chance=.48)
+            old.update(think_seconds=4.9, buy_chance=.48, desired_people=14, material_batch_limit=16)
+            allowed = set(read_json(ROOT / 'data/off_work_bot.json')['bot']) - {'owner'}
+            migrated = {key:value for key,value in old.items() if key in allowed}
+            migrated['decision_budget_ms'] = 12
             old_id = config_id('ai', old)
             snapshot = {'kind':'ai', 'data':old, 'id':old_id, 'name':'旧偏低',
                         'source':'manual', 'created_at':'2026-09-01T00:00:00+00:00'}
@@ -118,15 +121,17 @@ class ShiftWorkbench(unittest.TestCase):
             with OffWorkWorkbench(GODOT, 0, handler=BaseHTTPRequestHandler, store=folder) as lab:
                 try:
                     submitted = lab.start_job({'kind':'balance', 'cards':read_json(ROOT/'data/off_work_cards.json'),
-                                               'a':old, 'a_name':'从脚本载入', 'pairs':1, 'seed':16, 'max_seconds':1})
+                                               'a':migrated, 'a_name':'从脚本载入', 'pairs':1, 'seed':16, 'max_seconds':1})
                     new_id = submitted['configs']['a']
                     self.assertNotEqual(new_id, old_id)
                     self.assertEqual(submitted['configs']['b'], new_id)
                     new_policy = lab.library_info(new_id)
                     self.assertEqual(new_policy['name'], '旧偏低')
-                    self.assertEqual(new_policy['data'], {**old, 'decision_budget_ms':12})
+                    self.assertEqual(new_policy['data'], migrated)
+                    self.assertFalse(set(new_policy['data']) & {'buy_chance','desired_people','material_batch_limit'})
                     self.assertEqual(read_json(path), snapshot)
-                    relative = {**old, 'decision_budget_ratio':.5}
+                    relative = {key:value for key,value in migrated.items() if key != 'decision_budget_ms'}
+                    relative['decision_budget_ratio'] = .5
                     with self.assertRaises(ConfigConflict) as conflict:
                         lab.save_config('bot', {'name':'旧偏低', 'data':relative})
                     self.assertEqual(conflict.exception.payload['code'], 'name_conflict')
@@ -295,17 +300,17 @@ class ShiftWorkbench(unittest.TestCase):
                     # A balance run may mirror a single custom side, while older callers
                     # who explicitly submit two different profiles keep both unchanged.
                     body = {'kind': 'balance', 'cards': off['cards'], 'pairs': 1, 'seed': 55,
-                            'max_seconds': 2, 'b': {'buy_chance': .19}, 'b_name': '自定义 B'}
+                            'max_seconds': 2, 'b': {'decision_budget_ratio': .19}, 'b_name': '自定义 B'}
                     single = api('/off-work/api/run', body)
                     self.assertEqual(single['configs']['a'], single['configs']['b'])
                     used = api('/off-work/api/jobs/' + single['id'])['request']
-                    self.assertEqual(used['a']['buy_chance'], .19)
+                    self.assertEqual(used['a']['decision_budget_ratio'], .19)
                     self.assertEqual(used['a_name'], used['b_name'])
                     distinct = api('/off-work/api/run', {**body, 'a': profile})
                     self.assertNotEqual(distinct['configs']['a'], distinct['configs']['b'])
                     used = api('/off-work/api/jobs/' + distinct['id'])['request']
                     self.assertEqual(used['a'], profile)
-                    self.assertEqual(used['b']['buy_chance'], .19)
+                    self.assertEqual(used['b']['decision_budget_ratio'], .19)
                     def conflict(kind, body, code):
                         with self.assertRaises(HTTPError) as error:
                             api('/off-work/api/library/'+kind, body)
@@ -315,7 +320,7 @@ class ShiftWorkbench(unittest.TestCase):
                         return payload
                     self.assertEqual(conflict('bot', {'name':'仅改名','data':profile},
                                               'unchanged_config')['existing']['id'], old_key)
-                    edit = {'name':'原策略', 'data':{**profile, 'buy_chance':0.51}}
+                    edit = {'name':'原策略', 'data':{**profile, 'decision_budget_ratio':0.51}}
                     overwrite = conflict('ai', edit, 'name_conflict')['conflicts'][0]['current_id']
                     self.assertEqual(overwrite, old_key)
                     updated = api('/off-work/api/library/bot', {**edit,'overwrite_id':overwrite})

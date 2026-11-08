@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 extends Control
 
-## Presentation only: gameplay has already committed before these effects start.
+## Presentation only: impact/launch events come from the authoritative clock.
 var config: Dictionary
 var texts: Dictionary
 var items: Array[Dictionary] = []
@@ -23,6 +23,9 @@ func setup(settings: Dictionary, labels: Dictionary) -> void:
 	cash = Palette.semantic("cash")
 
 func emit_effect(kind: String, start: Vector2, finish: Vector2, count := 1, targets: Array = [], source_id := -1, target_ids: Array = []) -> void:
+	# The real strike card carries the entire attack/return; a generic source
+	# burst would suggest damage before the response window has ended.
+	if kind in ["strike_launch", "strike_blocked"]: return
 	if items.size() >= int(config.max_events):
 		items.pop_front()
 	var duration: float = float(config.duration)

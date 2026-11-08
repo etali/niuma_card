@@ -10,7 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 GODOT = shutil.which(os.environ.get("GODOT", "godot"))
-SEARCH_DEFAULTS = {"search_max_depth": 4, "search_root_width": 3, "search_reply_width": 2}
+SEARCH_DEFAULTS = {"search_max_depth": 4, "search_root_width": 6, "search_reply_width": 3}
 
 
 @unittest.skipUnless(GODOT, "需要 Godot")
@@ -42,7 +42,7 @@ class OffWorkBotSearchConfig(unittest.TestCase):
         archived, partial = result["profiles"]["a"], result["profiles"]["b"]
         self.assertEqual(archived["decision_budget_ms"], 12)
         self.assertNotIn("decision_budget_ratio", archived)
-        self.assertEqual(partial["decision_budget_ratio"], .5)
+        self.assertEqual(partial["decision_budget_ratio"], self.policy["decision_budget_ratio"])
         self.assertNotIn("decision_budget_ms", partial)
         for policy in (archived, partial):
             self.assertEqual({key: policy[key] for key in SEARCH_DEFAULTS}, SEARCH_DEFAULTS)
@@ -58,7 +58,7 @@ class OffWorkBotSearchConfig(unittest.TestCase):
         self.assertEqual(fixed["decision_budget_ms"], 7)
         self.assertNotIn("decision_budget_ratio", fixed)
         self.assertEqual(result["profiles"]["b"]["search_max_depth"], 1)
-        self.assertEqual(result["profiles"]["b"]["decision_budget_ratio"], .5)
+        self.assertEqual(result["profiles"]["b"]["decision_budget_ratio"], self.policy["decision_budget_ratio"])
 
     def test_experiment_entry_rejects_search_values_outside_bounds(self):
         status, result = self.profiles({"search_max_depth": 17}, {})
@@ -66,10 +66,9 @@ class OffWorkBotSearchConfig(unittest.TestCase):
         self.assertIn("search_max_depth", result["error"])
 
     def test_algorithm_overrides_reach_actual_experiment_profiles(self):
-        overrides = {"material_batch_limit": 48, "fallback_probe_group_limit": 23,
-                     "planner_horizon_work_cycles": 4.5, "tree_horizon_work_cycles": 1.25,
-                     "planner_purchase_order_bonus": .12, "tree_cash_log_weight": 3.5,
-                     "decision_publish_reserve_us": 2000, "live_snapshot_card_limit": 64}
+        overrides = {"evaluation_max_seconds": 3600, "decision_publish_reserve_ratio": .3,
+                     "decision_publish_reserve_us": 2000, "live_snapshot_card_limit": 64,
+                     "live_snapshot_group_limit": 32, "live_fallback_budget_us": 1700}
         status, result = self.profiles(overrides, {})
         self.assertEqual(status, 0, result)
         for key, value in overrides.items():
@@ -80,23 +79,31 @@ class OffWorkBotSearchConfig(unittest.TestCase):
         document = json.loads((ROOT / 'data/off_work_bot.json').read_text())
         old = {key: value for key, value in self.policy.items()
                if key not in document['compatibility']['algorithm_defaults'] and key not in SEARCH_DEFAULTS}
-        document['bot']['material_batch_limit'] = 64
-        document['bot']['tree_cash_log_weight'] = 5
+        document['bot']['live_snapshot_card_limit'] = 64
+        document['bot']['evaluation_max_seconds'] = 3600
         document['bot']['search_max_depth'] = 9
         status, result = self.profiles(old, {}, document)
         self.assertEqual(status, 0, result)
-        self.assertEqual(result['profiles']['a']['material_batch_limit'], 16)
-        self.assertEqual(result['profiles']['a']['tree_cash_log_weight'], 2)
+        self.assertEqual(result['profiles']['a']['live_snapshot_card_limit'], 2048)
+        self.assertEqual(result['profiles']['a']['evaluation_max_seconds'], 1800)
         self.assertEqual(result['profiles']['a']['search_max_depth'], 4)
-        self.assertEqual(result['profiles']['b']['material_batch_limit'], 64)
-        self.assertEqual(result['profiles']['b']['tree_cash_log_weight'], 5)
+        self.assertEqual(result['profiles']['b']['live_snapshot_card_limit'], 64)
+        self.assertEqual(result['profiles']['b']['evaluation_max_seconds'], 3600)
         self.assertEqual(result['profiles']['b']['search_max_depth'], 9)
 
     def test_invalid_algorithm_override_is_rejected_by_experiment(self):
-        status, result = self.profiles({'material_batch_limit': 0}, {})
+        status, result = self.profiles({'evaluation_max_seconds': 0}, {})
         self.assertNotEqual(status, 0)
-        self.assertIn('material_batch_limit', result['error'])
+        self.assertIn('evaluation_max_seconds', result['error'])
 
+
+    def test_obsolete_heuristics_cannot_be_reintroduced_as_live_overrides(self):
+        for key, value in {"buy_chance": 1, "desired_people": 20, "material_batch_limit": 64,
+                           "purchase_priority": ["employee"], "planner_cash_value_cap": .4}.items():
+            with self.subTest(key=key):
+                status, result = self.profiles({key: value}, {})
+                self.assertNotEqual(status, 0)
+                self.assertIn(key, result["error"])
 
 if __name__ == "__main__":
     unittest.main()

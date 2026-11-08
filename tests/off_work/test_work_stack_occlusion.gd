@@ -125,8 +125,11 @@ func _settlements(compact: bool) -> void:
 		state.advance(10.0)
 		var events: Array = state.drain_events()
 		board.sync_state(state)
+		var papers_before := int(board._paper_disposal.emitted) + int(board._paper_disposal.queued_count()) if is_instance_valid(board._paper_disposal) else 0
 		for event in events: board.play_event(event)
-		_check(group.cards.filter(func(card): return card._stamp_flash_on).size() == 1, "a shared work completion shows one stamp, not one per buried employee")
+		_check(group.cards.all(func(card): return not card._stamp_flash_on), "work completion leaves the crumpling file visible without stamps piercing its pile")
+		_check(board._paper_disposal.emitted + board._paper_disposal.queued_count() - papers_before == 10,
+			"a shared settlement queues one actual paper per consumed file on both tables")
 		if batch == 0 and compact: await _capture("settlement")
 		var retired: Array = board._retired_cards.values().duplicate()
 		_check(retired.size() == 10, "one shared settlement consumes five work on each side")

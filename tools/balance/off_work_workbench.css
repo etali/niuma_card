@@ -46,3 +46,8 @@ input[type="checkbox"] { justify-self: start; min-height: auto; }
   .global-grid .wide { grid-column: 1/-1; }
   #definitions article { grid-template-columns: 1fr; gap: 2px; }
 }
+
+.off-work-overall-strength { display: grid; gap: 6px; margin: 16px 0; max-width: 520px; }
+.off-work-overall-strength > span { font-weight: 600; }
+.off-work-overall-strength output { font-variant-numeric: tabular-nums; color: var(--muted); }
+.off-work-overall-strength input[type="range"] { width: 100%; min-height: 28px; padding: 0; }

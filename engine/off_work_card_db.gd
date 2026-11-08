@@ -67,7 +67,8 @@ static func configure(off_work_config: OffWorkConfig) -> void:
 
 ## 工具说明使用同名规则节的占位符，人员的批次收益和升级材料随卡表计算。
 static func _description(id: String) -> String:
-	var words := str(config.cards[id].description).format(config.rules.get(id, {}))
+	var rule_section := "recruitment" if id == "boss" else id
+	var words := str(config.cards[id].description).format(config.rules.get(rule_section, {}))
 	if not config.is_person(id):
 		return words
 	var role: Dictionary = config.roles[id]
@@ -79,6 +80,8 @@ static func _description(id: String) -> String:
 	words += " 每批甩锅 %d 份，主持会议最多拉 %d 人。" % [role.transfer_capacity, config.meeting_capacity(id)]
 	if not config.can_be_meeting_target(id):
 		words += " 免疫对方会议。"
+	if not bool(role.get("can_be_strike_target", true)):
+		words += " 本人免疫罢工。"
 	var upgrade := config.coffee_upgrade(id)
 	if not upgrade.is_empty():
 		words += " 用 %d 杯咖啡可升为%s。" % [upgrade.cost, config.cards[upgrade.to].name]

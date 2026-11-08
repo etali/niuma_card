@@ -1,0 +1,28 @@
+{
+  "tool": "built-in image_gen",
+  "source": "/Users/Yitan/.codex/generated_images/01a1a771-11f8-7d20-a4ae-4b80b3f0b62f/exec-8f3b999b-0d62-438b-bb10-74e81d89377d.png",
+  "type": "single_master",
+  "concept": "Boss in the exact employee/leader round-headed doodle style: dot eyes, tiny wide cream torso, thick stick limbs, one ochre money pouch",
+  "style_references": [
+    "assets/art/icon/work_employee.png",
+    "assets/art/icon/work_leader.png"
+  ],
+  "postprocessing": "whole-master uniform resize and transparent padding only; original alpha preserved",
+  "source_sha256": "c0e5a45e7c3e8e60820c1552f09358a8bb7bda115910c24387c4ff166c8b61b2",
+  "master_size": [
+    1254,
+    1254
+  ],
+  "runtime_size": [
+    384,
+    384
+  ],
+  "runtime_alpha_bbox": [
+    103,
+    63,
+    276,
+    358
+  ],
+  "runtime_file": "assets/art/icon/off_work_boss.png",
+  "runtime_art_id": "off_work_boss"
+}

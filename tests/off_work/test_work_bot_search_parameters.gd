@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 extends "res://tests/harness.gd"
 
-const Planner = preload("res://engine/off_work_bot_planner.gd")
-const Search = preload("res://engine/off_work_bot_tree.gd")
+const Search = preload("res://engine/off_work_bot_search.gd")
 
 func _initialize() -> void:
 	_run.call_deferred()
@@ -26,13 +25,16 @@ func _test_config() -> void:
 	document.preferences.knobs = document.preferences.knobs.filter(func(item): return not OffWorkConfig.BOT_SEARCH_DEFAULTS.has(item.key))
 	for budget_mode in ["ratio", "fixed", "legacy"]:
 		var old := document.duplicate(true)
+		# A historical ratio is explicit and must survive current preset tuning.
+		old.bot.think_seconds = 2.8
+		old.bot.decision_budget_ratio = 0.5
 		if budget_mode != "ratio": old.bot.erase("decision_budget_ratio")
 		if budget_mode == "fixed": old.bot.decision_budget_ms = 7
 		var before := JSON.stringify(old)
 		var imported := OffWorkConfig.new(config.balance_document(), old)
 		check(imported.errors.is_empty(), "%s 旧策略能够载入" % budget_mode)
 		for key in OffWorkConfig.BOT_SEARCH_DEFAULTS:
-			check(imported.rules.bot[key] == OffWorkConfig.BOT_SEARCH_DEFAULTS[key], "%s 缺少 %s 时沿用旧搜索范围" % [budget_mode, key])
+			check(imported.rules.bot[key] == OffWorkConfig.BOT_SEARCH_DEFAULTS[key], "%s 缺少 %s 时补齐当前搜索范围" % [budget_mode, key])
 		check(JSON.stringify(old) == before, "补搜索字段不改写 %s 历史文档" % budget_mode)
 		if budget_mode == "ratio":
 			check(not imported.rules.bot.has("decision_budget_ms") and OffWorkConfig.decision_budget_ms(imported.rules.bot) == 1400, "旧比例预算保留")
@@ -51,73 +53,62 @@ func _test_config() -> void:
 func _branching_game() -> OffWorkState:
 	var config := OffWorkConfig.new()
 	config.rules.initial.groups = [{"employee":1}]
-	for count in range(1, 9): config.rules.initial.groups.append({"work":count})
+	for count in range(1, 5): config.rules.initial.groups.append({"work":count})
 	config.rules.initial.money = 0
-	config.rules.bot.buy_chance = 0.0
 	config.roles.employee.work_seconds = 60.0
 	config.rules.conveyor.interval_seconds = 1000.0
 	var game := OffWorkState.new(config)
 	game.new_game(719)
+	game.offers.clear()
 	return game
 
-func _rank(game: OffWorkState) -> Dictionary:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 17
-	return Planner.new().choose(game, 0, game.config.rules.bot, rng, Time.get_ticks_usec() + 2000000)
-
 func _search(game: OffWorkState) -> Dictionary:
-	var ranked := _rank(game)
-	return Search.new().search(game, 0, game.config.rules.bot, ranked.finalists, Time.get_ticks_usec() + 2000000, Callable())
+	return Search.new().search(game, 0, game.config.rules.bot, Time.get_ticks_usec() + 10000000)
 
 func _test_widths_and_depth() -> void:
 	var game := _branching_game()
 	var policy: Dictionary = game.config.rules.bot
-	var default_rank := _rank(game)
-	check(default_rank.finalists.size() == 4, "默认行为仍保留原来四个真实候选")
-	policy.search_root_width = 8
 	policy.search_max_depth = 1
-	var ranked := _rank(game)
-	check(ranked.finalists.size() == 8 and ranked.diagnostics.candidates.size() == 4, "真实候选拓宽到八个，日志仍只显示四个")
+	policy.search_root_width = 8
 	var wide := _search(game)
-	check(wide.search_depth == 1 and wide.search_nodes == 9 and wide.candidates.size() == 9, "首步宽度八实际展开八个派工加一个额外等待")
-	policy.search_root_width = 2
+	policy.search_root_width = 1
 	var narrow := _search(game)
-	check(narrow.search_nodes == 3 and narrow.candidates.size() == 3, "首步缩至二实际只展开二个派工加等待")
-	policy.search_max_depth = 2
+	check(wide.root_complete and narrow.root_complete and wide.root_candidates > 8, "全部合法动作先经过同一真实规则评价")
+	check(wide.completed_candidates == narrow.completed_candidates and wide.search_nodes == narrow.search_nodes and wide.action == narrow.action,
+		"深搜宽度不裁剪首层候选，也不改变已完整比较的首层选择")
+	policy.search_max_depth = 3
 	policy.search_reply_width = 1
 	var one_reply := _search(game)
-	policy.search_reply_width = 6
-	check(_rank(game).finalists.size() == 6, "只提高后续宽度也会保留足够真实候选")
-	var six_replies := _search(game)
-	check(one_reply.search_depth == 2 and six_replies.search_depth == 2 and
-		one_reply.search_nodes == 6 and six_replies.search_nodes == 21, "后续宽度一和六确实分别展开六和二十一个节点")
-	policy.search_root_width = 1
+	policy.search_reply_width = 4
+	var more_replies := _search(game)
+	check(one_reply.search_depth == 3 and more_replies.search_depth == 3 and more_replies.search_nodes > one_reply.search_nodes,
+		"后续宽度确实改变深层展开范围，双方回应仍用同一评价")
 	policy.search_reply_width = 1
+	policy.search_root_width = 1
 	for depth in [1, 3, 5]:
 		policy.search_max_depth = depth
-		var bot := OffWorkBot.new(game, 0)
-		bot.decide_action()
-		check(bot.last_decision.search_depth == depth and bot.last_decision.principal_variation.size() == depth,
-			"真实 BOT 入口完成所配 %d 层并可超过旧四层上限" % depth)
+		var found := _search(game)
+		check(found.search_depth == depth and found.principal_variation.size() == depth,
+			"完成所配 %d 层且主变化包含每一步" % depth)
 
 func _test_deadline() -> void:
 	var game := _branching_game()
 	game.config.rules.bot.search_max_depth = 16
 	game.config.rules.bot.search_root_width = 16
 	game.config.rules.bot.search_reply_width = 16
-	var ranked := _rank(game)
-	var expired := Search.new().search(game, 0, game.config.rules.bot, ranked.finalists, Time.get_ticks_usec() - 1, Callable())
+	var expired := Search.new().search(game, 0, game.config.rules.bot, Time.get_ticks_usec() - 1)
 	check(expired.cutoff and expired.search_depth == 0 and expired.search_nodes == 0, "最大深宽设置也不能越过已截止的时间预算")
 	var search := Search.new()
 	var reference: WeakRef = weakref(search)
 	var first_layer := {}
 	var publish := func(layer: Dictionary):
+		if layer.search_depth != 1: return
 		first_layer.merge(layer.duplicate(true), true)
 		reference.get_ref().deadline = Time.get_ticks_usec() - 1
-	var interrupted := search.search(game, 0, game.config.rules.bot, ranked.finalists, Time.get_ticks_usec() + 2000000, Callable(), publish)
+	var interrupted := search.search(game, 0, game.config.rules.bot, Time.get_ticks_usec() + 10000000, Callable(), publish)
 	check(interrupted.cutoff and interrupted.search_depth == 1 and interrupted.action == first_layer.action and
-		interrupted.principal_variation == first_layer.principal_variation, "下一层开始前截止时仍发布完整第一层而不追求配置深度")
+		interrupted.principal_variation == first_layer.principal_variation, "下一层开始前截止时仍发布完整第一层")
 	var bot := OffWorkBot.new(game, 0)
 	var action := bot.decide_action(Time.get_ticks_usec() - 1)
 	check(action.kind == "wait" and bot.last_decision.search_depth == 0 and bot.last_decision.fallback,
-		"真实决策入口也优先服从外部截止并返回可执行等待")
+		"真实决策入口也服从外部截止并返回可执行等待")

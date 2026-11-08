@@ -15,6 +15,7 @@ const DebugPreferences = preload("res://engine/off_work_debug_preferences.gd")
 const ProgressClock = preload("res://engine/off_work_progress_clock.gd")
 const SideExtract = preload("res://engine/off_work_side_extract.gd")
 const StackLayout = preload("res://engine/off_work_stack_layout.gd")
+const PaperDisposal = preload("res://scenes/off_work_paper_disposal.gd")
 # The opponent uses the same original Board. Income and meeting visits own
 # temporary motion; all pointer/group behavior remains inherited.
 class IncomeBoard extends Board:
@@ -29,6 +30,8 @@ class IncomeBoard extends Board:
 	var rest_height: float
 	var defer_record_refresh := false
 	var terminal_sides_hidden := false
+	func group_mods(group_cards: Array) -> Dictionary:
+		return OffWorkBoard.balance_group_mods(group_cards)
 	func refresh_group(group, top_pos := Vector3.INF) -> bool:
 		return false if defer_record_refresh else super.refresh_group(group, top_pos)
 	func _core_first(group) -> void:
@@ -93,6 +96,8 @@ var _resolving_drop := false
 var _drop_target_person := -1
 var _meeting_visitors: Dictionary = {}
 var _strike_dancers: Dictionary = {}
+var _strike_attacks: Dictionary = {}
+var _paper_disposal: Node3D
 var _transfer_departures := {}
 var _delivery_flights: Dictionary = {}
 var _meeting_centers: Dictionary = {}
@@ -106,6 +111,15 @@ var _motion: Node
 var _cash_flights: Dictionary = {}
 var _cash_emission_serial: Dictionary = {}
 var _cash_stream_width: Dictionary = {}
+
+static func balance_group_mods(group_cards: Array) -> Dictionary:
+	var amount := 0
+	for card in group_cards:
+		if is_instance_valid(card) and card.def_id == "money": amount += int(card.record.get("amount", 1))
+	return {"off_work_money_amount": amount}
+
+func group_mods(group_cards: Array) -> Dictionary:
+	return balance_group_mods(group_cards)
 var _opening_counts: Dictionary = {}
 var _opening_layout_enabled := false
 var _opponent_layout_signature := ""
@@ -227,6 +241,8 @@ func _process(delta: float) -> void:
 	_advance_cash_flights(delta)
 	_advance_meeting_visitors(delta)
 	_advance_strike_dancers(delta)
+	_advance_strike_attacks(delta)
+	_advance_paper_disposal(delta)
 	_advance_deliveries(delta)
 	var active := _interacting()
 	if _was_interacting and not active and not _drop_pending and _state != null:
@@ -518,7 +534,7 @@ func _is_striking_card(card: CardEntity) -> bool:
 	return is_instance_valid(card) and _state != null and _state.is_striking(card.uid)
 
 func _strike_in_flight(uid: int) -> bool:
-	return _strike_dancers.has(uid) and not bool(_strike_dancers[uid].get("landed", false))
+	return _strike_attacks.has(uid) or (_strike_dancers.has(uid) and not bool(_strike_dancers[uid].get("landed", false)))
 
 func _strike_drop_conflict(at: Vector3) -> bool:
 	var moving_striker := _drag_cards.any(func(card): return _is_striking_card(card))
@@ -571,8 +587,12 @@ func _end_drag() -> void:
 			var target_gid := int(attack.work_group_id)
 			_detach_drag()
 			_picked_ids.clear()
+			_begin_strike_attack(strike_id, int(_state.cards[strike_id].group), target_gid, true, "pending")
 			tool_activated.emit(strike_id, target_gid)
-			if _state.cards.has(strike_id): _restore_dismiss_pick()
+			var awaiting_ack: bool = _strike_attacks.get(strike_id, {}).get("awaiting_ack", false)
+			if _state.cards.has(strike_id) and not _state.pending_strikes.has(strike_id) and not awaiting_ack:
+				_release_strike_attack(strike_id, false)
+				_restore_dismiss_pick()
 			else: _dismiss_pick_snapshot.clear()
 			sync_state(_state)
 			return
@@ -767,6 +787,7 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 			_cancel_cash_flight(card)
 			_release_delivery(uid)
 			_release_strike_motion(uid, false)
+			_release_strike_attack(uid, false)
 			_meeting_visitors.erase(uid)
 			_meeting_centers.erase(uid)
 			_forget_press_card(card)
@@ -834,6 +855,7 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 		return
 	_sync_meeting_visitors()
 	_sync_strike_dancers()
+	_sync_strike_attacks()
 	_placing_snapshot = rebuilding
 	if not _interacting() and not _drop_pending: _sync_owner_groups(int(_settings.local_owner), self)
 	_sync_owner_groups(int(_settings.opponent_owner), enemy_board)
@@ -844,6 +866,7 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 	if side_extract != null: side_extract.sync_state()
 	_advance_meeting_visitors(0.0)
 	_advance_strike_dancers(0.0)
+	_advance_strike_attacks(0.0)
 	_advance_deliveries(0.0)
 
 func refresh_group(group, top_pos := Vector3.INF) -> bool:
@@ -890,6 +913,7 @@ func _freeze_terminal_layout() -> void:
 		var card: OffWorkCard = by_uid[uid]
 		_release_meeting_motion(uid, false)
 		_release_strike_motion(uid, false)
+		_release_strike_attack(uid, false)
 		# Already-airborne income and coffee may finish their independent arc.
 		if not _cash_flights.has(uid) and not _delivery_flights.has(uid):
 			_presenter(card.card_owner)._stop_move(card, false)
@@ -1030,7 +1054,7 @@ func _collect_stack_visibility(members: Array, offsets: Array, preferred: Dictio
 		if hidden.has(uid): representatives[uid] = compact_head if compact_head >= 0 else occupied[offsets[index]]
 
 func _has_external_pose(uid: int) -> bool:
-	return _cash_flights.has(uid) or _delivery_flights.has(uid) or _meeting_visitors.has(uid) or _strike_dancers.has(uid)
+	return _cash_flights.has(uid) or _delivery_flights.has(uid) or _meeting_visitors.has(uid) or _strike_dancers.has(uid) or _strike_attacks.has(uid)
 
 ## Keep source stacking order and expose one authoritative work bar per group.
 ## Meeting/coffee retain their own timers; they never borrow a work countdown.
@@ -1193,23 +1217,39 @@ func _configure_cash_layers(group: Dictionary, presenter: Board) -> void:
 func _stack_face_order(group: Dictionary) -> Array:
 	var back: Array = []
 	var regular: Array = []
+	var work_front: Array = []
+	var production := false
+	var meeting_group := false
+	if not group.cards.is_empty() and _state != null:
+		var gid := int(group.cards[0].group_id)
+		production = _state.groups.has(gid) and str(_state.groups[gid].job) == "work" and not _state.group_people(gid).is_empty()
+		if _state.groups.has(gid):
+			meeting_group = str(_state.groups[gid].get("function", _state.groups[gid].job)) == "meeting"
 	var front: CardEntity = null
 	var front_priority := 0
 	var meeting_type := str(_settings.meeting_motion.front_card)
 	for card: CardEntity in group.cards:
-		if _settings.stack_display.back_cards.has(card.def_id): back.append(card)
+		if production and card.def_id == "work": work_front.append(card)
+		elif _settings.stack_display.back_cards.has(card.def_id): back.append(card)
 		else: regular.append(card)
 		var priority := 0
-		if card.def_id == meeting_type:
+		# An unused meeting added to a working group must not cover its work bar.
+		# The meeting function remains selected throughout its cooldown.
+		if card.def_id == meeting_type and meeting_group:
 			priority = 3 if _state != null and _state.meetings.has(card.uid) else 1
 		elif card.def_id == "slack" and _state != null and _state.cards.has(card.uid):
 			if _state.cards[card.uid].status == "active": priority = 2
+		elif card.def_id == "boss" and _state != null and _state.cards.has(card.uid):
+			if _state.cards[card.uid].activity == "recruitment": priority = 3
 		# 多张工具共用同一生产批次。刷新、折叠、重连时都选同一张实际卡牌。
 		if priority > front_priority or (priority > 0 and priority == front_priority and card.uid < front.uid):
 			front = card
 			front_priority = priority
 	var compact := bool(group.get("compact", false))
 	var ordered := regular + back if compact else back + regular
+	# Keep all files contiguous, so dragging the exposed work suffix still
+	# separates work from personnel after reversing the top-facing order.
+	ordered = work_front + ordered if compact else ordered + work_front
 	if front != null:
 		ordered.erase(front)
 		if compact: ordered.push_front(front)
@@ -1234,7 +1274,7 @@ func _sync_owner_groups(owner_value: int, presenter: Board) -> void:
 		if int(_state.groups[gid].owner) != owner_value: continue
 		var members: Array = []
 		for uid in _state.groups[gid].cards:
-			if by_uid.has(uid) and not _strike_dancers.has(uid) and (not _meeting_visitors.has(uid) or _meeting_visitors[uid].phase == "return"): members.append(by_uid[uid])
+			if by_uid.has(uid) and not _strike_dancers.has(uid) and not _strike_attacks.has(uid) and (not _meeting_visitors.has(uid) or _meeting_visitors[uid].phase == "return"): members.append(by_uid[uid])
 		if not members.is_empty(): desired[gid] = members
 	var matched: Dictionary = {}
 	var claimed: Array = []
@@ -1348,7 +1388,7 @@ func _opponent_layout_snapshot() -> Dictionary:
 		var members: Array = []
 		var absent: Array = []
 		for uid in _state.group_cards(int(gid)):
-			if not by_uid.has(uid) or _strike_dancers.has(uid): continue
+			if not by_uid.has(uid) or _strike_dancers.has(uid) or _strike_attacks.has(uid): continue
 			if _meeting_visitors.has(uid) and _meeting_visitors[uid].phase != "return":
 				absent.append(uid)
 			else: members.append(by_uid[uid])
@@ -1593,6 +1633,7 @@ func _retire(card: OffWorkCard) -> void:
 
 func play_event(event: Dictionary) -> void:
 	var kind := str(event.get("kind", ""))
+	if kind in ["work_complete", "outsource"]: _queue_disposed_work(event)
 	var actors: Array = []
 	if kind == "work_complete":
 		# A batch has one visible completion, just like its shared progress bar.
@@ -1628,6 +1669,11 @@ func play_event(event: Dictionary) -> void:
 					card._leave_tween.finished.connect(_restore_terminal_stationary_faces, CONNECT_ONE_SHOT)
 		_restore_terminal_stationary_faces()
 		ComicFx.shake(camera, ComicFx.shake_amount("final"))
+	elif kind == "strike_launch":
+		_sync_strike_attacks()
+		_advance_strike_attacks(0.0)
+	elif kind == "strike_blocked":
+		_return_strike_attack(int(event.get("source", -1)))
 	elif kind == "transfer":
 		_start_delivery(event, true)
 	elif kind == "work_complete":
@@ -1640,12 +1686,51 @@ func play_event(event: Dictionary) -> void:
 	elif kind == "slack_complete":
 		_flash_group_task_completion(int(event.get("source", -1)), "slack")
 		_start_delivery(event, false)
+	elif kind == "recruitment_complete":
+		_start_delivery(event, false)
 	elif kind == "coffee_upgrade":
 		var person := int(event.get("person", -1))
 		if by_uid.has(person): by_uid[person].play_event(kind)
 	elif kind in ["meeting_start", "strike"]:
 		for uid in event.get("targets", []):
 			if by_uid.has(uid): by_uid[uid].play_event(kind)
+
+func _queue_disposed_work(event: Dictionary) -> void:
+	if _paper_disposal == null:
+		_paper_disposal = PaperDisposal.new()
+		add_child(_paper_disposal)
+		_paper_disposal.setup(_settings.paper_disposal)
+	var origin := get_group_position(int(event.get("group", -1)))
+	var source_face: OffWorkCard
+	for uid in event.get("ids", []):
+		var previous: Vector3 = _previous_positions.get(uid, origin)
+		if previous.y >= origin.y:
+			origin = previous
+			source_face = _retired_cards.get(uid, by_uid.get(uid))
+	var frame := OffWorkUI.section("frame")
+	var source_size := Vector2.ZERO
+	if is_instance_valid(source_face) and is_instance_valid(source_face._icon):
+		var icon: Sprite3D = source_face._icon
+		origin = icon.global_position
+		source_size = Vector2(icon.texture.get_width(), icon.texture.get_height()) * icon.pixel_size
+		source_size *= Vector2(icon.global_basis.x.length(), icon.global_basis.y.length())
+	else:
+		# Deep-stack faces can be deferred; use the exact same frame placement
+		# as OffWorkCard._center_illustration rather than a smaller fake icon.
+		origin += Vector3((float(frame.art_cx) - 0.5) * CardEntity.CARD_SIZE.x,
+			CardEntity.Y_ICON, (float(frame.art_cy) - 0.5) * CardEntity.CARD_SIZE.z)
+	origin.y += float(_settings.paper_disposal.source_height)
+	var texture := CardArt.illustration_texture("work", OffWorkCardDB)
+	for uid in event.get("ids", []):
+		var card: OffWorkCard = _retired_cards.get(uid, by_uid.get(uid))
+		# Deep stacks deliberately defer card-face allocation. Those real work
+		# UIDs still deserve a paper; use the shared artwork, not a face node.
+		if is_instance_valid(card) and card.def_id != "work": continue
+		_paper_disposal.enqueue(texture, origin, int(event.get("owner", 0)), source_size)
+	_advance_paper_disposal(0.0)
+
+func _advance_paper_disposal(delta: float) -> void:
+	if is_instance_valid(_paper_disposal): _paper_disposal.advance(delta)
 
 func _layout_side(group, at: Vector3, pin_y := false) -> void:
 	if _terminal_pose_locked:
@@ -2221,7 +2306,7 @@ func _terminal_transfer_top(event: Dictionary) -> Vector3:
 			top = card.global_position
 	return top
 
-## 飞行期间真实的工作牌/咖啡暂时独占展示位置；堆叠只更新它的落点。
+## 真实工作牌、咖啡或新员工暂时独占飞行位置；堆叠只更新它的落点。
 func _start_delivery(event: Dictionary, transfer: bool) -> void:
 	var ids: Array = event.get("coffee_ids", event.get("ids", [event.get("coffee_id", -1)]))
 	ids = ids.filter(func(uid): return by_uid.has(uid))
@@ -2315,6 +2400,128 @@ func _motion_unlock(card: OffWorkCard, saved: Dictionary) -> void:
 	card.remove_meta("in_flight")
 	card.remove_meta("dest_pos")
 	card.reset_interaction_visual()
+
+## Attack travel uses the authoritative game clock. It never settles damage
+## in a Tween callback: pausing, LAN snapshots and a mid-flight union all see
+## the same response window. The complete card face travels as one object.
+func _sync_strike_attacks() -> void:
+	for uid in _strike_attacks.keys():
+		if not _state.pending_strikes.has(uid) and str(_strike_attacks[uid].phase) == "attack":
+			_return_strike_attack(int(uid))
+		elif str(_strike_attacks[uid].phase) == "pending" and not _state.groups.has(int(_strike_attacks[uid].target_group)):
+			_return_strike_attack(int(uid))
+	for uid in _state.pending_strikes:
+		if not by_uid.has(uid): continue
+		var attack: Dictionary = _state.pending_strikes[uid]
+		var card: OffWorkCard = by_uid[uid]
+		if _strike_attacks.has(uid):
+			var existing: Dictionary = _strike_attacks[uid]
+			if existing.phase == "pending":
+				# The local hand already delivered this card. A LAN acknowledgement
+				# starts only the authoritative response clock, not a second throw.
+				existing.phase = "attack"
+				existing.awaiting_ack = false
+				existing.to = _strike_attack_target(int(attack.target_group))
+			elif existing.phase == "return":
+				# A new authoritative launch may interrupt the purely visual
+				# rebound (e.g. a BOT selects another unprotected target).
+				existing.phase = "attack"
+				existing.delivered = false
+				existing.from = card.global_position
+				existing.target_group = int(attack.target_group)
+				existing.to = _strike_attack_target(int(attack.target_group))
+			continue
+		_begin_strike_attack(int(uid), int(attack.group), int(attack.target_group))
+
+func _begin_strike_attack(uid: int, source_group: int, target_group: int, delivered := false, phase := "attack") -> void:
+	var card: OffWorkCard = by_uid[uid]
+	var presenter := _presenter(card.card_owner)
+	var home: Vector3 = _origin_by_gid.get(source_group, _origin_for(source_group, card.card_owner))
+	var target := _strike_attack_target(target_group)
+	presenter.drop_card(card)
+	presenter._stop_move(card, false)
+	var flight := _motion_lock(card)
+	flight.merge({"from": target if delivered else home, "home": home, "to": target,
+		"target_group": target_group, "phase": phase, "elapsed": 0.0, "delivered": delivered, "awaiting_ack": false})
+	_strike_attacks[uid] = flight
+	card.reveal_stack_face()
+	card.card_mesh.show()
+	card.label.show()
+	card.set_meta("strike_attack", true)
+	card.set_meta("in_flight", true)
+	card.set_meta("dest_pos", target)
+	card.global_position = flight.from
+
+func await_manual_strike_ack(uid: int) -> void:
+	if _strike_attacks.has(uid) and _strike_attacks[uid].phase == "pending":
+		_strike_attacks[uid].awaiting_ack = true
+
+func reject_manual_strike_drops() -> void:
+	for uid in _strike_attacks:
+		if _strike_attacks[uid].phase == "pending": _return_strike_attack(int(uid))
+
+func _strike_attack_target(group: int) -> Vector3:
+	var target := get_group_position(group)
+	return target + Vector3.UP * float(_settings.strike_attack_motion.landing_height)
+
+func _return_strike_attack(uid: int) -> void:
+	if not _strike_attacks.has(uid) or not by_uid.has(uid): return
+	var flight: Dictionary = _strike_attacks[uid]
+	if flight.phase == "return": return
+	flight.phase = "return"
+	flight.elapsed = 0.0
+	flight.from = flight.to
+	by_uid[uid].global_position = flight.from
+	flight.to = flight.home
+	by_uid[uid].set_meta("dest_pos", flight.to)
+
+func _advance_strike_attacks(delta: float) -> void:
+	if _strike_attacks.is_empty() or _state == null or _terminal_pose_locked: return
+	var spec: Dictionary = _settings.strike_attack_motion
+	var landed := false
+	for uid in _strike_attacks.keys():
+		if not by_uid.has(uid):
+			_strike_attacks.erase(uid)
+			continue
+		var flight: Dictionary = _strike_attacks[uid]
+		var card: OffWorkCard = by_uid[uid]
+		var returning: bool = flight.phase == "return"
+		var progress := 0.0
+		if flight.phase == "pending":
+			card.global_position = flight.to
+			continue
+		elif returning:
+			flight.elapsed += delta
+			progress = clampf(float(flight.elapsed) / float(spec.return_seconds), 0.0, 1.0)
+		elif _state.pending_strikes.has(uid):
+			var attack: Dictionary = _state.pending_strikes[uid]
+			progress = clampf(1.0 - float(attack.remaining) / float(attack.total), 0.0, 1.0)
+			if bool(flight.get("delivered", false)): progress = 1.0
+			if _state.groups.has(int(flight.target_group)):
+				flight.to = _strike_attack_target(int(flight.target_group))
+		else:
+			continue
+		var eased := progress * progress * (3.0 - 2.0 * progress)
+		var arc := float(spec.return_arc_height if returning else spec.arc_height)
+		card.global_position = (flight.from as Vector3).lerp(flight.to, eased) + Vector3.UP * sin(progress * PI) * arc
+		card._visual.rotation_degrees.y = sin(progress * PI) * float(spec.flight_tilt_degrees) * (-1.0 if returning else 1.0)
+		card.set_meta("dest_pos", flight.to)
+		if returning and progress >= 1.0:
+			_release_strike_attack(int(uid), true)
+			landed = true
+	if landed and not _interacting(): sync_state(_state)
+
+func _release_strike_attack(uid: int, land: bool) -> void:
+	if not _strike_attacks.has(uid): return
+	var flight: Dictionary = _strike_attacks[uid]
+	_strike_attacks.erase(uid)
+	if not by_uid.has(uid): return
+	var card: OffWorkCard = by_uid[uid]
+	# A successfully consumed attack retires at its target, never halfway over
+	# the table. A failed attack returns to its original owner's source pile.
+	if land or not _state.cards.has(uid): card.global_position = flight.to
+	_motion_unlock(card, flight)
+	card.remove_meta("strike_attack")
 
 ## Strike owns position only during ejection. After landing the original drag
 ## path owns the loose card; the rule timer still blocks combinations.
@@ -2427,12 +2634,14 @@ func _release_strike_motion(uid: int, landed: bool) -> void:
 	if not presenter.cards.has(card): presenter.register_card(card)
 
 func reset_view() -> void:
+	if is_instance_valid(_paper_disposal): _paper_disposal.clear()
 	_terminal_pose_locked = false
 	if is_instance_valid(enemy_board): (enemy_board as IncomeBoard).terminal_sides_hidden = false
 	if side_extract != null: side_extract.close()
 	cancel_pointer()
 	for uid in _delivery_flights.keys(): _release_delivery(uid)
 	for uid in _strike_dancers.keys(): _release_strike_motion(uid, false)
+	for uid in _strike_attacks.keys(): _release_strike_attack(uid, false)
 	_delivery_flights.clear()
 	_strike_dancers.clear()
 	_meeting_visitors.clear()

@@ -37,8 +37,9 @@ class Search extends RefCounted:
 			visible_group_end = mini(visible_group_end, world._next_group)
 		var delta := due - world.time
 		if delta > 0 and not world.advance_for_search(delta, deadline, control.is_cancelled): return
+		world.mask_search_market(visible_offer_end)
 		if world.winner >= 0 or control.is_cancelled(): return
-		var selected := worker.decide_action(deadline, control.is_cancelled, true, publish)
+		var selected := worker.decide_action(deadline, control.is_cancelled, true, publish, uses_observed_entities)
 		publish(selected, worker.last_decision)
 
 	# Publish completed depths as they arrive. If the next expansion is still
@@ -46,7 +47,7 @@ class Search extends RefCounted:
 	func publish(command: Dictionary, report: Dictionary) -> void:
 		if control.is_cancelled() or Time.get_ticks_usec() >= deadline: return
 		var packet := {"action":command.duplicate(true), "report":report.duplicate(true),
-			"rng":worker._rng.state, "hints":worker._planner.save_scan_hints()}
+			"rng":worker._rng.state, "hints":worker.export_decision_context()}
 		_mutex.lock()
 		if Time.get_ticks_usec() < deadline: _published = packet
 		_mutex.unlock()
@@ -57,13 +58,25 @@ class Search extends RefCounted:
 			_mutex.unlock()
 		return _last_seen
 
+	## Keep predicted arrivals out of root ranking and emergency publications,
+	## so they cannot overwrite a completed choice that the frame can execute.
+	## These bounds are immutable after the worker has decoded its observation.
+	func uses_observed_entities(action: Dictionary) -> bool:
+		if action.is_empty(): return false
+		if int(action.get("offer", -1)) >= visible_offer_end: return false
+		if int(action.get("group", -1)) >= visible_group_end: return false
+		for key in ["tool", "person"]:
+			if int(action.get(key, -1)) >= visible_card_end: return false
+		for id in action.get("ids", []):
+			if int(id) >= visible_card_end: return false
+		return true
+
 	## A sampled future offer/card may have exactly the same ID as an unrelated
 	## real arrival. Only use items visible when search started, in the same role
 	## and pile that the worker expected immediately before acting.
 	func still_legal(live: OffWorkState, action: Dictionary) -> bool:
-		if action.is_empty(): return false
+		if not uses_observed_entities(action): return false
 		if action.has("offer"):
-			if int(action.offer) >= visible_offer_end: return false
 			var known := false
 			for offer in live.offers:
 				if not offer.is_empty() and offer.id == action.offer and offer.type == action.get("card_type",""):
@@ -71,7 +84,7 @@ class Search extends RefCounted:
 					break
 			if not known: return false
 		var gid := int(action.get("group",-1))
-		if gid >= 0 and (gid >= visible_group_end or not live.groups.has(gid) or not world.groups.has(gid)
+		if gid >= 0 and (not live.groups.has(gid) or not world.groups.has(gid)
 				or live.groups[gid].job != world.groups[gid].job or live.groups[gid].owner != world.groups[gid].owner):
 			return false
 		for key in ["tool","person"]:
@@ -90,6 +103,8 @@ class Search extends RefCounted:
 var _task: int = -1
 var _search: Search
 var _ready: Search
+var _retained_source: Search
+var _retained_packet := {}
 var _frozen_config: OffWorkConfig
 var _source_config_id := 0
 var needs_keyframe := false
@@ -109,17 +124,18 @@ func tick(bot: OffWorkBot, frame_delta: float, frozen_frame: Dictionary = {}) ->
 	if in_flight != null and (in_flight.bot_id != bot.get_instance_id() or in_flight.due != due
 			or in_flight.policy_hash != hash(bot._policy)):
 		cancel()
+	if _retained_source != null and not _matches(bot, _retained_source):
+		_retained_source = null
+		_retained_packet = {}
 	var remaining: float = due - bot.state.time
 	if remaining <= 0:
 		var source := _ready if _ready != null else _search
 		var used := false
 		if source != null and not source.control.is_cancelled():
-			var packet := source.latest()
-			if not packet.is_empty() and source.still_legal(bot.state,packet.action):
-				used = bot.commit_action(packet.action, packet.report)
-				if used:
-					bot._rng.state = packet.rng
-					bot._planner.restore_scan_hints(packet.hints)
+			used = _commit_packet(bot, source, source.latest())
+		if not used and _retained_source != null:
+			used = _commit_packet(bot, _retained_source, _retained_packet)
+			if used: bot.last_decision["live_retained"] = true
 		if not used:
 			var action := bot.decide_action(Time.get_ticks_usec() + int(bot._policy.live_fallback_budget_us), Callable(), false)
 			bot.last_decision["live_fallback"] = true
@@ -148,6 +164,38 @@ func tick(bot: OffWorkBot, frame_delta: float, frozen_frame: Dictionary = {}) ->
 	needs_keyframe = false
 	_launch(bot, due, Time.get_ticks_usec() + mini(budget_us, wall_to_due), frozen_frame if large else {})
 
+func _matches(bot: OffWorkBot, source: Search) -> bool:
+	return bot != null and source.bot_id == bot.get_instance_id() and source.due == bot.next_action_time() \
+		and source.policy_hash == hash(bot._policy)
+
+func _commit_packet(bot: OffWorkBot, source: Search, packet: Dictionary) -> bool:
+	if packet.is_empty() or not _matches(bot, source) or not source.still_legal(bot.state, packet.action): return false
+	if not bot.commit_action(packet.action, packet.report): return false
+	bot._rng.state = packet.rng
+	bot.import_decision_context(packet.hints)
+	return true
+
+## Player input invalidates the forecast, but a completed command can still be
+## legal. Keep exactly that publication while replanning; validate it again at
+## the action point if no newer result can be used. Lifecycle cancellation must
+## still discard everything, including this backup.
+func replan(bot: OffWorkBot) -> void:
+	_collect()
+	var source := _ready if _ready != null else _search
+	if source != null and not source.control.is_cancelled() and _matches(bot, source):
+		var packet := source.latest()
+		var previous_legal := _retained_source != null and not _retained_packet.is_empty() \
+			and _matches(bot, _retained_source) and _retained_source.still_legal(bot.state, _retained_packet.action)
+		# A tool may only finish cooling at the predicted action time. Keep that
+		# candidate if there is no currently legal backup to protect.
+		if not packet.is_empty() and (source.still_legal(bot.state, packet.action) or not previous_legal):
+			_retained_source = source
+			_retained_packet = packet.duplicate(true)
+	if _retained_source != null and not _matches(bot, _retained_source):
+		_retained_source = null
+		_retained_packet = {}
+	_cancel_search()
+
 func _launch(bot: OffWorkBot, due: float, deadline: int, frozen_frame: Dictionary) -> void:
 	var job := Search.new()
 	job.due = due
@@ -171,7 +219,7 @@ func _launch(bot: OffWorkBot, due: float, deadline: int, frozen_frame: Dictionar
 	if Time.get_ticks_usec() >= deadline: return
 	job.worker = Bot.new(job.world, bot.owner, bot._policy.duplicate(true))
 	job.worker._rng.state = bot._rng.state
-	job.worker._planner.restore_scan_hints(bot._planner.save_scan_hints())
+	job.worker.import_decision_context(bot.export_decision_context())
 	_task = WorkerThreadPool.add_task(job.run, false, "下班 BOT")
 	if _task >= 0: _search = job
 
@@ -184,6 +232,11 @@ func _collect() -> void:
 	_search = null
 
 func cancel() -> void:
+	_retained_source = null
+	_retained_packet = {}
+	_cancel_search()
+
+func _cancel_search() -> void:
 	needs_keyframe = false
 	_ready = null
 	if _search != null: _search.control.request()

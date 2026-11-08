@@ -1,80 +1,15 @@
 {
+  "model": "race_search_v2",
   "bot": {
     "enabled": true,
     "owner": 1,
-    "decision_budget_ratio": 0.5,
-    "search_max_depth": 4,
-    "search_root_width": 3,
-    "search_reply_width": 2,
-    "think_seconds": 2.8,
+    "think_seconds": 6.0,
     "first_action_seconds": 0.0,
-    "buy_chance": 0.65,
-    "min_reserve": 1,
-    "desired_people": 7,
-    "max_tool_copies": 1,
-    "purchase_priority": [
-      "employee",
-      "leader",
-      "overtime",
-      "transfer",
-      "meeting",
-      "coffee",
-      "strike",
-      "outsource",
-      "slack"
-    ],
-    "tool_priority": [
-      "meeting",
-      "transfer",
-      "overtime",
-      "coffee",
-      "strike",
-      "outsource",
-      "slack"
-    ],
-    "max_support_people": 1,
-    "production_reserve_people": 1,
-    "transfer_batch_size": 6,
-    "max_card_copies": {
-      "overtime": 4,
-      "coffee": 4
-    },
-    "material_batch_limit": 16,
-    "fallback_probe_group_limit": 192,
-    "planner_candidate_minimum": 4,
-    "planner_horizon_work_cycles": 3,
-    "planner_horizon_action_intervals": 2,
-    "tree_horizon_work_cycles": 2,
-    "planner_cash_value_cap": 0.4,
-    "planner_cash_saturation_price_multiple": 2,
-    "planner_partial_progress_weight": 0.1,
-    "planner_purchase_order_bonus": 0.05,
-    "planner_support_dismissal_cost": 0.5,
-    "planner_unstaffed_transfer_value_ratio": 0.1,
-    "planner_support_base_value": 0.3,
-    "planner_upgrade_future_work_multiplier": 2,
-    "planner_upgrade_chain_bonus_cap": 1,
-    "planner_upgrade_chain_work_scale": 10,
-    "planner_slack_setup_discount": 0.75,
-    "planner_strike_finish_bonus": 1,
-    "planner_outsource_setup_discount": 0.7,
-    "planner_outsource_funding_discount": 0.85,
-    "planner_transfer_extract_discount": 0.3,
-    "planner_transfer_staffing_discount": 0.6,
-    "planner_transfer_material_discount": 0.8,
-    "tree_tool_value": 0.25,
-    "tree_support_person_value": 0.4,
-    "tree_busy_worker_rate_ratio": 0.6,
-    "tree_paused_worker_rate_ratio": 0.15,
-    "tree_cash_log_weight": 2,
-    "tree_tool_value_cap": 3,
-    "tree_pending_work_weight": 1,
-    "tree_progress_weight": 1,
-    "tree_forecast_output_weight": 1,
-    "tree_terminal_time_penalty": 0.001,
-    "tree_terminal_time_penalty_cap": 1000,
-    "fallback_probe_budget_ratio": 0.25,
-    "fallback_probe_min_us": 10,
+    "decision_budget_ratio": 0.11666666666666668,
+    "search_max_depth": 4,
+    "search_root_width": 6,
+    "search_reply_width": 3,
+    "evaluation_max_seconds": 1800.0,
     "decision_publish_reserve_us": 1000,
     "decision_publish_reserve_ratio": 0.2,
     "live_fallback_budget_us": 1500,
@@ -82,8 +17,9 @@
     "live_snapshot_group_limit": 512
   },
   "preferences": {
-    "model_label": "电脑对手",
-    "help": "强度调整每次思考占行动间隔的比例。\n搜索深度和宽度决定探索范围，实际时限始终优先。",
+    "model_version": 2,
+    "model_label": "完工竞速搜索",
+    "help": "各强度使用同一套合法动作与完工时间评价。\n整体强度只改变行动间隔和思考预算，不限制人员、工具或材料数量。\n根动作统一评价后逐层推演，未完成的新层保留上一完整结果。",
     "default_strength": 0.5,
     "presets": {
       "min": 0,
@@ -138,7 +74,7 @@
         "max": 16,
         "step": 1,
         "group": "搜索范围",
-        "hint": "每层只包含一方的一次动作；4 层是我方、对手、我方、对手。按层逐步加深，时限始终优先。"
+        "hint": "双方交替行动的推演步数；整层比较结束后才替换上一层选择。"
       },
       {
         "key": "search_root_width",
@@ -148,7 +84,7 @@
         "max": 16,
         "step": 1,
         "group": "搜索范围",
-        "hint": "从静态评分中保留多少个首步动作；若其中没有等待，会额外保留一个等待分支。"
+        "hint": "全部根动作经同一完工时间评价后，保留用于多步推演的候选数；不会在评价前按人数或材料上限删除动作。"
       },
       {
         "key": "search_reply_width",
@@ -158,437 +94,17 @@
         "max": 16,
         "step": 1,
         "group": "搜索范围",
-        "hint": "每个后续节点保留多少个候选，包括对手回应和我方再行动；受剪枝与实际时限约束。"
+        "hint": "后续每个决策点先评价合法动作，再保留的分支数；等待作为独立选择保留。"
       },
       {
-        "key": "buy_chance",
-        "label": "购买概率",
+        "key": "evaluation_max_seconds",
+        "label": "完工估计时间上限（秒）",
+        "group": "局面评价",
         "kind": "float",
-        "min": 0,
-        "max": 1,
-        "step": 0.05,
-        "group": "对手设置",
-        "hint": "每次实际决策是否生成购买候选的概率；未来分支仍考虑可能发生的购买。"
-      },
-      {
-        "key": "desired_people",
-        "label": "人员采购上限",
-        "kind": "int",
-        "min": 1,
-        "max": 30,
-        "step": 1,
-        "group": "采购倾向",
-        "hint": "当前全部人员达到这个数量后，不再购买人员；包括能工作和辅助的人员，不强制凑满。"
-      },
-      {
-        "key": "min_reserve",
-        "label": "保留现金",
-        "kind": "int",
-        "min": 0,
-        "max": 50,
-        "step": 1,
-        "group": "采购倾向",
-        "hint": "购买后保留的现金；影响直接采购及通过开除筹款的候选。"
-      },
-      {
-        "key": "max_tool_copies",
-        "label": "同类工具默认持有上限",
-        "kind": "int",
-        "min": 0,
-        "max": 4096,
-        "step": 1,
-        "group": "采购倾向",
-        "hint": "未单独指定上限的工具与原料，达到此数量后不再采购；已持有牌不会被移除。"
-      },
-      {
-        "key": "max_support_people",
-        "label": "辅助人员采购上限",
-        "kind": "int",
-        "min": 0,
-        "max": 4096,
-        "step": 1,
-        "group": "采购倾向",
-        "hint": "达到此数量后不再购买不能处理工作的辅助人员。"
-      },
-      {
-        "key": "production_reserve_people",
-        "label": "生产预留人员",
-        "kind": "int",
-        "min": 1,
-        "max": 4096,
-        "step": 1,
-        "group": "人员安排",
-        "hint": "为生产保留的人员数量：约束开除筹资与抽调生产人员主持会议，不是牌局规则。"
-      },
-      {
-        "key": "transfer_batch_size",
-        "label": "甩锅组备料上限",
-        "kind": "int",
-        "min": 1,
-        "max": 4096,
-        "step": 1,
-        "group": "人员安排",
-        "hint": "给甩锅组备料时的工作数上限，原组至少保留一份；单次调配另受 16 张材料扫描上限限制。每次实际甩出数量由人员卡能力决定。"
-      },
-      {
-        "key": "material_batch_limit",
-        "label": "材料候选批量上限",
-        "group": "候选生成",
-        "hint": "每组工作牌与可动用现金牌最多纳入多少张搬运候选；甩锅备料也受此上限约束。",
-        "min": 1,
-        "max": 4096,
-        "kind": "int",
-        "step": 1
-      },
-      {
-        "key": "fallback_probe_group_limit",
-        "label": "保底探测组数上限",
-        "group": "候选生成",
-        "hint": "完整观察前最多探测多少个组的首尾牌，用于时限内先取得可执行派工动作。",
-        "min": 1,
-        "max": 65536,
-        "kind": "int",
-        "step": 1
-      },
-      {
-        "key": "planner_candidate_minimum",
-        "label": "候选保留最小数",
-        "kind": "int",
-        "min": 1,
-        "max": 16,
-        "step": 1,
-        "group": "候选生成",
-        "hint": "规划器至少保留多少个候选，最终数量取此值与两项搜索宽度的最大值；诊断只展示前4条，不限制实际搜索。"
-      },
-      {
-        "key": "planner_horizon_work_cycles",
-        "label": "规划窗口：员工工作周期倍数",
-        "group": "预测窗口",
-        "hint": "静态候选预测窗口的工作周期部分，与行动间隔部分取较大值。",
-        "min": 0.01,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_horizon_action_intervals",
-        "label": "规划窗口：行动间隔倍数",
-        "group": "预测窗口",
-        "hint": "静态候选预测窗口的行动间隔部分，与工作周期部分取较大值。",
-        "min": 0.01,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "tree_horizon_work_cycles",
-        "label": "树估值窗口：员工工作周期倍数",
-        "group": "预测窗口",
-        "hint": "未结束的搜索分支使用多少个员工工作周期预测产出。",
-        "min": 0.01,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_cash_value_cap",
-        "label": "现金单位价值上限",
-        "group": "候选估值",
-        "hint": "采购及派工估值中的现金边际价值上限，仍受员工价格和现有资金影响。",
-        "min": 0,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_cash_saturation_price_multiple",
-        "label": "现金折价：员工价格倍数",
-        "group": "候选估值",
-        "hint": "资金达到若干倍员工价格时，现金边际价值降到原来一半。",
-        "min": 0.01,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_partial_progress_weight",
-        "label": "派工未完成进度权重",
-        "group": "候选估值",
-        "hint": "派工收益中未完成批次进度的权重；完成批次权重为1减该值。",
-        "min": 0,
-        "max": 1,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_purchase_order_bonus",
-        "label": "采购顺序偏好幅度",
-        "group": "候选估值",
-        "hint": "按采购列表次序给静态购牌评分的相对偏好，最大幅度用于列表第一项。",
-        "min": 0,
-        "max": 1,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_support_dismissal_cost",
-        "label": "开除辅助人员估值损失",
-        "group": "候选估值",
-        "hint": "为购牌筹资时，开除不能处理工作的辅助人员所扣的静态价值。",
-        "min": 0,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_unstaffed_transfer_value_ratio",
-        "label": "无辅助人员时甩锅采购估值比例",
-        "group": "候选估值",
-        "hint": "没有辅助人员时，甩锅工具的采购价值相对折扣。",
-        "min": 0,
-        "max": 1,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_support_base_value",
-        "label": "无工具配合时辅助人员基础价值",
-        "group": "候选估值",
-        "hint": "没有开会、摸鱼、甩锅工具配合时，辅助人员采购的基础估值。",
-        "min": 0,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_upgrade_future_work_multiplier",
-        "label": "升级后收入预测工作量倍率",
-        "group": "候选估值",
-        "hint": "提升卷度后额外收入的预测工作量倍率，仍不超过现有待办量。",
-        "min": 0,
-        "max": 100,
-        "kind": "float",
-        "step": 0.1
-      },
-      {
-        "key": "planner_upgrade_chain_bonus_cap",
-        "label": "后续升级潜力奖励上限",
-        "group": "候选估值",
-        "hint": "还可继续喝咖啡升级时，按剩余工作量给予的潜力奖励上限。",
-        "min": 0,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_upgrade_chain_work_scale",
-        "label": "后续升级潜力工作量尺度",
-        "group": "候选估值",
-        "hint": "剩余工作量除以此值形成后续升级潜力奖励，受奖励上限约束。",
-        "min": 0.01,
-        "max": 65536,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_slack_setup_discount",
-        "label": "摸鱼准备动作估值比例",
-        "group": "动作折扣",
-        "hint": "从生产组调出辅助人员准备摸鱼时，对预期咖啡收益的折扣。",
-        "min": 0,
-        "max": 1,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_strike_finish_bonus",
-        "label": "阻止对手清空工作奖励",
-        "group": "候选估值",
-        "hint": "罢工可阻止对手当前全部工作完成时，额外增加的候选评分。",
-        "min": 0,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_outsource_setup_discount",
-        "label": "外包工具入组估值比例",
-        "group": "动作折扣",
-        "hint": "将外包牌搬入目标组这一步的收益折扣。",
-        "min": 0,
-        "max": 1,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_outsource_funding_discount",
-        "label": "外包补充资金估值比例",
-        "group": "动作折扣",
-        "hint": "向外包组搬入现金这一步的收益折扣。",
-        "min": 0,
-        "max": 1,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_transfer_extract_discount",
-        "label": "甩锅拆组准备估值比例",
-        "group": "动作折扣",
-        "hint": "拆出正在生产组中的甩锅工具，对后续甩锅收益的折扣。",
-        "min": 0,
-        "max": 1,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_transfer_staffing_discount",
-        "label": "甩锅安排人员估值比例",
-        "group": "动作折扣",
-        "hint": "给甩锅组安排辅助人员，对后续甩锅收益的折扣。",
-        "min": 0,
-        "max": 1,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "planner_transfer_material_discount",
-        "label": "甩锅补料估值比例",
-        "group": "动作折扣",
-        "hint": "向甩锅组搬入工作牌，对后续甩锅收益的折扣。",
-        "min": 0,
-        "max": 1,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "tree_tool_value",
-        "label": "库存工具与咖啡单位价值",
-        "group": "搜索估值",
-        "hint": "树叶估值中每张可用工具或咖啡的价值；预测生成的咖啡使用相同口径。",
-        "min": 0,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "tree_support_person_value",
-        "label": "辅助人员价值",
-        "group": "搜索估值",
-        "hint": "树叶估值中每名不能直接处理工作的辅助人员的价值。",
-        "min": 0,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "tree_busy_worker_rate_ratio",
-        "label": "忙于其他任务的人员产能比例",
-        "group": "搜索估值",
-        "hint": "人员正在甩锅、摸鱼、开会等任务时，按标准产能的此比例估值；工作、喝咖啡与空闲人员另算延迟。",
-        "min": 0,
-        "max": 1,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "tree_paused_worker_rate_ratio",
-        "label": "暂停人员产能比例",
-        "group": "搜索估值",
-        "hint": "人员被暂停时，对估算产能施加的比例。",
-        "min": 0,
-        "max": 1,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "tree_cash_log_weight",
-        "label": "资金购买力权重",
-        "group": "搜索估值",
-        "hint": "对预计可用资金的log(1+金额)赋予的价值权重。",
-        "min": 0,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "tree_tool_value_cap",
-        "label": "工具与辅助人员总价值上限",
-        "group": "搜索估值",
-        "hint": "限制工具、咖啡及辅助人员在单方树叶估值中的总贡献。",
-        "min": 0,
-        "max": 10000,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "tree_pending_work_weight",
-        "label": "剩余工作惩罚权重",
-        "group": "搜索估值",
-        "hint": "树叶估值中每份剩余工作扣除的价值。",
-        "min": 0,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "tree_progress_weight",
-        "label": "在途完成进度权重",
-        "group": "搜索估值",
-        "hint": "树叶估值中生产、甩锅与外包的在途进度价值权重。",
-        "min": 0,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "tree_forecast_output_weight",
-        "label": "预测产出权重",
-        "group": "搜索估值",
-        "hint": "树叶估值中预测窗口内可完成工作量的价值权重。",
-        "min": 0,
-        "max": 100,
-        "kind": "float",
-        "step": 0.01
-      },
-      {
-        "key": "tree_terminal_time_penalty",
-        "label": "终局时长偏好（每游戏秒）",
-        "group": "搜索估值",
-        "hint": "同为获胜时优先较早结束，每游戏秒扣除的终局分数；仍保证终局优先于未结束估值。",
-        "min": 0,
-        "max": 100,
-        "kind": "float",
-        "step": 0.001
-      },
-      {
-        "key": "tree_terminal_time_penalty_cap",
-        "label": "终局时长扣分上限",
-        "group": "搜索估值",
-        "hint": "终局较晚结束的最多扣分，不改变获胜优先和胜负规则。",
-        "min": 0,
-        "max": 10000,
-        "kind": "float",
-        "step": 1
-      },
-      {
-        "key": "fallback_probe_budget_ratio",
-        "label": "保底探测预算比例",
-        "kind": "float",
-        "min": 0.01,
-        "max": 0.9,
-        "step": 0.01,
-        "group": "候选生成",
-        "hint": "保底探测最多分配当前剩余思考预算的此比例，仍受单次思考总时限约束。"
-      },
-      {
-        "key": "fallback_probe_min_us",
-        "label": "保底探测最小预算（微秒）",
-        "kind": "int",
-        "min": 0,
-        "max": 1000,
-        "step": 1,
-        "group": "候选生成",
-        "hint": "剩余思考预算充足时，为保底探测保留的最小微秒数；不会延长总时限。"
+        "min": 30,
+        "max": 7200,
+        "step": 10,
+        "hint": "在公开人员、任务、资源和报价下估算双方清空工作时间的上限，不限制实际牌局时长。"
       },
       {
         "key": "decision_publish_reserve_us",
@@ -641,65 +157,57 @@
         "hint": "超过此数量后在后台解析已有冻结帧，不排除牌组或动作。"
       }
     ],
-    "fields": [
-      {
-        "key": "purchase_priority",
-        "label": "采购候选顺序",
-        "group": "采购倾向",
-        "hint": "数组中未列出的卡不会采购；靠前项获得最多 5% 的近似同分偏好，预测收益仍优先。"
-      },
-      {
-        "key": "tool_priority",
-        "label": "工具候选顺序",
-        "group": "人员安排",
-        "hint": "按此顺序生成工具动作，影响同分和时间不足时的选择；最终仍比较实际收益。"
-      },
-      {
-        "key": "max_card_copies",
-        "label": "各卡持有上限",
-        "group": "采购倾向",
-        "hint": "覆盖同类工具默认上限。咖啡上限至少满足下一次提升卷度所需杯数，避免因上限无法凑齐配方。"
-      }
-    ]
+    "fields": [],
+    "strength_curves": {
+      "think_seconds": [
+        [
+          0,
+          24
+        ],
+        [
+          0.25,
+          12
+        ],
+        [
+          0.5,
+          6
+        ],
+        [
+          0.75,
+          3
+        ],
+        [
+          1,
+        2
+        ]
+      ],
+      "decision_budget_ratio": [
+        [
+          0,
+          0.01
+        ],
+        [
+          0.25,
+          0.04166666666666667
+        ],
+        [
+          0.5,
+          0.11666666666666668
+        ],
+        [
+          0.75,
+          0.26666666666666666
+        ],
+        [
+          1,
+          0.9
+        ]
+      ]
+    }
   },
   "compatibility": {
     "algorithm_defaults": {
-      "material_batch_limit": 16,
-      "fallback_probe_group_limit": 192,
-      "planner_candidate_minimum": 4,
-      "planner_horizon_work_cycles": 3,
-      "planner_horizon_action_intervals": 2,
-      "tree_horizon_work_cycles": 2,
-      "planner_cash_value_cap": 0.4,
-      "planner_cash_saturation_price_multiple": 2,
-      "planner_partial_progress_weight": 0.1,
-      "planner_purchase_order_bonus": 0.05,
-      "planner_support_dismissal_cost": 0.5,
-      "planner_unstaffed_transfer_value_ratio": 0.1,
-      "planner_support_base_value": 0.3,
-      "planner_upgrade_future_work_multiplier": 2,
-      "planner_upgrade_chain_bonus_cap": 1,
-      "planner_upgrade_chain_work_scale": 10,
-      "planner_slack_setup_discount": 0.75,
-      "planner_strike_finish_bonus": 1,
-      "planner_outsource_setup_discount": 0.7,
-      "planner_outsource_funding_discount": 0.85,
-      "planner_transfer_extract_discount": 0.3,
-      "planner_transfer_staffing_discount": 0.6,
-      "planner_transfer_material_discount": 0.8,
-      "tree_tool_value": 0.25,
-      "tree_support_person_value": 0.4,
-      "tree_busy_worker_rate_ratio": 0.6,
-      "tree_paused_worker_rate_ratio": 0.15,
-      "tree_cash_log_weight": 2,
-      "tree_tool_value_cap": 3,
-      "tree_pending_work_weight": 1,
-      "tree_progress_weight": 1,
-      "tree_forecast_output_weight": 1,
-      "tree_terminal_time_penalty": 0.001,
-      "tree_terminal_time_penalty_cap": 1000,
-      "fallback_probe_budget_ratio": 0.25,
-      "fallback_probe_min_us": 10,
+      "evaluation_max_seconds": 1800.0,
       "decision_publish_reserve_us": 1000,
       "decision_publish_reserve_ratio": 0.2,
       "live_fallback_budget_us": 1500,

@@ -303,6 +303,8 @@ func _step(delta: float) -> void:
 		board._advance_cash_flights(delta)
 		board._advance_meeting_visitors(delta)
 		board._advance_strike_dancers(delta)
+		board._advance_strike_attacks(delta)
+		board._advance_paper_disposal(delta)
 		board._advance_deliveries(delta)
 		_advance_side_extract(delta)
 		for card in board.by_uid.values() + board.offers_by_id.values(): card._process(delta)
@@ -533,6 +535,7 @@ func snapshot() -> Dictionary:
 		result.merge({"winner": state.winner, "work": [state.work_count(0), state.work_count(1)], "money": [state.money(0), state.money(1)],
 			"cards": state.cards.size(), "poses": poses, "cash_flights": board._cash_flights.size(), "coffee_flights": board._delivery_flights.values().filter(func(flight): return not flight.transfer).size(),
 			"meeting_visitors": board._meeting_visitors.size(), "strikers": board._strike_dancers.size(),
+			"strike_attacks": board._strike_attacks.duplicate(true),
 			"camera": [camera.transform, camera.size, camera.h_offset, camera.v_offset],
 			"effects": effects.items.duplicate(true),
 			"conveyor": conveyor.carriers.map(func(carrier): return carrier.transform),

@@ -9,7 +9,7 @@ var checked := 0
 func _initialize() -> void:
 	var config := Config.new()
 	_check(config.errors.is_empty(), "配置完整")
-	_check(config.cards.size() == 14 and not config.cards.has("involution") and not config.rules.has("involution"), "内卷牌和人数增益规则均已移除")
+	_check(not config.cards.has("involution") and not config.rules.has("involution"), "内卷牌和人数增益规则均已移除")
 	_check(not config.can_purchase("involution") and not config.rules.conveyor.pool.has("involution"), "被移除卡不能购买或由传送带生成")
 	for kind in ["employee", "grinder"]:
 		_check(is_equal_approx(config.work_rate(kind, 0), 0.1), "基础十秒速度与角色收入倍率分开")
@@ -83,14 +83,14 @@ func _check(ok: bool, name: String) -> void:
 
 func _test_decision_budget() -> void:
 	var base := Config.new()
-	_check(Config.decision_budget_ms(base.rules.bot) == 1400, "标准 2.8 游戏秒的 50% 为 1400 毫秒")
+	_check(Config.decision_budget_ms(base.rules.bot) == 700, "标准 6 游戏秒的 7/60 为 700 毫秒")
 	BotPreferences.bind(State.new(base), base.bot_preferences)
 	BotPreferences.set_override("think_seconds", 0.2)
-	_check(Config.decision_budget_ms(base.rules.bot) == 100, "改变间隔立即换算预算")
+	_check(Config.decision_budget_ms(base.rules.bot) == 23, "改变间隔立即换算预算")
 	BotPreferences.set_pref_strength(1.0)
-	_check(Config.decision_budget_ms(base.rules.bot) == 180 and base.rules.bot.think_seconds == 0.2, "最高强度只调整占比到 90%")
+	_check(Config.decision_budget_ms(base.rules.bot) == 1800 and is_equal_approx(base.rules.bot.think_seconds, 2.0) and base.rules.bot.decision_budget_ratio == 0.9, "最高整体强度同时更新行动间隔与计算预算")
 	BotPreferences.set_override("decision_budget_ratio", 0.01)
-	_check(Config.decision_budget_ms(base.rules.bot) == 2 and BotPreferences.prefs().get_knob("budget_readout") == "2 毫秒", "派生数值与面板读数一致")
+	_check(Config.decision_budget_ms(base.rules.bot) == 20 and BotPreferences.prefs().get_knob("budget_readout") == "20 毫秒", "派生数值与面板读数一致")
 	_check(Config.decision_budget_ms({"think_seconds":0.0001,"decision_budget_ratio":0.01}) == 1, "不足一毫秒时仍有可用预算")
 	_check(Config.decision_budget_ms({"think_seconds":2.8,"decision_budget_ratio":0.7}) == 1960, "整数边界消除浮点误差，70% 正好 1960 毫秒")
 	_check(Config.decision_budget_ms({"think_seconds":0.219,"decision_budget_ratio":0.01}) == 2, "非整毫秒向下取整")
@@ -98,7 +98,6 @@ func _test_decision_budget() -> void:
 	var legacy := {"bot": base.rules.bot.duplicate(true), "preferences": base.bot_preferences.duplicate(true)}
 	legacy.bot.erase("decision_budget_ratio")
 	legacy.bot.think_seconds = 5.0
-	legacy.bot.buy_chance = 0.23
 	legacy.preferences.knobs = legacy.preferences.knobs.filter(func(k): return k.key != "decision_budget_ratio")
 	var recovered := Config.new(base.balance_document(), legacy)
 	_check(recovered.errors.is_empty() and Config.decision_budget_ms(recovered.rules.bot) == 12, "更早的无预算快照恢复为当时的固定 12 毫秒")
@@ -109,8 +108,8 @@ func _test_decision_budget() -> void:
 	BotPreferences.set_override("think_seconds", 4.5)
 	_check(Config.decision_budget_ms(recovered.rules.bot) == 7, "显式固定预算不因历史行动节奏变化而漂移")
 	BotPreferences.set_pref_strength(1.0)
-	_check(not recovered.rules.bot.has("decision_budget_ms") and Config.decision_budget_ms(recovered.rules.bot) == 4050 and recovered.rules.bot.buy_chance == 0.23, "主动更改强度切换到占比预算，保留行动间隔和购买倾向")
-	_check(BotPreferences.has_overrides(), "修改档位后手调行动间隔仍标记为自定义")
+	_check(not recovered.rules.bot.has("decision_budget_ms") and Config.decision_budget_ms(recovered.rules.bot) == 1800 and recovered.rules.bot.decision_budget_ratio == 0.9, "主动更改整体强度使用统一曲线，切换为占比预算")
+	_check(not BotPreferences.has_overrides(), "整体强度覆盖过的行动间隔不再标记自定义")
 	BotPreferences.restore_defaults()
 	_check(recovered.rules.bot.think_seconds == 5.0 and not recovered.rules.bot.has("decision_budget_ratio") and Config.decision_budget_ms(recovered.rules.bot) == 7, "旧快照还原时恢复固定预算")
 	for invalid in [0, -1, 12.1, 33, null, "12"]:

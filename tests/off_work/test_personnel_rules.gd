@@ -62,15 +62,17 @@ func _test_leader_cannot_work() -> void:
 	_check(is_equal_approx(float(state.cards[employee].rate_multiplier), 1.0), "同组领导不改变员工基础工作速度")
 	state.advance(6.0)
 	_check(state.work_count(0) == 29 and state.money(0) == 1, "员工按基础十秒完成一份")
-	var transfer: int = state.add_card("transfer", 0, group)
-	_check(state.activate(transfer, group) and state.tasks[leader].kind == "transfer", "领导仍可甩锅")
+	var transfer: int = state.add_card("transfer", 0)
+	group = state.move_cards(state.group_cards(group), int(state.cards[transfer].group))
+	_check(state.cards[transfer].status == "active" and state.tasks[leader].kind == "transfer", "领导仍可甩锅")
 	state.advance(10.0)
 	_check(state.work_count(0) == 26 and state.work_count(1) == 33, "领导和员工十秒统一转移三份工作")
 
 func _test_free_slack() -> void:
 	var state := _state({"employee": 1, "grinder": 1, "leader": 1, "work": 30})
 	var group := _group(state)
-	var slack: int = state.add_card("slack", 0, group)
+	var slack: int = state.add_card("slack", 0)
+	group = state.move_cards(state.group_people(group), int(state.cards[slack].group))
 	var people: Array = state.group_people(group)
 	_check(state.money(0) == 0 and state.activate(slack, group), "零资金仍可开始摸鱼")
 	for person in people:
@@ -139,8 +141,9 @@ func _test_dismissal_refunds() -> void:
 func _test_dismissal_tasks() -> void:
 	var state := _state({"employee": 3, "leader": 1, "work": 30})
 	var group := _group(state)
-	var meeting: int = state.add_card("meeting", 0, group)
-	_check(state.activate(meeting, group), "领导主持会议用于开除清理验证")
+	var meeting: int = state.add_card("meeting", 0)
+	group = state.move_cards(state.group_people(group), int(state.cards[meeting].group))
+	_check(state.meetings.has(meeting), "领导主持会议用于开除清理验证")
 	var host: int = state.meetings[meeting].host
 	var targets: Array = state.meetings[meeting].targets.duplicate()
 	_check(not state.dismiss_people([targets[0]], 1), "被强行拉走的人员不能出售逃脱")
@@ -153,8 +156,9 @@ func _test_dismissal_tasks() -> void:
 	for person in targets.slice(1):
 		if state.config.can_work(str(state.cards[person].type)):
 			_check(float(state.cards[person].progress) > 0.0, "散会后对方员工继续原任务")
-	var slack: int = state.add_card("slack", 0, group)
-	_check(state.activate(slack, group), "剩余员工能够开始摸鱼")
+	var slack: int = state.add_card("slack", 0)
+	group = state.move_cards(state.group_people(group), int(state.cards[slack].group))
+	_check(state.cards[slack].status == "active", "剩余员工独立组合后能够开始摸鱼")
 	_check(state.dismiss_people(state.group_people(group), 0), "活动批次中的全部人员可出售")
 	_check(state.cards[slack].status == "active" and state.cards[slack].paused and state.groups[group].job == "slack" and state.group_slack_participants(group).is_empty(), "无人组合保留进度并暂停等待人员返场")
 	state.advance(state.config.number("slack", "seconds"))
@@ -181,26 +185,40 @@ func _test_dismiss_transfer() -> void:
 
 func _test_bot_support() -> void:
 	var state := _state({"employee": 1, "work": 30})
+	# An unused leader should not be shuffled into production or sold to
+	# finance an unrelated random-market investment.
+	state.offers.clear()
+	state.config.rules.conveyor.interval_seconds = 1000.0
 	var leader: int = state.add_card("leader", 0)
 	var bot := Bot.new(state, 0)
-	state.config.rules.bot.buy_chance = 0.0
 	var original: int = state.cards[leader].group
 	bot.start()
 	for _i in range(3):
 		bot.advance(0.0)
 		state.advance(state.config.number("bot", "think_seconds"))
 	_check(state.cards[leader].group == original and not state.tasks.has(leader), "BOT 不反复把空闲领导塞到工作组")
+	# Independently test support allocation with a fresh production batch:
+	# a timely free cup doubles capacity, while the leader cannot do work.
+	state = _state({"employee": 1, "work": 30})
+	state.offers.clear()
+	state.config.rules.conveyor.interval_seconds = 1000.0
+	state.config.rules.slack.seconds = 1.0
+	state.config.roles.grinder.work_capacity = 2
+	leader = state.add_card("leader", 0)
 	var slack: int = state.add_card("slack", 0)
+	bot = Bot.new(state, 0)
+	bot.start()
 	bot.advance(0.0)
-	_check(state.cards[slack].status == "active" and state.tasks[leader].kind == "slack", "BOT 使用空闲领导免费摸鱼")
+	_check(state.cards[slack].status == "active" and state.tasks.get(leader, {}).get("kind") == "slack", "BOT 使用空闲领导免费摸鱼")
 	_check(state.tasks[_ids(state, "employee")[0]].kind == "work", "BOT 留员工继续工作")
 	var transferring := _state({"employee": 1, "work": 30})
+	transferring.offers.clear()
+	transferring.config.rules.conveyor.interval_seconds = 1000.0
 	var support: int = transferring.add_card("leader", 0)
 	var tool: int = transferring.add_card("transfer", 0)
 	var transfer_bot := Bot.new(transferring, 0)
-	transferring.config.rules.bot.buy_chance = 0.0
 	transfer_bot.start()
 	transfer_bot.advance(0.0)
 	transferring.advance(transferring.config.number("bot", "think_seconds"))
 	transfer_bot.advance(0.0)
-	_check(transferring.cards[tool].status == "active" and transferring.tasks[support].kind == "transfer", "BOT 把领导安排到有效甩锅组")
+	_check(transferring.cards[tool].status == "active" and transferring.tasks.get(support, {}).get("kind") == "transfer", "BOT 把领导安排到有效甩锅组")

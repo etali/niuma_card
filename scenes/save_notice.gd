@@ -31,6 +31,8 @@ const MARGIN_X := 24.0
 const BOTTOM_Y := -232.0     ## 三颗按钮最高那颗（存录像）在 -172，高 44 → -216
 const PANEL_W := 560.0
 
+var count_unit := "步"
+
 var _title: Label
 var _path_edit: LineEdit
 var _hint: Label
@@ -122,7 +124,7 @@ func _button(text: String, cb: Callable) -> Button:
 ## （engine/on_work_tape.gd），而 `~` 在各平台展开成什么不一样 ——
 ## 只念一句「存在 ~/.niumapai_record 里」的话玩家还得自己拼一遍
 func show_saved(abs_path: String, steps: int) -> void:
-	_title.text = "录像已存（%d 步）" % steps
+	_title.text = "录像已存（%d %s）" % [steps, count_unit]
 	_title.add_theme_color_override("font_color", Color(0.7, 1.0, 0.7))
 	_path_edit.text = abs_path
 	_path_edit.editable = false

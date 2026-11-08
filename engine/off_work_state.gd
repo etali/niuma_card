@@ -4,7 +4,7 @@ class_name OffWorkState
 extends RefCounted
 
 const ConfigSource = preload("res://engine/off_work_config.gd")
-const WORLD_FIELDS := ["cards", "groups", "tasks", "meetings", "outsourcing", "offers",
+const WORLD_FIELDS := ["cards", "groups", "tasks", "meetings", "outsourcing", "pending_strikes", "recruitment", "offers",
 	"winner", "time", "conveyor_progress", "revision", "_next_card", "_next_group",
 	"_next_offer", "_conveyor_elapsed", "_supply_count"]
 
@@ -14,6 +14,8 @@ var groups: Dictionary = {}
 var tasks: Dictionary = {}
 var meetings: Dictionary = {}
 var outsourcing: Dictionary = {}
+var pending_strikes: Dictionary = {}
+var recruitment: Dictionary = {}
 var offers: Array = []
 var winner: int = -1
 var time: float = 0.0
@@ -32,6 +34,9 @@ var _bot_branch := false
 # survives advance(): editor/test fixtures may alter public records between
 # steps, and status/progress/participants must always be read live.
 var _index_queries := false
+# Search commands may reuse membership queries without postponing any normal
+# card refresh. Keep this separate from advance()'s event batching flag.
+var _search_queries := false
 var _group_index: Dictionary = {}
 
 func _invalidate_group_index() -> void:
@@ -79,6 +84,15 @@ func fork_search_node() -> OffWorkState:
 	branch._rng.state = _rng.state
 	return branch
 
+## Preserve conveyor positions and expiry, but do not present a sampled future
+## offer as a resource on which an irreversible plan can depend. Opt-in for the
+## current search only; normal play and legacy simulator branches are unchanged.
+func mask_search_market(known_offer_end: int) -> void:
+	assert(_bot_branch)
+	for index in offers.size():
+		if not offers[index].is_empty() and int(offers[index].id) >= known_offer_end:
+			offers[index] = {}
+
 func new_game(seed_value: int = 0) -> void:
 	if not config.validate():
 		last_error = "配置错误：\n" + "\n".join(config.errors)
@@ -87,6 +101,8 @@ func new_game(seed_value: int = 0) -> void:
 	groups.clear()
 	tasks.clear()
 	meetings.clear()
+	pending_strikes.clear()
+	recruitment.clear()
 	outsourcing.clear()
 	offers.clear()
 	_events.clear()
@@ -118,11 +134,58 @@ func new_game(seed_value: int = 0) -> void:
 func create_group(owner: int) -> int:
 	var id: int = _next_group
 	_next_group += 1
-	groups[id] = {"id": id, "owner": owner, "cards": [], "job": "work"}
+	groups[id] = {"id": id, "owner": owner, "cards": [], "job": "work", "function": ""}
 	return id
+
+## A production combination keeps its first function while its defining cards
+## remain, including tool cooldowns and waits for personnel or materials.
+## Union/overtime are modifiers; coffee and boss recruitment retain their
+## separate personnel/material rules rather than claiming this production lock.
+func _sync_group_function(group: int) -> void:
+	if not groups.has(group): return
+	var current := str(groups[group].get("function", ""))
+	if not groups[group].has("function"):
+		# Existing session/replay snapshots predate the lock. Retain their running
+		# tool, including a just-finished meeting/outsource still cooling down.
+		var previous := str(groups[group].get("job", "work"))
+		if previous in ["meeting", "transfer", "slack", "outsource"]:
+			current = previous
+		else:
+			for id in group_actions(group):
+				if cards[id].type in ["meeting", "transfer", "slack", "outsource"] and cards[id].status in ["active", "recovering"]:
+					current = str(cards[id].type)
+					break
+	if current == "work":
+		if group_work(group).is_empty() or group_workers(group).is_empty(): current = ""
+	elif not current.is_empty() and _group_type(group, current).is_empty():
+		current = ""
+	if current.is_empty():
+		var people := _available_people(group)
+		for id in group_actions(group):
+			var kind := str(cards[id].type)
+			if kind == "meeting" and not people.is_empty() and not meeting_candidates(int(groups[group].owner)).is_empty():
+				current = kind
+			elif kind == "transfer" and not people.is_empty() and not _transfer_work(group).is_empty():
+				current = kind
+			elif kind == "slack" and not group_people(group).is_empty():
+				current = kind
+			elif kind == "outsource" and not _outsource_additions(group).work_ids.is_empty():
+				current = kind
+			if not current.is_empty(): break
+		if current.is_empty() and not group_work(group).is_empty() and not group_workers(group).is_empty():
+			current = "work"
+	groups[group]["function"] = current
+	groups[group].job = current if not current.is_empty() else "work"
+
+func _accepts_function(group: int, kind: String) -> bool:
+	_sync_group_function(group)
+	return groups.has(group) and str(groups[group].get("function", "")) == kind
 
 func add_card(kind: String, owner: int, group: int = -1) -> int:
 	assert(config.cards.has(kind), "未知卡种：" + kind)
+	if not can_acquire(kind, owner):
+		_fail("已达到这类牌的每方持有上限")
+		return -1
 	if not groups.has(group):
 		group = create_group(owner)
 	assert(int(groups[group].owner) == owner)
@@ -135,6 +198,12 @@ func add_card(kind: String, owner: int, group: int = -1) -> int:
 	_invalidate_group_index()
 	revision += 1
 	return id
+
+func can_acquire(kind: String, owner: int) -> bool:
+	return not config.cards[kind].has("max_per_owner") or _owner_type(owner, kind).size() < int(config.cards[kind].max_per_owner)
+
+func can_person_be_struck(person: int) -> bool:
+	return cards.has(person) and config.is_person(str(cards[person].type)) and bool(config.roles[cards[person].type].get("can_be_strike_target", true)) and not _is_paused(person)
 
 func money(owner: int) -> int:
 	var result := 0
@@ -149,6 +218,7 @@ func reserved_cash_amount(id: int) -> int:
 	if not cards.has(id) or cards[id].type != "money": return 0
 	var reserved := 0
 	for batch in outsourcing.values(): reserved += int(batch.payments.get(id, 0))
+	for batch in recruitment.values(): reserved += int(batch.payments.get(id, 0))
 	return reserved
 
 func available_cash_amount(id: int) -> int:
@@ -179,17 +249,45 @@ func group_cards(group: int) -> Array:
 	return groups[group].cards.duplicate() if groups.has(group) else []
 
 func group_people(group: int) -> Array:
-	if _index_queries: return _indexed_group(group).people.duplicate()
+	if _index_queries or _search_queries: return _indexed_group(group).people.duplicate()
 	var result: Array = []
 	for id in group_cards(group):
 		if config.is_person(str(cards[id].type)):
 			result.append(id)
 	return result
 
+func group_has_union(group: int) -> bool:
+	return not _group_type(group, "union").is_empty()
+
+func effective_work_kind(kind: String, group: int) -> String:
+	if group_has_union(group) and config.can_work(kind):
+		return str(config.rules.union.work_role)
+	return kind
+
+func can_person_work(person: int) -> bool:
+	if not cards.has(person): return false
+	var kind := str(cards[person].type)
+	if not config.is_person(kind): return false
+	return config.can_work(kind)
+
+func _eject_union_overtime() -> void:
+	for group in groups.keys():
+		if not group_has_union(int(group)): continue
+		var ejected: Array = _group_type(int(group), "overtime")
+		for id in ejected:
+			groups[group].cards.erase(id)
+			var destination := create_group(int(cards[id].owner))
+			cards[id].group = destination
+			groups[destination].cards.append(id)
+		if not ejected.is_empty():
+			_invalidate_group_index()
+			_emit("union_eject", {"source": _group_type(int(group), "union")[0], "owner": groups[group].owner,
+				"group": group, "ids": ejected})
+
 func group_workers(group: int) -> Array:
 	var result: Array = []
 	for person in group_people(group):
-		if config.can_work(str(cards[person].type)):
+		if can_person_work(int(person)):
 			result.append(person)
 	return result
 
@@ -205,7 +303,7 @@ func group_work_participants(group: int) -> Array:
 	for person in group_people(group):
 		if not tasks.has(person) or tasks[person].kind != "work" or _is_paused(int(person)):
 			continue
-		if config.can_work(str(cards[person].type)) and cards.has(tasks[person].work_id):
+		if can_person_work(int(person)) and cards.has(tasks[person].work_id):
 			participants.append(person)
 	return participants
 
@@ -215,7 +313,7 @@ func group_work_rate(group: int) -> float:
 	var rate := 0.0
 	var overtime := _group_type(group, "overtime").size()
 	for person in participants:
-		rate += config.work_rate(str(cards[person].type), overtime)
+		rate += config.work_rate(effective_work_kind(str(cards[person].type), group), overtime)
 	return rate / float(participants.size())
 
 ## Transfer is a continuous combination cycle, just like ordinary work.
@@ -244,7 +342,7 @@ func group_slack_rate(group: int) -> float:
 	return 0.0 if group_slack_participants(group).is_empty() else config.slack_rate(_group_type(group, "slack").size())
 
 func group_tools(group: int) -> Array:
-	if _index_queries: return _indexed_group(group).tools.duplicate()
+	if _index_queries or _search_queries: return _indexed_group(group).tools.duplicate()
 	var result: Array = []
 	for id in group_cards(group):
 		if config.category(str(cards[id].type)) == "tool":
@@ -252,7 +350,7 @@ func group_tools(group: int) -> Array:
 	return result
 
 func group_actions(group: int) -> Array:
-	if _index_queries: return _indexed_group(group).actions.duplicate()
+	if _index_queries or _search_queries: return _indexed_group(group).actions.duplicate()
 	return group_cards(group).filter(func(id): return config.category(str(cards[id].type)) in ["tool", "ingredient"])
 
 func move_cards(ids: Array, target_group: int = -1, target_card: int = -1) -> int:
@@ -265,6 +363,9 @@ func move_cards(ids: Array, target_group: int = -1, target_card: int = -1) -> in
 		var id := int(id_value)
 		if not cards.has(id):
 			_fail("这张牌已不在桌上")
+			return -1
+		if pending_strikes.has(id):
+			_fail("飞行中的罢工牌不能移动")
 			return -1
 		if is_meeting_target(id):
 			_fail("开会中的人员不能自行离开")
@@ -300,6 +401,9 @@ func move_cards(ids: Array, target_group: int = -1, target_card: int = -1) -> in
 		return -1
 	if group_people(target_group).any(func(person): return is_striking(int(person))) and group_cards(target_group) != unique:
 		_fail("罢工跳舞中的人员暂时不能组合")
+		return -1
+	if group_has_union(target_group) and unique.any(func(id): return str(cards[id].type) == "overtime"):
+		_fail("工会组合不能加入加班牌")
 		return -1
 	if target_group < 0:
 		target_group = create_group(owner)
@@ -357,19 +461,21 @@ func activate(tool_id: int, target_group: int = -1, target_card: int = -1) -> bo
 		return _activate_strike(tool_id, target_group)
 	if target_owner != owner:
 		return _fail("这张工具只能给己方使用")
+	if kind in ["meeting", "transfer", "slack", "outsource"] and not _accepts_function(target_group, kind):
+		return _fail("这个组合已在执行其他功能，请先拆出原功能牌或另组一摞")
 	if kind == "coffee":
 		return _activate_coffee(tool_id, target_group, target_card)
 	if kind == "outsource":
 		return _activate_outsource(tool_id, target_group)
 	if int(tool.group) != target_group:
 		return _fail("先把工具叠进这个组")
-	if kind == "overtime":
+	if kind == "overtime" and group_has_union(target_group):
+		return _fail("工会组合不能使用加班牌")
+	if kind in ["overtime", "union"]:
 		_sync_schedule()
 		return true
 	if kind == "slack":
 		return _activate_slack(tool_id, target_group)
-	if str(groups[target_group].job) != "work":
-		return _fail("这个组已经在执行另一种任务")
 	if kind == "meeting":
 		return _activate_meeting(tool_id, target_group, target_card)
 	if kind == "transfer":
@@ -387,6 +493,9 @@ func buy(offer_id: int, owner: int, payment_ids: Array = []) -> int:
 			continue
 		if not config.can_purchase(str(offer.type)):
 			_fail("高卷度人员需要喝咖啡逐级提升卷度获得" if config.is_upgrade_role(str(offer.type)) else "这张牌不可购买")
+			return -1
+		if not can_acquire(str(offer.type), owner):
+			_fail("每方最多持有一名老板")
 			return -1
 		if not _spend(owner, int(offer.price), payment_ids):
 			if last_error.is_empty(): _fail("钱还不够")
@@ -431,6 +540,10 @@ func _advance_events(delta: float, deadline_usec: int, cancelled: Callable = Cal
 		for meeting in meetings.values():
 			step = minf(step, maxf(0.0, float(meeting.remaining)))
 		for batch in outsourcing.values():
+			step = minf(step, maxf(0.0, float(batch.remaining)))
+		for flight in pending_strikes.values():
+			step = minf(step, maxf(0.0, float(flight.remaining)))
+		for batch in recruitment.values():
 			step = minf(step, maxf(0.0, float(batch.remaining)))
 		for group in groups:
 			var rate := group_work_rate(int(group))
@@ -496,12 +609,20 @@ func _sync_transfer_groups() -> void:
 			card.remaining = 0.0
 			card.total = 0.0
 	for group in groups:
+		if not _accepts_function(int(group), "transfer"):
+			if _group_type(int(group), "transfer").is_empty(): groups[group].erase("transfer_progress")
+			for id in _group_type(int(group), "transfer"):
+				if cards[id].status == "active":
+					cards[id].status = "ready"
+					cards[id].remaining = 0.0
+					cards[id].total = 0.0
+			continue
 		var tool := -1
 		for id in _group_type(int(group), "transfer"):
 			if cards[id].status == "active": tool = int(id); break
 		# A previously used combination waits for its people/materials rather
 		# than requiring another button press when they become available.
-		if tool < 0 and groups[group].job == "work" and not _transfer_work(int(group)).is_empty() and not _available_people(int(group)).is_empty():
+		if tool < 0 and not _transfer_work(int(group)).is_empty() and not _available_people(int(group)).is_empty():
 			for id in _group_type(int(group), "transfer"):
 				if cards[id].status == "ready" and int(cards[id].get("transfer_group", -1)) == int(group):
 					tool = int(id)
@@ -510,7 +631,6 @@ func _sync_transfer_groups() -> void:
 					if not groups[group].has("transfer_progress"): groups[group]["transfer_progress"] = 0.0
 					break
 		if tool < 0:
-			if groups[group].job == "transfer": groups[group].job = "work"
 			if _group_type(int(group), "transfer").is_empty(): groups[group].erase("transfer_progress")
 			continue
 		var works := _transfer_work(int(group))
@@ -519,7 +639,6 @@ func _sync_transfer_groups() -> void:
 			cards[tool].status = "ready"
 			cards[tool].remaining = 0.0
 			cards[tool].total = 0.0
-			groups[group].job = "work"
 			if works.is_empty(): groups[group].erase("transfer_progress")
 			continue
 		groups[group].job = "transfer"
@@ -533,7 +652,7 @@ func _sync_transfer_groups() -> void:
 			index += 1
 
 func _activate_slack(_tool_id: int, group: int) -> bool:
-	if str(groups[group].job) not in ["work", "slack"]:
+	if not _accepts_function(group, "slack"):
 		return _fail("这个组已经在执行另一种任务")
 	if _available_people(group).is_empty() and group_slack_participants(group).is_empty() and not groups[group].has("slack_progress"):
 		return _fail("这个组没有能摸鱼的人员")
@@ -549,11 +668,11 @@ func _sync_slack_groups() -> void:
 	for group in groups:
 		var tools := _group_type(int(group), "slack")
 		if tools.is_empty():
-			if groups[group].job == "slack": groups[group].job = "work"
+			_sync_group_function(int(group))
 			groups[group].erase("slack_progress")
 			continue
 		var people := group_people(int(group))
-		var eligible: bool = str(groups[group].job) in ["work", "slack"] and (not people.is_empty() or groups[group].has("slack_progress"))
+		var eligible: bool = _accepts_function(int(group), "slack") and (not people.is_empty() or groups[group].has("slack_progress"))
 		if not eligible:
 			for id in tools:
 				cards[id].status = "ready"
@@ -561,7 +680,7 @@ func _sync_slack_groups() -> void:
 				cards[id].remaining = 0.0
 				cards[id].total = 0.0
 			continue
-		var starting: bool = groups[group].job != "slack"
+		var starting: bool = not tools.any(func(id): return cards[id].status == "active")
 		if not groups[group].has("slack_progress"):
 			var carried := 0.0
 			for id in tools:
@@ -582,6 +701,8 @@ func _sync_slack_groups() -> void:
 			_emit("slack_start", {"owner": groups[group].owner, "source": tools[0], "group": group, "targets": group_slack_participants(int(group))})
 
 func _activate_meeting(tool_id: int, group: int, selected_host: int) -> bool:
+	if not _accepts_function(group, "meeting"):
+		return _fail("这个组合已在执行其他功能")
 	var people: Array = _available_people(group)
 	if people.is_empty():
 		return _fail("需要一名空闲的主持人")
@@ -597,8 +718,8 @@ func _activate_meeting(tool_id: int, group: int, selected_host: int) -> bool:
 	targets = selected
 	if targets.is_empty():
 		return _fail("对面没有可叫来开会的人")
-	# Hosting occupies only this person; colleagues in the same group retain
-	# their work and continue. The visible meeting never freezes extra workers.
+	# Meeting is this combination's only production function.
+	_cancel_group_work(group)
 	tasks.erase(host)
 	groups[group].job = "meeting"
 	cards[tool_id].status = "active"
@@ -609,6 +730,10 @@ func _activate_meeting(tool_id: int, group: int, selected_host: int) -> bool:
 	meetings[tool_id] = {"host": host, "group": group, "targets": targets, "remaining": duration, "total": duration}
 	tasks[host] = {"kind": "meeting", "tool_id": tool_id, "group": group, "work_id": -1, "progress": 0.0}
 	_emit("meeting_start", {"owner": cards[tool_id].owner, "source": tool_id, "group": group, "host": host, "targets": targets.duplicate()})
+	for person in targets:
+		if tasks.has(person) and tasks[person].kind == "coffee":
+			_cancel_coffee(int(person), tasks[person].duplicate(true))
+	_sync_coffee_groups()
 	_refresh_card_views()
 	return true
 
@@ -630,7 +755,7 @@ func _restart_ready_meetings() -> void:
 		if card.type != "meeting" or card.status != "ready" or not bool(card.get("meeting_repeat", false)):
 			continue
 		var group: int = int(card.group)
-		if not groups.has(group) or groups[group].job != "work" or _available_people(group).is_empty():
+		if not groups.has(group) or not _accepts_function(group, "meeting") or _available_people(group).is_empty():
 			continue
 		# Waiting for an eligible opponent is idle, not a failed player command.
 		if meeting_candidates(int(card.owner)).is_empty(): continue
@@ -651,18 +776,14 @@ func _activate_coffee(coffee_id: int, group: int, target_card: int) -> bool:
 	if not available.has(coffee_id):
 		return _fail("这杯咖啡已经分配给其他人员提升卷度")
 	var people: Array = group_people(group)
-	var person := target_card
-	if person >= 0:
-		if not people.has(person) or config.coffee_upgrade(str(cards[person].type)).is_empty():
-			return _fail("只有员工、卷王、肝帝可以喝咖啡逐级提升卷度")
-	else:
-		var lowest_rank := INF
-		for candidate in people:
-			var step: Dictionary = config.coffee_upgrade(str(cards[candidate].type))
-			var rank := _coffee_rank(str(cards[candidate].type))
-			if not step.is_empty() and rank < lowest_rank and available.size() >= int(step.cost) and not _is_paused(int(candidate)) and (not tasks.has(candidate) or tasks[candidate].kind == "work"):
-				person = int(candidate)
-				lowest_rank = rank
+	var person := -1
+	var highest_rank := -1
+	for candidate in people:
+		var step: Dictionary = config.coffee_upgrade(str(cards[candidate].type))
+		var rank := _coffee_rank(str(cards[candidate].type))
+		if not step.is_empty() and rank > highest_rank and available.size() >= int(step.cost) and not _is_paused(int(candidate)) and (not tasks.has(candidate) or tasks[candidate].kind == "work"):
+			person = int(candidate)
+			highest_rank = rank
 	if person < 0:
 		return _fail("请为要提升卷度的人员补足咖啡")
 	if is_striking(person):
@@ -695,7 +816,7 @@ func _activate_coffee(coffee_id: int, group: int, target_card: int) -> bool:
 	return true
 
 func _coffee_batch_valid(person: int, task: Dictionary) -> bool:
-	if not cards.has(person) or str(cards[person].type) != str(task.from_type): return false
+	if not cards.has(person) or str(cards[person].type) != str(task.from_type) or is_meeting_target(person): return false
 	var group := int(cards[person].group)
 	if not group_work(group).is_empty(): return false
 	for id in task.coffee_ids:
@@ -703,23 +824,11 @@ func _coffee_batch_valid(person: int, task: Dictionary) -> bool:
 	return true
 
 func _coffee_rank(kind: String) -> int:
-	# Derive rank from the configured upgrade chain, not from tunable income.
-	var rank := 0
-	var previous := kind
-	for _index in config.rules.coffee.upgrades.size():
-		var found := false
-		for from_type in config.rules.coffee.upgrades:
-			if str(config.rules.coffee.upgrades[from_type].to) == previous:
-				previous = str(from_type)
-				rank += 1
-				found = true
-				break
-		if not found: break
-	return rank
+	return config.coffee_rank(kind)
 
 func _sync_coffee_groups() -> void:
 	# One shared queue per combination: finish the current person's stage,
-	# then take the lowest eligible tier in stable group order. Ready coffee
+	# then take the highest affordable eligible tier in stable group order. Ready coffee
 	# is rescanned when materials arrive, meetings finish, or
 	# a cancelled participant leaves; an unrelated coffee-only pile stays idle.
 	var previous_error := last_error
@@ -762,7 +871,8 @@ func can_strike_group(group: int, attacker_owner: int) -> bool:
 		return false
 	if not config.rules.simulation.owners.any(func(value): return int(value) == attacker_owner):
 		return false
-	if group_people(group).filter(func(person): return not _is_paused(int(person))).is_empty():
+	if group_has_union(group): return false
+	if group_people(group).filter(func(person): return can_person_be_struck(int(person))).is_empty():
 		return false
 	if group_work_rate(group) > 0.0 or group_transfer_rate(group) > 0.0 or group_slack_rate(group) > 0.0:
 		return true
@@ -775,9 +885,52 @@ func _activate_strike(tool_id: int, group: int) -> bool:
 	var owner: int = int(cards[tool_id].owner)
 	if not can_strike_group(group, owner):
 		return _fail("罢工需要对方正在处理工作或摸鱼的组合，且组内有人员")
+	var flight_seconds := float(config.rules.strike.get("flight_seconds", 0.0))
+	if flight_seconds <= 0.0:
+		_apply_strike(tool_id, group)
+		return true
+	var flight := {"source": tool_id, "owner": owner, "group": int(cards[tool_id].group),
+		"target_group": group, "duration": flight_seconds, "total": flight_seconds, "remaining": flight_seconds}
+	pending_strikes[tool_id] = flight
+	cards[tool_id].status = "in_flight"
+	cards[tool_id].total = flight_seconds
+	cards[tool_id].remaining = flight_seconds
+	cards[tool_id].progress = 0.0
+	_emit("strike_launch", flight.duplicate(true))
+	revision += 1
+	return true
+
+func _resolve_strike(tool_id: int) -> void:
+	var flight: Dictionary = pending_strikes[tool_id]
+	pending_strikes.erase(tool_id)
+	if not cards.has(tool_id): return
+	var target := int(flight.target_group)
+	if can_strike_group(target, int(flight.owner)):
+		_apply_strike(tool_id, target)
+		return
+	_return_strike(tool_id, flight, "union" if group_has_union(target) else "target_unavailable")
+
+func _return_strike(tool_id: int, flight: Dictionary, reason: String) -> void:
+	if not cards.has(tool_id): return
+	cards[tool_id].status = "ready"
+	cards[tool_id].total = 0.0
+	cards[tool_id].remaining = 0.0
+	cards[tool_id].progress = 0.0
+	flight["reason"] = reason
+	_emit("strike_blocked", flight)
+	revision += 1
+
+func _cancel_pending_strikes() -> void:
+	for tool_id in pending_strikes.keys():
+		var flight: Dictionary = pending_strikes[tool_id]
+		pending_strikes.erase(tool_id)
+		_return_strike(int(tool_id), flight, "match_finished")
+
+func _apply_strike(tool_id: int, group: int) -> void:
+	var owner: int = int(cards[tool_id].owner)
 	var source_group: int = int(cards[tool_id].group)
 	var duration: float = config.number("strike", "duration_seconds")
-	var affected: Array = group_people(group).filter(func(person): return not _is_paused(int(person)))
+	var affected: Array = group_people(group).filter(func(person): return can_person_be_struck(int(person)))
 	for person in affected:
 		# Moving a host ends its meeting; moving an upgrading employee cancels
 		# the upgrade through the normal scheduler and returns its ingredient.
@@ -793,7 +946,6 @@ func _activate_strike(tool_id: int, group: int) -> bool:
 	_sync_schedule()
 	_emit("strike", {"source": tool_id, "owner": owner, "group": source_group,
 		"target_group": group, "targets": affected, "ids": affected, "duration": duration})
-	return true
 
 ## Dismiss only the selected personnel. Validate the whole request before any
 ## removal, refund or task changes so malformed drag payloads cannot partly sell.
@@ -830,7 +982,7 @@ func dismiss_people(ids: Array, owner: int) -> bool:
 func _activate_outsource(tool_id: int, group: int) -> bool:
 	if int(cards[tool_id].group) != group:
 		return _fail("先把外包与金钱、工作叠成一组")
-	if groups[group].job != "work":
+	if not _accepts_function(group, "outsource"):
 		return _fail("这个组正在执行另一种任务")
 	var owner: int = int(cards[tool_id].owner)
 	var materials := _outsource_additions(group)
@@ -880,7 +1032,7 @@ func _sync_outsource_groups() -> void:
 		var tool: Dictionary = cards[tool_id]
 		if tool.type != "outsource" or tool.status != "ready": continue
 		var group: int = int(tool.group)
-		if groups[group].job != "work" or group_work(group).is_empty(): continue
+		if not _accepts_function(group, "outsource") or group_work(group).is_empty(): continue
 		if _outsource_additions(group).work_ids.is_empty(): continue
 		_activate_outsource(int(tool_id), group)
 
@@ -906,7 +1058,7 @@ func _cancel_outsource(tool_id: int) -> void:
 		cards[tool_id].progress = 0.0
 		cards[tool_id].remaining = 0.0
 		cards[tool_id].total = 0.0
-	if groups.has(batch.group): groups[batch.group].job = "work"
+	if groups.has(batch.group): _sync_group_function(int(batch.group))
 	_emit("outsource_cancel", {"source": tool_id, "owner": batch.owner, "group": batch.group})
 
 func _validate_outsource_batches() -> void:
@@ -925,13 +1077,110 @@ func _complete_outsource(tool_id: int) -> void:
 		cards[id].amount -= int(batch.payments[id])
 		if int(cards[id].amount) == 0: _consume(int(id))
 	for id in batch.work_ids: _consume(int(id))
-	groups[batch.group].job = "work"
+	_sync_group_function(int(batch.group))
 	_recover(tool_id)
 	_emit("outsource", {"source": tool_id, "owner": batch.owner, "group": batch.group,
 		"ids": batch.work_ids, "spent": batch.amount, "amount": batch.work_ids.size()})
 
+func _recruitment_additions(group: int) -> Dictionary:
+	var cash: Array = _group_type(group, "money")
+	var funds := 0
+	for id in cash: funds += available_cash_amount(int(id))
+	var reserved_count := 0
+	for batch in recruitment.values(): reserved_count += int(batch.count)
+	var capacity := maxi(0, OffWorkConfig.MAX_CARD_ALLOCATION - cards.size() - reserved_count)
+	var unit: int = config.integer("recruitment", "cost_per_employee")
+	var count := mini(funds / unit, capacity)
+	var payments: Dictionary = {}
+	var left := count * unit
+	for id in cash:
+		var take := mini(left, available_cash_amount(int(id)))
+		if take > 0: payments[id] = take
+		left -= take
+		if left == 0: break
+	return {"count": count, "payments": payments, "amount": count * unit}
+
+func _sync_recruitment_groups() -> void:
+	if not config.cards.has("boss"): return
+	for boss_id in recruitment:
+		var batch: Dictionary = recruitment[boss_id]
+		var additions := _recruitment_additions(int(batch.group))
+		batch.count += int(additions.count)
+		batch.amount += int(additions.amount)
+		for id in additions.payments: batch.payments[id] = int(batch.payments.get(id, 0)) + int(additions.payments[id])
+	for boss_id in cards:
+		if cards[boss_id].type != "boss" or tasks.has(boss_id) or recruitment.has(boss_id): continue
+		var group := int(cards[boss_id].group)
+		if str(groups[group].job) != "work": continue
+		var materials := _recruitment_additions(group)
+		if int(materials.count) == 0: continue
+		var duration: float = config.number("recruitment", "seconds")
+		var owner := int(cards[boss_id].owner)
+		recruitment[boss_id] = {"owner": owner, "group": group, "payments": materials.payments,
+			"count": materials.count, "amount": materials.amount, "total": duration, "remaining": duration}
+		tasks[boss_id] = {"kind": "recruitment", "tool_id": boss_id, "work_id": -1, "group": group, "progress": 0.0}
+		cards[boss_id].status = "active"
+		cards[boss_id].total = duration
+		cards[boss_id].remaining = duration
+		_emit("recruitment_start", {"source": boss_id, "owner": owner, "group": group,
+			"count": materials.count, "amount": materials.count, "spent": materials.amount})
+
+func _recruitment_batch_valid(boss_id: int) -> bool:
+	if not recruitment.has(boss_id) or not cards.has(boss_id) or cards[boss_id].type != "boss": return false
+	var batch: Dictionary = recruitment[boss_id]
+	var group := int(batch.group)
+	if not groups.has(group) or int(cards[boss_id].group) != group: return false
+	for id in batch.payments:
+		if not cards.has(id) or cards[id].type != "money" or int(cards[id].group) != group or int(cards[id].amount) < int(batch.payments[id]):
+			return false
+	return true
+
+func _cancel_recruitment(boss_id: int) -> void:
+	if not recruitment.has(boss_id): return
+	var batch: Dictionary = recruitment[boss_id]
+	recruitment.erase(boss_id)
+	if tasks.has(boss_id) and tasks[boss_id].kind == "recruitment": tasks.erase(boss_id)
+	if cards.has(boss_id):
+		cards[boss_id].status = "ready"
+		cards[boss_id].total = 0.0
+		cards[boss_id].remaining = 0.0
+		cards[boss_id].progress = 0.0
+	_emit("recruitment_cancel", {"source": boss_id, "owner": batch.owner, "group": batch.group,
+		"count": batch.count, "amount": batch.count, "spent": 0})
+
+func _validate_recruitment_batches() -> void:
+	for boss_id in recruitment.keys():
+		if not _recruitment_batch_valid(int(boss_id)): _cancel_recruitment(int(boss_id))
+
+func _complete_recruitment(boss_id: int) -> void:
+	if not _recruitment_batch_valid(boss_id):
+		_cancel_recruitment(boss_id)
+		return
+	var batch: Dictionary = recruitment[boss_id]
+	if int(batch.count) > OffWorkConfig.MAX_CARD_ALLOCATION - cards.size():
+		_cancel_recruitment(boss_id)
+		return
+	recruitment.erase(boss_id)
+	tasks.erase(boss_id)
+	for id in batch.payments:
+		cards[id].amount -= int(batch.payments[id])
+		if int(cards[id].amount) == 0: _consume(int(id))
+	cards[boss_id].status = "ready"
+	cards[boss_id].total = 0.0
+	cards[boss_id].remaining = 0.0
+	cards[boss_id].progress = 0.0
+	var destination := create_group(int(batch.owner))
+	var employees: Array = []
+	for _index in int(batch.count): employees.append(add_card("employee", int(batch.owner), destination))
+	_emit("recruitment_complete", {"source": boss_id, "owner": batch.owner, "group": batch.group,
+		"count": batch.count, "amount": batch.count, "spent": batch.amount, "ids": employees,
+		"person_ids": employees, "person_group": destination})
+
 func _sync_schedule(start_coffee := true) -> void:
+	_eject_union_overtime()
+	for group in groups: _sync_group_function(int(group))
 	_validate_outsource_batches()
+	_validate_recruitment_batches()
 	for tool_id in meetings.keys():
 		var meeting: Dictionary = meetings[tool_id]
 		var host: int = int(meeting.host)
@@ -951,7 +1200,7 @@ func _sync_schedule(start_coffee := true) -> void:
 		if not invalid:
 			invalid = int(cards[person].group) != int(task.group)
 			if task.kind == "work":
-				invalid = invalid or not config.can_work(str(cards[person].type))
+				invalid = invalid or not can_person_work(int(person))
 		if task.kind == "work" or task.kind == "transfer":
 			invalid = invalid or not cards.has(task.work_id)
 			if cards.has(task.work_id):
@@ -974,11 +1223,11 @@ func _sync_schedule(start_coffee := true) -> void:
 	_finish_empty_batches()
 	_sync_transfer_groups()
 	_sync_outsource_groups()
+	_sync_recruitment_groups()
 	_restart_ready_meetings()
 	_sync_slack_groups()
-	# Work assignments are slots of one group batch. Rebuild them so a new
-	# colleague joins the current batch and a meeting/coffee participant leaves
-	# its work available to remaining colleagues without an independent timer.
+	# Work assignments are slots of one group batch. Only a work combination
+	# assigns them; a meeting's idle colleagues must not run a second function.
 	for person in tasks.keys():
 		if tasks[person].kind == "work": tasks.erase(person)
 	for group in groups:
@@ -988,14 +1237,14 @@ func _sync_schedule(start_coffee := true) -> void:
 			continue
 		if not groups[group].has("work_progress"):
 			groups[group]["work_progress"] = float(cards[works[0]].progress)
-		if not ["work", "meeting"].has(str(groups[group].job)):
+		if not _accepts_function(int(group), "work"):
 			continue
 		var index := 0
 		for person in group_people(int(group)):
-			if tasks.has(person) or _is_paused(int(person)) or not config.can_work(str(cards[person].type)):
+			if tasks.has(person) or _is_paused(int(person)) or not can_person_work(int(person)):
 				continue
 			if index >= works.size(): break
-			var count: int = config.work_batch_size(str(cards[person].type), works.size() - index)
+			var count: int = config.work_batch_size(effective_work_kind(str(cards[person].type), int(group)), works.size() - index)
 			tasks[person] = {"kind": "work", "group": group, "work_id": works[index],
 				"work_ids": works.slice(index, index + count), "tool_id": -1, "progress": group_work_progress(int(group))}
 			index += count
@@ -1037,6 +1286,10 @@ func _progress_time(delta: float) -> void:
 		meeting.remaining = maxf(0.0, float(meeting.remaining) - delta)
 	for batch in outsourcing.values():
 		batch.remaining = maxf(0.0, float(batch.remaining) - delta)
+	for flight in pending_strikes.values():
+		flight.remaining = maxf(0.0, float(flight.remaining) - delta)
+	for batch in recruitment.values():
+		batch.remaining = maxf(0.0, float(batch.remaining) - delta)
 	time += delta
 	_conveyor_elapsed += delta
 	conveyor_progress = _conveyor_elapsed / config.number("conveyor", "interval_seconds")
@@ -1059,7 +1312,7 @@ func _settle_due() -> void:
 	for group in slack_groups: _complete_slack_group(int(group))
 	var completed: Array = []
 	for person in tasks:
-		if str(tasks[person].kind) not in ["meeting", "work", "transfer", "slack"] and _task_progress(int(person)) >= 1.0 - epsilon:
+		if str(tasks[person].kind) not in ["meeting", "work", "transfer", "slack", "recruitment"] and _task_progress(int(person)) >= 1.0 - epsilon:
 			completed.append(person)
 	for person in completed:
 		if tasks.has(person):
@@ -1070,6 +1323,10 @@ func _settle_due() -> void:
 	for tool_id in outsourcing.keys():
 		if float(outsourcing[tool_id].remaining) <= epsilon:
 			_complete_outsource(int(tool_id))
+	for boss_id in recruitment.keys():
+		if float(recruitment[boss_id].remaining) <= epsilon: _complete_recruitment(int(boss_id))
+	for tool_id in pending_strikes.keys():
+		if float(pending_strikes[tool_id].remaining) <= epsilon: _resolve_strike(int(tool_id))
 	for id in cards.keys():
 		var card: Dictionary = cards[id]
 		if _has_timer(card) and float(card.remaining) <= epsilon:
@@ -1098,6 +1355,8 @@ func _task_progress(person: int) -> float:
 		return group_transfer_progress(int(task.group))
 	if task.kind == "slack":
 		return group_slack_progress(int(task.group))
+	if task.kind == "recruitment" and recruitment.has(person):
+		return 1.0 - float(recruitment[person].remaining) / float(recruitment[person].total)
 	if task.kind == "meeting" and meetings.has(task.tool_id):
 		return 1.0 - float(meetings[task.tool_id].remaining) / float(meetings[task.tool_id].total)
 	return float(task.progress)
@@ -1124,7 +1383,7 @@ func _complete_work_group(group: int) -> void:
 	var income := 0
 	for person in participants:
 		var work_ids: Array = tasks[person].work_ids
-		income += work_ids.size() * config.income_per_work(str(cards[person].type))
+		income += work_ids.size() * config.income_per_work(effective_work_kind(str(cards[person].type), group))
 		completed.append_array(work_ids)
 		tasks.erase(person)
 	for work_id in completed:
@@ -1205,16 +1464,7 @@ func _complete_slack_group(group: int) -> void:
 
 func _finish_empty_batches() -> void:
 	for group in groups:
-		if groups[group].job in ["transfer", "slack"]: continue
-		if groups[group].job == "work" or outsourcing.values().any(func(batch): return int(batch.group) == int(group)):
-			continue
-		var occupied := false
-		for task in tasks.values():
-			if int(task.group) == int(group) and task.kind != "work":
-				occupied = true
-				break
-		if not occupied:
-			groups[group].job = "work"
+		_sync_group_function(int(group))
 
 func _end_meeting(tool_id: int) -> void:
 	if not meetings.has(tool_id):
@@ -1227,7 +1477,7 @@ func _end_meeting(tool_id: int) -> void:
 		_recover(tool_id)
 	_emit("meeting_end", {"source": tool_id, "host": meeting.host, "group": meeting.group, "targets": meeting.targets.duplicate()})
 	if groups.has(meeting.group):
-		groups[meeting.group].job = "work"
+		_sync_group_function(int(meeting.group))
 
 func _recover(tool_id: int) -> void:
 	if not cards.has(tool_id):
@@ -1280,16 +1530,22 @@ func _refresh_card_views() -> void:
 			if tasks.has(id):
 				card.activity = tasks[id].kind
 				card.progress = _task_progress(int(id))
+				if tasks[id].kind == "recruitment":
+					card.total = recruitment[id].total
+					card.remaining = recruitment[id].remaining
 				if tasks[id].kind == "work":
 					var group: int = int(tasks[id].group)
 					if not group_rates.has(group): group_rates[group] = group_work_rate(group)
-					card.rate_multiplier = 0.0 if bool(card.paused) else float(group_rates[group]) * float(config.roles[card.type].work_seconds)
+					card.rate_multiplier = 0.0 if bool(card.paused) else float(group_rates[group]) * float(config.roles[effective_work_kind(str(card.type), group)].work_seconds)
 				elif tasks[id].kind in ["transfer", "slack", "coffee"]:
 					card.rate_multiplier = _task_rate(int(id)) * config.number(str(tasks[id].kind), "seconds")
 		elif config.category(str(card.type)) in ["tool", "ingredient"]:
 			card.paused = false
 			if _has_timer(card) and float(card.total) > 0.0:
 				card.progress = clampf(1.0 - float(card.remaining) / float(card.total), 0.0, 1.0)
+			elif pending_strikes.has(id):
+				card.remaining = pending_strikes[id].remaining
+				card.progress = 1.0 - float(card.remaining) / float(card.total)
 			elif outsourcing.has(id):
 				card.remaining = outsourcing[id].remaining
 				card.progress = 1.0 - float(card.remaining) / float(card.total)
@@ -1353,7 +1609,7 @@ func _spend(owner: int, amount: int, payment_ids: Array = []) -> bool:
 		available += available_cash_amount(int(id))
 		reserved += reserved_cash_amount(int(id))
 	if amount < 0 or available < amount:
-		return _fail("外包资金已预留，可用金钱不足" if reserved > 0 and amount >= 0 else "钱还不够")
+		return _fail("组合资金已预留，可用金钱不足" if reserved > 0 and amount >= 0 else "钱还不够")
 	var left: int = amount
 	for id in candidates:
 		if left == 0: break
@@ -1399,7 +1655,7 @@ func _transfer_destination(owner: int) -> int:
 	return create_group(owner)
 
 func _group_type(group: int, kind: String) -> Array:
-	if _index_queries: return _indexed_group(group).types.get(kind, []).duplicate()
+	if _index_queries or _search_queries: return _indexed_group(group).types.get(kind, []).duplicate()
 	var result: Array = []
 	for id in group_cards(group):
 		if cards.has(id) and cards[id].type == kind:
@@ -1422,6 +1678,7 @@ func _opponent(owner: int) -> int:
 func resign(owner: int) -> bool:
 	if winner >= 0 or owner not in [0, 1]: return false
 	winner = 1 - owner
+	_cancel_pending_strikes()
 	revision += 1
 	_emit("win", {"winner": winner, "owner": winner, "resigned": owner})
 	return true
@@ -1436,6 +1693,7 @@ func _check_winner() -> void:
 	if cleared.is_empty():
 		return
 	winner = int(cleared[0]) if cleared.size() == 1 else config.integer("simulation", "tie_winner")
+	_cancel_pending_strikes()
 	_emit("win", {"winner": winner, "owner": winner})
 
 func _make_offer(kind: String) -> Dictionary:

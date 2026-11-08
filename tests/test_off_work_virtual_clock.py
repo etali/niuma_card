@@ -19,7 +19,7 @@ class OffWorkVirtualClock(unittest.TestCase):
         self.cards["rules"]["initial"] = {"money": 0, "groups": [{"work": 2}, {"employee": 1}]}
         self.cards["roles"]["employee"]["work_seconds"] = 3600
         self.cards["rules"]["conveyor"]["interval_seconds"] = 900
-        self.profile = {"think_seconds": 30, "buy_chance": 0}
+        self.profile = {"think_seconds": 30, "decision_budget_ms": 12, "evaluation_max_seconds": 7200}
 
     def simulate(self, a, b, limit):
         with tempfile.TemporaryDirectory() as folder:
@@ -150,7 +150,14 @@ class OffWorkVirtualClock(unittest.TestCase):
             self.assertTrue(all(s["budget_ms"] == expected for s in samples))
             for sample in samples:
                 self.assertGreaterEqual(sample["search_nodes"], sample["search_depth"])
-                self.assertLessEqual(len(sample["principal_variation"]), sample["search_depth"])
+                if sample["search_depth"] == 0:
+                    self.assertFalse(sample["root_complete"])
+                    # A completed root prefix may publish one usable command
+                    # before every root candidate has been evaluated.
+                    self.assertLessEqual(len(sample["principal_variation"]), 1)
+                else:
+                    self.assertTrue(sample["root_complete"])
+                    self.assertLessEqual(len(sample["principal_variation"]), sample["search_depth"])
 
     def test_shorter_than_epsilon_timeout_with_no_bot_deadline(self):
         disabled = {"enabled": False}

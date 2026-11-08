@@ -27,6 +27,7 @@ func state(contents := {"employee": 2, "work": 200}) -> OffWorkState:
 	cfg.rules.initial.groups = [staff, {"work":contents.get("work", 200)}]
 	cfg.rules.initial.money = 0
 	cfg.rules.bot.enabled = false
+	cfg.rules.strike.flight_seconds = 0.0
 	var s := OffWorkState.new(cfg)
 	s.new_game(20261101)
 	s.drain_events()
@@ -72,16 +73,16 @@ func _fair_tiers() -> void:
 	var original_high: int = ids(s, "workaholic")[0]
 	var group: int = s.cards[people[0]].group
 	s.move_cards(cups(s, 8), group)
-	check(drinkers(s, group) == [people[0]], "default queue chooses the lowest tier even if higher tiers precede it in the stack")
+	check(drinkers(s, group) == [original_high], "highest affordable tier is selected first")
 	s.advance(5.0)
-	check(drinkers(s, group) == [people[1]], "remaining ordinary employee goes before every grinder")
+	check(s.cards[original_high].type == "work_emperor" and drinkers(s, group) == [original_grinder], "after highest upgrade the next affordable tier begins")
 	s.advance(5.0)
-	check(drinkers(s, group) == [original_grinder], "equal tiers use stable group order after the ordinary employees finish")
-	s.advance(15.0)
-	check(s.cards[original_grinder].type == "workaholic" and people.all(func(id): return s.cards[id].type == "workaholic"), "all three available grinders progress one at a time before a higher rank drinks")
-	check(s.cards[original_high].type == "workaholic" and ids(s, "coffee").is_empty(), "queue neither skips a level nor spends four cups on a higher rank ahead of lower ranks")
+	check(drinkers(s, group) == [people[0]], "insufficient coffee for a higher tier allows an employee to begin")
+	s.advance(10.0)
+	check(s.cards[original_grinder].type == "workaholic" and people.all(func(id): return s.cards[id].type == "grinder"), "queue follows affordability after higher tiers consume materials")
+	check(ids(s, "coffee").is_empty(), "all reserved coffee is consumed once")
 	var completed := events(s)
-	check(completed.map(func(event): return event.amount) == [1, 1, 2, 2, 2], "mixed queue consumes each configured stage cost once")
+	check(completed.map(func(event): return event.amount) == [4, 2, 1, 1], "mixed queue consumes the highest affordable configured stage first")
 
 func _refill_and_fresh_output() -> void:
 	var s := state()
@@ -182,9 +183,9 @@ func _meeting_and_strike() -> void:
 	check(s.activate(meeting, s.cards[leader].group, leader), "meeting starts against queued personnel")
 	check(people.all(func(id): return s.is_meeting_target(id)), "both queued employees are pulled into the meeting")
 	s.advance(12.0)
-	check(drinkers(s, group) == [people[0]] and is_equal_approx(s.tasks[people[0]].progress, 0.2), "meeting freezes the active upgrade and does not start another stage")
-	s.advance(9.0)
-	check(people.all(func(id): return s.cards[id].type == "grinder") and ids(s, "coffee", 1).is_empty(), "meeting return resumes the first bar and then the waiting employee")
+	check(drinkers(s, group) == [people[0]] and is_zero_approx(s.tasks[people[0]].progress), "meeting return restarts an abandoned upgrade at zero")
+	s.advance(10.0)
+	check(people.all(func(id): return s.cards[id].type == "grinder") and ids(s, "coffee", 1).is_empty(), "meeting return restarts the first bar and then the waiting employee")
 
 	var struck := state()
 	people = ids(struck, "employee", 1)

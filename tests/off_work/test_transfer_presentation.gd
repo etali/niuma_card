@@ -87,7 +87,7 @@ func _winning_transfer() -> void:
 	var gid: int = game.state.cards[_person(0)].group
 	var tool: int = game.state.cards.values().filter(func(card): return card.type == "transfer" and card.owner == 0)[0].id
 	var ids: Array = game.state.group_work(gid)
-	game.state.move_cards([tool], gid)
+	gid = game.state.move_cards(game.state.group_cards(gid), int(game.state.cards[tool].group))
 	game.board.sync_state(game.state)
 	await create_timer(0.25, true).timeout
 	game._process(game.state.config.number("transfer", "seconds"))

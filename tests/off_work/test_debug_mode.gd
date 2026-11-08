@@ -40,7 +40,7 @@ func _run() -> void:
 	fresh.free()
 	_advance(4.0)
 	_expect_timer(top, 6.0, "shared group clock counts two employees once")
-	_check(top.type == "leader" and float(top.record.total) == 0.0, "visible leader uses the group's real clock instead of its own empty total")
+	_check(top.type == "work" and float(top.record.total) == 0.0, "visible work file uses the group's real clock instead of its own empty total")
 	var overtime: int = game.state.add_card("overtime", 0)
 	game.state.move_cards([overtime], 1)
 	board.sync_state(game.state)
@@ -94,9 +94,9 @@ func _run() -> void:
 	_expect_timer(meeting_card, 20.0, "reverse cooldown counts down independently of fill direction")
 	_check(is_equal_approx(meeting_card.task_progress_display_value(), 20.0 / 24.0), "cooldown's reverse fill agrees with numeric time")
 
-	_fixture([{"employee": 1, "work": 40}])
-	var transfer: int = game.state.add_card("transfer", 0)
-	game.state.move_cards([transfer], 1)
+	_fixture([{"transfer": 1, "employee": 1, "work": 40}])
+	var transfer: int = game.state.group_actions(1)[0]
+	game.state.activate(transfer, 1)
 	_advance(3.0)
 	top = _bar(1, "transfer")
 	_expect_timer(top, 7.0, "continuous transfer uses the group's shared ten-second cycle")
@@ -106,8 +106,8 @@ func _run() -> void:
 	_advance(2.0)
 	_expect_timer(_bar(1, "coffee"), 3.0, "visible upgrading staff shows the real five-second coffee countdown")
 	_check(is_equal_approx(board.by_uid[coffee]._debug_remaining, 3.0), "buried coffee retains the same material countdown without drawing through the stack")
-	_fixture([{"employee": 1, "work": 40}])
-	var slack: int = game.state.add_card("slack", 0, 1)
+	_fixture([{"slack": 1, "employee": 1, "work": 40}])
+	var slack: int = game.state.group_actions(1)[0]
 	_check(game.state.activate(slack, 1), "slack fixture starts a real task")
 	_advance(7.0)
 	for card: OffWorkCard in board.by_uid.values():

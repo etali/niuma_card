@@ -120,9 +120,7 @@ func _misassigned_host() -> void:
 	check(c.world.time == 0 and c.world.winner < 0, "reading after a mistaken worker-host assignment cannot exhaust the lesson")
 	check(c.tutor.demonstrate(c.world), "demonstration undoes the mistaken meeting using an actual tool move")
 	c.tutor.observe(c.world,c.world.drain_events())
-	settle(c, 90)
-	check(c.tutor.demonstrate(c.world), "after cooldown the leader can host the repaired meeting")
-	c.tutor.observe(c.world,c.world.drain_events())
+	check(c.tutor.step == 1 and c.world.meetings.has(tool), "the misplaced tool never claimed the work pile and can immediately move to an independent host")
 	move(c, [leader], workplace)
 	check(c.tutor.step == 0, "moving the leader away from the meeting returns to its setup")
 	settle(c, 90)
@@ -139,9 +137,10 @@ func _transfer() -> void:
 	check(c.world.time == 0, "transfer setup does not silently send a batch")
 	var tool: int = owned(c, "transfer")[0]
 	var worker: int = owned(c, "employee")[0]
-	var group: int = c.world.cards[worker].group
+	var group: int = c.world.cards[tool].group
 	var cash: int = c.world.money(0)
-	move(c, [tool], group, worker)
+	check(c.world.group_people(group).is_empty() and not c.world.tasks.has(worker), "transfer lesson starts with an independent employee and a prepared work/tool pile")
+	move(c, [worker], group, worker)
 	check(c.tutor.step == 1 and c.world.tasks[worker].kind == "transfer", "combining the actual tool creates a transfer task")
 	var events := settle(c, 60)
 	check(c.tutor.step == 2 and c.world.time == c.world.config.number("transfer","seconds"), "the wait stops on the first actual transfer")

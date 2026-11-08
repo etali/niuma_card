@@ -32,7 +32,17 @@ func _run() -> void:
 	for uid in people: source_positions[uid] = board.by_uid[uid].global_position
 	var target: Dictionary = board.enemy_board.group_of(board.by_uid[people[0]])
 	await _drag(board.by_uid[strike], _point(target.cards[board.enemy_board._top_index(target)]))
-	_check(not state.cards.has(strike), "valid pointer drop consumes one strike")
+	_check(state.pending_strikes.has(strike) and board._strike_attacks.has(strike), "valid pointer drop launches the actual strike card")
+	var landed: Vector3 = board.by_uid[strike].global_position
+	_check(board._strike_attacks[strike].delivered and landed.is_equal_approx(board._strike_attacks[strike].to), "manual drag stays at the target instead of throwing again from home")
+	_check(is_equal_approx(state.pending_strikes[strike].remaining, state.config.rules.strike.flight_seconds) and people.all(func(uid): return not state.is_striking(uid)), "manual delivery retains the full authoritative response window")
+	state.advance(float(state.config.rules.strike.flight_seconds) * 0.5)
+	board.sync_state(state)
+	_check(board.by_uid[strike].global_position.is_equal_approx(landed) and people.all(func(uid): return not state.is_striking(uid)), "the delivered card remains still while the original response clock advances")
+	state.advance(float(state.config.rules.strike.flight_seconds) * 0.5)
+	board.sync_state(state)
+	for event in state.drain_events(): board.play_event(event)
+	_check(not state.cards.has(strike), "valid pointer strike consumes only on impact")
 	_check(board._strike_dancers.size() == people.size(), "all present enemy personnel enter independent dance motion")
 	for uid in people:
 		var card: OffWorkCard = board.by_uid[uid]
@@ -71,6 +81,7 @@ func _run() -> void:
 		_check(not card.draggable, "enemy ownership still forbids stealing expired personnel %d" % uid)
 	await _coffee_flight()
 	await _opponent_strike_interrupts_drag()
+	await _manual_network_drop()
 	if OS.get_environment("WORK_STRIKE_CAPTURE") == "1" and DisplayServer.get_name() != "headless":
 		await _capture_strike()
 	main.queue_free()
@@ -78,6 +89,51 @@ func _run() -> void:
 	for message in failures: printerr("FAIL ", message)
 	print("STRIKE_PRESENTATION %s (%d checks)" % ["PASS" if failures.is_empty() else "FAIL", checks])
 	quit(0 if failures.is_empty() else 1)
+
+func _manual_network_drop() -> void:
+	main._new_game()
+	await _settle()
+	var transport := OffWorkTransport.new()
+	main.lan.net = transport
+	main.lan._round = 1
+	main.lan._bind_connection()
+	main.lan.set_process(false)
+	for accepted in [false, true]:
+		var strike := _owned("strike")
+		var victim := -1
+		for uid in state.cards:
+			if state.cards[uid].owner == 1 and state.cards[uid].type == "employee" and not state.group_work(int(state.cards[uid].group)).is_empty():
+				victim = int(uid)
+				break
+		var target: int = state.cards[victim].group
+		var native: Dictionary = board.enemy_board.group_of(board.by_uid[victim])
+		await _drag(board.by_uid[strike], _point(native.cards[board.enemy_board._top_index(native)]))
+		_check(not state.pending_strikes.has(strike) and board._strike_attacks[strike].phase == "pending"
+			and board._strike_attacks[strike].awaiting_ack, "LAN manual drop waits for authority without inventing a rule launch")
+		var dropped: Vector3 = board.by_uid[strike].global_position
+		board.sync_state(state)
+		board._advance_strike_attacks(10.0)
+		_check(board.by_uid[strike].global_position.is_equal_approx(dropped), "ordinary snapshots and elapsed wall time preserve the pending drop position")
+		if not accepted:
+			transport.rejected.emit({"reason":"目标已失效"})
+			_check(board._strike_attacks[strike].phase == "return" and state.cards.has(strike), "LAN rejection returns the actual unconsumed card")
+			var home: Vector3 = board._strike_attacks[strike].home
+			board._advance_strike_attacks(float(board._settings.strike_attack_motion.return_seconds))
+			await _settle()
+			_check(not board._strike_attacks.has(strike) and board.by_uid[strike].draggable
+				and board.rest_pos(board.by_uid[strike]).distance_to(home) < 0.02, "rejected drop releases its lock and restores its original place")
+		else:
+			var authoritative := state.fork_for_bot(73)
+			_check(authoritative.activate(strike, target), "server rules accept the same manual strike command")
+			var world := {}
+			for key in OffWorkState.WORLD_FIELDS: world[key] = authoritative.get(key)
+			transport.frame_received.emit({"world":world, "rng":authoritative._rng.state,
+				"events":authoritative.drain_events(), "round":1, "paused":false})
+			_check(state.pending_strikes.has(strike) and board._strike_attacks[strike].phase == "attack"
+				and board._strike_attacks[strike].delivered, "LAN acknowledgement preserves the manual-delivery source")
+			_check(board.by_uid[strike].global_position.is_equal_approx(dropped) and not state.is_striking(victim), "acknowledgement neither rethrows nor settles damage early")
+	main.lan.net = null
+	transport.close()
 
 func _coffee_flight() -> void:
 	var worker := -1
@@ -139,6 +195,9 @@ func _opponent_strike_interrupts_drag() -> void:
 	for uid in state.cards:
 		if state.cards[uid].type == "strike" and int(state.cards[uid].owner) == 1: opponent_tool = int(uid)
 	_check(state.activate(opponent_tool, target_group), "opponent uses the same strike rule")
+	board.sync_state(state)
+	_check(board.is_dragging() and board._strike_attacks.has(opponent_tool), "incoming flight leaves the local response gesture available")
+	state.advance(float(state.config.rules.strike.flight_seconds))
 	board.sync_state(state)
 	for event in state.drain_events():
 		if event.kind == "strike": board.play_event(event)
@@ -212,6 +271,8 @@ func _capture_strike() -> void:
 	for gid in state.groups:
 		if state.can_strike_group(int(gid), 0): target = int(gid)
 	main._activate(strike, target)
+	state.advance(float(state.config.rules.strike.flight_seconds))
+	board.sync_state(state)
 	board._pointer_at = Vector2(10, 400)
 	await create_timer(0.28).timeout
 	await _draw_frame()

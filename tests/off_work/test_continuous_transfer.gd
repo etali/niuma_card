@@ -37,8 +37,10 @@ func _group(state: OffWorkState) -> int:
 	return -1
 
 func _start(state: OffWorkState, group: int) -> int:
-	var tool := state.add_card("transfer", 0)
-	_check(state.move_cards([tool], group) == group and state.cards[tool].status == "active", "stacking starts a real transfer combination")
+	var people := state.group_people(group)
+	state.move_cards(people, -1)
+	var tool := state.add_card("transfer", 0, group)
+	_check(state.move_cards(people, group) == group and state.cards[tool].status == "active", "rebuilding personnel and work around the tool starts transfer")
 	state.drain_events()
 	return tool
 
@@ -119,7 +121,10 @@ func _dismantle_and_refill() -> void:
 	_check(state.cards[tool].status == "ready" and state.group_transfer_participants(group).is_empty(), "removing transfer tool releases all transfer assignments")
 	_check(is_equal_approx(state.group_work_progress(group), 0.2), "ordinary work resumes its own pre-transfer progress")
 	state.advance(1.0)
+	var rebuild := state.group_people(group)
+	state.move_cards(rebuild, -1)
 	state.move_cards([tool], group)
+	state.move_cards(rebuild, group)
 	_check(is_zero_approx(state.group_transfer_progress(group)), "rebuilding a dismantled transfer combination starts a new cycle")
 	var worker: int = state.group_people(group)[0]
 	state.advance(4.0)

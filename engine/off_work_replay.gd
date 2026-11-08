@@ -5,7 +5,10 @@ extends RefCounted
 const Session = preload("res://engine/off_work_session.gd")
 const JsonStore = preload("res://engine/json_store.gd")
 const SavePaths = preload("res://engine/save_paths.gd")
+const SPEEDS: Array[float] = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0]
 var playing := false
+var speed := 1.0
+var source_path := ""
 var frames: Array = []
 var playback: Array = []
 var clock := 0.0
@@ -35,10 +38,16 @@ func record(host: Node, events: Array = [], force := false) -> void:
 	frames.append({"t": state.time, "data": Marshalls.raw_to_base64(payload.compress(FileAccess.COMPRESSION_ZSTD)), "size": payload.size()})
 
 func save(host: Node) -> String:
-	if playing: return ""
+	if playing: return source_path
 	record(host, [], true)
 	var path := SavePaths.recordings_dir().path_join("下班-%s-%d.json" % [Time.get_datetime_string_from_system().replace(":", "-"), Time.get_ticks_usec()])
 	var tape := {"game": "work", "version": 1, "cards": host.state.config.balance_document(), "frames": frames}
+	# Record the policy actually bound to this match, so a saved loss can be
+	# audited without guessing its strength from the cadence of visible moves.
+	if host.bot != null:
+		tape["bot"] = {"model_version":host.state.config.bot_preferences.get("model_version", 0),
+			"policy":host.bot._policy.duplicate(true),
+			"selection":preload("res://engine/off_work_bot_preferences.gd").selection_snapshot()}
 	return path if JsonStore.save(path, tape, false) else ""
 
 func begin(host: Node, path: String) -> Dictionary:
@@ -48,6 +57,13 @@ func begin(host: Node, path: String) -> Dictionary:
 		return {"ok": false, "reason": "请选用下班玩法保存的录像"}
 	var config := OffWorkConfig.new(tape.cards)
 	if not config.errors.is_empty(): return {"ok": false, "reason": "录像卡表无效"}
+	if tape.has("bot"):
+		if not tape.bot is Dictionary or not tape.bot.get("policy") is Dictionary:
+			return {"ok": false, "reason": "录像 BOT 参数无效"}
+		var preferences: Dictionary = config.bot_preferences.duplicate(true)
+		preferences.model_version = tape.bot.get("model_version", preferences.model_version)
+		config = OffWorkConfig.new(tape.cards, {"bot":tape.bot.policy, "preferences":preferences})
+		if not config.errors.is_empty(): return {"ok": false, "reason": "录像 BOT 参数无效"}
 	var view := OffWorkState.new(config)
 	var last_time := -1.0
 	for frame in tape.frames:
@@ -59,6 +75,8 @@ func begin(host: Node, path: String) -> Dictionary:
 	host.state = view
 	host._use_table_config(config)
 	playing = true
+	speed = 1.0
+	source_path = ProjectSettings.globalize_path(path)
 	playback = tape.frames
 	next = 0
 	clock = playback[0].t
@@ -74,14 +92,21 @@ static func decode_frame(frame: Variant, model: OffWorkState) -> Dictionary:
 	var entry: Variant = bytes_to_var(raw)
 	if not entry is Dictionary or not entry.get("world") is Dictionary or not entry.get("layout") is Dictionary or not entry.get("events") is Array or not entry.get("rng") is int: return {}
 	if not entry.layout.has_all(Session.BOARD_FIELDS): return {}
+	for key in ["pending_strikes", "recruitment"]:
+		if not entry.world.has(key): entry.world[key] = {}
 	for key in Session.STATE_FIELDS:
 		if typeof(entry.world.get(key)) != typeof(model.get(key)): return {}
 	for card in entry.world.cards.values():
 		if not card is Dictionary or not model.config.cards.has(card.get("type")): return {}
 	return entry
 
+func set_speed(value: float) -> void:
+	speed = clampf(value, SPEEDS.front(), SPEEDS.back())
+
 func advance(host: Node, delta: float) -> void:
-	clock = minf(clock + delta, playback.back().t)
+	if not playing or playback.is_empty(): return
+	# Only the recording clock changes speed; the parked game and UI keep real time.
+	clock = minf(clock + maxf(0.0, delta) * speed, playback.back().t)
 	while next < playback.size() and playback[next].t <= clock:
 		var frame := decode_frame(playback[next], host.state)
 		for key in Session.STATE_FIELDS: host.state.set(key, frame.world[key])
@@ -110,6 +135,7 @@ func seek(host: Node, seconds: float) -> void:
 func end(host: Node) -> void:
 	if not playing: return
 	playing = false
+	speed = 1.0
 	playback.clear()
 	host.restore_table(parked)
 	parked.clear()

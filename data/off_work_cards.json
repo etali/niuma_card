@@ -117,6 +117,24 @@
       "art": "work_emperor",
       "purchasable": false,
       "refund": 4
+    },
+    "union": {
+      "name": "工会",
+      "category": "tool",
+      "description": "保护本组免受罢工；人员按普通员工产能工作，牌型不变。加入时弹出全部加班，本组不能加入加班。",
+      "price": 6,
+      "art": "union",
+      "purchasable": true
+    },
+    "boss": {
+      "name": "老板",
+      "category": "person",
+      "description": "不亲自工作，也不参加开会或罢工。与金钱组堆，每 {seconds} 秒按每人 {cost_per_employee} 钱批量招募员工；读条期间可补钱，每方最多一名老板。",
+      "price": 12,
+      "art": "boss",
+      "purchasable": true,
+      "refund": 6,
+      "max_per_owner": 1
     }
   },
   "roles": {
@@ -163,6 +181,16 @@
       "work_income_multiplier": 8,
       "can_be_meeting_target": true,
       "transfer_capacity": 1,
+      "work_capacity": 1
+    },
+    "boss": {
+      "work_seconds": 10.0,
+      "meeting_multiplier": 2.0,
+      "can_work": false,
+      "work_income_multiplier": 1,
+      "can_be_meeting_target": false,
+      "can_be_strike_target": false,
+      "transfer_capacity": 2,
       "work_capacity": 1
     }
   },
@@ -236,7 +264,8 @@
       "seconds": 10.0
     },
     "strike": {
-      "duration_seconds": 20.0
+      "duration_seconds": 20.0,
+      "flight_seconds": 1.2
     },
     "fire": {
       "minimum_people": 0
@@ -262,11 +291,20 @@
         "meeting": 2,
         "slack": 1,
         "outsource": 1,
-        "strike": 1
+        "strike": 1,
+        "union": 1,
+        "boss": 1
       }
     },
     "income": {
       "destination_policy": "oldest_cash_pile"
+    },
+    "union": {
+      "work_role": "employee"
+    },
+    "recruitment": {
+      "seconds": 10.0,
+      "cost_per_employee": 5
     }
   }
 }

@@ -32,6 +32,7 @@
       "workaholic",
       "work_emperor",
       "leader",
+      "boss",
       "work",
       "money",
       "coffee",
@@ -40,7 +41,8 @@
       "transfer",
       "slack",
       "outsource",
-      "strike"
+      "strike",
+      "union"
     ],
     "default_card": "employee",
     "categories": [
@@ -1387,28 +1389,14 @@
           {
             "at": 0.5,
             "kind": "combine",
-            "cards": [
-              {
-                "type": "person",
-                "owner": 0,
-                "all": true
-              },
-              {
-                "type": "transfer",
-                "owner": 0,
-                "index": 0
-              }
-            ],
+            "cards": [{"type": "transfer", "owner": 0, "index": 0}],
             "group": "my_work"
           },
           {
             "at": 0.5,
-            "kind": "activate",
-            "card": {
-              "type": "transfer",
-              "owner": 0,
-              "index": 0
-            }
+            "kind": "combine",
+            "cards": [{"type": "person", "owner": 0, "all": true}],
+            "group": "my_work"
           }
         ],
         "expects": [
@@ -1544,6 +1532,24 @@
         }
       },
       {
+        "id": "off_work_union_defense",
+        "name": "工会拦截罢工",
+        "description": "对手的罢工牌飞向工作组；飞行中加入工会，罢工在落下时被挡住并弹回对面，人员继续工作。",
+        "category": "组合演出",
+        "duration": 5,
+        "groups": [
+          {"name": "tool", "owner": 1, "cards": {"strike": 1}, "position": [0, 0.05, -5]},
+          {"name": "enemy_work", "owner": 1, "cards": {"work": 30}, "position": [4, 0.05, -5]},
+          {"name": "my_work", "owner": 0, "cards": {"work": 30, "employee": 1}, "position": [0, 0.05, 3.4]},
+          {"name": "defense", "owner": 0, "cards": {"union": 1}, "position": [4, 0.05, 3.4]}
+        ],
+        "actions": [
+          {"at": 0.5, "kind": "activate", "card": {"type": "strike", "owner": 1}, "group": "my_work"},
+          {"at": 1.0, "kind": "combine", "cards": [{"type": "union", "owner": 0}], "group": "my_work"}
+        ],
+        "expects": ["strike_launch", "strike_blocked"]
+      },
+      {
         "id": "strike_ejection",
         "name": "罢工弹飞与恢复",
         "description": "罢工命中后人员沿弧线弹出，只有牌内角色跳舞；20秒后恢复普通散牌。",
@@ -1603,6 +1609,7 @@
           }
         ],
         "expects": [
+          "strike_launch",
           "strike",
           "strike_end"
         ]

@@ -75,9 +75,13 @@ func _evaluate(request: Dictionary, progress_path: String) -> Dictionary:
 		var presets := {}
 		for key in settings.presets:
 			presets[key] = BotPreferences.strength_parameters(settings.presets[key], config.rules.bot, settings)
+		var strength_profiles := {}
+		for percent in 101:
+			strength_profiles["%.2f" % (percent / 100.0)] = BotPreferences.strength_parameters(percent / 100.0, config.rules.bot, settings)
 		var standard: Dictionary = config.rules.bot.duplicate()
 		standard.erase("owner")
-		return {"presets": presets, "standard_profile": standard, "cards": config.balance_document(),
+		return {"presets": presets, "strength_profiles": strength_profiles, "standard_profile": standard, "cards": config.balance_document(),
+			"simulator_fingerprint": _simulator_fingerprint(), "godot_version": Engine.get_version_info().string,
 			"bot": {"bot": config.rules.bot, "preferences": settings},
 			"legacy_default_budget_ms": Config.LEGACY_DECISION_BUDGET_MS,
 			"legacy_search_defaults": Config.BOT_SEARCH_DEFAULTS.duplicate(),
@@ -330,6 +334,8 @@ func _record_decision(report: Dictionary, side: String, seat: int, seed_value: i
 		"cutoff": decision.cutoff, "fallback": decision.fallback, "over_budget": overdue, "applied": decision.applied,
 		"evaluated": decision.get("evaluated"), "depth": decision.get("depth"), "shop_reason": decision.get("shop_reason"),
 		"search_depth": depth, "search_nodes": decision.get("search_nodes", 0), "discarded_late": discarded_late,
+		"root_complete": decision.get("root_complete", false),
+		"root_candidates": decision.get("root_candidates", 0), "completed_candidates": decision.get("completed_candidates", 0),
 		"principal_variation": decision.get("principal_variation", []),
 		"candidates": decision.get("candidates", []).slice(0, 5)})
 
@@ -355,6 +361,8 @@ static func _collect_events(events: Array, report: Dictionary, game: Dictionary)
 				if not event.coffee_ids.is_empty():
 					game.tool_generations += 1
 					_acquire(game.acquisitions, "coffee", event.coffee_ids.size())
+			"recruitment_complete":
+				_acquire(game.acquisitions, "employee", event.person_ids.size())
 			"fire":
 				report.flow.dismissed += 1
 				report.flow.dismiss_income += int(event.amount)

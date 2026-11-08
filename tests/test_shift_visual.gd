@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 extends "res://tests/harness.gd"
 
+## Hold the real boot's window setup at the scene-loading stage. Its root
+## viewport texture excludes native letterboxing, so alpha checks alone would
+## miss the two opaque strips surrounding the old 64×64 startup surface.
+class LoadingBoot extends "res://scenes/boot.gd":
+	func _ready() -> void: pass
+
 ## Read the native compositor: inspecting either child viewport alone cannot
 ## detect a blank frame while the shared display changes its source texture.
 func _initialize() -> void:
@@ -12,10 +18,19 @@ func _run() -> void:
 		finish()
 		return
 	OS.set_environment("CARD_DRAWER_SIZE", "1280x800")
+	var loading := LoadingBoot.new()
+	root.add_child(loading)
+	if OS.get_name() == "macOS":
+		var native_size := DisplayServer.window_get_size()
+		check(native_size.x <= 2 and native_size.y <= 2 and root.min_size == Vector2i.ONE,
+			"资源加载期间原生窗口维持一像素，不扩大为64×64")
+		check(root.content_scale_mode == Window.CONTENT_SCALE_MODE_DISABLED and root.content_scale_size == Vector2i.ZERO,
+			"资源加载期间不生成16:9画面外的上下黑边")
 	await RenderingServer.frame_post_draw
 	var boot := root.get_texture().get_image()
 	if OS.get_name() == "macOS":
 		check(boot.get_used_rect().size == Vector2i.ZERO, "原生首帧完全透明")
+	loading.queue_free()
 	change_scene_to_file(ProjectSettings.get_setting("application/run/main_scene"))
 	while current_scene == null or not current_scene.has_method("switch_mode"):
 		await process_frame

@@ -39,6 +39,7 @@ var btn_resign: Button
 var btn_pass: Button # Unused original-main compatibility slot for refresh_button_roles.
 var btn_pause: Button
 var _replay_time: HSlider
+var _replay_speed: OptionButton
 var mine: Label
 var opponent: Label
 var message: Label
@@ -180,6 +181,10 @@ func _setup_source_controls() -> void:
 	table_hud.add_child(bot_panel)
 	btn_net = _button("局域网对战")
 	btn_save = _button("存录像")
+	btn_save.pressed.connect(_save_replay)
+	save_notice = SaveNotice.new()
+	save_notice.count_unit = "个关键帧"
+	add_child(save_notice)
 	btn_resign = _button("认输")
 	btn_resign.tooltip_text = "再次点击确认认输"
 	_resign_timer = Timer.new()
@@ -219,11 +224,25 @@ func _build_mode_actions(row: HBoxContainer) -> void:
 	_replay_time = HSlider.new()
 	_replay_time.name = "ReplayTime"
 	_replay_time.accessibility_name = "录像时间"
-	_replay_time.custom_minimum_size = Vector2(100, 0)
+	_replay_time.custom_minimum_size = Vector2(240, 36)
+	_replay_time.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_replay_time.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_replay_time.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_replay_time.step = 0.1
 	_replay_time.hide()
 	_replay_time.value_changed.connect(func(value: float): host.replay.seek(host, value))
 	row.add_child(_replay_time)
+	_replay_speed = OptionButton.new()
+	_replay_speed.name = "ReplaySpeed"
+	_replay_speed.custom_minimum_size = Vector2(88, 38)
+	_replay_speed.tooltip_text = "录像播放速度"
+	for speed in host.replay.SPEEDS:
+		_replay_speed.add_item("%s×" % str(speed).trim_suffix(".0"))
+		_replay_speed.set_item_metadata(_replay_speed.item_count - 1, speed)
+	_replay_speed.select(host.replay.SPEEDS.find(1.0))
+	_replay_speed.item_selected.connect(func(index: int): host.replay.set_speed(float(_replay_speed.get_item_metadata(index))))
+	_replay_speed.hide()
+	row.add_child(_replay_speed)
 	_rulebook_button = _button("怎么玩")
 	_rulebook_button.pressed.connect(_open_utility.bind(UTILITY_RULEBOOK))
 	row.add_child(_rulebook_button)
@@ -233,6 +252,25 @@ func _build_mode_actions(row: HBoxContainer) -> void:
 	_style_primary_table_action(btn_pause)
 	btn_pause.pressed.connect(func(): set_manual_paused(not _manual_paused))
 	row.add_child(btn_pause)
+
+func _apply_tree_theme(control: Control) -> void:
+	super._apply_tree_theme(control)
+	if control == _replay_speed:
+		_replay_speed.accessibility_name = "录像播放速度"
+	if control != _replay_time or not is_instance_valid(_replay_time): return
+	var ink := Palette.get_color("card", "frame")
+	var gold := Palette.plate_color("plate_cash", "band")
+	for entry in [["slider", Palette.get_color("world", "background")], ["grabber_area", gold], ["grabber_area_highlight", Palette.plate_color("plate_cash", "face")]]:
+		var track := _style(entry[1], 0)
+		track.content_margin_top = _px(13)
+		track.content_margin_bottom = _px(13)
+		_replay_time.add_theme_stylebox_override(entry[0], track)
+	for entry in [["grabber", gold], ["grabber_highlight", Palette.plate_color("plate_cash", "face")], ["grabber_disabled", Palette.semantic("disabled")]]:
+		var svg := '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="34" viewBox="0 0 24 34"><rect x="1" y="1" width="22" height="32" rx="8" fill="#%s" stroke="#%s" stroke-width="2"/><path d="M9 12v10M15 12v10" stroke="#%s" stroke-width="2" stroke-linecap="round"/></svg>' % [entry[1].to_html(false), ink.to_html(false), ink.to_html(false)]
+		var image := Image.new()
+		image.load_svg_from_string(svg, _responsive_factor())
+		_replay_time.add_theme_icon_override(entry[0], ImageTexture.create_from_image(image))
+	_replay_time.add_theme_stylebox_override("focus", _style(Color.TRANSPARENT, 0, 2, Palette.semantic("focus")))
 
 func set_manual_paused(on: bool) -> void:
 	if on and ((state.winner >= 0 and not host.replay.playing) or host.shift_network_live()): return
@@ -255,6 +293,7 @@ func refresh(game_state: RefCounted, _selected_tool := -1) -> void:
 			label.tooltip_text = label.text
 	btn_pause.disabled = (state.winner >= 0 and not host.replay.playing) or host.shift_network_live()
 	_replay_time.visible = host.replay.playing
+	_replay_speed.visible = host.replay.playing
 	_rulebook_button.visible = not host.replay.playing
 	btn_resign.disabled = state.winner >= 0
 	if host.replay != null and host.replay.playing:
@@ -263,6 +302,7 @@ func refresh(game_state: RefCounted, _selected_tool := -1) -> void:
 		_replay_time.min_value = host.replay.playback.front().t
 		_replay_time.max_value = maxf(_replay_time.min_value, host.replay.playback.back().t)
 		_replay_time.set_value_no_signal(host.replay.clock)
+		_replay_speed.select(host.replay.SPEEDS.find(host.replay.speed))
 		lbl_msg.text = "录像  %d / %d 秒" % [host.replay.clock, _replay_time.max_value]
 	elif not host.practice.is_empty():
 		btn_resign.disabled = false
@@ -293,7 +333,7 @@ func _process(_delta: float) -> void:
 		_practice_panel.visible = not _utility.visible
 		if is_instance_valid(_practice_gesture) and not host.lesson.complete():
 			var target: String = host.lesson.lesson.steps[host.lesson.step][0]
-			if target in ["inspect_type", "extract_type", "transfer_resume"]:
+			if target in ["inspect_type", "extract_type", "transfer_start", "transfer_resume", "separate_worker"]:
 				_practice_gesture.set_cue(_lesson_cue(target))
 		_position_practice_panel()
 	if _utility.visible and _utility.has_meta("source") and _utility.get_meta("source") == _bot:
@@ -316,6 +356,10 @@ func _process(_delta: float) -> void:
 	else: show_card_detail(card, pointer)
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F5 and host.is_visible_in_tree():
+		_save_replay()
+		get_viewport().set_input_as_handled()
+		return
 	# 固定视口没有原生的 mouse_entered 通知，使用实际的视口指针位置。
 	if _fixed_view and drawer_window != null and drawer_window.is_expanded() and event is InputEventMouseMotion:
 		if get_viewport().get_visible_rect().has_point(event.position):
@@ -564,6 +608,22 @@ func _position_practice_panel() -> void:
 func _lesson_cue(target: String) -> Dictionary:
 	if target in ["inspect_type", "extract_type"]:
 		return _type_extraction_cue(host.lesson.source_group(), "employee", target == "extract_type")
+	if target == "transfer_start":
+		var tools: Array = state._owner_type(0, "transfer")
+		var people: Array = host.lesson.workers(state, 0)
+		var jobs: Array = state._owner_type(0, "work")
+		if tools.is_empty() or people.is_empty() or jobs.is_empty(): return {}
+		var person_group: int = state.cards[people[0]].group
+		if not state.group_work(person_group).is_empty():
+			return _type_extraction_cue(person_group, "employee", true)
+		var tool_group: int = state.cards[tools[0]].group
+		var source: int = people[0] if not state.group_work(tool_group).is_empty() else tools[0]
+		var destination: int = tools[0] if source == people[0] else jobs[0]
+		if not board.by_uid.has(source) or not board.by_uid.has(destination): return {}
+		var target_card: Node3D = board.by_uid[destination]
+		var group = board.group_of(target_card)
+		if group != null and not group.cards.is_empty(): target_card = group.cards[board._top_index(group)]
+		return {"source":board.by_uid[source], "target":target_card, "gesture":"drag"}
 	if target == "transfer_resume":
 		var tools: Array = state._owner_type(0, "transfer")
 		if tools.is_empty(): return {}
@@ -573,10 +633,7 @@ func _lesson_cue(target: String) -> Dictionary:
 	if target == "separate_worker":
 		var people: Array = host.lesson.workers(state, 0)
 		if people.is_empty(): return {}
-		var worker: Node3D = board.by_uid.get(people[0])
-		if not is_instance_valid(worker): return {}
-		var landing: Vector3 = board._free_spawn_position(-1, 0, worker.global_position + Vector3(2.0, 0, 0))
-		return {"source": worker, "target_world": landing, "gesture": "drag"}
+		return _type_extraction_cue(int(state.cards[people[0]].group), "employee", true)
 	if target == "buy":
 		for offer in state.offers:
 			if offer.is_empty() or offer.type != "employee": continue
@@ -588,7 +645,7 @@ func _lesson_cue(target: String) -> Dictionary:
 		return {}
 	var pairs := {"assign":["employee","work",0], "own_income":["employee","work",0],
 		"overtime":["overtime","employee",0], "coffee":["coffee","employee",0], "strike":["strike","employee",1],
-		"meeting_start":["meeting","leader",0], "transfer_start":["transfer","employee",0]}
+		"meeting_start":["meeting","leader",0]}
 	if not pairs.has(target): return {}
 	var pair: Array = pairs[target]
 	var source: Array = state._owner_type(0, pair[0])
@@ -596,7 +653,11 @@ func _lesson_cue(target: String) -> Dictionary:
 	if pair[0] == "employee": source = host.lesson.workers(state, 0)
 	if pair[1] == "employee": destination = host.lesson.workers(state, pair[2])
 	if source.is_empty() or destination.is_empty() or not board.by_uid.has(source[0]) or not board.by_uid.has(destination[0]): return {}
-	return {"source":board.by_uid[source[0]], "target":board.by_uid[destination[0]], "gesture":"drag"}
+	var destination_card: Node3D = board.by_uid[destination[0]]
+	var group = board.group_of(destination_card)
+	if group != null and not group.cards.is_empty():
+		destination_card = group.cards[board._top_index(group)]
+	return {"source":board.by_uid[source[0]], "target":destination_card, "gesture":"drag"}
 
 func _type_extraction_cue(group_id: int, kind: String, allow_drag: bool) -> Dictionary:
 	var extract = board.side_extract

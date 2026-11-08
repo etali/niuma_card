@@ -10,7 +10,7 @@ func _initialize() -> void: _run.call_deferred()
 func _run() -> void:
 	var config := OffWorkConfig.new()
 	# Tool before personnel deliberately exercises the original core-first order.
-	config.rules.initial.groups = [{"transfer": 1, "employee": 1, "work": 4}]
+	config.rules.initial.groups = [{"strike": 1, "employee": 1, "work": 4}]
 	config.rules.bot.enabled = false
 	state = OffWorkState.new(config)
 	state.new_game(237)
@@ -31,7 +31,7 @@ func _run() -> void:
 	var group: Dictionary = board.group_of(board.by_uid[person])
 	var original_order: Array = group.cards.map(func(card): return card.uid)
 	var top: OffWorkCard = group.cards[board._top_index(group)]
-	_check(group.compact and top.type == "transfer", "tool-first compact stack retains original top")
+	_check(group.compact and top.type == "work", "ordinary production exposes work above personnel and unused tools")
 	_check(top._task_progress.visible and is_zero_approx(top._task_progress_value), "valid zero-progress task exposes its empty track")
 	state.advance(2.5)
 	board.sync_state(state)
@@ -68,8 +68,8 @@ func _run() -> void:
 	var host_person := -1
 	for id in state.cards:
 		if int(state.cards[id].owner) == 1 and state.cards[id].type == "employee": host_person = int(id)
-	state.move_cards([meeting], int(state.cards[host_person].group))
-	_check(state.meetings.has(meeting), "moving meeting into host group starts a real meeting")
+	state.move_cards([host_person], int(state.cards[meeting].group))
+	_check(state.meetings.has(meeting), "moving a host into a separate meeting group starts a real meeting")
 	board.sync_state(state)
 	var visitor: OffWorkCard = board.by_uid[person]
 	_check(visitor._task_progress_paused and not visitor._task_progress.visible, "pulled meeting participant hides the retained paused task progress")
@@ -92,12 +92,13 @@ func _run() -> void:
 	board.sync_state(state)
 	var leadership: Dictionary = board.group_of(board.by_uid[leader])
 	var leader_top: OffWorkCard = leadership.cards[board._top_index(leadership)]
-	_check(leader_top.uid == leader and not leader_top._task_progress.visible, "leader with work keeps original compact ordering without inventing a task")
+	_check(leader_top.type == "work" and not leader_top._task_progress.visible, "leader with work exposes the work file without inventing a production task")
 	var colleague := state.add_card("employee", 0, leader_group)
 	state.advance(2.5)
 	board.sync_state(state)
 	_check(not state.tasks.has(leader) and state.tasks.has(colleague), "mixed group allocates ordinary work only to its employee")
-	_check(leader_top._task_progress.visible and is_equal_approx(leader_top._task_progress_value, 0.25) and not leader_top.illustration_is_active(), "leader covering a worker projects the group's real progress without claiming it is doing ordinary work")
+	leader_top = leadership.cards[board._top_index(leadership)]
+	_check(leader_top.type == "work" and leader_top._task_progress.visible and is_equal_approx(leader_top._task_progress_value, 0.25), "working personnel under a leader expose the real shared work timer on the top work card")
 	state.move_cards([colleague], -1)
 	board.sync_state(state)
 	_check(not leader_top._task_progress.visible, "removing the only worker clears the leadership stack's projected task")

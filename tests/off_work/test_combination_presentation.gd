@@ -67,12 +67,61 @@ func _run() -> void:
 	for gid in groups:
 		var bars := _work_bars(gid)
 		_check(bars.size() == 1 and is_equal_approx(bars[0]._task_progress_value, 0.1), "next batch restarts one shared timer")
+	await _locked_meeting_presentation()
 	await _outsource()
 	game.queue_free()
 	await _frames(3)
 	for message in errors: push_error(message)
 	print("COMBINATION_PRESENTATION %s (%d checks)" % ["PASS" if errors.is_empty() else "FAIL", checks])
 	quit(0 if errors.is_empty() else 1)
+
+func _locked_meeting_presentation() -> void:
+	game.state.config.rules.initial.groups = [{"employee": 2, "work": 8}]
+	game._new_game()
+	game.state.advance(2.0)
+	var tools := {}
+	for owner in [0, 1]:
+		var gid: int = game.state.cards[_person(owner)].group
+		var meeting: int = game.state.add_card("meeting", owner)
+		tools[owner] = meeting
+		game.state.move_cards([meeting], gid)
+	game.board.sync_state(game.state)
+	for compact in [true, false]:
+		for owner in [0, 1]:
+			var person: OffWorkCard = game.board.by_uid[_person(owner)]
+			var presenter: Board = game.board if owner == 0 else game.board.enemy_board
+			var group: Dictionary = presenter.group_of(person)
+			if bool(group.compact) != compact: presenter.toggle_compact(person)
+		game.board.sync_state(game.state)
+		await create_timer(0.3, true).timeout
+		for owner in [0, 1]:
+			var gid: int = game.state.cards[_person(owner)].group
+			var presenter: Board = game.board if owner == 0 else game.board.enemy_board
+			var group: Dictionary = presenter.group_of(game.board.by_uid[_person(owner)])
+			var top: OffWorkCard = group.cards[presenter._top_index(group)]
+			_check(game.state.groups[gid].function == "work" and game.state.cards[tools[owner]].status == "ready",
+				"adding an unused meeting keeps the actual work function")
+			_check(top.type == "work" and top._task_progress.is_visible_in_tree() and _work_bars(gid) == [top],
+				"both stack shapes and owners keep the sole work bar on the exposed work card")
+			_check(is_equal_approx(top._task_progress_value, 0.2), "unused meeting preserves the visible twenty-percent work progress")
+	var meeting: int = tools[0]
+	var work_group: int = game.state.cards[meeting].group
+	game.state.move_cards([meeting], -1)
+	var meeting_group: int = game.state.cards[meeting].group
+	game.state.move_cards(game.state.group_people(work_group), meeting_group)
+	game.state.move_cards(game.state.group_work(work_group), meeting_group)
+	for phase in ["meeting", "recovering"]:
+		game.board.sync_state(game.state)
+		for compact in [true, false]:
+			var view: OffWorkCard = game.board.by_uid[meeting]
+			var group: Dictionary = game.board.group_of(view)
+			if bool(group.compact) != compact: game.board.toggle_compact(view)
+			game.board.sync_state(game.state)
+			var top: OffWorkCard = group.cards[game.board._top_index(group)]
+			_check(top == view and top._task_progress.is_visible_in_tree() and top._task_progress_phase == phase,
+				"actual meeting stays exposed during activity and cooldown in both stack shapes")
+			_check(_work_bars(meeting_group).is_empty(), "meeting and its cooldown expose no ordinary work progress")
+		if phase == "meeting": game.state.advance(game.state.config.number("meeting", "duration_seconds"))
 
 func _outsource() -> void:
 	game.state.config.rules.initial.groups = [{"employee": 1}, {"work": 12}, {"outsource": 1}]

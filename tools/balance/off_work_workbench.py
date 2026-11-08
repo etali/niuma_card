@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import mimetypes
+import math
 import os
 import re
 import subprocess
@@ -74,6 +75,37 @@ def normalize_job(record):
 def config_id(kind, data):
     serialized = json.dumps(canonical(data), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return kind + "_" + hashlib.sha256(serialized.encode()).hexdigest()
+
+
+def bot_policy_signature(policy):
+    """Comparison only: JSON float noise must not rename the same strategy.
+
+    Keep immutable content IDs and actual request/snapshot numbers untouched.
+    Fourteen significant digits remove parser ULP noise, but never coalesce a
+    time change above 1 ns or a different effective integer-ms decision budget.
+    """
+    def numeric(value):
+        if isinstance(value, dict):
+            return {key: numeric(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [numeric(item) for item in value]
+        if isinstance(value, float) and math.isfinite(value):
+            rounded = float(format(value, ".14g"))
+            if abs(rounded - value) <= 1e-9:
+                return rounded
+        return value
+
+    signature = numeric(policy)
+    period, ratio = policy.get("think_seconds"), policy.get("decision_budget_ratio")
+    if (type(period) in (int, float) and type(ratio) in (int, float)
+            and math.isfinite(period) and math.isfinite(ratio)):
+        # Very long imported clocks can magnify even a ratio ULP. Preserve
+        # those values if rounding would shift the budget by at least 0.1 us.
+        if abs(signature["decision_budget_ratio"] - ratio) * abs(period) >= 1e-7:
+            signature["decision_budget_ratio"] = ratio
+        ms = float(period) * 1000.0 * float(ratio)
+        signature["_identity_budget_ms"] = max(1, math.floor(ms + 1e-8))
+    return config_id("bot_signature", signature)
 
 
 def runner_args(engine, folder):
@@ -389,7 +421,19 @@ class OffWorkWorkbench(ThreadingHTTPServer):
     def _content_id(self, kind, data):
         # Re-saving a historical strategy must retain its published ID and name.
         key = config_id(kind, data)
-        return self.library_aliases.get(key, key)
+        key = self.library_aliases.get(key, key)
+        if kind == "bot" and key not in self.library:
+            signature = bot_policy_signature(data)
+            for record in self.library.values():
+                if record["kind"] != "bot":
+                    continue
+                try:
+                    saved_signature = bot_policy_signature(record["data"])
+                except (ValueError, TypeError, RecursionError):
+                    continue
+                if saved_signature == signature:
+                    return record["id"]
+        return key
 
     def _catalog_record(self, kind, name, catalog=None):
         entry = (self.catalog if catalog is None else catalog)[kind][name]
@@ -430,15 +474,22 @@ class OffWorkWorkbench(ThreadingHTTPServer):
             raise ValueError("覆盖确认必须使用当前配置 ID")
         draft = {kind: dict(entries) for kind, entries in self.catalog.items()}
         plans, conflicts, names, targets = [], [], {}, {}
+        batch_bot_ids = {}
         compatibility = self.configuration() if any(c["kind"] == "bot" for c in candidates) else {}
         policy_defaults = {**compatibility.get("legacy_search_defaults", {}),
                            **compatibility.get("legacy_algorithm_defaults", {})}
+        policy_keys = (set(compatibility.get("bot", {}).get("bot", {}))
+                       | {"decision_budget_ms", "decision_budget_ratio"}) - {"owner"}
 
         def effective_bot_id(policy):
-            normalized = {**policy_defaults, **policy}
+            # Match the editor's migration against the installed schema. Retired
+            # heuristics remain in immutable archives, but cannot distinguish two
+            # policies that now execute with exactly the same supported settings.
+            normalized = {key: value for key, value in {**policy_defaults, **policy}.items()
+                          if key in policy_keys}
             if "decision_budget_ms" not in normalized and "decision_budget_ratio" not in normalized:
                 normalized["decision_budget_ms"] = legacy_budget
-            return config_id("bot", normalized)
+            return bot_policy_signature(normalized)
 
         # Hash effective historical policies once, using engine compatibility
         # defaults rather than the user's current tuning values. Only names
@@ -455,6 +506,11 @@ class OffWorkWorkbench(ThreadingHTTPServer):
         for candidate in candidates:
             slot, kind, name, data = (candidate[key] for key in ("slot", "kind", "name", "data"))
             key = self._content_id(kind, data)
+            if kind == "bot":
+                # Two ULP-equivalent sides in one request share the first
+                # immutable snapshot; their exact runtime values remain in
+                # request.json, never replaced by rounded signature numbers.
+                key = batch_bot_ids.setdefault(bot_policy_signature(data), key)
             # Enrich a reused old policy in a new immutable snapshot for this
             # experiment. Prior snapshots and their experiment references stay
             # addressable, while the catalog keeps the original strategy name.

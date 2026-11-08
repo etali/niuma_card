@@ -148,6 +148,7 @@ func _strike_reservations() -> void:
 	if not _check(state.can_strike_group(target, 0), "fixture offers a working opponent strike target"): return
 	var strike := state.add_card("strike", 0)
 	state.activate(strike, target)
+	state.advance(state.config.number("strike", "flight_seconds"))
 	board.sync_state(state)
 	board._advance_strike_dancers(1.0)
 	_check(not board._strike_dancers.is_empty(), "fixture reserves real scattered personnel destinations")

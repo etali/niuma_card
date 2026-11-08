@@ -39,6 +39,11 @@ func _person(state: OffWorkState, kind: String, owner := 0) -> int:
 func _group(state: OffWorkState, owner := 0) -> int:
 	return int(state.cards[_ids(state, "work", owner)[0]].group)
 
+func _tool_group(state: OffWorkState, kind: String, members: Array) -> int:
+	var tool := state.add_card(kind, 0)
+	state.move_cards(members, state.cards[tool].group)
+	return tool
+
 func _income_events(state: OffWorkState) -> Array:
 	return state.drain_events().filter(func(event): return event.kind == "work_complete" and event.owner == 0)
 
@@ -134,10 +139,11 @@ func _transfer_never_pays() -> void:
 		var state := _state({kind: 1, "work": 100})
 		var person := _person(state, kind)
 		var group := _group(state)
-		var tool := state.add_card("transfer", 0, group)
+		var tool := _tool_group(state, "transfer", state.group_cards(group))
+		group = state.cards[tool].group
 		state.move_cards([_person(state, kind, 1)], -1)
 		var original_work: Array = state.group_work(group)
-		_check(state.activate(tool), "all personnel roles can transfer work")
+		_check(state.cards[tool].status == "active" and state.tasks[person].kind == "transfer", "all personnel roles can transfer work")
 		state.drain_events()
 		state.advance(state.config.number("transfer", "seconds"))
 		var events := state.drain_events()
@@ -153,26 +159,26 @@ func _leader_immunity() -> void:
 	for seed_value in range(1, 9):
 		var state := _state({"employee": 2, "grinder": 2, "leader": 6, "work": 200}, seed_value)
 		var host := _person(state, "leader")
-		var tool := state.add_card("meeting", 0, _group(state))
-		_check(state.activate(tool, _group(state), host), "leader may host while being immune to enemy meetings")
+		var tool := _tool_group(state, "meeting", [host])
+		_check(state.meetings.has(tool) and state.meetings[tool].host == host, "leader may host while being immune to enemy meetings")
 		var targets: Array = state.meetings[tool].targets
 		_check(targets.size() == 4 and targets.all(func(id): return state.cards[id].type in ["employee", "grinder"]), "four-capacity meeting takes only employees and grinders, never leaders")
 		_check(_ids(state, "leader", 1).all(func(id): return not state.cards[id].paused), "all enemy leaders remain unpaused")
 	var only := _state({"leader": 3, "work": 100})
 	var host := only.add_card("employee", 0, _group(only))
-	var tool := only.add_card("meeting", 0, _group(only))
+	var tool := _tool_group(only, "meeting", [host])
 	only.advance(2.0)
 	only.drain_events()
 	var before := JSON.stringify({"cards": only.cards, "groups": only.groups, "tasks": only.tasks, "meetings": only.meetings, "revision": only.revision})
-	_check(not only.activate(tool, _group(only), host), "all-leader opponents reject meeting")
-	_check(before == JSON.stringify({"cards": only.cards, "groups": only.groups, "tasks": only.tasks, "meetings": only.meetings, "revision": only.revision}) and only.drain_events().is_empty(), "rejected meeting preserves host work, tool timer and events atomically")
+	_check(not only.activate(tool, only.cards[tool].group, host), "all-leader opponents reject meeting")
+	_check(before == JSON.stringify({"cards": only.cards, "groups": only.groups, "tasks": only.tasks, "meetings": only.meetings, "revision": only.revision}) and only.drain_events().is_empty(), "rejected meeting preserves personnel, tool timer and events atomically")
 	var one := only.add_card("grinder", 1)
-	_check(only.activate(tool, _group(only), host) and only.meetings[tool].targets == [one], "single eligible grinder is drawn alone despite many immune leaders")
+	_check(only.activate(tool, only.cards[tool].group, host) and only.meetings[tool].targets == [one], "single eligible grinder is drawn alone despite many immune leaders")
 
 func _cycle_state() -> OffWorkState:
 	var state := _state({"employee": 2, "work": 200})
-	var tool := state.add_card("meeting", 0, _group(state))
-	_check(state.activate(tool), "repeating meeting starts")
+	var tool := _tool_group(state, "meeting", [_person(state, "employee")])
+	_check(state.meetings.has(tool) and state.cards[tool].status == "active", "repeating meeting starts")
 	return state
 
 func _meeting_cycles() -> void:

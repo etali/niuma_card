@@ -186,7 +186,7 @@ func _spending_reserved_cash() -> void:
 	_check(state.reserved_cash_amount(f.cash[0]) == 8 and state.available_cash_amount(f.cash[0]) == 0, "reserved wallet exposes zero spendable amount")
 	_check(state.reserved_money(0) == 8 and state.available_money(0) == 100 and state.money(0) == 108, "available and reserved amounts sum to actual total")
 	_check(state.buy(int(offer.id), 0, [f.cash[0]]) < 0, "explicit reserved wallet cannot fund a purchase")
-	_check(state.last_error.contains("外包") and state.last_error.contains("预留"), "rejected reserved payment explains the unavailable funds")
+	_check(state.last_error.contains("预留") and state.last_error.contains("可用金钱不足"), "rejected reserved payment explains the unavailable funds")
 	_check(state.cards == cards_before and state.offers == offers_before and state.outsourcing[f.tool] == original, "rejected purchase is atomic and leaves exact outsource timer untouched")
 	_check(state.buy(int(offer.id), 0) >= 0, "normal purchasing uses another unreserved wallet")
 	_check(state.cards[f.cash[0]].amount == 8 and state.outsourcing[f.tool] == original and state.cards[f.tool].status == "active", "successful purchase never disturbs reserved cash or reading progress")
@@ -266,9 +266,9 @@ func _bot_uses_surplus() -> void:
 		if state.cards[id].owner == 0 and state.cards[id].type == "money" and not f.cash.has(id): state._consume(id)
 	_start(f)
 	state.advance(3.0)
-	state.config.rules.bot.buy_chance = 1.0
-	state.config.rules.bot.min_reserve = 0
-	state.config.rules.bot.purchase_priority = ["employee"]
+	# The extra worker has productive work to do; the public market contains
+	# that investment rather than relying on removed purchase priorities.
+	state.offers = [state._make_offer("employee")]
 	state.config.rules.bot.enabled = true
 	state.config.rules.bot.think_seconds = 0.2
 	var bot := OffWorkBot.new(state, 0)

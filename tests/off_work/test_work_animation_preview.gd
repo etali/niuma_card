@@ -34,8 +34,8 @@ func _run() -> void:
 	root.add_child(viewer)
 	var preview: Control = viewer.off_work_preview
 	await process_frame
-	check(preview.ids.size() == 14 and preview.ids.size() == OffWorkCardDB.all_cards().size(), "all fourteen formal card types are listed")
-	check(preview.spec.states.size() == 5 and preview.entries.size() >= 19, "all five personnel strike states accompany the fourteen base motions")
+	check(preview.ids.has("boss") and preview.ids.has("union") and preview.ids.size() == OffWorkCardDB.all_cards().size(), "all formal card types including boss and union are listed")
+	check(preview.spec.states.size() == 5 and preview.entries.size() >= preview.ids.size() + 5, "all five strike-vulnerable personnel states accompany the complete card pool")
 	check(preview.entries.all(func(entry): return preview._buttons.has(str(entry.id))), "every registered animation has a navigation button")
 	check(preview.card is OffWorkCard and preview.card is CardEntity, "preview uses the production card and original frame")
 	check(preview.find_children("*", "OffWorkState", true, false).is_empty(), "no match state is started")

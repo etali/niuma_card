@@ -57,11 +57,15 @@ func _run() -> void:
 	var next: Button = game.hud._practice_panel.find_children("*", "Button", true, false).filter(func(button): return button.text == "下一课")[0]
 	next.pressed.emit()
 	check(game.lesson.lesson.id == "upgrade" and game.state._owner_type(0, "overtime").is_empty(), "下一课单独学习咖啡提升卷度")
-	check(game.hud._practice_gesture.cue.has("target_world"), "咖啡课先指引把员工从工作堆拆到空位")
-	var teaching_worker = game.hud._practice_gesture.cue.source
+	check(game.hud._practice_gesture.cue.gesture == "tap", "咖啡课先指引点击员工数量，再抽取人员")
+	var teaching_worker = game.board.by_uid[game.state._owner_type(0, "employee")[0]]
 	var teaching_group = game.board.group_of(teaching_worker)
-	check(teaching_group != null and not teaching_group.compact and teaching_group.cards.back() == teaching_worker,
-		"咖啡课展开工作堆并将员工放在末端，拖员工只取出本人")
+	check(teaching_group != null and teaching_group.cards[game.board._top_index(teaching_group)].type == "work",
+		"咖啡课保持工作置顶，隐藏人员通过同类抽取操作取出")
+	game.board.side_extract.open_group(game.state.cards[teaching_worker.uid].group, "employee")
+	game.hud._process(0.01)
+	check(game.hud._practice_gesture.cue.has("target_world") and game.hud._practice_gesture.cue.source == game.board.side_extract.view,
+		"展开员工后手势指向真实扇牌和桌面空位")
 	game.demonstrate_practice_step()
 	game._process(0.01)
 	check(game.practice_stage == 1 and game.lesson.separate_worker(game.state) >= 0, "人员实际与工作分开后才提示加咖啡")
@@ -73,6 +77,8 @@ func _run() -> void:
 	game.begin_practice("interrupt")
 	game.demonstrate_practice_step()
 	game._process(0.01)
+	check(game.practice_stage == 0 and not game.state.pending_strikes.is_empty(), "罢工飞行过程中教程等待实际命中")
+	game._process(game.state.config.number("strike", "flight_seconds"))
 	check(game.practice_stage == 1,"只认打断对手的真实罢工")
 	game.demonstrate_practice_step()
 	game._process(2.1)

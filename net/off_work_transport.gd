@@ -51,9 +51,9 @@ func _valid_frame(frame: Variant) -> bool:
 	if not frame is Dictionary or not frame.get("world") is Dictionary: return false
 	if not frame.get("paused") is bool or not frame.get("round") is int or not frame.get("rng") is int: return false
 	if not frame.get("events") is Array or not frame.world.has_all(OffWorkRoom.Session.STATE_FIELDS): return false
-	for field in ["cards", "groups", "outsourcing", "tasks", "meetings"]:
+	for field in ["cards", "groups", "outsourcing", "tasks", "meetings", "pending_strikes", "recruitment"]:
 		if not frame.world[field] is Dictionary: return false
-	for field in ["cards", "groups", "outsourcing"]:
+	for field in ["cards", "groups", "outsourcing", "pending_strikes", "recruitment"]:
 		for item in frame.world[field].values():
 			if not item is Dictionary or item.get("owner") not in [0, 1]: return false
 	for event in frame.events:
@@ -62,7 +62,7 @@ func _valid_frame(frame: Variant) -> bool:
 
 # The board uses 0 for the near side in both seats. Entity IDs are shared.
 func _mirror(frame: Dictionary) -> void:
-	for field in ["cards", "groups", "outsourcing"]:
+	for field in ["cards", "groups", "outsourcing", "pending_strikes", "recruitment"]:
 		for item in frame.world[field].values(): item.owner = 1 - int(item.owner)
 	if frame.world.winner in [0, 1]: frame.world.winner = 1 - int(frame.world.winner)
 	for event in frame.events:

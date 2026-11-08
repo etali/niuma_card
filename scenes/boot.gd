@@ -14,12 +14,21 @@ func _enter_tree() -> void:
 	if OS.get_name() != "macOS" or DisplayServer.get_name() == "headless": return
 	var window := get_window()
 	window.transparent_bg = true
+	# SceneTree raises the one-pixel Cocoa window to its 64×64 minimum before
+	# loading this scene. Keeping 16:9 canvas stretching on that square produces
+	# two opaque letterbox strips while threaded scene loading yields frames.
+	# The drawer/preview sets its own scale and geometry once content is ready.
+	window.min_size = Vector2i.ONE
 	# The drawer chooses the actual display and geometry. An explicitly requested
 	# plain table bypasses the drawer, so it must grow its own launch window.
 	if (LaunchConfig.desktop_args().has("--table") or PlatformMode.force_mobile()) and window.size.x <= 64:
 		window.size = Vector2i(ProjectSettings.get_setting("display/window/size/viewport_width"),
 			ProjectSettings.get_setting("display/window/size/viewport_height"))
 		window.move_to_center()
+	elif window.size.x <= 64:
+		window.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+		window.content_scale_size = Vector2i.ZERO
+		window.size = Vector2i.ONE
 
 func _ready() -> void:
 	var entry := entry_scene(OS.get_cmdline_user_args())

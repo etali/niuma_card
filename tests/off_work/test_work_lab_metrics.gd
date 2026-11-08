@@ -43,6 +43,11 @@ func _initialize() -> void:
 	_check(result.first_player_win_rate.denominator == 2, "naturally ended game without a first opportunity has no first player")
 	result = _add(metrics, report, _match("timeout", 0.0, 0, -1))
 	_check(result.upgrades_per_minute.denominator == 4 and result.card_acquisitions.observed_games == 5, "zero-duration observation is valid for acquisition counts only")
+	var hiring := _match("a",10.0,0,0)
+	Lab._collect_events([{"kind":"recruitment_start"},{"kind":"recruitment_complete","person_ids":[21,22,23,24]},
+		{"kind":"strike_launch"},{"kind":"strike_blocked"}],report,hiring)
+	_check(hiring.acquisitions == {"employee":4} and hiring.tool_generations == 0,"recruited employees count as acquired personnel, not generated tools")
+	_check(hiring.interferences == 0,"launched or blocked strikes are not successful interference")
 	print("WORK_LAB_METRICS %s (%d checks)" % ["PASS" if failures == 0 else "FAIL", checks])
 	quit(1 if failures else 0)
 

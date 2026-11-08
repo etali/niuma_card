@@ -48,7 +48,7 @@ func add_drink(s: OffWorkState, p: int, count: int) -> Array:
 
 func _config_contract() -> void:
 	var cfg := OffWorkConfig.new()
-	check(cfg.validate() and cfg.roles.size() == 5 and cfg.cards.size() == 14, "five personnel kinds and fourteen cards validate")
+	check(cfg.validate() and cfg.roles.has_all(["employee", "leader", "grinder", "workaholic", "work_emperor", "boss"]) and cfg.cards.has("union"), "current pool preserves all employee tiers alongside boss and union")
 	var kinds := ["employee", "grinder", "workaholic", "work_emperor"]
 	for i in kinds.size():
 		var kind: String = kinds[i]
@@ -150,12 +150,13 @@ func _queue_and_priority() -> void:
 	var staff := s.group_people(s.cards[ids(s, "employee")[0]].group)
 	var material := cups(s, 3)
 	s.move_cards(material, s.cards[staff[0]].group, staff[0])
-	for index in staff.size():
-		check(staff.filter(func(id): return s.tasks.has(id) and s.tasks[id].kind == "coffee") == [staff[index]], "one active coffee task advances through stable personnel order")
-		check(s.tasks[staff[index]].coffee_ids.size() == 1, "queued employee reserves only its own one-cup stage")
-		s.advance(5.0)
-		check(s.cards[staff[index]].type == "grinder" and ids(s, "coffee").size() == staff.size() - index - 1, "queued employee consumes exactly one cup at its own deadline")
-	check(staff.all(func(id): return s.cards[id].type == "grinder"), "three employees and three cups complete three successive grinder upgrades")
+	check(s.tasks[staff[0]].coffee_ids.size() == 1, "first employee reserves its one-cup stage")
+	s.advance(5.0)
+	check(s.cards[staff[0]].type == "grinder" and s.tasks[staff[0]].coffee_ids.size() == 2, "newly upgraded grinder becomes highest affordable priority")
+	check(staff.slice(1).all(func(id): return not s.tasks.has(id)), "lower-ranked employees wait while the higher tier has enough coffee")
+	s.advance(5.0)
+	check(s.cards[staff[0]].type == "workaholic" and ids(s, "coffee").is_empty(), "three cups upgrade the same employee through two configured stages")
+	check(staff.slice(1).all(func(id): return s.cards[id].type == "employee"), "unfunded lower-ranked personnel do not transform")
 	var targeted := state({"employee": 2, "workaholic": 1, "work": 200})
 	var high: int = ids(targeted, "workaholic")[0]
 	add_drink(targeted, high, 6)
@@ -176,14 +177,14 @@ func _income_and_personnel() -> void:
 	var event := s.drain_events().filter(func(e): return e.kind == "work_complete" and e.owner == 0)
 	check(event.size() == 1 and event[0].participants.size() == 4 and event[0].amount == 15, "mixed tiers preserve shared group settlement event")
 	var slack := s.add_card("slack", 0)
-	s.move_cards([slack], group)
+	s.move_cards(s.group_people(group), int(s.cards[slack].group))
 	s.advance(14.0)
 	check(ids(s, "coffee").size() == 5, "higher tiers still produce one coffee per person, not income-multiplied coffee")
 	for kind in ["workaholic", "work_emperor"]:
 		var transfer := state({kind: 1, "work": 200}, true)
 		var p: int = ids(transfer, kind)[0]
 		var tool := transfer.add_card("transfer", 0)
-		transfer.move_cards([tool], transfer.cards[p].group)
+		transfer.move_cards(transfer.group_cards(int(transfer.cards[p].group)), int(transfer.cards[tool].group))
 		transfer.advance(10.0)
 		check(transfer.work_count(0) == 199 and transfer.work_count(1) == 200 and transfer.money(0) == 0, kind + " transfers one work without earning money")
 		var fire := state({kind: 1, "work": 200}, true)
@@ -197,10 +198,10 @@ func _pause_and_interrupt() -> void:
 	var leader := s.add_card("leader", 0)
 	var meeting := s.add_card("meeting", 0, s.cards[leader].group)
 	check(s.activate(meeting, s.cards[leader].group, leader), "leader starts meeting including new personnel tiers")
-	check(s.is_meeting_target(p) and material.all(func(id): return s.cards[id].paused), "meeting pauses person and every reserved coffee")
+	check(s.is_meeting_target(p) and not s.tasks.has(p) and material.all(func(id): return s.cards[id].status == "ready" and s.cards[id].progress == 0.0), "meeting releases all reserved cups and clears the unattended upgrade")
 	s.advance(12.0)
-	check(s.cards[p].type == "workaholic" and is_equal_approx(s.tasks[p].progress, 0.2), "meeting preserves exact partial upgrade")
-	s.advance(4.0)
+	check(s.cards[p].type == "workaholic" and is_zero_approx(s.tasks[p].progress), "returning senior starts a new full upgrade")
+	s.advance(5.0)
 	check(s.cards[p].type == "work_emperor" and material.all(func(id): return not s.cards.has(id)), "after meeting all four cups settle together")
 	var strike := state({"workaholic": 1, "work_emperor": 1, "work": 200})
 	var sp: int = ids(strike, "workaholic", 1)[0]
@@ -210,6 +211,8 @@ func _pause_and_interrupt() -> void:
 	check(not strike.activate(tool, strike.cards[sp].group), "standalone upgrade group has no work and cannot be struck")
 	strike.move_cards([ids(strike, "work", 1)[0]], strike.cards[sp].group)
 	check(strike.activate(tool, strike.cards[sp].group), "after work arrives the active work group accepts strike")
+	check(strike.pending_strikes.has(tool) and not strike.is_striking(sp), "higher tier remains productive during strike flight")
+	strike.advance(strike.config.number("strike", "flight_seconds"))
 	check(strike.is_striking(sp) and not strike.tasks.has(sp) and coffee.all(func(id): return strike.cards[id].status == "ready"), "strike ejects upgrading person and returns every cup")
 	check(strike.dismiss_people([sp], 1), "striking high-tier person may still be dismissed")
 

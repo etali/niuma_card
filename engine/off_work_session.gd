@@ -25,7 +25,7 @@ static func save_session(host: Node) -> bool:
 		"bot": {"bot": state.config.rules.bot, "preferences": state.config.bot_preferences},
 		"rng": state._rng.state, "bot_rng": bot._rng.state,
 		"bot_started": bot.is_started(), "bot_next": bot._next_think,
-		"bot_scan": bot._planner.save_scan_hints(),
+		"bot_context": bot.export_decision_context(),
 		"replay_frames": host.replay.frames, "result_taunt": host.replay.result_taunt,
 		"active_config": host._active_config, "paused": host.hud._manual_paused})
 
@@ -33,6 +33,9 @@ static func read_session(host: Node) -> Dictionary:
 	var saved := Slots.load_slot(Slots.OFF_WORK)
 	if not saved.get("world") is Dictionary or not saved.get("layout") is Dictionary: return {}
 	var world: Dictionary = saved.world
+	# Sessions from before attacks had a travel phase have no in-flight strikes.
+	for key in ["pending_strikes", "recruitment"]:
+		if not world.has(key): world[key] = {}
 	if not world.has_all(STATE_FIELDS) or not saved.layout.has_all(BOARD_FIELDS): return {}
 	var strategy: Variant = saved.get("bot", saved.get("ai")) # 兼容旧下班存档
 	if not saved.get("balance") is Dictionary or not strategy is Dictionary: return {}
@@ -43,11 +46,12 @@ static func read_session(host: Node) -> Dictionary:
 		if typeof(world[key]) != typeof(state.get(key)): return {}
 		state.set(key, world[key])
 	state._rng.state = saved.rng
-	# Older sessions could drink coffee on a working stack. Reconcile before
-	# the first card face is shown, even if the restored table stays paused.
-	if state.winner < 0 and state.tasks.keys().any(func(person):
+	# Reconcile legacy production locks and invalid upgrade stacks before the
+	# first card face is shown, including when the restored table stays paused.
+	var legacy_functions: bool = state.groups.values().any(func(group): return not group.has("function"))
+	if state.winner < 0 and (legacy_functions or state.tasks.keys().any(func(person):
 		var task: Dictionary = state.tasks[person]
-		return task.kind == "coffee" and not state._coffee_batch_valid(int(person), task)):
+		return task.kind == "coffee" and not state._coffee_batch_valid(int(person), task))):
 		state._sync_schedule()
 		state.revision += 1
 		state.drain_events()
@@ -55,8 +59,9 @@ static func read_session(host: Node) -> Dictionary:
 	bot._started = saved.bot_started
 	bot._rng.state = saved.bot_rng
 	bot._next_think = saved.bot_next
-	if saved.get("bot_scan") is Dictionary:
-		bot._planner.restore_scan_hints(saved.bot_scan)
+	var context: Variant = saved.get("bot_context", saved.get("bot_scan", {}))
+	if context is Dictionary:
+		bot.import_decision_context(context)
 	host.state = state
 	host.bot = bot
 	host.replay.result_taunt = str(saved.get("result_taunt", ""))
