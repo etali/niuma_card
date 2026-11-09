@@ -7,6 +7,7 @@ extends RefCounted
 const Actions = preload("res://engine/off_work_bot_actions.gd")
 const Evaluation = preload("res://engine/off_work_bot_evaluator.gd")
 const Budget = preload("res://engine/off_work_bot_budget.gd")
+const PurchaseContinuations = preload("res://engine/off_work_bot_purchase_continuations.gd")
 const SCORE_EPSILON := 0.0000001
 
 var deadline := 0
@@ -21,6 +22,7 @@ var publisher: Callable
 var root_action_filter: Callable
 var known_offer_end := 0
 var evaluator := Evaluation.new()
+var purchase_continuations := PurchaseContinuations.new()
 var result := {}
 var cleanup_us := 1000
 var current_only := true
@@ -49,6 +51,8 @@ func search(world: OffWorkState, owner: int, settings: Dictionary, until: int,
 		"root_ordinary_us":0,"root_production_us":0,"root_production_candidates":0,"root_production_serviced":0,
 		"root_production_complete":0,"root_evaluated_intents":{},
 		"root_economic_us":0,"root_economic_completed":0,"evaluation_layer":"current",
+		"root_tactical_us":0,"root_tactical_completed":0,
+		"root_purchase_candidates":0,"root_purchase_serviced":0,"root_purchase_complete":0,"root_purchase_us":0,
 		"principal_variation":[], "candidates":[], "cutoff":false, "fallback":true}
 	if not _can_fork(world): return _finish()
 	# Independent randomness remains useful for uncertain tool effects. New
@@ -113,9 +117,9 @@ func _can_fork(world: OffWorkState) -> bool:
 		stopped = true
 	return not stopped
 
-func _node(world: OffWorkState, actor: int, production_commitments: Dictionary = {}) -> Dictionary:
+func _node(world: OffWorkState, actor: int, production_commitments: Dictionary = {}, purchase_commitments: Dictionary = {}) -> Dictionary:
 	return {"world":world, "actor":actor, "ranked":[], "complete":false,
-		"production_commitments":production_commitments.duplicate()}
+		"production_commitments":production_commitments.duplicate(),"purchase_commitments":purchase_commitments.duplicate()}
 
 func _evaluate(node: Dictionary) -> bool:
 	if node.has("value"): return true
@@ -125,8 +129,14 @@ func _evaluate(node: Dictionary) -> bool:
 	# useful root action while charging its delay to neither side.
 	var next_actions := [half_period, half_period]
 	next_actions[int(node.actor)] = 0.0
-	var value: Dictionary = evaluator.evaluate_current(node.world,seat,policy,_until(),next_actions) if current_only \
-		else evaluator.evaluate(node.world, seat, policy, _until(), next_actions, false)
+	var value: Dictionary
+	if not current_only:
+		value=evaluator.evaluate(node.world,seat,policy,_until(),next_actions,false)
+	elif result.evaluation_layer=="tactical":
+		value=evaluator.evaluate_tactical(node.world,seat,policy,_until(),next_actions)
+	else:
+		value=evaluator.evaluate_current(node.world,seat,policy,_until(),next_actions)
+		value["evaluation_mode"]="current"
 	if not value.get("complete", false) or not _open():
 		stopped = true
 		return false
@@ -153,22 +163,33 @@ func _rank(node: Dictionary, root := false) -> bool:
 		if not _can_fork(node.world): return false
 		var child_world: OffWorkState = node.world.fork_search_node()
 		if not Actions.apply_search_action(child_world, int(node.actor), action): continue
+		# Capture the paid identity before natural events can produce coffee or
+		# recruited staff of the same type during the intervening half-turn.
+		var bought_ids: Array = []
+		if action.kind=="buy":
+			bought_ids=child_world._owner_type(int(node.actor),str(action.card_type)).filter(func(id): return not node.world.cards.has(id))
 		if not child_world.advance_for_search(half_period, _until(), cancelled) or not _open():
 			stopped = true
 			return false
 		child_world.mask_search_market(known_offer_end)
+		var purchases: Dictionary = node.purchase_commitments.duplicate()
+		for id in purchases.keys():
+			if not child_world.cards.has(id) or action.get("ids",[]).has(id) or int(action.get("tool",-1))==int(id) or int(action.get("person",-1))==int(id): purchases.erase(id)
+		for id in bought_ids:
+			if child_world.cards.has(id): purchases[int(id)]=int(node.actor)
 		var commitments: Dictionary = node.production_commitments.duplicate()
 		if action.kind=="buy" and action.get("card_type","")=="slack":
 			# Actual purchased identities survive intervening opponent replies.
 			# This is search-node context, not a persistent shopping preference.
 			for uid in child_world._owner_type(int(node.actor),"slack"):
 				if not node.world.cards.has(uid): commitments[int(uid)] = int(node.actor)
-		var child := _node(child_world, 1 - int(node.actor), commitments)
+		var child := _node(child_world, 1 - int(node.actor), commitments, purchases)
 		_reserve_release(child_world)
 		nodes += 1
 		if not _evaluate(child): return false
 		var entry := {"action":action, "child":child, "score":child.value.score, "tie_score":child.value.get("tie_score", 0.0), "order":order,
-			"production_possible":evaluator.has_production_continuation(child_world,commitments)}
+			"production_possible":evaluator.has_production_continuation(child_world,commitments),
+			"purchase_possible":purchase_continuations.available(child_world,purchases)}
 		order += 1
 		node.ranked.append(entry)
 		if root:
@@ -197,7 +218,22 @@ func _rank(node: Dictionary, root := false) -> bool:
 	# evaluated. Publish this completed layer before optional continuations.
 	if root: _publish_ranking(node)
 	var pending: Array = node.ranked.filter(func(option): return option.production_possible)
-	if root and not _refine_economic_layer(node,pending.size()): return false
+	var purchases: Array = node.ranked.filter(func(option): return option.purchase_possible)
+	if root and not _refine_economic_layer(node,pending.size()+purchases.size()): return false
+	if root and current_only and not _refine_tactical_layer(node,pending.size()+purchases.size()): return false
+	var purchase_started := Time.get_ticks_usec()
+	if root: result.root_purchase_candidates=purchases.size()
+	for index in purchases.size():
+		if not _open(): return false
+		var now := Time.get_ticks_usec()
+		var task_until := now+maxi(0,(_until()-now)/(purchases.size()-index+pending.size()))
+		var continuing := _extend_purchase(node,purchases[index],root,task_until)
+		if root:
+			_release_option_world(purchases[index])
+			result.root_purchase_serviced+=1
+			result.root_purchase_us=Time.get_ticks_usec()-purchase_started
+			if purchases[index].child.value.get("purchase_extension",{}).get("complete",true): result.root_purchase_complete+=1
+		if not continuing: return false
 	var production_started := Time.get_ticks_usec()
 	if root: result.root_production_candidates = pending.size()
 	for index in pending.size():
@@ -283,6 +319,47 @@ func _refine_economic_layer(node: Dictionary, production_count: int) -> bool:
 		option.score = values[index].score
 		option.tie_score = values[index].get("tie_score",0.0)
 	_publish_ranking(node,true)
+	return _open()
+
+func _refine_tactical_layer(node: Dictionary, continuation_count: int) -> bool:
+	var values := []
+	var started := Time.get_ticks_usec()
+	for index in node.ranked.size():
+		if not _open(): return false
+		var now := Time.get_ticks_usec()
+		var task_until := now+maxi(0,(_until()-now)/(node.ranked.size()-index+continuation_count))
+		var option: Dictionary = node.ranked[index]
+		if not _materialize(node,option,task_until): return _open()
+		var clock := [half_period,half_period]
+		clock[int(option.child.actor)]=0.0
+		var value: Dictionary = evaluator.evaluate_tactical(option.child.world,seat,policy,task_until,clock)
+		_release_option_world(option)
+		result.root_tactical_us=Time.get_ticks_usec()-started
+		if not value.get("complete",false): return _open()
+		values.append(value)
+		result.root_tactical_completed+=1
+	# No partial attack model may compete with a physical-only candidate.
+	for index in node.ranked.size():
+		var option: Dictionary = node.ranked[index]
+		option.child.value=values[index]
+		option.score=values[index].score
+		option.tie_score=values[index].get("tie_score",0.0)
+	result.evaluation_layer="tactical"
+	_publish_ranking(node,true)
+	return _open()
+
+func _extend_purchase(node: Dictionary, option: Dictionary, root: bool, task_until: int) -> bool:
+	if not _materialize(node,option,task_until):
+		option.child.value["purchase_extension"]={"complete":false,"plans":0,"examined":0}
+		return _open()
+	var clock := [half_period,half_period]
+	clock[int(option.child.actor)]=0.0
+	var value: Dictionary = purchase_continuations.extend(option.child.world,seat,policy,task_until,clock,
+		option.child.value,option.child.purchase_commitments,cancelled)
+	option.child.value=value
+	option.score=value.score
+	option.tie_score=value.get("tie_score",0.0)
+	if root: _publish_ranking(node,true)
 	return _open()
 
 func _extend_option(node: Dictionary, option: Dictionary, root: bool, task_until: int = -1) -> bool:

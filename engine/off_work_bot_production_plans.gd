@@ -7,7 +7,6 @@ extends RefCounted
 ## The visitor consumes each branch immediately so a large table is not kept
 ## alive once for every possible staffing choice.
 const Actions = preload("res://engine/off_work_bot_actions.gd")
-const Budget = preload("res://engine/off_work_bot_budget.gd")
 
 static func available(world: OffWorkState, owner: int) -> bool:
 	var ingredient_source := not world._owner_type(owner, "slack").is_empty()
@@ -44,24 +43,11 @@ static func visit(world: OffWorkState, owner: int, policy: Dictionary, until: in
 	planner.options = options
 	return planner.run()
 
-class Planner extends RefCounted:
-	var source: OffWorkState
-	var owner := 0
-	var policy: Dictionary
-	var until := -1
-	var cancelled: Callable
+class Planner extends "res://engine/off_work_bot_plan_cursor.gd":
 	var visitor: Callable
-	var period := 1.0
-	var horizon := 1800.0
-	var next_actions: Array
 	var options: Dictionary
-	var complete := true
 	var emitted := 0
 	var examined := 0
-
-	func _open() -> bool:
-		if (until >= 0 and Time.get_ticks_usec() >= until) or (cancelled.is_valid() and cancelled.call()): complete = false
-		return complete
 
 	func run() -> Dictionary:
 		if not _open(): return _result()
@@ -89,18 +75,6 @@ class Planner extends RefCounted:
 
 	func _result() -> Dictionary:
 		return {"complete":complete, "plans":emitted, "examined":examined}
-
-	func _cursor(world: OffWorkState, previous: Dictionary = {}) -> Dictionary:
-		if not _open(): return {}
-		# Copying and later releasing a coherent branch are indivisible. Use
-		# exactly the tree search's existing cost model, not another time cap.
-		if until>=0 and until-Time.get_ticks_usec()<=Budget.fork_cost(world)+Budget.release_cost(world):
-			complete = false
-			return {}
-		var branch := world.fork_search_node() if world._bot_branch else world.fork_for_bot(hash(["production_chain",owner,world.time,world._next_card,world._next_offer]))
-		return {"world":branch, "next":float(next_actions[owner]) if previous.is_empty() else float(previous.next),
-			"commands":[] if previous.is_empty() else previous.commands.duplicate(true),
-			"purchases":{} if previous.is_empty() else previous.purchases.duplicate(true)}
 
 	func _owned(cursor: Dictionary) -> void:
 		var world: OffWorkState = cursor.world
@@ -217,41 +191,8 @@ class Planner extends RefCounted:
 
 	func _publish(cursor: Dictionary, person: int) -> void:
 		if not _open(): return
-		var elapsed: float = cursor.world.time - source.time
-		var future := []
-		for side in 2:
-			var next := float(cursor.next) if side == owner else float(next_actions[side])
-			if next < elapsed: next += ceili((elapsed-next) / period) * period
-			future.append(maxf(0.0, next-elapsed))
 		emitted += 1
-		visitor.call({"world":cursor.world, "owner":owner, "person":person, "elapsed":elapsed,
-			"next_actions":future, "commands":cursor.commands, "purchases":cursor.purchases,
-			"complete":true, "kind":"slack_upgrade_return"})
-
-	func _slot(cursor: Dictionary) -> bool:
-		if not _open() or cursor.world.winner >= 0 or float(cursor.next) > horizon: return false
-		var delta := maxf(0.0, source.time + float(cursor.next) - float(cursor.world.time))
-		if delta > 0.0 and not cursor.world.advance_for_search(delta, until, cancelled):
-			complete = false
-			return false
-		cursor.world.mask_search_market(source._next_offer)
-		return _open() and cursor.world.winner < 0
-
-	func _command(cursor: Dictionary, action: Dictionary) -> bool:
-		if not _slot(cursor): return false
-		var price := 0
-		if action.kind == "buy":
-			for offer in cursor.world.offers:
-				if not offer.is_empty() and int(offer.id) == int(action.offer): price = int(offer.price)
-		if not Actions.apply_search_action(cursor.world, owner, action): return false
-		var at: float = cursor.world.time - source.time
-		cursor.commands.append({"at":at, "action":action.duplicate(true)})
-		if action.kind == "buy": cursor.purchases[int(action.offer)] = {"at":at,"owner":owner,"price":price}
-		cursor.next = at + period
-		return _open()
-
-	func _quote_exists(world: OffWorkState, id: int) -> bool:
-		return world.offers.any(func(offer): return not offer.is_empty() and int(offer.id) == id)
+		visitor.call(_plan(cursor,"slack_upgrade_return",person))
 
 	func _ready_coffee(world: OffWorkState) -> Array:
 		return world._owner_type(owner,"coffee").filter(func(id): return str(world.cards[id].status) == "ready")

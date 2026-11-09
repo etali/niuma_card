@@ -28,6 +28,25 @@ class PartialEconomicLayer extends "res://engine/off_work_bot_evaluator.gd":
 		if value.complete: value.score=123456789.0
 		return value
 
+class PartialTacticalLayer extends PartialEconomicLayer:
+	var tactical_calls := 0
+	func evaluate_tactical(world: OffWorkState, owner: int, policy: Dictionary, until: int = -1,
+			clock: Array = []) -> Dictionary:
+		tactical_calls+=1
+		if tactical_calls>1: return {"complete":false}
+		var value := super.evaluate_tactical(world,owner,policy,until,clock)
+		if value.complete: value.score=987654321.0
+		return value
+
+class ObservedLayers extends "res://engine/off_work_bot_search.gd":
+	var layers: Array = []
+	func _publish_ranking(node: Dictionary, retain_completed := false) -> void:
+		layers.append({"layer":result.evaluation_layer,
+			"entries":node.ranked.map(func(option): return {
+				"mode":option.child.value.get("evaluation_mode","economic"),
+				"score":option.child.value.score})})
+		super._publish_ranking(node,retain_completed)
+
 func _initialize() -> void:
 	_run.call_deferred()
 
@@ -75,16 +94,27 @@ func _partial_economic_layer() -> void:
 	var world := OffWorkState.new(config)
 	world.new_game(185)
 	world.offers.clear()
-	var search := Search.new()
-	var evaluator := PartialEconomicLayer.new()
-	search.evaluator=evaluator
-	var published := []
-	var result: Dictionary = search.search(world,0,config.rules.bot,Time.get_ticks_usec()+700000,Callable(),
-		func(row): published.append(row.duplicate(true)),false)
-	check(evaluator.calls==2 and result.root_economic_completed==1 and result.evaluation_layer=="current",
-		"后续rich候选未完成时整层弃用，已完成core层继续有效")
-	check(published.all(func(row): return row.candidates.all(func(candidate): return absf(float(candidate.score))<123456789.0)),
-		"部分rich极高分也从未混入任何已发布core排名")
+	for partial_tactical in [false,true]:
+		var search := ObservedLayers.new()
+		var evaluator: RefCounted = PartialTacticalLayer.new() if partial_tactical else PartialEconomicLayer.new()
+		search.evaluator=evaluator
+		var published := []
+		var result: Dictionary = search.search(world,0,config.rules.bot,Time.get_ticks_usec()+700000,Callable(),
+			func(row): published.append(row.duplicate(true)),false)
+		check(evaluator.calls==2 and result.root_economic_completed==1 and result.evaluation_layer!="economic",
+			"后续rich候选未完成时整层弃用，不能采用单个rich毒分")
+		if partial_tactical:
+			check(evaluator.tactical_calls==2 and result.root_tactical_completed==1 and result.evaluation_layer=="current",
+				"tactical也只完成首个毒分时整层弃用，保持完整current层")
+		else:
+			check(result.root_tactical_completed==result.root_candidates and result.evaluation_layer=="tactical",
+				"rich失败后允许所有候选完整完成的tactical层整体替换current")
+		check(published.all(func(row): return row.candidates.all(func(candidate): return absf(float(candidate.score))<123456789.0)),
+			"rich和tactical部分极高分均不混入任何已发布排名")
+		check(not search.layers.is_empty() and search.layers.all(func(layer):
+			return not layer.entries.is_empty() and layer.entries.all(func(value):
+				return value.mode==layer.layer and absf(float(value.score))<123456789.0)),
+			"每次完整排名全部候选真实使用同一估值层，不能仅修改诊断字符串过关")
 
 func _ready_coffee() -> void:
 	var world := _world()

@@ -53,14 +53,32 @@ func evaluate_current(world: OffWorkState, owner: int, policy: Dictionary, until
 		next_actions: Array = []) -> Dictionary:
 	var prepared := _prepare_evaluation(world,owner,policy,until,next_actions)
 	if prepared.has("value"): return prepared.value
-	var forecasts := _forecast_pair(prepared.models)
-	if not _complete: return _incomplete()
+	var forecasts := _current_forecasts(prepared.models)
+	return _evaluation_result(forecasts,owner)
+
+## A common tactical lens for every root action and executable assembly tail.
+## Existing physical commitments and visible attacks are evaluated together;
+## employee, upgrade and recruitment investments remain the optional rich pass.
+## This makes a delayed defense face the same attack opportunity as waiting,
+## without granting a union, transfer or any unassembled card an asset bonus.
+func evaluate_tactical(world: OffWorkState, owner: int, policy: Dictionary, until: int = -1,
+		next_actions: Array = []) -> Dictionary:
+	var prepared := _prepare_evaluation(world,owner,policy,until,next_actions)
+	if prepared.has("value"): return prepared.value.merged({"evaluation_mode":"tactical"})
+	var forecasts := _current_forecasts(prepared.models)
+	if not _complete: return _incomplete().merged({"evaluation_mode":"tactical"})
+	forecasts = _attack_continuations(world,prepared.models,prepared.models,forecasts)
+	return _evaluation_result(forecasts,owner).merged({"evaluation_mode":"tactical"})
+
+func _current_forecasts(models: Array) -> Array:
+	var forecasts := _forecast_pair(models)
+	if not _complete: return forecasts
 	for side in 2:
-		var model: Dictionary = prepared.models[side]
+		var model: Dictionary = models[side]
 		forecasts[side].merge({"work":model.work,"current_rate":model.current_rate,"idle_pending":model.idle_pending,
 			"committed_work":model.pending_work,"pending_strikes":model.pending_strikes,"free_cash":model.free_cash,
 			"public_investment":{}},true)
-	return _evaluation_result(forecasts,owner)
+	return forecasts
 
 func _prepare_evaluation(world: OffWorkState, owner: int, policy: Dictionary, until: int, next_actions: Array) -> Dictionary:
 	_deadline = until
@@ -160,8 +178,12 @@ func extend_production(world: OffWorkState, owner: int, policy: Dictionary, unti
 				candidate.required_actions = 0
 				candidate.forecast_purchases = {}
 			else:
-				var tail: Dictionary = tail_evaluator.evaluate_current(plan.world,owner,policy,until,plan.next_actions) if current_only \
-					else tail_evaluator.evaluate(plan.world,owner,policy,until,plan.next_actions,false)
+				var tail: Dictionary
+				if current_only:
+					tail = tail_evaluator.evaluate_tactical(plan.world,owner,policy,until,plan.next_actions) if ordinary.get("evaluation_mode","")=="tactical" \
+						else tail_evaluator.evaluate_current(plan.world,owner,policy,until,plan.next_actions)
+				else:
+					tail = tail_evaluator.evaluate(plan.world,owner,policy,until,plan.next_actions,false)
 				if not tail.get("complete",false):
 					extension.complete = false
 					return
@@ -207,10 +229,17 @@ func extend_production(world: OffWorkState, owner: int, policy: Dictionary, unti
 func _offset_forecast(forecast: Dictionary, elapsed: float) -> void:
 	forecast.eta = float(forecast.eta)+elapsed
 	for purchase in forecast.get("forecast_purchases",{}).values(): purchase.at = float(purchase.at)+elapsed
-	for name in ["cashout","public_investment"]:
-		var detail: Dictionary = forecast.get(name,{})
-		for key in ["at","eta","purchase_at","funding_at","usable_at"]:
+	for command in forecast.get("forecast_commands",[]): command.at = float(command.at)+elapsed
+	for name in ["cashout","public_investment","forecast_attack"]:
+		if not forecast.has(name): continue
+		# Attack details can be shared by the public-investment and attack
+		# fields. Detach each before translating to avoid adding elapsed twice.
+		var detail: Dictionary = forecast[name].duplicate(true)
+		for key in ["at","eta","purchase_at","funding_at","usable_at","use_at","impact_at","ready_seconds","target_ready_seconds","expires"]:
 			if detail.has(key): detail[key] = float(detail[key])+elapsed
+		for purchase in detail.get("purchases",[]):
+			if purchase.has("at"): purchase.at = float(purchase.at)+elapsed
+		forecast[name]=detail
 
 func _open() -> bool:
 	if _deadline >= 0 and Time.get_ticks_usec() >= _deadline: _complete = false
@@ -574,13 +603,18 @@ func _remaining(context: Dictionary) -> int:
 	return count
 
 func _forecast_result(context: Dictionary, eta: float, remaining: int) -> Dictionary:
+	var commands := []
+	for event in context.scheduled.events:
+		if not event.has("action_key"): continue
+		if context.required.has(event.action_key) or context.payments.has(str(event.get("operation",""))):
+			commands.append(event.duplicate(true))
 	return {"eta":eta,"remaining":remaining,"income":context.earned,
 		"uncommitted":maxi(0,remaining-int(context.pending)),
 		"cash":float(context.model.free_cash)+float(context.earned)-float(context.spent),
 		"transferred":context.transferred,"stalled":remaining>0,"unreachable":context.model.get("unreachable",false),
 		"required_actions":context.required.size(),"_required_commands":context.required.duplicate(),
 		"_payments":context.payments.duplicate(true),
-		"forecast_purchases":context.purchases.duplicate(true)}
+		"forecast_purchases":context.purchases.duplicate(true),"forecast_commands":commands}
 
 func _forecast(model: Dictionary, horizon: float = -1.0) -> Dictionary:
 	if horizon < 0.0: horizon = _horizon
@@ -996,7 +1030,14 @@ func _attack_continuations(world: OffWorkState, original: Array, continuation: A
 	var order := forced_order if not forced_order.is_empty() else ([0,1] if float(_next_actions[0])<=float(_next_actions[1]) else [1,0])
 	for side in order:
 		if not _open(): return forecasts
-		var future_targets := _future_strike_targets(world,models[1-int(side)])
+		# Most opening/production tables have no public or owned attack. Do not
+		# build scheduled target contexts for those tables (or for meetings).
+		var availability: Dictionary = AttackPlans.available_kinds(world,int(side),_deadline)
+		if not availability.complete:
+			_complete = false
+			return forecasts
+		if availability.kinds.is_empty(): continue
+		var future_targets := _future_strike_targets(world,models[1-int(side)]) if availability.kinds.has("strike") else []
 		if not _open(): return forecasts
 		var generated: Dictionary = AttackPlans.plans(world,int(side),_deadline,future_targets)
 		if not generated.complete:

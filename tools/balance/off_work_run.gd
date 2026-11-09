@@ -363,6 +363,11 @@ func _record_decision(report: Dictionary, side: String, seat: int, seed_value: i
 		"root_production_complete":decision.get("root_production_complete",0),
 		"root_evaluated_intents":decision.get("root_evaluated_intents",{}),
 		"root_economic_us":decision.get("root_economic_us",0),"root_economic_completed":decision.get("root_economic_completed",0),
+		"root_tactical_us":decision.get("root_tactical_us",0),"root_tactical_completed":decision.get("root_tactical_completed",0),
+		"root_purchase_us":decision.get("root_purchase_us",0),
+		"root_purchase_candidates":decision.get("root_purchase_candidates",0),
+		"root_purchase_serviced":decision.get("root_purchase_serviced",0),
+		"root_purchase_complete":decision.get("root_purchase_complete",0),
 		"evaluation_layer":decision.get("evaluation_layer","unknown"),
 		"principal_variation": decision.get("principal_variation", []),
 		"candidates": decision.get("candidates", []).slice(0, 5)})

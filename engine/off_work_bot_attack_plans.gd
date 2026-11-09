@@ -10,6 +10,29 @@ extends RefCounted
 ## affordable yet: the caller's cash forecast decides whether they can occur.
 ## Owned tools carry ready_seconds. A meeting additionally occupies its host
 ## for duration_seconds; its sampled targets are one legal public hypothesis.
+static func available_kinds(world: OffWorkState, owner: int, until: int = -1) -> Dictionary:
+	var kinds := []
+	if not _open(until): return {"kinds":kinds,"complete":false}
+	if world.winner >= 0 or not world.config.rules.simulation.owners.any(func(value): return int(value)==owner):
+		return {"kinds":kinds,"complete":true}
+	for kind in ["strike","meeting"]:
+		for id in world._owner_type(owner,kind):
+			if not _open(until): return {"kinds":kinds,"complete":false}
+			var status := str(world.cards[id].status)
+			if status == "ready" or (kind == "meeting" and status == "recovering"):
+				kinds.append(kind)
+				break
+	for slot in world.offers.size():
+		if not _open(until): return {"kinds":kinds,"complete":false}
+		var offer: Dictionary = world.offers[slot]
+		if offer.is_empty(): continue
+		var kind := str(offer.type)
+		if kind not in ["strike","meeting"] or kinds.has(kind): continue
+		if not world.config.can_purchase(kind) or not world.can_acquire(kind,owner): continue
+		if (slot+1)*world.config.number("conveyor","interval_seconds")-world._conveyor_elapsed<=0.0: continue
+		kinds.append(kind)
+	return {"kinds":kinds,"complete":_open(until)}
+
 static func plans(world: OffWorkState, owner: int, until: int = -1, future_targets: Array = []) -> Dictionary:
 	var result := {"plans":[], "complete":true}
 	if not _open(until):
@@ -19,7 +42,9 @@ static func plans(world: OffWorkState, owner: int, until: int = -1, future_targe
 	var owned := {}
 	var hosts := []
 	var host_keys := {}
-	for id in world.cards:
+	# Only people and tools can be a source or host. The shared owner/activity
+	# index excludes queued work and cash without imposing a personnel cap.
+	for id in world.activity_card_ids(owner):
 		if not _open(until):
 			result.complete = false
 			return result
