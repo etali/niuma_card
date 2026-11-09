@@ -201,25 +201,60 @@ function field(parent, object, key, options = {}) {
   });
   return input;
 }
+function parameterFieldOptions(path) {
+  // Shared with the editor: one meaning/choice list for both editing and comparison.
+  const exact = {
+    "cards.work.work_seconds": {label:"每份工作基础耗时（秒）",min:0,positive:true,unit:"秒",
+      hint:"员工及各升级等级共用；加班会影响实际工作速度。"},
+    "rules.recruitment.cost_per_employee": {label:"每名员工招聘费用",kind:"int",min:1,unit:"钱/人",
+      hint:"老板每招募一名员工消耗的金钱，须高于购牌区员工价格。"},
+    "rules.recruitment.seconds": {label:"招聘耗时（秒）",min:0,positive:true,unit:"秒",
+      hint:"老板完成一批招聘所需时间，一批可按投入金钱招募多人。"},
+    "rules.income.destination_policy": {label:"收入放置位置",hint:"只决定新收入放进哪个现金堆，不改变收入数量。",choices:[
+      ["oldest_cash_pile","最早创建的现金堆"],["newest_cash_pile","最新创建的现金堆"]]},
+    "rules.transfer.destination_policy": {label:"甩锅落点",hint:"决定转交的工作放到对方哪里。",choices:[
+      ["largest_work_queue","工作最多的对方牌组"],["new_group","对方新建牌组"]]}
+  };
+  const common = {
+    price:{unit:"钱",hint:"从购牌区买入这张牌的费用；是否可购由“可购买”决定。"},
+    refund:{unit:"钱",hint:"开除一名该类型人员返还的金钱。"},
+    work_capacity:{unit:"份/批",hint:"每名在场人员一次工作周期最多处理的工作份数，不是工资倍率。"},
+    work_income_multiplier:{unit:"倍",hint:"该人员每完成一份工作时的收入倍率，不改变每批工作份数。"},
+    transfer_capacity:{unit:"份/人",hint:"该人员每次甩锅可转交的工作份数；甩锅不产生收入。"},
+    meeting_multiplier:{unit:"倍",hint:"作为会议主持人时，基础目标人数乘以此倍率。"},
+    coffee_per_person:{unit:"杯/人/批",hint:"摸鱼每批每位在场人员产出的咖啡数量；每分钟产量还取决于周期和速度倍率。"},
+    speed_multiplier:{unit:"倍",hint:"同组效果叠加使用的速度倍率；实际速度还取决于牌数和组合规则。"},
+    seconds:{unit:"秒",hint:"完成一次或一批此效果所需的基础时间；适用加速时实际周期会变化。"},
+    duration_seconds:{unit:"秒",hint:"效果持续的时间。"},
+    recovery_seconds:{unit:"秒",hint:"效果完成后再次使用前的冷却时间。"},
+    interval_seconds:{unit:"秒",hint:"共享购牌区每隔此时间轮询一次；不是每张卡的出现概率。"},
+    slots:{unit:"格",hint:"共享购牌区同时展示的槽位数。"},
+    cost_per_work:{unit:"钱/份",hint:"外包每处理一份工作消耗的金钱。"},
+    income:{unit:"钱/份",hint:"完成每份工作的基础收入，再乘以人员对应收入倍率。"},
+    money:{unit:"钱/方",hint:"双方开局各自获得的金钱，不是两方合计。"},
+    cost:{unit:"杯",hint:"完成这一段提升卷度消耗的咖啡数量，不是累计到最高级的总用量。"},
+    max_per_owner:{unit:"名/方",hint:"每方同时持有这种牌的上限。"},
+    base_targets:{unit:"人",hint:"会议基础目标人数，再按主持人类型的倍率计算。"},
+    minimum_targets:{unit:"人",hint:"会议目标人数的下限。"},
+    minimum_people:{unit:"人",hint:"开除后至少保留的人员数量。"},
+    flight_seconds:{unit:"秒",hint:"罢工牌飞到对方目标所需的时间，不是罢工持续时间。"},
+    can_work:{hint:"决定该类人员能否处理工作；其他功能由对应组合规则决定。"},
+    can_be_meeting_target:{hint:"决定该类人员能否被对方会议拉走。"},
+    can_be_strike_target:{hint:"决定该类人员能否受到罢工影响。"},
+    work_role:{hint:"工会组合按这个人员类型的工作标准结算，原牌型不变。"},
+    purchasable:{hint:"决定这张牌能否进入购牌区；实际概率还由权重决定。"},
+    auto_repeat:{hint:"会议冷却完成且有合法目标时是否自动再次开始。"},
+    description:{hint:"牌面显示文字；文字修改本身不改变规则参数。"},
+    name:{hint:"显示名称；改名本身不改变规则。"},
+    art:{hint:"卡面美术资源标识，不影响数值效果。"}
+  };
+  const key = path.split(".").at(-1);
+  return {...common[key],...exact[path]};
+}
 function fields(parent, values, path, excluded = []) {
   for (const key of Object.keys(values)) {
     if (key.startsWith("_") || excluded.includes(key)) continue;
-    const options = {path:path + "." + key};
-    if (key === "work_seconds" && path === "cards.work") {
-      Object.assign(options,{label:"每份工作基础耗时（秒）",min:0,positive:true,
-        hint:"员工及各升级等级共用；加班会影响实际工作速度。"});
-    } else if (path === "rules.recruitment" && key === "cost_per_employee") {
-      Object.assign(options,{label:"每名员工招聘费用",kind:"int",min:1,hint:"须高于购牌区员工价格。"});
-    } else if (path === "rules.recruitment" && key === "seconds") {
-      Object.assign(options,{label:"招聘耗时（秒）",min:0,positive:true});
-    } else if (key === "destination_policy" && path === "rules.income") {
-      Object.assign(options,{label:"收入放置位置",choices:[
-        ["oldest_cash_pile","最早创建的现金堆"],["newest_cash_pile","最新创建的现金堆"]]});
-    } else if (key === "destination_policy" && path === "rules.transfer") {
-      Object.assign(options,{label:"甩锅落点",choices:[
-        ["largest_work_queue","工作最多的对方牌组"],["new_group","对方新建牌组"]]});
-    }
-    field(parent,values,key,options);
+    field(parent,values,key,{path:path + "." + key,...parameterFieldOptions(path + "." + key)});
   }
 }
 function marketPoolIssue() {
@@ -638,16 +673,200 @@ function differentConditions([left,right]) {
   else if (left.result.simulator_fingerprint !== right.result.simulator_fingerprint) differences.push("模拟器版本");
   return differences;
 }
+function parameterNumber(value) {
+  return Number.isFinite(value) ? value.toLocaleString("zh-CN",{maximumSignificantDigits:8}) : "未记录";
+}
+function parameterCardName(id,snapshots) {
+  const names = [...new Set(snapshots.map(snapshot => snapshot?.cards?.[id]?.name).filter(Boolean))];
+  return names.join(" / ") || baseline?.cards?.[id]?.name || id;
+}
+function parameterMetadata(path,snapshots) {
+  const key = path.at(-1), full = path.join(".");
+  const cardName = id => parameterCardName(id,snapshots);
+  const options = parameterFieldOptions(full);
+  const label = options.label || fieldLabels[key] || key;
+  const unknownHint = "未提供此历史或扩展字段的说明；保留原始路径和值，不推断玩法效果。";
+  if (path[0] === "cards" || path[0] === "roles") {
+    return {...options,hint:options.hint || unknownHint,label:cardName(path[1]) + " · " + label};
+  }
+  if (path[0] === "rules") {
+    if (path[1] === "initial" && path[2] === "groups" && path.length === 5) {
+      return {label:"开局第 " + (Number(path[3])+1) + " 组 · " + cardName(key),
+        unit:key === "work" ? "份/方" : "张/方",hint:"双方开局各自在这一牌组获得的数量；组号变化也可能只是开局布局变化。"};
+    }
+    if (path[1] === "conveyor" && path[2] === "pool") {
+      return {label:"购牌区 · " + cardName(key) + "出现权重",hint:"权重不是百分比；出现概率取决于本列所有可购牌的权重总和。"};
+    }
+    if (path[1] === "coffee" && path[2] === "upgrades") {
+      const targets = [...new Set(snapshots.map(s => s?.rules?.coffee?.upgrades?.[path[3]]?.to).filter(Boolean))];
+      return {...options,hint:options.hint || unknownHint,label:"咖啡升级 · " + cardName(path[3]) +
+        (targets.length ? " → " + targets.map(cardName).join(" / ") : "") + " · " + label};
+    }
+    return {...options,hint:options.hint || unknownHint,label:(fieldLabels[path[1]] || cardName(path[1])) + " · " + label};
+  }
+  const knobs = bot?.preferences?.knobs || [];
+  const spec = knobs.find(item => item.key === key);
+  if (spec && (path.length === 1 || path[0].startsWith("BOT"))) {
+    const unit = spec.label.includes("微秒") ? "微秒" : spec.label.includes("毫秒") ? "毫秒" :
+      spec.label.includes("秒") ? "秒" : "";
+    return {...spec,unit,label:(path.length > 1 ? path.slice(0,-1).join(" · ") + " · " : "BOT · ") + spec.label};
+  }
+  const experiment = {
+    seed:{label:"起始随机种子",hint:"影响发牌随机序列；与卡牌强度没有固定的增减关系。"},
+    pairs:{label:"种子对数",unit:"对",hint:"每个种子交换座位各模拟一局；增加样本数，不改变单局规则。"},
+    max_seconds:{label:"单局观察上限",unit:"秒",hint:"到达观察上限仍未结束的对局记为超时；不是目标对局长度。"},
+    metrics_version:{label:"指标版本",hint:"指标口径的版本；不同版本可能不能直接比较。"},
+    godot_version:{label:"Godot 版本",hint:"运行实验的游戏引擎版本。"},
+    simulator_fingerprint:{label:"模拟器版本指纹",hint:"规则与 BOT 实现的版本标识；不同版本的差异不能仅归因于卡表。"}
+  };
+  if (path[0] === "实验设置" && experiment[key]) return experiment[key];
+  return {label:full || "完整配置",hint:unknownHint};
+}
+function parameterValue(value,spec,path,snapshots) {
+  if (value === undefined) return "缺少";
+  if (value === null) return "空值";
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (typeof value === "number") return parameterNumber(value) + (spec.unit ? " " + spec.unit : "");
+  const choice = spec.choices?.find(([key]) => key === value);
+  if (choice) return choice[1];
+  if (["to","work_role"].includes(path.at(-1)) && typeof value === "string") return parameterCardName(value,snapshots);
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+function parameterDifferenceNote(path,a,b,spec,snapshots) {
+  const notes = [];
+  if (a === undefined) notes.push("右侧新增此设置；左侧未记录，不能视为 0。");
+  else if (b === undefined) notes.push("右侧未记录此设置，不能视为 0。");
+  else if (typeof a === "number" && typeof b === "number" && Number.isFinite(a) && Number.isFinite(b)) {
+    const delta = b-a;
+    notes.push("右侧较左侧" + (delta > 0 ? "增加 " : "减少 ") + parameterNumber(Math.abs(delta)) +
+      (spec.unit ? " " + spec.unit : "") + "。");
+  }
+  if (spec.hint) notes.push(spec.hint);
+  if (path.slice(0,3).join(".") === "rules.conveyor.pool") {
+    const chances = snapshots.map(snapshot => {
+      const pool = snapshot?.rules?.conveyor?.pool;
+      if (!pool || !snapshot.cards) return "未记录";
+      const weights = Object.entries(snapshot.cards).filter(([,card]) => card.purchasable).map(([id]) => pool[id] ?? 0);
+      const total = weights.reduce((sum,value) => sum+value,0);
+      if (weights.some(value => !Number.isFinite(value) || value < 0) || !Number.isFinite(total) || total <= 0) return "无法计算";
+      const id = path.at(-1);
+      return snapshot.cards[id]?.purchasable ? parameterNumber((pool[id] ?? 0)/total*100) + "%" : "不可购买";
+    });
+    notes.push("归一后出现概率：" + chances[0] + " → " + chances[1] + "（双方共享）。");
+  }
+  if (path.slice(0,3).join(".") === "rules.initial.groups" && path.at(-1) === "work") {
+    const totals = snapshots.map(snapshot => {
+      const groups = snapshot?.rules?.initial?.groups;
+      if (!Array.isArray(groups) || groups.some(group => !group || typeof group !== "object" ||
+        (group.work !== undefined && !Number.isFinite(group.work)))) return null;
+      return groups.reduce((sum,group) => sum+(group.work ?? 0),0);
+    });
+    if (totals.every(Number.isFinite)) notes.push("每方总工作 " + totals.map(parameterNumber).join(" → ") +
+      " 份；双方合计 " + totals.map(value => parameterNumber(value*2)).join(" → ") + " 份。");
+  }
+  return notes.join(" ");
+}
 function parameterDifferences(left,right) {
-  const changes = [];
+  const changes = [], snapshots = [left,right];
+  const initialGroups = snapshots.map(snapshot => snapshot?.rules?.initial?.groups);
   function visit(path, a, b) {
+    // A recorded initial group is a sparse card-count map: an absent card (or
+    // absent group index) means none were dealt. A missing groups snapshot is
+    // unknown instead, so never apply this normalization outside known arrays.
+    if (path.length === 5 && path.slice(0,3).join(".") === "rules.initial.groups" &&
+        /^\d+$/.test(path[3]) && [a,b].every(value => value === undefined || Number.isFinite(value)) &&
+        initialGroups.every(groups => Array.isArray(groups) &&
+          (Number(path[3]) >= groups.length || (groups[path[3]] &&
+            typeof groups[path[3]] === "object" && !Array.isArray(groups[path[3]]))))) {
+      a ??= 0;
+      b ??= 0;
+    }
     if (same(a,b)) return;
-    if (a && b && typeof a === "object" && typeof b === "object" && !Array.isArray(a) && !Array.isArray(b)) {
-      for (const k of new Set([...Object.keys(a),...Object.keys(b)])) visit([...path,k],a[k],b[k]);
-    } else changes.push([path.join("."),JSON.stringify(a) ?? "缺少",JSON.stringify(b) ?? "缺少"]);
+    const objects = [a,b].filter(value => value !== undefined);
+    const keys = objects.flatMap(value => value && typeof value === "object" ? Object.keys(value) : []);
+    if (objects.length && objects.every(value => value && typeof value === "object") &&
+        objects.every(value => Array.isArray(value) === Array.isArray(objects[0])) && keys.length) {
+      for (const k of new Set(keys)) visit([...path,k],a?.[k],b?.[k]);
+    } else {
+      const spec = parameterMetadata(path,snapshots);
+      changes.push([stacked(spec.label,path.join(".")),parameterValue(a,spec,path,snapshots),
+        parameterValue(b,spec,path,snapshots),parameterDifferenceNote(path,a,b,spec,snapshots)]);
+    }
   }
   visit([],left,right);
   return changes;
+}
+function offWorkMetricValue(summary,key) {
+  const metric = summary?.balance_metrics?.[key];
+  return metric?.denominator > 0 && Number.isFinite(metric.denominator) &&
+    Number.isFinite(metric.numerator) && Number.isFinite(metric.value) && metric.value >= 0
+    ? metric.value : null;
+}
+function offWorkChartNumber(value,unit) {
+  const precision = unit === "次/游戏分钟" ? 4 : 2;
+  if (value !== 0 && Math.abs(value) < 10 ** -precision) {
+    return value.toLocaleString("zh-CN",{maximumSignificantDigits:3});
+  }
+  return unit === "次/游戏分钟" ? rateNumber(value) : number(value);
+}
+function offWorkChangeText(a,b,unit,compare = true) {
+  if (!compare) return "仅展示观测值，不计算变化";
+  if (![a,b].every(Number.isFinite)) return "缺少观测，无法计算变化";
+  const delta = b-a;
+  const signed = value => (value > 0 ? "+" : "") + offWorkChartNumber(value,unit);
+  const absolute = "B − A：" + signed(delta) + " " + (unit === "%" ? "个百分点" : unit);
+  if (a === 0) return absolute + (b === 0 ? " · 无变化" : " · A 为 0，不计算相对幅度");
+  const relative = (b-a)/a*100;
+  return absolute + " · 相对 A " + (relative > 0 ? "+" : "") + offWorkChartNumber(relative,"%") + "%";
+}
+function offWorkBarFigure(key,label,values,unit,compare) {
+  values = values.map(value => Number.isFinite(value) && value >= 0 && (unit !== "%" || value <= 100) ? value : null);
+  const figure = element("figure",undefined,"off-work-bar-figure");
+  figure.dataset.offWorkChart = key;
+  figure.append(element("figcaption",label));
+  const observed = values.filter(value => Number.isFinite(value) && value >= 0);
+  const maximum = unit === "%" ? 100 : Math.max(0,...observed) || 1;
+  figure.dataset.axisMax = String(maximum);
+  for (const [index,value] of values.entries()) {
+    const side = index ? "B" : "A";
+    const row = element("div",undefined,"off-work-bar-row");
+    row.dataset.side = side;
+    row.append(element("strong",side));
+    const track = element("div",undefined,"off-work-bar-track");
+    if (Number.isFinite(value) && value >= 0) {
+      row.dataset.value = String(value);
+      const bar = document.createElementNS("http://www.w3.org/2000/svg","svg");
+      bar.setAttribute("class","off-work-bar");
+      bar.setAttribute("viewBox","0 0 100 20");
+      bar.setAttribute("preserveAspectRatio","none");
+      bar.setAttribute("aria-hidden","true");
+      const fill = document.createElementNS("http://www.w3.org/2000/svg","rect");
+      fill.setAttribute("width",String(value/maximum*100));
+      fill.setAttribute("height","20");
+      bar.append(fill);
+      if (value === 0) track.classList.add("off-work-bar-zero");
+      track.append(bar);
+      row.append(track,element("span",offWorkChartNumber(value,unit) + " " + unit,"off-work-bar-value"));
+    } else {
+      row.append(track,element("span","未观测","off-work-bar-value muted"));
+    }
+    figure.append(row);
+  }
+  const axis = element("div",undefined,"off-work-bar-axis");
+  axis.append(element("span","0"),element("span",offWorkChartNumber(maximum,unit) + " " + unit));
+  figure.append(axis,element("p",offWorkChangeText(values[0],values[1],unit,compare),"off-work-chart-change"));
+  return figure;
+}
+function offWorkMetricCharts(root,batches,compare,measures = balanceMeasures) {
+  const charts = element("div",undefined,"off-work-metric-charts");
+  charts.setAttribute("aria-label","平衡性指标柱状对比");
+  for (const [key,spec] of Object.entries(measures)) {
+    const figure = offWorkBarFigure(key,spec.label,batches.map(({result}) => offWorkMetricValue(result,key)),spec.unit || "%",compare);
+    figure.title = spec.formula;
+    charts.append(figure);
+  }
+  root.append(element("h3","平衡指标 · 柱状对比"),
+    element("p","蓝色 A，橙色 B；同一指标共用刻度，不同数量指标使用独立刻度。条长表示观测值，增减不代表好坏。相对变化以 A 为基线。","hint"),charts);
 }
 function balanceTable(root,batches,compare,deltaLabel = "B − A") {
   const measures = {...balanceMeasures};
@@ -659,10 +878,7 @@ function balanceTable(root,batches,compare,deltaLabel = "B − A") {
     const label = stacked(spec.label,spec.formula);
     const row = [label,...batches.map(({result}) => metricReading(result,key,true))];
     if (compare) {
-      const values = batches.map(({result}) => {
-        const metric = result.balance_metrics?.[key];
-        return metric?.denominator > 0 && Number.isFinite(metric.numerator) ? metric.value : null;
-      });
+      const values = batches.map(({result}) => offWorkMetricValue(result,key));
       const difference = values[1]-values[0];
       const format = spec.unit === "次/游戏分钟" ? rateNumber : number;
       row.push(values.every(Number.isFinite)
@@ -672,6 +888,7 @@ function balanceTable(root,batches,compare,deltaLabel = "B − A") {
     return row;
   });
   table(root,["平衡指标",...batches.map(batch => batch.heading || batch.name),...(compare ? [deltaLabel] : [])],rows);
+  if (batches.length === 2) offWorkMetricCharts(root,batches,compare,measures);
 }
 function acquisitionTable(root,batches,compare = false) {
   const sets = batches.map(batch => batch.result?.balance_metrics?.card_acquisitions);
@@ -713,6 +930,21 @@ function acquisitionTable(root,batches,compare = false) {
     return row;
   });
   table(root,headers,rows);
+  if (batches.length === 2) {
+    const charts = element("div",undefined,"off-work-metric-charts off-work-acquisition-charts");
+    charts.setAttribute("aria-label","各卡获得占比柱状对比");
+    for (const id of sorted) {
+      const cards = maps.map(map => map.get(id));
+      const labels = [...new Set(cards.map(card => card?.label).filter(Boolean))];
+      charts.append(offWorkBarFigure("acquisition-"+id,labels.join(" / ") || id,
+        cards.map(card => Number.isFinite(card?.percentage) ? card.percentage : null),"%",compare));
+    }
+    const block = element("details",undefined,"off-work-acquisition-chart-details");
+    block.open = true;
+    block.append(element("summary","各卡获得占比 · 柱状对比"),
+      element("p","统一使用 0–100% 刻度；变化以百分点表示。占比的变化也受其他卡牌获得量影响，需结合上表张数查看。","hint"),charts);
+    root.append(block);
+  }
 }
 function botDuelReport(root,record,result) {
   const decided = result.a_wins + result.b_wins;
@@ -732,7 +964,7 @@ function botDuelReport(root,record,result) {
   });
   const differences = parameterDifferences(...policies);
   if (differences.length) {
-    table(details(root,"A、B 策略参数差异（" + differences.length + " 项）"),["参数","BOT A","BOT B"],differences);
+    table(details(root,"A、B 策略参数差异（" + differences.length + " 项）"),["参数","BOT A","BOT B","注释（B 相对 A）"],differences);
   } else root.append(element("p","A、B 使用相同的策略参数。","hint"));
 }
 function report(root,record,result) {
@@ -1296,7 +1528,7 @@ async function showComparison() {
     const comparable = bothMeasured && batches.every(b => [1,2].includes(b.result.balance_metrics?.version));
     if (bothMeasured) {
       const differences = differentConditions(batches);
-      let message = "实验条件一致，差值为右侧减左侧。";
+      let message = comparable ? "实验条件一致，差值为右侧减左侧。" : "指标版本未知，仅展示两侧观测值。";
       if (differences.length) {
         message = "条件不同或缺少记录 · " + differences.join("、") + "。";
         message += comparable ? "下表展示双方都采集且口径一致的指标差。" : "指标版本未知，仅展示两侧观测值。";
@@ -1314,7 +1546,7 @@ async function showComparison() {
     const changes = parameterDifferences(snapshots[0],snapshots[1]);
     if (changes.length) {
       root.append(element("h4","参数差异（" + changes.length + " 项）"));
-      table(root,["参数","左侧","右侧"],changes);
+      table(root,["参数","左侧","右侧","注释（右侧相对左侧）"],changes);
     } else root.append(element("p","两份快照中记录的参数相同。","hint"));
     for (const [index,snapshot] of snapshots.entries()) {
       const record = records[index];

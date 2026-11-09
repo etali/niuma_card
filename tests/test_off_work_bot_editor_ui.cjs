@@ -192,7 +192,7 @@ function harness() {
     context.candidate = copy(record.data);
     context.$('cardName').value = record.name;
   };
-  loadFunctions(context,['element','same','displayName','caption','field','details','number','profilePreset','profileStrength','budgetText','setProfile',
+  loadFunctions(context,['element','same','displayName','caption','field','details','number','stacked','parameterFieldOptions','parameterNumber','parameterCardName','parameterMetadata','parameterValue','parameterDifferenceNote','parameterDifferences','profilePreset','profileStrength','budgetText','setProfile',
     'fields','table','filterCards','renderInitialFields','renderCards','marketPoolIssue','updateMarketProbabilities','renderMarketPool','validCards','playCurrentCards','startPlaytest',
     'renderProfiles','valid','api','busy','saveWithConfirmation','saveVersion','currentCardsName','run',
     'availableCards','botCardsId','renderBotCards','selectBotCards','matchingConditions','comparisonChoices',
@@ -867,7 +867,7 @@ test('a single duel report compares A and B results and their actual strategy pa
   const {ui} = harness();
   loadFunctions(ui,['fraction','parameterDifferences','botDuelReport']);
   const tables = [];
-  ui.table = (_root,headers,rows) => tables.push({headers:copy(headers),rows:copy(rows)});
+  ui.table = (_root,headers,rows) => tables.push({headers:copy(headers),rows:copy(rows.map(row => row.map(cell => cell instanceof Element ? cell.textContent : cell)))});
   const output = new Element('div');
   const record = {card_name:'共用卡表',a_name:'深搜策略',b_name:'快速策略',request:{
     a_name:'请求 A',b_name:'请求 B',a:{search_max_depth:4,owner:0},b:{search_max_depth:4,owner:1},
@@ -883,8 +883,10 @@ test('a single duel report compares A and B results and their actual strategy pa
   assert.deepEqual(tables[0].rows[0],['策略名称','深搜策略','快速策略']);
   assert.deepEqual(tables[0].rows[1],['胜局','3','1']);
   assert.deepEqual(tables[0].rows[2],['分胜负胜率','75%（3 / 4）','25%（1 / 4）']);
-  assert.deepEqual(tables[1].headers,['参数','BOT A','BOT B']);
-  assert.deepEqual(tables[1].rows,[['search_max_depth','8','2']],'actual evaluated policies take precedence over requested defaults');
+  assert.deepEqual(tables[1].headers,['参数','BOT A','BOT B','注释（B 相对 A）']);
+  assert.match(tables[1].rows[0][0],/最大搜索深度.*search_max_depth/);
+  assert.deepEqual(tables[1].rows[0].slice(1,3),['8','2'],'actual evaluated policies take precedence over requested defaults');
+  assert.match(tables[1].rows[0][3],/减少 6.*双方交替行动/);
   assert.deepEqual({record,result},before,'display never mutates archived snapshots');
 
   tables.length = 0;
@@ -1042,4 +1044,99 @@ test('all 101 real engine profiles preserve exact mappings, focus, save and run 
     assert.equal(requests.filter(row => row.url === 'api/library/bot').length,303,'all 101 points are saved from every editor');
     assert.equal(requests.filter(row => row.url === 'api/run').length,303,'all 101 points are submitted from every editor');
   } finally { fs.rmSync(directory,{recursive:true,force:true}); }
+});
+
+
+test('参数差异按快照解释价格、升级与每方工作，保留原始字段并且不修改配置', () => {
+  const {ui} = harness();
+  const left = copy(cards), right = copy(cards);
+  right.cards.employee.name = '研发员工';
+  right.cards.employee.price = 2;
+  right.rules.initial.groups[0].work = 800;
+  right.rules.initial.groups[1].employee = 2;
+  right.rules.coffee.upgrades.workaholic.cost = 3;
+  right.rules.recruitment.cost_per_employee = 10;
+  const before = JSON.stringify([left,right]);
+  const rows = ui.parameterDifferences(left,right);
+  const row = path => rows.find(r => r[0].querySelector('small').textContent === path);
+  assert.match(row('cards.employee.price')[0].textContent,/员工 \/ 研发员工/);
+  assert.deepEqual(copy(row('cards.employee.price').slice(1,3)),['4 钱','2 钱']);
+  assert.match(row('cards.employee.price')[3],/减少 2 钱.*买入/);
+  assert.deepEqual(copy(row('rules.initial.groups.0.work').slice(1,3)),['200 份\/方','800 份\/方']);
+  assert.match(row('rules.initial.groups.0.work')[3],/每方总工作 200 → 800 份；双方合计 400 → 1,600 份/);
+  assert.match(row('rules.initial.groups.1.employee')[0].textContent,/第 2 组.*员工/);
+  assert.match(row('rules.coffee.upgrades.workaholic.cost')[0].textContent,/肝帝 → 打工皇帝/);
+  assert.match(row('rules.coffee.upgrades.workaholic.cost')[3],/不是累计到最高级/);
+  assert.match(row('rules.recruitment.cost_per_employee')[3],/每招募一名员工/);
+  assert.equal(JSON.stringify([left,right]),before);
+});
+
+test('权重差异用各自卡表的总权重归一，权重不等于概率', () => {
+  const {ui} = harness();
+  const left = copy(cards), right = copy(cards);
+  for (const c of [left,right]) {
+    for (const key of Object.keys(c.rules.conveyor.pool)) c.rules.conveyor.pool[key] = 0;
+  }
+  left.rules.conveyor.pool.employee = 1;
+  left.rules.conveyor.pool.coffee = 1;
+  right.rules.conveyor.pool.employee = 2;
+  right.rules.conveyor.pool.coffee = 6;
+  const rows = ui.parameterDifferences(left,right);
+  const row = rows.find(r => r[0].querySelector('small').textContent === 'rules.conveyor.pool.employee');
+  assert.match(row[3],/增加 1/);
+  assert.match(row[3],/权重不是百分比/);
+  assert.match(row[3],/50% → 25%/,'weight increased while normalized probability decreased');
+  right.rules.conveyor.pool.coffee = -1;
+  assert.match(ui.parameterDifferences(left,right).find(r => r[0].querySelector('small').textContent === 'rules.conveyor.pool.employee')[3],/无法计算/);
+});
+
+test('参数注释区分缺失与零，未知字段不臆测效果，文本安全保留', () => {
+  const {ui} = harness();
+  const left = {rules:{initial:{}}};
+  const right = {rules:{initial:{groups:[{work:2},{employee:1}]}},'<img src=x onerror=bad>':0};
+  const rows = ui.parameterDifferences(left,right);
+  const added = rows.find(r => r[0].querySelector('small').textContent === 'rules.initial.groups.1.employee');
+  assert.equal(added[1],'缺少');
+  assert.equal(added[2],'1 张/方');
+  assert.match(added[3],/新增.*不能视为 0/);
+  const unknown = rows.find(r => r[0].querySelector('small').textContent.includes('<img'));
+  assert.equal(unknown[0].querySelector('img'),null);
+  assert.match(unknown[3],/未提供.*不推断/);
+  const removed = ui.parameterDifferences({old_field:1},{}).at(0);
+  assert.equal(removed[2],'缺少');
+  assert.match(removed[3],/右侧未记录/);
+  const empty = ui.parameterDifferences({}, {historical_empty:{}}).at(0);
+  assert.equal(empty[1],'缺少');
+  assert.equal(empty[2],'{}','adding an empty object remains an observable parameter difference');
+});
+
+test('完整开局数组中的稀疏牌种计数按零解释，未知数组仍保留缺少', () => {
+  const {ui} = harness();
+  const left = {rules:{initial:{groups:[{work:2,employee:1}]}}};
+  const right = {rules:{initial:{groups:[{work:2},{coffee:2}]}}};
+  const before = JSON.stringify([left,right]);
+  const find = (rows,path) => rows.find(row => row[0].querySelector('small').textContent === path);
+  const rows = ui.parameterDifferences(left,right);
+  const removed = find(rows,'rules.initial.groups.0.employee');
+  assert.deepEqual(copy(removed.slice(1,3)),['1 张/方','0 张/方']);
+  assert.match(removed[3],/减少 1 张\/方/);
+  assert.doesNotMatch(removed[3],/未记录|不能视为 0/);
+  const added = find(rows,'rules.initial.groups.1.coffee');
+  assert.deepEqual(copy(added.slice(1,3)),['0 张/方','2 张/方']);
+  assert.match(added[3],/增加 2 张\/方/);
+  assert.equal(JSON.stringify([left,right]),before,'normalization does not mutate saved layouts');
+  const unknown = find(ui.parameterDifferences({rules:{initial:{}}},right),'rules.initial.groups.1.coffee');
+  assert.equal(unknown[1],'缺少');
+  assert.match(unknown[3],/未记录.*不能视为 0/);
+});
+
+test('BOT差异复用现有旋钮说明，实验上限不会解释为目标时长', () => {
+  const {ui} = harness();
+  const rows = ui.parameterDifferences({BOT实际策略:{a:{think_seconds:6}},实验设置:{max_seconds:1800}},
+    {BOT实际策略:{a:{think_seconds:3}},实验设置:{max_seconds:2400}});
+  const botRow = rows.find(r => r[0].querySelector('small').textContent.includes('think_seconds'));
+  assert.match(botRow[0].textContent,/行动间隔（游戏秒）/);
+  assert.match(botRow[3],/减少 3 秒.*搜索中双方错开半个间隔/);
+  const capRow = rows.find(r => r[0].querySelector('small').textContent.includes('max_seconds'));
+  assert.match(capRow[3],/不是目标对局长度/);
 });
