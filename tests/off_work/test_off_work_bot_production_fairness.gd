@@ -4,6 +4,13 @@ extends "res://tests/harness.gd"
 const Bot = preload("res://engine/off_work_bot.gd")
 const Search = preload("res://engine/off_work_bot_search.gd")
 
+class OrdinarySearch extends "res://engine/off_work_bot_search.gd":
+	# Isolate local production cutoffs from the separately budgeted root
+	# growth pass, whose intentionally exhausted deadline is tested elsewhere.
+	func _growth_pass(_root: Dictionary) -> bool:
+		growth_reserve_us=0
+		return false
+
 class LocalCutoff extends "res://engine/off_work_bot_evaluator.gd":
 	var received: Array = []
 
@@ -70,7 +77,7 @@ func _fair_queue() -> void:
 	var world := _world()
 	world.advance(14.0)
 	world.offers.clear()
-	var search := Search.new()
+	var search := OrdinarySearch.new()
 	var evaluator := LocalCutoff.new()
 	search.evaluator = evaluator
 	var seen_before_extension := {"complete":false}

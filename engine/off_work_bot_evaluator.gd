@@ -10,6 +10,7 @@ const WIN := 1000000.0
 const AttackPlans = preload("res://engine/off_work_bot_attack_plans.gd")
 const Economy = preload("res://engine/off_work_bot_economy.gd")
 const ProductionPlans = preload("res://engine/off_work_bot_production_plans.gd")
+const GrowthPlans = preload("res://engine/off_work_bot_growth_plans.gd")
 var _deadline := -1
 var _complete := true
 var _config: RefCounted
@@ -125,9 +126,13 @@ func _evaluation_result(forecasts: Array, owner: int) -> Dictionary:
 ## An optional complete-rule extension of an already valid ordinary estimate.
 ## Search publishes each complete ordinary candidate before extending it;
 ## this pass must never invalidate that incumbent or publish an unfinished recipe.
-func has_production_continuation(world: OffWorkState, commitments: Dictionary = {}) -> bool:
+func has_production_continuation(world: OffWorkState, commitments: Dictionary = {}, sustained := true) -> bool:
 	for side in 2:
-		if not ProductionPlans.available(world,side): continue
+		if not (sustained and GrowthPlans.available(world,side)) and not ProductionPlans.available(world,side): continue
+		# Between recruitment batches the boss is idle, but already earned
+		# wages can fund the next real command. Do not forget the production
+		# asset just because its previous batch has finished.
+		if sustained and not world._owner_type(side,"boss").is_empty(): return true
 		for id in world._owner_type(side,"slack"):
 			var gid := int(world.cards[id].group)
 			if commitments.has(id) or (str(world.groups[gid].get("function",""))=="slack" and not world.group_people(gid).is_empty()): return true
@@ -145,22 +150,36 @@ func extend_production(world: OffWorkState, owner: int, policy: Dictionary, unti
 	# equivalents. It never recursively invents another production chain.
 	var tail_evaluator: RefCounted = get_script().new()
 	var extension := {"complete":true,"plans":0,"examined":0}
+	# Single-recipe and sustained reinvestment are alternative executable
+	# plans on one ETA scale. Share the remaining budget across both sides and
+	# plan families; a long rollout cannot swallow the next complete estimate.
+	var jobs := []
 	for side in order:
-		if not ProductionPlans.available(world,int(side)): continue
 		var options := {}
 		if not root_action.is_empty():
-			# Ordinary root actions already enumerate buying and staffing. Their
-			# extra continuation only needs to cross the recipe's delayed payoff,
-			# not recursively enumerate another shop and another staffing search.
-			# Actual purchases remain commitments after an opponent reply. Only
-			# these paid identities need a delayed assembly continuation; all
-			# previously owned tools have ordinary assembly candidates already.
 			var idle_tool: bool = production_commitments.keys().any(func(id):
-				if not world.cards.has(id) or int(world.cards[id].owner)!=int(side) or str(world.cards[id].type)!="slack": return false
+				if not world.cards.has(id) or int(world.cards[id].owner)!=int(side): return false
+				if str(world.cards[id].type)!="slack": return false
 				var gid := int(world.cards[id].group)
 				return str(world.groups[gid].get("function",""))!="slack" or world.group_people(gid).is_empty())
 			options = {"allow_purchase":false,"allow_assembly":idle_tool}
-		var status: Dictionary = ProductionPlans.visit(world,int(side),policy,until,clock,func(plan):
+		if ProductionPlans.available(world,int(side)):
+			jobs.append({"planner":ProductionPlans,"side":side,"options":options})
+		if root_action.get("sustained_growth",true) and GrowthPlans.available(world,int(side)):
+			options=options.merged({"consume_immediately":true})
+			jobs.append({"planner":GrowthPlans,"side":side,"options":options})
+	for job_index in jobs.size():
+		if (until>=0 and Time.get_ticks_usec()>=until) or (cancelled.is_valid() and cancelled.call()):
+			extension.complete=false
+			break
+		var job: Dictionary = jobs[job_index]
+		var side: int = job.side
+		var now := Time.get_ticks_usec()
+		var task_until: int = -1 if until<0 else now+maxi(0,(until-now)/(jobs.size()-job_index))
+		var task_status := {"complete":true}
+		var status: Dictionary = job.planner.visit(world,side,policy,task_until,clock,func(plan):
+			var tail_until: int = int(plan.get("evaluation_deadline",task_until))
+			if task_until>=0: tail_until=task_until if tail_until<0 else mini(task_until,tail_until)
 			var held: Dictionary = forecasts[1-int(side)].get("forecast_purchases",{})
 			# Keep the opponent's already committed public opportunity available.
 			# A later search node can contest it by actually buying first; a leaf
@@ -180,12 +199,12 @@ func extend_production(world: OffWorkState, owner: int, policy: Dictionary, unti
 			else:
 				var tail: Dictionary
 				if current_only:
-					tail = tail_evaluator.evaluate_tactical(plan.world,owner,policy,until,plan.next_actions) if ordinary.get("evaluation_mode","")=="tactical" \
-						else tail_evaluator.evaluate_current(plan.world,owner,policy,until,plan.next_actions)
+					tail = tail_evaluator.evaluate_tactical(plan.world,owner,policy,tail_until,plan.next_actions) if ordinary.get("evaluation_mode","")=="tactical" \
+						else tail_evaluator.evaluate_current(plan.world,owner,policy,tail_until,plan.next_actions)
 				else:
-					tail = tail_evaluator.evaluate(plan.world,owner,policy,until,plan.next_actions,false)
+					tail = tail_evaluator.evaluate(plan.world,owner,policy,tail_until,plan.next_actions,false)
 				if not tail.get("complete",false):
-					extension.complete = false
+					task_status.complete = false
 					return
 				# Both tail clocks refer to the projected world. Translate before
 				# comparing with any ETA rooted at the original observation.
@@ -200,22 +219,26 @@ func extend_production(world: OffWorkState, owner: int, policy: Dictionary, unti
 				if candidate.get("forecast_purchases",{}).keys().any(func(quote): return held.has(quote)): return
 			candidate.forecast_purchases.merge(plan.purchases,true)
 			candidate.required_actions = int(candidate.required_actions) + plan.commands.size()
+			# These fields describe the observation, not the checkpoint reached
+			# by a hypothetical plan. Keep current reservations/idle staff intact
+			# while ETA, earned income and planned commands describe the future.
+			for field in ["work","current_rate","idle_pending","committed_work","pending_strikes","free_cash"]:
+				if ordinary.detail.sides[int(side)].has(field): candidate[field]=ordinary.detail.sides[int(side)][field]
 			candidate["production_chain"] = {"kind":plan.kind,"seconds":plan.elapsed,"person":plan.person,
 				"commands":plan.commands.duplicate(true),"purchases":plan.purchases.duplicate(true),
 				"opponent_assumption":"prefix advances existing natural events only; opponent ETA is bounded by its faster pre-prefix continuation",
 				"opponent_eta":opponent.eta}
+			if plan.has("growth"): candidate.production_chain["growth"] = plan.growth.duplicate(true)
 			var pair: Array = forecasts.duplicate()
 			pair[int(side)] = candidate
 			pair[1-int(side)] = opponent
 			if _race(pair,int(side))>_race(forecasts,int(side))+1e-8:
 				forecasts[0] = pair[0]
 				forecasts[1] = pair[1],
-			cancelled,options)
+			cancelled,job.options)
 		extension.plans += int(status.plans)
 		extension.examined += int(status.examined)
-		if not status.complete or not extension.complete:
-			extension.complete = false
-			break
+		if not status.complete or not task_status.complete: extension.complete = false
 	var result: Dictionary = ordinary.duplicate(true)
 	result["production_extension"] = extension
 	# Enumeration can stop after a valid winner has already been evaluated.

@@ -488,7 +488,11 @@ class Builder extends RefCounted:
 						if rows[gid].function == "transfer": _move(staff,gid,"transfer_staff","批量补充甩锅人员")
 				if kind == "transfer" and rows[gid].function == "transfer":
 					_move(work,gid,"transfer_feed","给甩锅组合补入完整待办")
-				if not rows[gid].people.is_empty() and rows[gid].function in ["",kind] and (kind == "slack" or not rows[gid].work.is_empty()):
+				# A running slack line already produces on its natural clock.
+				# Re-activating it only reconciles the same state, consuming a BOT
+				# command and forecast budget without starting another batch.
+				var running_slack: bool = kind == "slack" and world.cards[tool].status == "active" and rows[gid].function == "slack"
+				if not running_slack and not rows[gid].people.is_empty() and rows[gid].function in ["",kind] and (kind == "slack" or not rows[gid].work.is_empty()):
 					_activate(tool,gid,kind,"启动已有工具组合")
 		# Multiple slack cards accelerate the same queue, just as overtime
 		# accelerates work; moving all available copies is one real drag action.

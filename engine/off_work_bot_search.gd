@@ -8,6 +8,8 @@ const Actions = preload("res://engine/off_work_bot_actions.gd")
 const Evaluation = preload("res://engine/off_work_bot_evaluator.gd")
 const Budget = preload("res://engine/off_work_bot_budget.gd")
 const PurchaseContinuations = preload("res://engine/off_work_bot_purchase_continuations.gd")
+const GrowthSearch = preload("res://engine/off_work_bot_growth_search.gd")
+const GrowthPlans = preload("res://engine/off_work_bot_growth_plans.gd")
 const SCORE_EPSILON := 0.0000001
 
 var deadline := 0
@@ -26,6 +28,7 @@ var purchase_continuations := PurchaseContinuations.new()
 var result := {}
 var cleanup_us := 1000
 var current_only := true
+var growth_reserve_us := 0
 
 func search(world: OffWorkState, owner: int, settings: Dictionary, until: int,
 		cancel: Callable = Callable(), publish: Callable = Callable(), deepen := true,
@@ -39,6 +42,7 @@ func search(world: OffWorkState, owner: int, settings: Dictionary, until: int,
 	nodes = 0
 	evaluated = 0
 	current_only = true
+	growth_reserve_us = 0
 	# Projection caches and GDScript containers also need time to release.
 	# Scale that fixed part with the available budget, in addition to the
 	# measured size of retained rule-state copies below.
@@ -61,7 +65,9 @@ func search(world: OffWorkState, owner: int, settings: Dictionary, until: int,
 	var sample_seed := hash([owner, int(world.time * 1000.0), world._supply_count, world._next_offer, 87121])
 	var root := _node(world.fork_for_bot(sample_seed), owner)
 	_reserve_release(root.world)
-	if not _rank(root, true): return _finish()
+	var ranked := _rank(root, true)
+	var growing := _growth_pass(root)
+	if growing or not ranked: return _finish()
 	if root.ranked.is_empty(): return _finish()
 	var frontier: Array = root.ranked.slice(0, int(policy.search_root_width))
 	_include_wait(root.ranked, frontier)
@@ -86,6 +92,42 @@ func search(world: OffWorkState, owner: int, settings: Dictionary, until: int,
 		if absf(best_value[0]) >= 900000.0: break
 	return _finish()
 
+func _growth_pass(root: Dictionary) -> bool:
+	if growth_reserve_us<=0: return false
+	growth_reserve_us=0
+	# Reaching the ordinary phase's local deadline does not cancel the
+	# reserved growth phase. User cancellation and the real deadline still do.
+	stopped=false
+	if not _open() or not result.get("root_complete",false) or not result.has("action"): return false
+	var incumbent := {}
+	for option in root.ranked:
+		if option.action==result.action:
+			incumbent=option.child.value.duplicate(true)
+			break
+	if incumbent.is_empty() or incumbent.detail.get("terminal",false): return false
+	# Ordinary root children are observed half a period after their command.
+	# Growth starts at the root: compare both estimates on that same clock.
+	for forecast in incumbent.detail.sides: evaluator._offset_forecast(forecast,half_period)
+	if result.action.kind!="wait": incumbent.detail.sides[seat].required_actions+=1
+	if result.action.kind=="buy":
+		# The root purchase already disappeared from the child's market and
+		# cash balance. Preserve that paid quote when comparing enemy plans.
+		incumbent.detail.sides[seat].forecast_purchases[int(result.action.offer)]={"at":0.0,"owner":seat}
+	incumbent.score=clampf(1000.0*evaluator._race(incumbent.detail.sides,seat),-Evaluation.WIN*0.5,Evaluation.WIN*0.5)
+	incumbent.tie_score=int(incumbent.detail.sides[1-seat].required_actions)-int(incumbent.detail.sides[seat].required_actions)
+	incumbent["evaluation_mode"]=result.evaluation_layer
+	var refiner := GrowthSearch.new()
+	var status: Dictionary = refiner.refine(root.world,seat,policy,_until(),incumbent,func(action,value,plan):
+		var rows := [{"kind":action.kind,"intent":action.get("intent",action.kind),
+			"score":value.score,"tie_score":value.get("tie_score",0.0),"reason":"持续生产与再投资的完整规则推演"}]
+		var line := []
+		for command in plan.commands:
+			line.append(command.action.merged({"seat":seat,"seconds":root.world.time+float(command.at)}))
+		_publish(action,rows,line,1,true,value.detail,true),cancelled,root_action_filter)
+	result["root_growth"]=status
+	_open()
+	return int(status.get("choices",0))>0
+
 func _finish() -> Dictionary:
 	result.search_nodes = nodes
 	result.evaluated = evaluated
@@ -98,7 +140,7 @@ func _open() -> bool:
 	return not stopped
 
 func _until() -> int:
-	return deadline - cleanup_us
+	return deadline - cleanup_us - growth_reserve_us
 
 func _reserve_release(world: OffWorkState) -> void:
 	# Cached branch worlds have a measurable destruction cost. Reserve it as
@@ -188,7 +230,7 @@ func _rank(node: Dictionary, root := false) -> bool:
 		nodes += 1
 		if not _evaluate(child): return false
 		var entry := {"action":action, "child":child, "score":child.value.score, "tie_score":child.value.get("tie_score", 0.0), "order":order,
-			"production_possible":evaluator.has_production_continuation(child_world,commitments),
+			"production_possible":evaluator.has_production_continuation(child_world,commitments,false),
 			"purchase_possible":purchase_continuations.available(child_world,purchases)}
 		order += 1
 		node.ranked.append(entry)
@@ -217,6 +259,12 @@ func _rank(node: Dictionary, root := false) -> bool:
 	# wait candidate must never prevent a ready coffee/return action from being
 	# evaluated. Publish this completed layer before optional continuations.
 	if root: _publish_ranking(node)
+	if root and (GrowthPlans.available(node.world,0) or GrowthPlans.available(node.world,1)):
+		# Cover ordinary legal actions first. Then share the remaining time
+		# between ordinary refinement and root growth policies. Re-running a
+		# long economy after every root action multiplied its cost and left no
+		# single plan enough time to finish a real recruitment/upgrade batch.
+		growth_reserve_us=maxi(0,(_until()-Time.get_ticks_usec())/2)
 	var pending: Array = node.ranked.filter(func(option): return option.production_possible)
 	var purchases: Array = node.ranked.filter(func(option): return option.purchase_possible)
 	if root and not _refine_economic_layer(node,pending.size()+purchases.size()): return false
@@ -369,7 +417,7 @@ func _extend_option(node: Dictionary, option: Dictionary, root: bool, task_until
 		return _open()
 	var next_actions := [half_period,half_period]
 	next_actions[int(option.child.actor)] = 0.0
-	var observed: Dictionary = option.action.merged({"actor":node.actor})
+	var observed: Dictionary = option.action.merged({"actor":node.actor,"sustained_growth":false})
 	var value: Dictionary = evaluator.extend_production(option.child.world,seat,policy,_until() if task_until<0 else task_until,next_actions,option.child.value,observed,cancelled,
 		option.child.production_commitments,current_only)
 	# The value contains only completed candidates, even when enumeration of

@@ -7,6 +7,7 @@ const Config = preload("res://engine/off_work_config.gd")
 const Actions = preload("res://engine/off_work_bot_actions.gd")
 const Search = preload("res://engine/off_work_bot_search.gd")
 const Emergency = preload("res://engine/off_work_bot_emergency.gd")
+const GrowthCommitment = preload("res://engine/off_work_bot_growth_commitment.gd")
 
 var state: RefCounted
 var owner: int
@@ -57,6 +58,9 @@ func commit_action(action: Dictionary, report: Dictionary) -> bool:
 		return false
 	if action.get("group", -1) >= 0 and not state.groups.has(action.group): return false
 	if not Actions.apply_action(state, owner, action): return false
+	if report.get("growth_continuation",false): _decision_context.erase("growth_return")
+	var growth_return: Dictionary = GrowthCommitment.remember(state,owner,action,report)
+	if not growth_return.is_empty(): _decision_context["growth_return"]=growth_return
 	last_decision = report
 	last_decision["applied"] = true
 	decision_serial += 1
@@ -87,13 +91,34 @@ func decide_action(deadline_usec: int = -1, cancelled: Callable = Callable(), se
 		"candidates":[], "evaluated":0, "depth":0, "search_depth":0, "search_nodes":0,
 		"principal_variation":[], "root_complete":false}}
 	if Time.get_ticks_usec() < until and not (cancelled.is_valid() and cancelled.call()):
+		# An already paid investment's validated next command is the incumbent
+		# when a crowded table cannot complete a fresh root comparison. Partial
+		# shallow scores must not keep postponing the promised return to work.
+		var continuing := false
+		if _decision_context.has("growth_return"):
+			var follow: Dictionary = GrowthCommitment.resolve(state,owner,_decision_context.growth_return,
+				mini(until,started+maxi(0,available/16)))
+			if follow.context.is_empty(): _decision_context.erase("growth_return")
+			else: _decision_context.growth_return=follow.context
+			if follow.action.kind!="wait" and (not root_action_filter.is_valid() or root_action_filter.call(follow.action)):
+				continuing=_publish(incumbent,follow.action,{"reason":follow.action.reason,"growth_continuation":true},started,cutoff,on_choice)
 		var quick_until := mini(until, started + mini(200, maxi(20, available / 8)))
 		var quick: Dictionary = Emergency.choose(state, owner, quick_until, _decision_context)
-		_decision_context = quick.context
-		if quick.action.kind != "wait" and (not root_action_filter.is_valid() or root_action_filter.call(quick.action)):
+		_decision_context.merge(quick.context,true)
+		if not continuing and quick.action.kind != "wait" and (not root_action_filter.is_valid() or root_action_filter.call(quick.action)):
 			_publish(incumbent, quick.action, {"reason":quick.action.reason}, started, cutoff, on_choice)
 		var publish := func(layer: Dictionary):
-			_publish(incumbent, layer.action, layer, started, cutoff, on_choice)
+			var decisive: bool = layer.get("evaluation",{}).get("terminal",false) and int(layer.evaluation.get("winner",-1))==owner
+			if continuing and not decisive:
+				if not layer.get("root_complete",false): return
+				var sides: Array = layer.get("evaluation",{}).get("sides",[])
+				var renewed: bool = sides.size()==2 and sides[owner].get("production_chain",{}).get("kind","")=="sustained_growth"
+				# The physical-only lens assumes idle staff will be dispatched in
+				# its tail; repeatedly choosing an attack can defer that obligation
+				# forever. Only a completed richer comparison/new executable plan
+				# may cancel this already funded return to work.
+				if layer.get("evaluation_layer","current")=="current" and not renewed: return
+			_publish(incumbent, layer.action, layer.merged({"growth_continuation":false}), started, cutoff, on_choice)
 		var search := Search.new()
 		var completed: Dictionary = search.search(state, owner, _policy, until, cancelled, publish, search_tree, root_action_filter)
 		# Include forecast-cache destruction in the reported/end-to-end budget.
@@ -106,6 +131,7 @@ func decide_action(deadline_usec: int = -1, cancelled: Callable = Callable(), se
 		incumbent.report.completed_candidates = completed.completed_candidates
 		incumbent.report.root_unobserved = completed.root_unobserved
 		incumbent.report.cleanup_reserve_us = completed.cleanup_reserve_us
+		if completed.has("root_growth"): incumbent.report["root_growth"]=completed.root_growth
 		for key in ["root_ordinary_us","root_production_us","root_production_candidates","root_production_serviced",
 				"root_production_complete","root_evaluated_intents","root_economic_us","root_economic_completed","evaluation_layer"]:
 			incumbent.report[key] = completed[key]

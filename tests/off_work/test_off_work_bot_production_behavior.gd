@@ -8,6 +8,12 @@ class ObservedSearch extends "res://engine/off_work_bot_search.gd":
 	var purchased := {}
 	var reply := {}
 
+	# This regression inspects the ordinary adversarial tree's paid UID after
+	# an opponent reply. Root macro selection has independent live coverage.
+	func _growth_pass(_root: Dictionary) -> bool:
+		growth_reserve_us=0
+		return false
+
 	func _extend_option(node: Dictionary, option: Dictionary, root: bool, task_until: int = -1) -> bool:
 		var ok := super._extend_option(node,option,root,task_until)
 		if not ok: return false
@@ -127,7 +133,9 @@ func _purchase_survives_reply() -> void:
 	if not need(after_reply.detail.sides[0].has("production_chain"), "对手wait后更深叶子仍记得已购摸鱼的真实收益"): return
 	var first: Dictionary = after_buy.detail.sides[0].production_chain
 	var second: Dictionary = after_reply.detail.sides[0].production_chain
-	check(first.commands[0].action.intent=="slack" and second.commands[0].action.intent=="slack",
+	check(first.commands[0].action.kind=="move" and second.commands[0].action.kind=="move"
+		and first.commands[0].action.ids.has(tool) and second.commands[0].action.ids.has(tool)
+		and first.commands[0].action.ids.size()>1 and second.commands[0].action.ids.size()>1,
 		"两层都必须付出真实组堆动作，不能免费开始生产")
 	check(is_equal_approx(float(first.commands[0].at),float(second.commands[0].at)+3.0),
 		"经过对手回合，组堆仍落在原时钟同一个6秒己方行动槽")
