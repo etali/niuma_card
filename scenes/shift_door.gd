@@ -5,18 +5,29 @@ signal shift_requested
 
 const INTRO_HOLD := 5.0
 const TURN_TIME := 0.44
+const HINT_DELAY := 2.0
+const HINT_DURATION := 8.0
+const HINT_TEXT := "点击旋转门\n切换到「下班牌」"
 var title_label: Label
 var on_duty := true
 var intro := false
 var turning := false
 var elapsed := 0.0
 var face_angle := 0.0
+var hint_available: Callable
+var _hint_pending := false
+var _hint_elapsed := 0.0
+var _hint: PanelContainer
+var _hint_label: Label
+var _hint_layout_key: Array = []
 
 func _ready() -> void:
 	name = "ShiftSign"
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	pressed.connect(func(): shift_requested.emit())
+	pressed.connect(func():
+		_dismiss_hint()
+		shift_requested.emit())
 	for feedback in [mouse_entered, mouse_exited, focus_entered, focus_exited]:
 		feedback.connect(queue_redraw)
 
@@ -24,6 +35,9 @@ func bind(title: Label, work: bool, first: bool) -> void:
 	title_label = title
 	on_duty = work
 	intro = first
+	_dismiss_hint()
+	_hint_pending = first and work
+	_hint_elapsed = 0.0
 	turning = false
 	elapsed = 0.0
 	if get_parent() == null:
@@ -39,17 +53,87 @@ func bind(title: Label, work: bool, first: bool) -> void:
 
 func _process(delta: float) -> void:
 	if not is_visible_in_tree(): return
-	elapsed += delta
-	if elapsed >= INTRO_HOLD:
-		turning = true
-	if elapsed >= INTRO_HOLD + TURN_TIME:
+	var hint_delta := delta
+	if intro:
+		elapsed += delta
+		turning = elapsed >= INTRO_HOLD
+		queue_redraw()
+		if elapsed < INTRO_HOLD + TURN_TIME: return
 		intro = false
 		turning = false
+		# Count only time after the sign has finished revealing the mode.
+		hint_delta = elapsed - INTRO_HOLD - TURN_TIME
+	if not _hint_pending:
 		set_process(false)
-	queue_redraw()
+		return
+	# A modal invitation can cover the sign; don't spend the hint's readable
+	# time behind it, or while the drawer is collapsed / changing modes.
+	if hint_available.is_valid() and not hint_available.call():
+		if is_instance_valid(_hint): _hint.hide()
+		return
+	_hint_elapsed += hint_delta
+	if _hint_elapsed < HINT_DELAY: return
+	if _hint_elapsed >= HINT_DELAY + HINT_DURATION:
+		_dismiss_hint()
+		return
+	_show_hint()
+
+func _dismiss_hint() -> void:
+	_hint_pending = false
+	if is_instance_valid(_hint): _hint.hide()
+	if not intro: set_process(false)
+
+func _show_hint() -> void:
+	if not is_instance_valid(_hint):
+		_hint = PanelContainer.new()
+		_hint.name = "ShiftHint"
+		_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_hint.z_index = 20
+		_hint_label = Label.new()
+		_hint_label.text = HINT_TEXT
+		_hint_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_hint_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		_hint_label.add_theme_font_override("font", Fonts.zh())
+		_hint.add_child(_hint_label)
+		# The drawer recursively themes Controls. Keep this self-themed bubble
+		# under a canvas node so a relayout cannot apply UI scaling a second time.
+		var hint_canvas := Node2D.new()
+		hint_canvas.name = "ShiftHintCanvas"
+		add_child(hint_canvas)
+		hint_canvas.add_child(_hint)
+	var ui_scale := title_label.get_theme_font_size("font_size") / 24.0
+	var paper := Palette.get_color("world", "table_frame")
+	var ink := Palette.get_color("card", "frame")
+	var layout_key := [ui_scale, paper, ink, global_position, size, get_viewport_rect(),
+		_hint.get_combined_minimum_size()]
+	if _hint_layout_key == layout_key:
+		_hint.show()
+		return
+	_hint_layout_key = layout_key
+	var style := StyleBoxFlat.new()
+	style.bg_color = paper
+	style.border_color = ink
+	style.set_border_width_all(maxi(1, roundi(2 * ui_scale)))
+	style.set_corner_radius_all(roundi(8 * ui_scale))
+	style.content_margin_left = 12 * ui_scale
+	style.content_margin_right = 12 * ui_scale
+	style.content_margin_top = 8 * ui_scale
+	style.content_margin_bottom = 8 * ui_scale
+	_hint.add_theme_stylebox_override("panel", style)
+	_hint_label.add_theme_font_size_override("font_size", maxi(1, roundi(17 * ui_scale)))
+	_hint_label.add_theme_color_override("font_color", Palette.readable_ink(ink, paper))
+	var bounds := get_viewport_rect().grow(-8 * ui_scale)
+	_hint.size = _hint.get_combined_minimum_size()
+	var at := global_position + Vector2((size.x - _hint.size.x) * 0.5, size.y + 8 * ui_scale)
+	at.x = clampf(at.x, bounds.position.x, maxf(bounds.position.x, bounds.end.x - _hint.size.x))
+	at.y = clampf(at.y, bounds.position.y, maxf(bounds.position.y, bounds.end.y - _hint.size.y))
+	_hint.global_position = at.round()
+	_hint.show()
 
 func set_turn(angle: float) -> void:
 	intro = false
+	_dismiss_hint()
 	set_process(false)
 	face_angle = angle
 	turning = not is_zero_approx(angle)

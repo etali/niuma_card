@@ -4,7 +4,7 @@
 [![Godot: 4.7.1](https://img.shields.io/badge/Godot-4.7.1-478CBF.svg?logo=godotengine&logoColor=white)](https://godotengine.org/)
 [![Platforms: macOS / Android](https://img.shields.io/badge/Platforms-macOS%20%7C%20Android-606060.svg)](#构建打包与测试)
 
-![example](ref_image/example.jpeg)
+![example](ref_image/onwork_example.jpeg) ![example](ref_image/offwork_example.jpeg)
 
 《牛马牌》里有两款共用一张牌桌的对战游戏。「上班」按回合经营公司，与对手争夺资金和用户；「下班」按连续时间派工、采购和干扰，抢在对手之前清空待办。两款游戏都支持与 BOT 单机对战和局域网对战。
 

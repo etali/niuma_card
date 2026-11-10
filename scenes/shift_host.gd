@@ -131,8 +131,17 @@ func _show_sign(mode: int) -> void:
 	if not is_instance_valid(sign):
 		sign = Door.new()
 		sign.shift_requested.connect(func(): switch_mode(1 - active))
+		sign.hint_available = _shift_hint_available
 	sign.bind(title_slots[mode], mode == 0, first_intro)
 	first_intro = false
+
+func _shift_hint_available() -> bool:
+	if switching or not is_instance_valid(tables[active]): return false
+	var presentation: Node = tables[active].drawer_presentation
+	if presentation == null: return true
+	var drawer := _drawer(tables[active])
+	if drawer and (not drawer.is_expanded() or drawer.is_transitioning()): return false
+	return not presentation.is_learning_invitation_open() and not presentation.panels_open()
 
 func _mount_backdrop(game: Node3D, fitted: bool) -> Node3D:
 	if not is_instance_valid(backdrop):
