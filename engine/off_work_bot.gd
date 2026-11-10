@@ -8,6 +8,7 @@ const Actions = preload("res://engine/off_work_bot_actions.gd")
 const Search = preload("res://engine/off_work_bot_search.gd")
 const Emergency = preload("res://engine/off_work_bot_emergency.gd")
 const GrowthCommitment = preload("res://engine/off_work_bot_growth_commitment.gd")
+const ExecutionPlan = preload("res://engine/off_work_bot_execution_plan.gd")
 
 var state: RefCounted
 var owner: int
@@ -57,12 +58,25 @@ func commit_action(action: Dictionary, report: Dictionary) -> bool:
 	if action.has("tool") and (not state.cards.has(action.tool) or state.cards[action.tool].owner != owner):
 		return false
 	if action.get("group", -1) >= 0 and not state.groups.has(action.group): return false
+	var follows_execution: bool = bool(report.get("execution_continuation",false)) or bool(action.get("execution_continuation",false))
+	var prepared: Dictionary = ExecutionPlan.prepare(state,owner,action,report,_policy)
 	if not Actions.apply_action(state, owner, action): return false
+	if follows_execution:
+		var remaining: Dictionary = ExecutionPlan.consumed(_decision_context.get("execution_plan",{}),action)
+		if remaining.is_empty(): _decision_context.erase("execution_plan")
+		else: _decision_context.execution_plan=remaining
+	# A freshly scored complete suffix replaces the old suffix even when its
+	# first command happens to match the previously saved step.
+	if not prepared.is_empty():
+		_decision_context["execution_plan"]=ExecutionPlan.adopt(_decision_context.get("execution_plan",{}),prepared)
+		_decision_context.erase("growth_return")
 	if report.get("growth_continuation",false): _decision_context.erase("growth_return")
-	var growth_return: Dictionary = GrowthCommitment.remember(state,owner,action,report)
-	if not growth_return.is_empty(): _decision_context["growth_return"]=growth_return
+	# All newly selected investments use the same execution plan. The old
+	# growth_return reader below only drains contexts imported from older live
+	# workers; it is no longer a second producer of production obligations.
 	last_decision = report
 	last_decision["applied"] = true
+	last_decision["action"] = action.duplicate(true)
 	decision_serial += 1
 	return true
 
@@ -85,42 +99,38 @@ func decide_action(deadline_usec: int = -1, cancelled: Callable = Callable(), se
 	var available := maxi(0, cutoff - started)
 	var reserve := mini(int(_policy.decision_publish_reserve_us), ceili(available * float(_policy.decision_publish_reserve_ratio)))
 	var until := cutoff - reserve
-	var incumbent := {"action":{"kind":"wait"}, "report":{"algorithm":"race_search_v2", "kind":"wait",
+	var incumbent := {"action":{"kind":"wait"}, "report":{"algorithm":"completion_search_v3", "kind":"wait",
 		"reason":"等待有效决策", "budget_ms":budget_ms, "selected_after_us":0, "elapsed_us":0,
 		"overrun":false, "fallback":true, "cutoff":true, "discarded_late":false,
 		"candidates":[], "evaluated":0, "depth":0, "search_depth":0, "search_nodes":0,
 		"principal_variation":[], "root_complete":false}}
 	if Time.get_ticks_usec() < until and not (cancelled.is_valid() and cancelled.call()):
-		# An already paid investment's validated next command is the incumbent
-		# when a crowded table cannot complete a fresh root comparison. Partial
-		# shallow scores must not keep postponing the promised return to work.
-		var continuing := false
-		if _decision_context.has("growth_return"):
+		# Saved steps are legal candidates, with no privileged investment policy.
+		# Every continuation must win the same completion-time comparison.
+		var continuing_action := {}
+		if _decision_context.has("execution_plan"):
+			var follow: Dictionary = ExecutionPlan.resolve(state,owner,_decision_context.execution_plan,
+				mini(until,started+maxi(0,available/8)))
+			if follow.context.is_empty(): _decision_context.erase("execution_plan")
+			else: _decision_context.execution_plan=follow.context
+			if follow.action.kind!="wait" and (not root_action_filter.is_valid() or root_action_filter.call(follow.action)):
+				continuing_action=follow.action
+		if continuing_action.is_empty() and _decision_context.has("growth_return"):
 			var follow: Dictionary = GrowthCommitment.resolve(state,owner,_decision_context.growth_return,
 				mini(until,started+maxi(0,available/16)))
 			if follow.context.is_empty(): _decision_context.erase("growth_return")
 			else: _decision_context.growth_return=follow.context
 			if follow.action.kind!="wait" and (not root_action_filter.is_valid() or root_action_filter.call(follow.action)):
-				continuing=_publish(incumbent,follow.action,{"reason":follow.action.reason,"growth_continuation":true},started,cutoff,on_choice)
+				continuing_action=follow.action
 		var quick_until := mini(until, started + mini(200, maxi(20, available / 8)))
 		var quick: Dictionary = Emergency.choose(state, owner, quick_until, _decision_context)
 		_decision_context.merge(quick.context,true)
-		if not continuing and quick.action.kind != "wait" and (not root_action_filter.is_valid() or root_action_filter.call(quick.action)):
+		if quick.action.kind != "wait" and (not root_action_filter.is_valid() or root_action_filter.call(quick.action)):
 			_publish(incumbent, quick.action, {"reason":quick.action.reason}, started, cutoff, on_choice)
 		var publish := func(layer: Dictionary):
-			var decisive: bool = layer.get("evaluation",{}).get("terminal",false) and int(layer.evaluation.get("winner",-1))==owner
-			if continuing and not decisive:
-				if not layer.get("root_complete",false): return
-				var sides: Array = layer.get("evaluation",{}).get("sides",[])
-				var renewed: bool = sides.size()==2 and sides[owner].get("production_chain",{}).get("kind","")=="sustained_growth"
-				# The physical-only lens assumes idle staff will be dispatched in
-				# its tail; repeatedly choosing an attack can defer that obligation
-				# forever. Only a completed richer comparison/new executable plan
-				# may cancel this already funded return to work.
-				if layer.get("evaluation_layer","current")=="current" and not renewed: return
-			_publish(incumbent, layer.action, layer.merged({"growth_continuation":false}), started, cutoff, on_choice)
+			_publish(incumbent, layer.action, layer.merged({"growth_continuation":false,"execution_continuation":false}), started, cutoff, on_choice)
 		var search := Search.new()
-		var completed: Dictionary = search.search(state, owner, _policy, until, cancelled, publish, search_tree, root_action_filter)
+		var completed: Dictionary = search.search(state, owner, _policy, until, cancelled, publish, search_tree, root_action_filter, continuing_action, _decision_context.get("execution_plan",{}))
 		# Include forecast-cache destruction in the reported/end-to-end budget.
 		search = null
 		incumbent.report.search_nodes = completed.search_nodes
@@ -132,12 +142,15 @@ func decide_action(deadline_usec: int = -1, cancelled: Callable = Callable(), se
 		incumbent.report.root_unobserved = completed.root_unobserved
 		incumbent.report.cleanup_reserve_us = completed.cleanup_reserve_us
 		if completed.has("root_growth"): incumbent.report["root_growth"]=completed.root_growth
-		for key in ["root_ordinary_us","root_production_us","root_production_candidates","root_production_serviced",
+		if completed.has("root_continuation"): incumbent.report["root_continuation"]=completed.root_continuation
+		incumbent.report["root_coverage_complete"]=completed.get("root_coverage_complete",false)
+		for key in ["short_search_depth","short_search_nodes","short_root_candidates","root_ordinary_us","root_production_us","root_production_candidates","root_production_serviced",
 				"root_production_complete","root_evaluated_intents","root_economic_us","root_economic_completed","evaluation_layer"]:
 			incumbent.report[key] = completed[key]
 	var report: Dictionary = incumbent.report
 	report.elapsed_us = Time.get_ticks_usec() - started
 	report.overrun = int(report.elapsed_us) > available
+	report["action"] = incumbent.action.duplicate(true)
 	last_decision = report
 	return incumbent.action
 

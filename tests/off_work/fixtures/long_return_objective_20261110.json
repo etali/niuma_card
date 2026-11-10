@@ -1,0 +1,20 @@
+{
+  "base_cards_fixture": "res://tests/off_work/fixtures/recorded_growth_20261109.json",
+  "seed": 20261110,
+  "think_seconds": 2.0,
+  "evaluation_max_seconds": 7200.0,
+  "public_supply": {"boss": 1},
+  "notes": [
+    "经济证书使用录像卡表，工作容量始终为1；测试变体只在本地副本覆盖明确列出的参数。",
+    "双方初态相同，对方工人移至独立牌组并保持静止，只测本方实际完成时间。",
+    "公开供应只有老板，双方已持有各自唯一老板；没有暗中删除有效报价或虚构未来外包。",
+    "测试使用充足逻辑时间和有限节点数，不冒充700/1800毫秒实战预算验收。"
+  ],
+  "cases": {
+    "near_finish": {"work": 1, "staff": {"employee": 1}, "money": 0, "coffee": 1},
+    "coffee_zero_return": {"work": 80, "staff": {"employee": 1}, "money": 0, "coffee": 1, "all_work_income_multiplier": 1.0},
+    "expensive_slow_recruitment": {"work": 40, "staff": {"employee": 1}, "money": 100, "outsource": 1, "recruitment_cost": 100, "recruitment_seconds": 120.0},
+    "long_800": {"work": 800, "staff": {"employee": 2, "grinder": 1}, "money": 10, "coffee": 1, "overtime": 1},
+    "long_2000": {"work": 2000, "staff": {"employee": 2, "grinder": 1}, "money": 10, "coffee": 1, "overtime": 1}
+  }
+}

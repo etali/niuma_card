@@ -9,6 +9,10 @@ var card_catalog: Script = OnWorkCardDB
 var combo_rules: Script = OnWorkComboRules
 # Modes without the native recipe/effect badges own their progress elsewhere.
 var native_recipe_progress_enabled := true
+# Modes whose materials cover the core card must also list a lone core.
+var side_include_single_core := false
+var _overlay_rest_positions: Array[Vector3] = []
+var _overlay_batch_active := false
 
 ## 自由桌面：管理卡牌拖拽、堆叠成组、配方进度显示
 ## 规则：拖任意卡到另一组上 = 并入该组；拖组顶卡离开 = 整组移动；
@@ -1669,7 +1673,7 @@ const SIDE_MAX_ROWS := 6
 ## 收拢后只露摞顶那张；原先按「种」判，1 种 → 核心一行都不出，
 ## 于是第二张既看不见、清单也不提 —— 屏幕上和「只合出一张」一模一样。
 ## 按张判则出一行「独角兽 ×2」，跟资源摞的 ×N 同一个口径
-static func side_spec(cards: Array) -> Array:
+static func side_spec(cards: Array, include_single_core := false) -> Array:
 	var catalog: Script = OnWorkCardDB
 	var n_user := 0
 	var n_cash := 0
@@ -1710,7 +1714,7 @@ static func side_spec(cards: Array) -> Array:
 	var core_total := 0
 	for def_id in cores:
 		core_total += int(core_n[def_id])
-	if core_total >= 2:
+	if core_total >= 2 or (include_single_core and core_total == 1):
 		for def_id in cores:
 			out.append({ "tex": CardArt.icon_texture(def_id, catalog),
 				"text": "×%d" % core_n[def_id] })
@@ -1789,7 +1793,7 @@ func _layout_side(g, at: Vector3, pin_y := false) -> void:
 	if not g.get("compact", false) or g["cards"].size() < 2 or at == Vector3.INF:
 		_clear_side(g)
 		return
-	var spec := side_spec(g["cards"])
+	var spec := side_spec(g["cards"], side_include_single_core)
 	if spec.is_empty():
 		_clear_side(g)
 		return
@@ -2161,6 +2165,12 @@ func rest_origin(g) -> Vector3:
 ## 清单会跳到 DRAG_HEIGHT 上并滞留在那里；真实相邻高摞仍按静止落点避让。
 func overlay_y(mid: Vector3, size: Vector2, floor_y: float) -> float:
 	var y: float = floor_y
+	if _overlay_batch_active:
+		for p in _overlay_rest_positions:
+			if absf(p.x - mid.x) < size.x / 2.0 + CardEntity.CARD_SIZE.x / 2.0 \
+				and absf(p.z - mid.z) < size.y / 2.0 + CardEntity.CARD_SIZE.z / 2.0:
+				y = maxf(y, p.y + ladder_y(1))
+		return y
 	for c in cards:
 		if not is_instance_valid(c) or c.dragging:
 			continue
@@ -2182,8 +2192,27 @@ func overlay_y(mid: Vector3, size: Vector2, floor_y: float) -> float:
 ## 单趟就够、不用反复迭代：清单本身不进 cards，overlay_y 只量卡，
 ## 所以抬高一条清单不会反过来埋掉另一条
 func resync_sides() -> void:
+	# Every sidebar in this synchronous pass sees the same resting geometry.
+	# Thousands of covered sheets share a slot: one position represents their
+	# exact height constraint, without rescanning every card for every row.
+	var previous_positions := _overlay_rest_positions
+	var previous_active := _overlay_batch_active
+	if not previous_active:
+		var unique := {}
+		_overlay_rest_positions = []
+		for card in cards:
+			if not is_instance_valid(card) or card.dragging: continue
+			var at: Vector3 = rest_pos(card)
+			if unique.has(at): continue
+			unique[at] = true
+			_overlay_rest_positions.append(at)
+		_overlay_batch_active = true
 	for g in groups:
 		if g["cards"].size() < 2 or not bool(g.get("compact", false)):
+			# Batched reconciliation may defer per-card side refresh. A pile
+			# shrinking to one card still needs the normal label/extract cleanup;
+			# skipping it leaves the previous quantity visible indefinitely.
+			_sync_side(g, Vector3.INF)
 			continue
 		var top: CardEntity = g["cards"][_top_index(g)]
 		if not is_instance_valid(top):
@@ -2191,6 +2220,8 @@ func resync_sides() -> void:
 		# 只读的 rest_pos，不用 _group_origin：后者会 _stop_move 掐掉队首那张的
 		# 补间，而整摞可能正被 _settle_pile_heights 挪着，掐了就只有它一张原地传送上去
 		_sync_side(g, rest_pos(top))
+	_overlay_rest_positions = previous_positions
+	_overlay_batch_active = previous_active
 
 ## 组内第 i 张相对组起点的位置偏移。
 ## 摊开态：沿 z 铺开，每张露出一条标题带。

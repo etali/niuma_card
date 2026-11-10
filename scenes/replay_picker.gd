@@ -21,6 +21,9 @@ var _frame: PanelContainer
 
 func bind(main: Node) -> void:
 	_main = main
+	# The table may be paused while its always-active HUD opens this panel.
+	# Keep file selection/cancel responsive without resuming the parked game.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	layer = 22
 	name = "ReplayPicker"
 

@@ -3,6 +3,15 @@ extends "res://tests/harness.gd"
 
 const Search = preload("res://engine/off_work_bot_search.gd")
 
+class ShortSearch extends Search:
+	# Isolate the configured adversarial depth/width from the optional
+	# deadline-driven long tree, whose plan length is a different contract.
+	func _rank(node: Dictionary, root := false) -> bool:
+		if root: growth_reserve_us=0
+		return super._rank(node,root)
+	func _growth_pass(_root: Dictionary) -> bool:
+		return false
+
 func _initialize() -> void:
 	_run.call_deferred()
 
@@ -62,18 +71,19 @@ func _branching_game() -> OffWorkState:
 	game.offers.clear()
 	return game
 
-func _search(game: OffWorkState) -> Dictionary:
-	return Search.new().search(game, 0, game.config.rules.bot, Time.get_ticks_usec() + 10000000)
+func _search(game: OffWorkState, deepen := true) -> Dictionary:
+	return ShortSearch.new().search(game, 0, game.config.rules.bot, Time.get_ticks_usec() + 3000000,
+		Callable(),Callable(),deepen)
 
 func _test_widths_and_depth() -> void:
 	var game := _branching_game()
 	var policy: Dictionary = game.config.rules.bot
 	policy.search_max_depth = 1
 	policy.search_root_width = 8
-	var wide := _search(game)
+	var wide := _search(game,false)
 	policy.search_root_width = 1
-	var narrow := _search(game)
-	check(wide.root_complete and narrow.root_complete and wide.root_candidates > 8, "全部合法动作先经过同一真实规则评价")
+	var narrow := _search(game,false)
+	check(wide.root_coverage_complete and narrow.root_coverage_complete and wide.root_candidates > 8, "全部合法动作先经过同一真实规则评价")
 	check(wide.completed_candidates == narrow.completed_candidates and wide.search_nodes == narrow.search_nodes and wide.action == narrow.action,
 		"深搜宽度不裁剪首层候选，也不改变已完整比较的首层选择")
 	policy.search_max_depth = 3
@@ -81,14 +91,18 @@ func _test_widths_and_depth() -> void:
 	var one_reply := _search(game)
 	policy.search_reply_width = 4
 	var more_replies := _search(game)
-	check(one_reply.search_depth == 3 and more_replies.search_depth == 3 and more_replies.search_nodes > one_reply.search_nodes,
+	check(one_reply.short_search_depth == 3 and more_replies.short_search_depth == 3 and more_replies.short_search_nodes > one_reply.short_search_nodes,
 		"后续宽度确实改变深层展开范围，双方回应仍用同一评价")
 	policy.search_reply_width = 1
+	policy.search_root_width = 4
+	var more_roots := _search(game)
+	check(more_roots.short_search_depth==3 and more_roots.short_root_candidates>one_reply.short_root_candidates \
+		and more_roots.short_search_nodes>one_reply.short_search_nodes,"根深搜宽度控制进入后续回应树的首步数量")
 	policy.search_root_width = 1
 	for depth in [1, 3, 5]:
 		policy.search_max_depth = depth
 		var found := _search(game)
-		check(found.search_depth == depth and found.principal_variation.size() == depth,
+		check(found.short_search_depth == depth and found.principal_variation.size() == depth,
 			"完成所配 %d 层且主变化包含每一步" % depth)
 
 func _test_deadline() -> void:

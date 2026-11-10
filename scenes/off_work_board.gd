@@ -16,6 +16,7 @@ const ProgressClock = preload("res://engine/off_work_progress_clock.gd")
 const SideExtract = preload("res://engine/off_work_side_extract.gd")
 const StackLayout = preload("res://engine/off_work_stack_layout.gd")
 const PaperDisposal = preload("res://scenes/off_work_paper_disposal.gd")
+const ActionMotion = preload("res://scenes/off_work_action_motion.gd")
 # The opponent uses the same original Board. Income and meeting visits own
 # temporary motion; all pointer/group behavior remains inherited.
 class IncomeBoard extends Board:
@@ -23,6 +24,8 @@ class IncomeBoard extends Board:
 		card_catalog = OffWorkCardDB
 		combo_rules = OffWorkComboRules
 		native_recipe_progress_enabled = false
+		# Work is the exposed face; the sole employee can be fully buried.
+		side_include_single_core = true
 
 	var income_move: Callable
 	var income_side: Callable
@@ -122,6 +125,8 @@ var _meeting_centers: Dictionary = {}
 var _meeting_home_order: Dictionary = {}
 var _was_interacting := false
 var _previous_positions: Dictionary = {}
+var _previous_action_groups: Dictionary = {}
+var _action_motion := ActionMotion.new()
 var _retired_cards: Dictionary = {}
 var _effect_tweens: Array[Tween] = []
 var _pending_buy_position := Vector3.INF
@@ -150,10 +155,12 @@ var _defer_side_refresh := false
 var _syncing_structure := false
 
 func _init(read_user_preferences := true) -> void:
+	_action_motion.setup(self)
 	align_stack_layers = _align_stack_layers
 	card_catalog = OffWorkCardDB
 	combo_rules = OffWorkComboRules
 	native_recipe_progress_enabled = false
+	side_include_single_core = true
 	_interaction_preferences = InteractionPreferences.new(_settings.snapping, read_user_preferences)
 	_debug_preferences = DebugPreferences.new(_settings.debug_mode, read_user_preferences)
 
@@ -264,6 +271,7 @@ func release_pointer(at: Vector2) -> void:
 func _process(delta: float) -> void:
 	if _assembling: return
 	super._process(delta)
+	_action_motion.advance(delta)
 	_sync_stack_occlusion()
 	_advance_cash_flights(delta)
 	_advance_meeting_visitors(delta)
@@ -860,6 +868,7 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 		_sync_live_presentation()
 		return
 	if state.winner >= 0: _freeze_terminal_layout()
+	_previous_action_groups.clear()
 	_effect_tweens = _effect_tweens.filter(func(tween): return tween != null and tween.is_valid())
 	# A single production tick can retire hundreds of files. Unregister all
 	# affected cards first, then close each surviving stack only once.
@@ -871,6 +880,7 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 		var card: OffWorkCard = by_uid[uid]
 		_previous_positions[uid] = card.global_position
 		if not state.cards.has(uid):
+			_action_motion.cancel(int(uid))
 			card.set_meta("retire_in_stack", _retirement_overlaps_stack(card))
 			_stack_occluded.erase(uid)
 			_transfer_departures.erase(uid)
@@ -919,6 +929,7 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 				_origin_by_gid[int(record.group)] = _free_spawn_position(int(record.group), int(record.owner), _pending_buy_position)
 			card.global_position = _origin_for(int(record.group), int(record.owner))
 		elif card.card_owner != int(record.owner):
+			_action_motion.cancel(int(uid))
 			# Network snapshots can sync again before their transfer event is presented.
 			_transfer_departures[uid] = card.global_position
 			_release_delivery(uid)
@@ -931,7 +942,10 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 			_presenter(int(record.owner)).register_card(card)
 		if _cash_flights.has(uid) and int(_cash_flights[uid].group) != int(record.group):
 			_cancel_cash_flight(card)
-		if card.group_id != int(record.group) or card.type != str(record.type): _invalidate_stack_occlusion()
+		if card.group_id != int(record.group):
+			_previous_action_groups[uid] = card.group_id
+			_invalidate_stack_occlusion()
+		elif card.type != str(record.type): _invalidate_stack_occlusion()
 		_update_record(card, record)
 	_assembling = false
 	_defer_record_refresh = false
@@ -1001,6 +1015,7 @@ func _unregister_record_card(card: OffWorkCard) -> void:
 func _freeze_terminal_layout() -> void:
 	if _terminal_pose_locked: return
 	_terminal_pose_locked = true
+	_action_motion.clear()
 	(enemy_board as IncomeBoard).terminal_sides_hidden = true
 	var poses: Dictionary = {}
 	for uid in by_uid:
@@ -1104,7 +1119,7 @@ func _occlusion_dependencies() -> Array:
 		player_bounds, enemy_board.player_bounds if is_instance_valid(enemy_board) else Rect2(),
 		_settings.stack_display.hash(), _drag_compact, _drag_cards.hash(), _drag_offsets.hash(),
 		_cash_flights.keys(), _delivery_flights.keys(), _meeting_visitors.keys(),
-		_strike_dancers.keys(), _strike_attacks.keys()]
+		_strike_dancers.keys(), _strike_attacks.keys(), _action_motion.motions.keys()]
 
 func _sync_stack_occlusion() -> void:
 	if _terminal_pose_locked: return
@@ -1115,12 +1130,36 @@ func _sync_stack_occlusion() -> void:
 	var representatives: Dictionary = {}
 	var thin: Dictionary = {}
 	var muted_titles: Dictionary = {}
+	var moving_by_group := {}
+	for motions in [_cash_flights, _delivery_flights, _meeting_visitors, _strike_dancers, _strike_attacks, _action_motion.motions]:
+		for uid in motions:
+			if not by_uid.has(uid): continue
+			var gid: int = by_uid[uid].group_id
+			if not moving_by_group.has(gid): moving_by_group[gid] = []
+			moving_by_group[gid].append(uid)
 	for presenter in [self, enemy_board]:
 		if not is_instance_valid(presenter): continue
 		for group in presenter.groups:
 			var compact := bool(group.get("compact", false))
 			var dense: bool = not compact and group.cards.size() > int(_settings.stack_display.expanded_visible_layers)
 			if not compact and not dense: continue
+			if compact and not group.cards.is_empty():
+				# A cash landing changes its wallet, not the thousands of work
+				# cards in other piles. Compact geometry depends on these exact
+				# members/slots only; expanded type-sensitive layouts stay live.
+				_configure_cash_layers(group, presenter)
+				var key := [group.cards.hash(), group.get("bounded_compact_cap", -1),
+					presenter.player_bounds, moving_by_group.get(group.cards[0].group_id, [])]
+				var cached: Dictionary = group.get("off_work_compact_visibility", {})
+				if cached.get("key", []) != key:
+					var compact_offsets: Array = []
+					for index in group.cards.size(): compact_offsets.append(Board._stack_offset_of(group, index))
+					cached = {"key": key, "hidden": {}, "representatives": {}}
+					_collect_stack_visibility(group.cards, compact_offsets, {}, cached.hidden, cached.representatives, int(group.cards[0].uid))
+					group.off_work_compact_visibility = cached
+				hidden.merge(cached.hidden, true)
+				representatives.merge(cached.representatives, true)
+				continue
 			var offsets: Array = []
 			var preferred: Dictionary = {}
 			for index in group.cards.size():
@@ -1144,6 +1183,10 @@ func _sync_stack_occlusion() -> void:
 			if not _drag_compact and (_drag_cards.size() > int(_settings.stack_display.expanded_visible_layers) or _thin_stack_cards.has(card.uid)):
 				thin[card.uid] = true
 		_collect_stack_visibility(_drag_cards, _drag_offsets, preferred, hidden, representatives)
+	# Overflow income keeps its real UID, flight clock and input lock, but
+	# does not allocate a printed face for an already saturated visual stream.
+	for uid in _cash_flights:
+		if not bool(_cash_flights[uid].get("rendered", true)): hidden[uid] = true
 	for uid in _stack_occluded:
 		if not hidden.has(uid) and by_uid.has(uid): by_uid[uid].reveal_stack_face()
 	for uid in hidden:
@@ -1179,7 +1222,7 @@ func _collect_stack_visibility(members: Array, offsets: Array, preferred: Dictio
 		if hidden.has(uid): representatives[uid] = compact_head if compact_head >= 0 else occupied[offsets[index]]
 
 func _has_external_pose(uid: int) -> bool:
-	return _cash_flights.has(uid) or _delivery_flights.has(uid) or _meeting_visitors.has(uid) or _strike_dancers.has(uid) or _strike_attacks.has(uid)
+	return _cash_flights.has(uid) or _delivery_flights.has(uid) or _meeting_visitors.has(uid) or _strike_dancers.has(uid) or _strike_attacks.has(uid) or _action_motion.motions.has(uid)
 
 ## Keep source stacking order and expose one authoritative work bar per group.
 ## Meeting/coffee retain their own timers; they never borrow a work countdown.
@@ -1544,7 +1587,7 @@ func _sync_owner_groups(owner_value: int, presenter: Board) -> void:
 				single.freeze = true
 				presenter._move_to(single, _origin_for(int(gid), owner_value))
 	if owner_value == int(_settings.opponent_owner): _arrange_opponent_groups()
-	presenter.resync_sides()
+	if not _defer_side_refresh: presenter.resync_sides()
 
 ## Arrange only the opponent's final visual groups. Native stack geometry
 ## remains authoritative, and moving a whole visual pile never calls a rule
@@ -1764,6 +1807,7 @@ func _sync_market() -> void:
 	for id in offers_by_id.keys():
 		if live.has(id): continue
 		var card: CardEntity = offers_by_id[id]
+		_action_motion.remember_offer(int(id), card.global_position)
 		unregister_card(card)
 		var exiting: bool = is_instance_valid(conveyor) and conveyor.release_offer(int(id), card)
 		if not exiting:
@@ -1838,6 +1882,7 @@ func _retire(card: OffWorkCard) -> void:
 
 func play_event(event: Dictionary) -> void:
 	var kind := str(event.get("kind", ""))
+	if kind in ["group_changed", "buy"]: _action_motion.play_event(event)
 	if kind in ["work_complete", "outsource"]: _queue_disposed_work(event)
 	var actors: Array = []
 	if kind == "work_complete":
@@ -2031,6 +2076,7 @@ func _preserve_income_motion(card: CardEntity, destination: Vector3) -> bool:
 	if _placing_snapshot:
 		card.global_position = destination
 		return true
+	if _action_motion.preserve(card, destination): return true
 	if _strike_in_flight(card.uid): return true
 	if _delivery_flights.has(card.uid):
 		_delivery_flights[card.uid].to = destination
@@ -2054,6 +2100,7 @@ func _preserve_income_motion(card: CardEntity, destination: Vector3) -> bool:
 	return true
 
 func _cancel_external_motion(card: CardEntity) -> void:
+	if is_instance_valid(card) and _action_motion.motions.has(card.uid): return
 	if is_instance_valid(card) and (_meeting_visitors.has(card.uid) or _strike_in_flight(card.uid) or _delivery_flights.has(card.uid)): return
 	_cancel_cash_flight(card)
 	if is_instance_valid(_motion):
@@ -2076,7 +2123,7 @@ func _cancel_cash_flight(card: CardEntity) -> void:
 	card.collision_mask = int(flight.collision_mask)
 	card.input_ray_pickable = bool(flight.input_ray_pickable)
 	card.draggable = bool(flight.draggable)
-	card._visual.visible = true
+	card._visual.visible = bool(flight.get("rendered", true))
 	_restore_cash_opacity(card._visual)
 	_cash_flights.erase(card.uid)
 	card.remove_meta("income_flight")
@@ -2108,18 +2155,16 @@ func _cash_flight_counts() -> Dictionary:
 	var counts := {}
 	for flight in _cash_flights.values():
 		var owner_value := int(flight.owner)
-		if not counts.has(owner_value): counts[owner_value] = {"active": 0, "decorations": 0}
+		if not counts.has(owner_value): counts[owner_value] = {"active": 0, "decorations": 0, "rendered": 0}
 		counts[owner_value].active += 1
 		counts[owner_value].decorations += flight.samples.size()
+		counts[owner_value].rendered += int(bool(flight.get("rendered", true))) + flight.samples.size()
 	return counts
 
 func _start_cash_card_flight(event: Dictionary, uid: int, counts: Dictionary = {}) -> void:
 	if not by_uid.has(uid) or _state == null or not _state.cards.has(uid): return
 	var card: OffWorkCard = by_uid[uid]
 	if card.dragging or card.type != "money" or _cash_flights.has(uid): return
-	# Income has an actual moving face even when it is destined for a covered
-	# cash slot. Build it before capturing the original opacity materials.
-	card.reveal_stack_face()
 	var owner_value := int(event.get("owner", card.card_owner))
 	var source := int(event.get("source", -1))
 	var from: Vector3 = _previous_positions.get(source, get_card_position(source))
@@ -2128,15 +2173,19 @@ func _start_cash_card_flight(event: Dictionary, uid: int, counts: Dictionary = {
 	presenter._stop_move(card, false)
 	var spec: Dictionary = _settings.income_motion
 	if counts.is_empty(): counts.merge(_cash_flight_counts())
-	if not counts.has(owner_value): counts[owner_value] = {"active": 0, "decorations": 0}
+	if not counts.has(owner_value): counts[owner_value] = {"active": 0, "decorations": 0, "rendered": 0}
 	var active := int(counts[owner_value].active)
 	var decorations := int(counts[owner_value].decorations)
+	var visual_slots := maxi(0, int(spec.max_visible_notes_per_owner) - int(counts[owner_value].rendered))
+	var rendered := visual_slots > 0
+	if rendered: card.reveal_stack_face()
 	if active == 0:
 		_cash_emission_serial[owner_value] = 0
 		_cash_stream_width[owner_value] = 0.0
 	var amount := maxi(1, int(_state.cards[uid].amount))
 	var count := mini(amount, int(spec.max_samples_per_payment))
 	count = mini(count, 1 + maxi(0, int(spec.max_decorative_cards_per_owner) - decorations))
+	count = mini(count, maxi(1, visual_slots))
 	var serial := int(_cash_emission_serial.get(owner_value, 0))
 	var first_delay := fposmod(float(serial) * float(spec.emission_interval_seconds), float(spec.max_emission_window_seconds))
 	var delays: Array = []
@@ -2152,14 +2201,15 @@ func _start_cash_card_flight(event: Dictionary, uid: int, counts: Dictionary = {
 		samples.append({"node": _make_cash_note(card), "delay": delays[index], "sequence": serial + index})
 	counts[owner_value].active += 1
 	counts[owner_value].decorations += samples.size()
+	counts[owner_value].rendered += int(rendered) + samples.size()
 	var flight := {"group": int(_state.cards[uid].group), "owner": owner_value,
 		"kind": str(event.get("kind", "work_complete")), "from": from, "to": destination,
 		"elapsed": 0.0, "delay": delays[0], "last_delay": delays.max(), "sequence": serial,
 		"samples": samples, "amount": amount, "sideways": sideways,
 		"collision_layer": card.collision_layer, "collision_mask": card.collision_mask,
-		"input_ray_pickable": card.input_ray_pickable, "draggable": card.draggable, "width": 0.0}
+		"input_ray_pickable": card.input_ray_pickable, "draggable": card.draggable, "width": 0.0, "rendered": rendered}
 	_cash_flights[uid] = flight
-	_prepare_cash_opacity(card._visual)
+	if rendered: _prepare_cash_opacity(card._visual)
 	card.set_meta("income_flight", true)
 	card.set_meta("in_flight", true)
 	card.set_meta("dest_pos", destination)
@@ -2170,7 +2220,7 @@ func _start_cash_card_flight(event: Dictionary, uid: int, counts: Dictionary = {
 	card.draggable = false
 	card.position = from
 	card._visual.scale = Vector3.ONE * float(spec.launch_scale)
-	card._visual.visible = is_zero_approx(float(flight.delay))
+	card._visual.visible = false
 
 func _cash_screen_region(owner_value: int, from_facility := false) -> Rect2:
 	var area: Rect2 = table_bounds if from_facility else _presenter(owner_value).player_bounds
@@ -2192,8 +2242,8 @@ func _cash_note_screen_bounds(visual: Node3D) -> Rect2:
 			else: bounds = bounds.expand(point)
 	return bounds
 
-func _contain_cash_note(visual: Node3D, mover: Node3D, flight: Dictionary) -> void:
-	var region := _cash_screen_region(int(flight.owner), str(flight.kind) == "fire")
+func _contain_cash_note(visual: Node3D, mover: Node3D, flight: Dictionary, region := Rect2()) -> void:
+	if not region.has_area(): region = _cash_screen_region(int(flight.owner), str(flight.kind) == "fire")
 	var bounds := _cash_note_screen_bounds(visual)
 	var shift := Vector2.ZERO
 	if bounds.position.x < region.position.x: shift.x += region.position.x - bounds.position.x
@@ -2231,6 +2281,7 @@ func _advance_cash_flights(delta: float) -> void:
 		var target := minf(float(spec.max_stream_width), maxf(0.0, float(amounts[owner] - 1)) * float(spec.width_per_card))
 		_cash_stream_width[owner] = move_toward(float(_cash_stream_width.get(owner, 0.0)), target, float(spec.width_change_speed) * delta)
 	var candidates: Array = []
+	var clip_regions := {}
 	for uid in _cash_flights.keys():
 		if not by_uid.has(uid): continue
 		var card: OffWorkCard = by_uid[uid]
@@ -2241,6 +2292,16 @@ func _advance_cash_flights(delta: float) -> void:
 		flight.elapsed += delta
 		flight.width = float(_cash_stream_width.get(flight.owner, 0.0))
 		var age := float(flight.elapsed) - float(flight.delay)
+		if not bool(flight.get("rendered", true)):
+			# Hidden identities still traverse and land on the same timeline;
+			# skip meshes, alpha materials and screen projections, not currency.
+			card.position = _cash_parabola(flight, age / travel, int(flight.sequence))
+			if float(flight.elapsed) >= float(flight.last_delay) + travel + land:
+				_cancel_cash_flight(card)
+			continue
+		var region_key := Vector2i(int(flight.owner), int(str(flight.kind) == "fire"))
+		if not clip_regions.has(region_key): clip_regions[region_key] = _cash_screen_region(int(flight.owner), str(flight.kind) == "fire")
+		var region: Rect2 = clip_regions[region_key]
 		if age < 0.0:
 			card._visual.visible = false
 			card.collision_layer = 0
@@ -2249,8 +2310,7 @@ func _advance_cash_flights(delta: float) -> void:
 			card.position = _cash_parabola(flight, t, int(flight.sequence))
 			card._visual.scale = Vector3.ONE * _cash_note_scale(t)
 			card._visual.rotation_degrees.y = 0.0
-			card._visual.visible = true
-			_contain_cash_note(card._visual, card, flight)
+			_contain_cash_note(card._visual, card, flight, region)
 			candidates.append({"visual": card._visual, "card": card, "owner": flight.owner, "progress": t, "collision_layer": flight.collision_layer})
 		else:
 			card.position = flight.to
@@ -2261,11 +2321,12 @@ func _advance_cash_flights(delta: float) -> void:
 		for sample in flight.samples:
 			var note: Node3D = sample.node
 			var t := (float(flight.elapsed) - float(sample.delay)) / travel
-			note.visible = t >= 0.0 and t < 1.0
-			if not note.visible: continue
+			if t < 0.0 or t >= 1.0:
+				note.hide()
+				continue
 			note.global_position = _cash_parabola(flight, t, int(sample.sequence))
 			note.scale = Vector3.ONE * _cash_note_scale(t)
-			_contain_cash_note(note, note, flight)
+			_contain_cash_note(note, note, flight, region)
 			candidates.append({"visual": note, "card": null, "owner": flight.owner, "progress": t})
 		if float(flight.elapsed) >= float(flight.last_delay) + travel + land:
 			_cancel_cash_flight(card)
@@ -2286,8 +2347,9 @@ func _limit_cash_density(candidates: Array, delta: float) -> void:
 		if not points.has(item.owner): points[item.owner] = []
 		var screen := camera.unproject_position(item.visual.global_position)
 		var visible: bool = points[item.owner].size() < int(spec.max_visible_notes_per_owner)
-		for other in points[item.owner]:
-			if screen.distance_to(other) < float(spec.minimum_separation_pixels): visible = false; break
+		if visible:
+			for other in points[item.owner]:
+				if screen.distance_squared_to(other) < float(spec.minimum_separation_pixels) * float(spec.minimum_separation_pixels): visible = false; break
 		var opacity := move_toward(float(item.visual.get_meta("income_opacity", 0.0)), 1.0 if visible else 0.0, delta / float(spec.density_fade_seconds))
 		_set_cash_opacity(item.visual, opacity)
 		if visible: points[item.owner].append(screen)
@@ -2315,8 +2377,9 @@ func _prepare_cash_opacity(visual: Node3D) -> void:
 	_set_cash_opacity(visual, 0.0)
 
 func _set_cash_opacity(visual: Node3D, opacity: float) -> void:
-	visual.set_meta("income_opacity", opacity)
 	visual.visible = opacity > float(_settings.income_motion.opacity_visibility_threshold)
+	if visual.has_meta("income_opacity") and is_equal_approx(float(visual.get_meta("income_opacity")), opacity): return
+	visual.set_meta("income_opacity", opacity)
 	for entry in visual.get_meta("income_originals", []):
 		var node: Node = entry.node
 		if entry.has("material"):
@@ -2369,8 +2432,11 @@ func _sync_meeting_visitors() -> void:
 			_origin_by_gid[gid] = home
 		var from := card.global_position
 		var from_scale := card._visual.scale
+		# Keep dest_pos until drop_card has also read the group's real origin.
+		# Its visible mid-air pose is the visit's departure, never its home.
 		_meeting_visitors.erase(uid)
 		presenter.drop_card(card)
+		_action_motion.cancel(int(uid))
 		card.global_position = from
 		info.merge({"phase": "pull", "home": home, "from": from, "from_scale": from_scale, "elapsed": 0.0, "home_group": gid}, true)
 		_meeting_visitors[uid] = info
@@ -2653,6 +2719,7 @@ func _sync_strike_attacks() -> void:
 		_begin_strike_attack(int(uid), int(attack.group), int(attack.target_group))
 
 func _begin_strike_attack(uid: int, source_group: int, target_group: int, delivered := false, phase := "attack") -> void:
+	_action_motion.cancel(uid)
 	var card: OffWorkCard = by_uid[uid]
 	var presenter := _presenter(card.card_owner)
 	var home: Vector3 = _origin_by_gid.get(source_group, _origin_for(source_group, card.card_owner))
@@ -2761,6 +2828,7 @@ func _sync_strike_dancers() -> void:
 	for uid in wanted:
 		if not by_uid.has(uid): continue
 		var card: OffWorkCard = by_uid[uid]
+		_action_motion.cancel(int(uid))
 		if _strike_dancers.has(uid):
 			if _strike_in_flight(uid): card.draggable = false
 			continue
@@ -2853,6 +2921,7 @@ func _release_strike_motion(uid: int, landed: bool) -> void:
 	if not presenter.cards.has(card): presenter.register_card(card)
 
 func reset_view() -> void:
+	_action_motion.clear()
 	if is_instance_valid(_paper_disposal): _paper_disposal.clear()
 	_terminal_pose_locked = false
 	if is_instance_valid(enemy_board): (enemy_board as IncomeBoard).terminal_sides_hidden = false
@@ -2911,6 +2980,7 @@ func reset_view() -> void:
 	_prices.clear()
 	_retired_cards.clear()
 	_previous_positions.clear()
+	_previous_action_groups.clear()
 	_transfer_departures.clear()
 	_origin_by_gid.clear()
 	_opponent_layout_signature = ""

@@ -5,24 +5,46 @@ const Bot = preload("res://engine/off_work_bot.gd")
 const Evaluation = preload("res://engine/off_work_bot_evaluator.gd")
 const Continuations = preload("res://engine/off_work_bot_purchase_continuations.gd")
 
+# Observe completed rule-state leaves through the common search path. The
+# structural test isolates short plies; the real 700ms BOT case remains below.
 class ObservedSearch extends "res://engine/off_work_bot_search.gd":
 	var purchase := {}
 	var reply := {}
+	var assembly := {}
 
-	func _extend_purchase(node: Dictionary, option: Dictionary, root: bool, task_until: int) -> bool:
-		var ok := super._extend_purchase(node,option,root,task_until)
-		if not ok: return false
-		var snapshot := {"commitments":option.child.purchase_commitments.duplicate(),
-			"detail":option.child.value.detail.duplicate(true),"time":option.child.world.time,
-			"mode":option.child.value.get("evaluation_mode","economic")}
-		if root and option.action.kind=="buy": purchase=snapshot
-		elif not root and option.action.kind=="wait": reply=snapshot
+	func _rank(node: Dictionary, root := false) -> bool:
+		if root: growth_reserve_us=0
+		return super._rank(node,root)
+
+	func _growth_pass(_root: Dictionary) -> bool:
+		return false
+
+	func _evaluate(node: Dictionary) -> bool:
+		if not super._evaluate(node): return false
+		var world: OffWorkState=node.world
+		var ids: Array=world._owner_type(0,"union")
+		if ids.size()!=1: return true
+		var id: int=ids[0]
+		var assembled: bool=not world.group_work(int(world.cards[id].group)).is_empty()
+		var snapshot := {"id":id,"cash":world.money(0),"time":world.time,"assembled":assembled,
+			"mode":node.value.get("evaluation_mode",""),"value":node.value.duplicate(true)}
+		if is_equal_approx(world.time,3.0): purchase=snapshot
+		elif is_equal_approx(world.time,6.0) and world._owner_type(1,"strike").is_empty() and world.money(1)==7:
+			reply=snapshot
+		elif is_equal_approx(world.time,9.0) and assembled:
+			assembly=snapshot
 		return true
 
-class IncompleteEconomic extends "res://engine/off_work_bot_evaluator.gd":
-	func _evaluate_existing(_world: OffWorkState, _owner: int, _policy: Dictionary,
-			_until: int, _clock: Array) -> Dictionary:
-		return {"complete":false}
+# Expire the real evaluator exactly at the first post-assembly leaf. No score
+# or synthetic production chain is supplied by the test.
+class IncompleteAssembly extends "res://engine/off_work_bot_evaluator.gd":
+	var reached := false
+	func evaluate_current(world: OffWorkState, owner: int, policy: Dictionary, until: int = -1,
+			next_actions: Array = []) -> Dictionary:
+		var assembled: bool=world._owner_type(owner,"union").any(func(id):
+			return not world.group_work(int(world.cards[id].group)).is_empty())
+		if world.time>=9.0 and assembled: reached=true
+		return super.evaluate_current(world,owner,policy,Time.get_ticks_usec()-1 if reached else until,next_actions)
 
 # Stop only after reaching the actual tail evaluator. The incomplete variant
 # uses its real expired-deadline return, never an injected score or plan.
@@ -135,30 +157,36 @@ func _tactical_lens_and_tail_cutoff() -> void:
 	TailBoundary.reached=false
 	TailBoundary.unfinished=false
 
-func _paid_identity_survives_reply(force_tactical := false) -> void:
+func _paid_identity_survives_reply(unfinished := false) -> void:
 	var world := _fixture()
+	var before := _snapshot(world)
 	var search := ObservedSearch.new()
-	if force_tactical: search.evaluator=IncompleteEconomic.new()
+	var tail := IncompleteAssembly.new()
+	if unfinished: search.evaluator=tail
 	var observer: WeakRef=weakref(search)
-	# This structural clock test explicitly waits for the real reply node;
-	# the end-to-end 700ms behavior is covered separately above.
+	var published := []
+	# A real root buy is followed by enemy t3 and own t6. Each leaf is observed
+	# after its normal half-period advance, at t3, t6 and t9 respectively.
 	var result: Dictionary=search.search(world,0,world.config.rules.bot,Time.get_ticks_usec()+5000000,
-		func(): return not observer.get_ref().reply.is_empty(),Callable(),true,
+		func(): return not observer.get_ref().assembly.is_empty(),func(row):published.append(row),true,
 		func(action): return action.kind=="buy" and action.get("card_type","")=="union")
 	if not need(not search.purchase.is_empty() and not search.reply.is_empty(),
-		"真实Search走过根购买与对手wait，不由测试伪造commitment"): return
-	if force_tactical:
-		check(result.evaluation_layer=="tactical" and search.purchase.mode=="tactical" and search.reply.mode=="tactical",
-			"强制rich未完成后，跨对手回复的深层仍继承完整tactical层，不能退回忽略公开攻击的current")
-	check(result.search_nodes>=2 and search.purchase.commitments.size()==1
-		and search.reply.commitments==search.purchase.commitments,"跨对手回复保留同一真实付费UID")
-	if not need(search.purchase.detail.has("purchase_chain") and search.reply.detail.has("purchase_chain"),
-		"对手wait后完整叶子仍保留已购工会的组装收益"): return
-	var first: Dictionary=search.purchase.detail.purchase_chain.commands[0]
-	var second: Dictionary=search.reply.detail.purchase_chain.commands[0]
-	check(is_equal_approx(float(first.at)+float(search.purchase.time),6.0)
-		and is_equal_approx(float(second.at)+float(search.reply.time),6.0),
-		"前进到对手回复节点后仍用同一个绝对t6组装时机，不重置或提前行动钟")
+		"通用Search真实执行根购买与对手wait，付费UID来自规则状态"): return
+	check(search.purchase.id==search.reply.id and search.purchase.cash==0 and search.reply.cash==0,
+		"跨对手回复保留同一付费UID和已付金额，不重复购买或退回现金")
+	check(not search.purchase.assembled and not search.reply.assembled 		and search.purchase.time==3.0 and search.reply.time==6.0,
+		"t0买入后等待己方t6行动槽，不能在对手t3回复时免费组装")
+	check(search.purchase.mode=="current" and search.reply.mode=="current" and result.evaluation_layer=="current",
+		"购买与对手回复都使用统一完工评价，不继承已取消的卡种专属层")
+	if unfinished:
+		check(tail.reached and search.assembly.is_empty() and result.cutoff and result.short_search_depth==2,
+			"t6后续动作的真实尾估值截止时，保留已完成的两步短层")
+		check(not published.is_empty() and result.evaluation==published.back().evaluation 			and result.principal_variation==published.back().principal_variation 			and result.principal_variation.size()==2,
+			"未完成组装叶不能发布收益或覆盖最后完整购买/回应前缀")
+	else:
+		check(not search.assembly.is_empty() and search.assembly.id==search.purchase.id 			and search.assembly.time==9.0 and search.assembly.mode=="current" 			and search.assembly.value.complete,
+			"通用后续搜索在t6真实组装原付费UID，并完整评价其t9规则状态")
+	check(before==_snapshot(world),"完整与截止后续搜索均不修改真实牌桌或随机流")
 
 func _run() -> void:
 	_public_defence()

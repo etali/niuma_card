@@ -48,6 +48,12 @@ class Search extends RefCounted:
 		if control.is_cancelled() or Time.get_ticks_usec() >= deadline: return
 		var packet := {"action":command.duplicate(true), "report":report.duplicate(true),
 			"rng":worker._rng.state, "hints":worker.export_decision_context()}
+		# Natural events were projected between the observation and action time.
+		# A future prefix may mention those predicted IDs even though its first
+		# command passed the visible-entity filter. Bind all later commands to
+		# the original observation, never to coincidentally matching live arrivals.
+		packet.report["observed_card_end"]=mini(visible_card_end,int(report.get("observed_card_end",visible_card_end)))
+		packet.report["observed_group_end"]=mini(visible_group_end,int(report.get("observed_group_end",visible_group_end)))
 		_mutex.lock()
 		if Time.get_ticks_usec() < deadline: _published = packet
 		_mutex.unlock()
@@ -170,9 +176,16 @@ func _matches(bot: OffWorkBot, source: Search) -> bool:
 
 func _commit_packet(bot: OffWorkBot, source: Search, packet: Dictionary) -> bool:
 	if packet.is_empty() or not _matches(bot, source) or not source.still_legal(bot.state, packet.action): return false
-	if not bot.commit_action(packet.action, packet.report): return false
-	bot._rng.state = packet.rng
+	# Worker hints describe the state BEFORE this command, including any
+	# independent step selected ahead of a waiting production recipe. Install
+	# that queue first so commit consumes the correct step or saves a new paid
+	# plan. Importing it afterward would undo every one of those transitions.
+	var previous_context := bot.export_decision_context()
 	bot.import_decision_context(packet.hints)
+	if not bot.commit_action(packet.action, packet.report):
+		bot.import_decision_context(previous_context)
+		return false
+	bot._rng.state = packet.rng
 	return true
 
 ## Player input invalidates the forecast, but a completed command can still be

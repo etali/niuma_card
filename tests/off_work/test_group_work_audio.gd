@@ -25,6 +25,7 @@ func _run() -> void:
 	audio.setup(settings, true)
 	_sample_isolation()
 	await _group_identity_and_speed()
+	_dense_work_mix()
 	_meeting_and_coffee()
 	_lifecycle()
 	await _pause_and_resume()
@@ -123,9 +124,37 @@ func _group_identity_and_speed() -> void:
 	s.move_cards([buff, second], group)
 	_sync(s)
 	check(is_equal_approx(audio._typing_speeds[group], 2.25), "audio derives stacked speed from configuration, not hardcoded 1.2 or ten seconds")
-	check(is_equal_approx(player.pitch_scale, float(settings.actions.typing.pitch) * 2.25), "custom configured work speed reaches actual audio pitch")
+	check(is_equal_approx(player.pitch_scale, float(settings.typing_pitch_max)), "custom work speed retains its real multiplier but caps the audible pitch")
+	for _index in 18: s.add_card("overtime", 0, group)
+	_sync(s)
+	check(is_equal_approx(audio._typing_speeds[group], pow(1.5,20.0)), "twenty overtime buffs retain their real exponential production speed")
+	check(_voice(group)==player and is_equal_approx(player.pitch_scale,float(settings.typing_pitch_max)), "late exponential production cannot whistle or restart the loop")
 	_sync(s, 1)
 	check(audio._typing_players.size() == 1 and audio._typing_players.has(opponent), "local owner is configurable rather than hardcoded to player zero")
+	audio.stop_all()
+
+func _dense_work_mix() -> void:
+	var config := OffWorkConfig.new()
+	config.rules.initial.groups = []
+	var total := int(settings.typing_voice_limit)+4
+	for _index in total: config.rules.initial.groups.append({"employee":1,"work":10})
+	var s := OffWorkState.new(config)
+	s.new_game(97)
+	_sync(s)
+	check(audio._typing_speeds.size()==total, "all real working groups remain represented in the speed model")
+	check(audio._typing_players.size()==int(settings.typing_voice_limit), "dense work has a fixed maximum number of looping voices")
+	var combined_gain := 0.0
+	var players: Dictionary = audio._typing_players.duplicate()
+	for player: AudioStreamPlayer in players.values(): combined_gain+=db_to_linear(player.volume_db)
+	check(is_equal_approx(combined_gain,db_to_linear(float(settings.actions.typing.db))), "even phase-aligned work loops cannot exceed the original single-group gain")
+	_sync(s)
+	check(players==audio._typing_players, "dense repeated sync retains the same audible group identities")
+	var audible_group := int(players.keys()[0])
+	s.move_cards(s.group_people(audible_group),-1)
+	_sync(s)
+	check(not audio._typing_players.has(audible_group) and audio._typing_players.size()==int(settings.typing_voice_limit), "an inactive voice gives its slot to an existing working group")
+	for group in players:
+		if int(group)!=audible_group: check(audio._typing_players[group]==players[group], "refilling the mix does not restart surviving voices")
 	audio.stop_all()
 
 func _meeting_and_coffee() -> void:

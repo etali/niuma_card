@@ -65,7 +65,7 @@ func _test_target() -> void:
 	var decision := choose(state)
 	check(decision.action.kind == "activate" and decision.action.get("group") == target,"strike the single high-capacity producer ahead of the two-person group")
 	check(decision.diagnostics.root_complete and decision.diagnostics.evaluated >= 3,"complete root comparison includes both enemy targets and wait")
-	check(decision.diagnostics.get("algorithm")=="race_search_v2","target selection uses the shared race search, without an old planner score")
+	check(decision.diagnostics.get("algorithm")=="completion_search_v3","target selection uses the shared race search, without an old planner score")
 
 func _test_deadline() -> void:
 	var state := _state([{"work":3900},{"employee":1}])

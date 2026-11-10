@@ -6,6 +6,17 @@ const Session = preload("res://engine/off_work_session.gd")
 const JsonStore = preload("res://engine/json_store.gd")
 const SavePaths = preload("res://engine/save_paths.gd")
 const SPEEDS: Array[float] = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0]
+const DECISION_FIELDS := ["reason", "applied", "budget_ms", "elapsed_us", "selected_after_us",
+	"algorithm", "evaluation_layer", "short_search_depth", "short_search_nodes", "short_root_candidates", "depth", "search_depth", "search_nodes", "evaluated",
+	"root_complete", "root_coverage_complete", "root_candidates", "completed_candidates", "root_unobserved",
+	"root_economic_completed", "root_production_complete", "cutoff", "fallback", "overrun",
+	"discarded_late", "live_retained", "live_fallback", "forecast_root_offset_seconds"]
+const ACTION_FIELDS := ["kind", "offer", "group", "tool", "person", "card_type", "intent", "reason",
+	"execution_continuation", "growth_continuation", "growth_intent"]
+const CANDIDATE_FIELDS := ["kind", "intent", "score", "tie_score", "base_score", "base_tie_score",
+	"card_type", "offer", "group", "tool", "person", "reason"]
+const FORECAST_FIELDS := ["eta", "current_rate", "remaining", "work", "required_actions", "idle_pending",
+	"committed_work", "pending_strikes", "free_cash", "income", "stalled", "unreachable", "eta_exact", "eta_method"]
 var playing := false
 var speed := 1.0
 var source_path := ""
@@ -14,12 +25,16 @@ var playback: Array = []
 var clock := 0.0
 var next := 0
 var last_revision := -1
+var _last_decision_bot_id := 0
+var _last_decision_serial := 0
 var result_taunt := ""
 var parked: Dictionary
 
 func reset() -> void:
 	frames.clear()
 	last_revision = -1
+	_last_decision_bot_id = 0
+	_last_decision_serial = 0
 	result_taunt = ""
 
 func _layout(board: Node) -> Dictionary:
@@ -27,14 +42,79 @@ func _layout(board: Node) -> Dictionary:
 	for key in Session.BOARD_FIELDS: layout[key] = board.get(key).duplicate(true)
 	return layout
 
+static func _scalar_fields(source: Dictionary, fields: Array) -> Dictionary:
+	var result := {}
+	for key in fields:
+		if source.has(key) and typeof(source[key]) in [TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING]:
+			result[key] = source[key]
+	return result
+
+static func _continuation_evidence(source: Dictionary) -> Dictionary:
+	var result := _scalar_fields(source, ["complete", "plans", "examined", "evaluated", "choices", "rounds",
+		"rejected_quotes", "rejected_unobserved", "execution_checkpoints", "execution_complete"])
+	if source.get("sides_evaluated") is Array:
+		result["sides_evaluated"] = source.sides_evaluated.slice(0, 2).filter(func(value): return value is int)
+	for key in ["side_0", "side_1"]:
+		if source.get(key) is Dictionary:
+			result[key] = _scalar_fields(source[key], ["root_actions", "root_serviced", "root_refined", "episodes", "max_depth",
+				"nodes", "pending", "release_reserve_us"])
+	return result
+
+## Evidence describes the command actually submitted and the completed search
+## comparison. Never serialize search worlds, principal variations, bindings or
+## future commands: those can contain thousands of hypothetical card records.
+func _decision_evidence(host: Node) -> Dictionary:
+	if host.bot == null: return {}
+	var bot: RefCounted = host.bot
+	var serial := int(bot.decision_serial)
+	if serial <= 0 or (bot.get_instance_id() == _last_decision_bot_id and serial == _last_decision_serial): return {}
+	var report: Dictionary = bot.last_decision
+	if report.is_empty(): return {}
+	var evidence := _scalar_fields(report, DECISION_FIELDS)
+	evidence.merge({"serial":serial, "owner":int(bot.owner), "game_time":float(host.state.time)})
+	# A completed prefix is not proof that every root command was compared.
+	# Keep its status separate from root_coverage_complete, with no inference.
+	# Current reports also expose a legacy alias; do not write the same stats twice.
+	var continuation_key := "root_continuation" if report.get("root_continuation") is Dictionary else "root_growth"
+	if report.get(continuation_key) is Dictionary:
+		evidence[continuation_key] = _continuation_evidence(report[continuation_key])
+	var action: Dictionary = report.get("action", {})
+	evidence["action"] = _scalar_fields(action, ACTION_FIELDS)
+	if action.get("ids") is Array:
+		# These are real command operands, not an expansion of the future plan.
+		evidence.action["ids"] = action.ids.filter(func(id): return id is int)
+	evidence["execution_continuation"] = bool(report.get("execution_continuation", false)) or bool(action.get("execution_continuation", false))
+	var detail: Dictionary = report.get("evaluation", {})
+	var evaluation := _scalar_fields(detail, ["terminal", "winner", "scale", "projection_seconds"])
+	var sides: Array = []
+	for side in detail.get("sides", []).slice(0, 2):
+		if not side is Dictionary: continue
+		var forecast := _scalar_fields(side, FORECAST_FIELDS)
+		forecast["owner"] = sides.size()
+		sides.append(forecast)
+	if not sides.is_empty(): evaluation["sides"] = sides
+	if not evaluation.is_empty(): evidence["evaluation"] = evaluation
+	var candidates: Array = []
+	for candidate in report.get("candidates", []).slice(0, 8):
+		if candidate is Dictionary: candidates.append(_scalar_fields(candidate, CANDIDATE_FIELDS))
+	evidence["candidates"] = candidates
+	return evidence
+
 func record(host: Node, events: Array = [], force := false) -> void:
 	if playing: return
 	var state: OffWorkState = host.state
-	if not force and state.revision == last_revision and events.is_empty(): return
+	var decision := _decision_evidence(host)
+	# Waiting can be a real BOT decision without a rule event or revision.
+	if not force and state.revision == last_revision and events.is_empty() and decision.is_empty(): return
 	last_revision = state.revision
 	var world := {}
 	for key in Session.STATE_FIELDS: world[key] = state.get(key)
-	var payload := var_to_bytes({"world": world, "rng": state._rng.state, "layout": _layout(host.board), "events": events})
+	var entry := {"world": world, "rng": state._rng.state, "layout": _layout(host.board), "events": events}
+	if not decision.is_empty():
+		entry["bot_decision"] = decision
+		_last_decision_bot_id = host.bot.get_instance_id()
+		_last_decision_serial = int(decision.serial)
+	var payload := var_to_bytes(entry)
 	frames.append({"t": state.time, "data": Marshalls.raw_to_base64(payload.compress(FileAccess.COMPRESSION_ZSTD)), "size": payload.size()})
 
 func save(host: Node) -> String:

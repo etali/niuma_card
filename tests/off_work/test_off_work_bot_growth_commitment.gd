@@ -2,7 +2,6 @@
 extends "res://tests/harness.gd"
 
 const Commitment = preload("res://engine/off_work_bot_growth_commitment.gd")
-const Growth = preload("res://engine/off_work_bot_growth_plans.gd")
 const Actions = preload("res://engine/off_work_bot_actions.gd")
 
 func _initialize() -> void:
@@ -34,15 +33,30 @@ func _world(coffee := false) -> OffWorkState:
 	return world
 
 func _prefix(world: OffWorkState, intent: String) -> Dictionary:
-	var result := {}
-	Growth.visit(world,0,world.config.rules.bot,-1,[0.0,3.0],func(plan):
-		if plan.commands.size()<2 or not result.is_empty(): return
-		if plan.commands[0].action.get("growth_intent", "")!=intent or plan.commands[1].action.get("growth_intent", "")!="growth_return": return
-		result.merge({"action":plan.commands[0].action.duplicate(true),"evaluation":{"sides":[
-			{"production_chain":{"kind":plan.kind,"owner":0,"complete":true,"commands":plan.commands.duplicate(true)}},{}]}}),
-		func(): return not result.is_empty())
-	check(not result.is_empty(), "真实规则增长计划包含投资后下一条返岗命令")
-	return result
+	# This module only reads old saved contexts. Build its historical wire
+	# format from real legal commands, without invoking an obsolete BOT policy.
+	var generated: Dictionary=Actions.generate(world,0,world.config.rules.bot,-1)
+	var public_intent := "coffee" if intent=="growth_upgrade" else "recruitment"
+	var choices: Array=generated.actions.filter(func(action):return action.get("intent","")==public_intent)
+	if not need(not choices.is_empty(),"普通规则提供旧格式夹具所需的真实投资命令"): return {}
+	if intent=="growth_recruit": choices.sort_custom(func(a,b):return a.get("ids",[]).size()>b.get("ids",[]).size())
+	var action: Dictionary=choices[0].duplicate(true)
+	action["growth_intent"]=intent
+	var target: int=world.cards[world._owner_type(0,"work")[0]].group
+	var trial := world.fork_for_bot(821)
+	if not need(Actions.apply_action(trial,0,action),"兼容夹具先真实支付投资而非伪造未来人员"): return {}
+	var remaining := 0.0
+	for id in trial.tasks:
+		if trial.tasks[id].get("kind","") in ["coffee","recruitment"]: remaining=maxf(remaining,float(trial.cards[id].remaining))
+	var period := float(world.config.rules.bot.think_seconds)
+	var at := maxf(period,ceilf(remaining/period)*period)
+	trial.advance(at)
+	var staff: Array=[int(action.person)] if intent=="growth_upgrade" else \
+		trial._owner_type(0,"employee").filter(func(id):return not world.cards.has(id))
+	var returning := {"kind":"move","ids":staff,"group":target,"intent":"staff_batch","growth_intent":"growth_return"}
+	if not need(not staff.is_empty() and Actions.apply_action(trial,0,returning),"完成真实招聘或升级后返岗命令合法"): return {}
+	return {"action":action,"evaluation":{"sides":[{"production_chain":{"kind":"sustained_growth",
+		"owner":0,"complete":true,"commands":[{"at":0.0,"action":action},{"at":at,"action":returning}]}},{}]}}
 
 func _recruited_ids_are_rebound() -> void:
 	var world := _world()

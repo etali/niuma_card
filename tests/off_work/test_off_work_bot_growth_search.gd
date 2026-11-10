@@ -1,108 +1,150 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 extends "res://tests/harness.gd"
 
-const GrowthSearch = preload("res://engine/off_work_bot_growth_search.gd")
+const Search = preload("res://engine/off_work_bot_search.gd")
 const Evaluation = preload("res://engine/off_work_bot_evaluator.gd")
 const Actions = preload("res://engine/off_work_bot_actions.gd")
 
 func _initialize() -> void:
-	_incumbent_attack_is_not_a_macro_attack()
-	_future_funding_requires_wait()
-	_public_boss_is_unique()
+	_run.call_deferred()
+
+func _run() -> void:
+	_actual_enemy_reply_stays_in_the_world()
+	_public_quote_is_exclusive()
+	_future_funding_is_paid_in_the_world()
 	finish()
 
-func _world(funds := 10, with_boss := true) -> OffWorkState:
+func _world(groups: Array = [{"employee":1,"work":80}], funds := 0) -> OffWorkState:
 	var config := OffWorkConfig.new()
-	config.rules.initial.groups = [{"employee":3,"work":120}]
-	config.rules.initial.money = funds
-	config.rules.conveyor.pool = {"employee":1}
-	config.rules.conveyor.interval_seconds = 1000.0
-	config.rules.recruitment.cost_per_employee = 5
-	config.rules.recruitment.seconds = 10.0
-	config.rules.strike.flight_seconds = 0.0
-	config.rules.strike.duration_seconds = 30.0
-	config.rules.bot.think_seconds = 6.0
-	config.rules.bot.evaluation_max_seconds = 120.0
+	config.rules.initial.groups=groups.duplicate(true)
+	config.rules.initial.money=funds
+	config.rules.conveyor.pool={"employee":1}
+	config.rules.conveyor.interval_seconds=10000.0
+	config.rules.bot.think_seconds=6.0
+	config.rules.bot.evaluation_max_seconds=180.0
+	config.rules.bot.search_max_depth=2
+	config.rules.bot.search_root_width=4
+	config.rules.bot.search_reply_width=4
+	config.rules.strike.flight_seconds=0.0
+	config.rules.strike.duration_seconds=30.0
 	var world := OffWorkState.new(config)
 	world.new_game(814)
 	world.offers.clear()
-	if with_boss: world.add_card("boss",0)
 	return world
 
-func _base(world: OffWorkState, clock: Array = [0.0,3.0]) -> Dictionary:
-	var value: Dictionary = Evaluation.new().evaluate_current(world,0,world.config.rules.bot,-1,clock)
-	value["evaluation_mode"] = "current"
-	return value
-
-func _refine(world: OffWorkState, base: Dictionary) -> Dictionary:
-	var result := {}
-	var status: Dictionary = GrowthSearch.refine(world,0,world.config.rules.bot,-1,base,
-		func(action,value,plan): result.merge({"action":action,"value":value,"plan":plan},true))
-	result["status"] = status
+func _search(world: OffWorkState, filter: Callable = Callable()) -> Dictionary:
+	var before := var_to_bytes([world.cards,world.groups,world.tasks,world.offers,world.time,world._rng.state])
+	# The generic tree must never be enumerated to exhaustion with until=-1.
+	var result := Search.new().search(world,0,world.config.rules.bot,Time.get_ticks_usec()+3000000,
+		Callable(),Callable(),true,filter)
+	check(result.root_coverage_complete and result.short_search_depth==2,
+		"有限搜索完成真实根覆盖及对手回应层")
+	var status: Dictionary=result.get("root_continuation",{})
+	check(status.get("opponent_model","")=="common_first_reply_resource_use_and_paid_physical_tail" \
+		and int(status.get("reply_candidates",0))>0 and status.get("incumbent_rechecked",false),"长期树用共同有限回复集，并先在同一模型复核原方案")
+	var sides: Array=status.get("sides_evaluated",[0,0])
+	check(int(sides[0])>0 and int(sides[1])==0,
+		"长期只扩展己方计划，对手来自实际短回应和已付费物理尾")
+	check(before==var_to_bytes([world.cards,world.groups,world.tasks,world.offers,world.time,world._rng.state]),
+		"完整搜索不消费原局面的资金、报价、工具或随机流")
 	return result
 
-func _incumbent_attack_is_not_a_macro_attack() -> void:
+func _replay(world: OffWorkState, result: Dictionary) -> OffWorkState:
+	var replay := world.fork_for_bot(815)
+	# The search fork suppresses event history. This independent rules replay
+	# must retain actual wages/payments so the economic certificate is nonempty.
+	replay._bot_branch=false
+	var period := float(world.config.rules.bot.think_seconds)
+	var next := [0.0,period*0.5]
+	var clocks_valid := true
+	var commands_valid := true
+	for command in result.principal_variation:
+		var actor := int(command.seat)
+		var at := float(command.seconds)-world.time
+		var slot := (at-actor*period*0.5)/period
+		clocks_valid=clocks_valid and at>=float(next[actor])-1e-8 and is_equal_approx(slot,roundf(slot))
+		replay.advance(world.time+at-replay.time)
+		commands_valid=Actions.apply_action(replay,actor,command) and commands_valid
+		next[actor]=at+period
+	check(clocks_valid,"双方命令使用各自真实行动时隙，不把长前缀强行解释成交替一步")
+	check(commands_valid,"同一真实状态顺序执行双方全部主变化命令")
+	var chain: Dictionary=result.evaluation.sides[0].get("production_chain",{})
+	var offset := float(result.forecast_root_offset_seconds)
+	var elapsed := float(chain.get("elapsed",offset))
+	if not need(elapsed>=replay.time-world.time-1e-8,"估值尾部不早于最后一条真实命令"): return replay
+	replay.advance(maxf(0.0,world.time+elapsed-replay.time))
+	var clock: Array=chain.get("next_actions",[]).duplicate()
+	if clock.is_empty():
+		for actor in 2:
+			var at := float(next[actor])
+			if at<elapsed: at+=ceil((elapsed-at)/period)*period
+			clock.append(maxf(0.0,at-elapsed))
+	var actual := Evaluation.new().evaluate_current(replay,0,world.config.rules.bot,-1,clock)
+	if not need(actual.complete,"真实主变化尾部仍可完整复算统一评价"): return replay
+	if actual.detail.terminal:
+		var reported := {"terminal":result.evaluation.get("terminal",false),"winner":result.evaluation.get("winner",-1)}
+		check(replay.winner==0 and reported==actual.detail,
+			"完整主变化实际获胜时，报告终局与赢家严格等于真实统一评价")
+		var rows: Array=result.get("candidates",[])
+		check(not rows.is_empty() and is_equal_approx(float(rows[0].score),float(actual.score)) \
+			and is_equal_approx(float(rows[0].get("tie_score",0.0)),float(actual.get("tie_score",0.0))),
+			"报告的终局分数和破同分值来自同一真实终局，不沿用此前ETA评分")
+		var completed_at := replay.time-world.time
+		check(replay.work_count(0)==0 and is_equal_approx(completed_at,elapsed) \
+			and is_equal_approx(completed_at,offset+float(result.evaluation.sides[0].eta)),
+			"胜方报告ETA、前缀结束时刻和实际完工时钟完全一致")
+		return replay
+	if not need(not result.evaluation.get("terminal",false),"未终局的真实重放不能被报告为已完成胜负"): return replay
+	for actor in 2:
+		var reported := offset+float(result.evaluation.sides[actor].eta)
+		var replayed := elapsed+float(actual.detail.sides[actor].eta)
+		check(is_equal_approx(reported,replayed),"第%d方根ETA来自同一个可执行世界，不拼接另一棵独立树"%actor)
+	return replay
+
+func _actual_enemy_reply_stays_in_the_world() -> void:
+	var world := _world([{"employee":3,"work":120},{"employee":1,"work":30}])
+	var strike := world.add_card("strike",1)
+	var result := _search(world)
+	check(result.principal_variation.any(func(step):return int(step.seat)==1 and int(step.get("tool",-1))==strike),
+		"长期方案仍保留实际对手罢工，不能在己方增长世界中抹掉攻击")
+	var replay := _replay(world,result)
+	check(not replay.cards.has(strike) or replay.cards[strike].status!="ready",
+		"共同状态真实消耗敌方罢工工具")
+
+func _public_quote_is_exclusive() -> void:
 	var world := _world()
-	var strike := world.add_card("strike",0)
-	var base := _base(world)
-	var trial := world.fork_for_bot(814)
-	var enemy_group: int = trial.cards[trial._owner_type(1,"employee")[0]].group
-	check(trial.activate(strike,enemy_group), "普通incumbent先通过真实规则罢工对手")
-	trial.advance(3.0)
-	var incumbent := _base(trial,[3.0,0.0])
-	var evaluator := Evaluation.new()
-	for forecast in incumbent.detail.sides: evaluator._offset_forecast(forecast,3.0)
-	incumbent.score = 1000.0 * evaluator._race(incumbent.detail.sides,0)
-	incumbent.detail.sides[0].required_actions += 1
-	check(float(incumbent.detail.sides[1].eta)>float(base.detail.sides[1].eta),
-		"夹具中的普通根动作确实改变了对方完工时间")
-	var refined := _refine(world,incumbent)
-	if not need(refined.status.choices==1, "招聘宏计划在同一ETA尺度下优于真实罢工incumbent"): return
-	check(float(refined.value.detail.sides[1].eta)<=float(base.detail.sides[1].eta)+1e-8,
-		"未发罢工的招聘宏计划不能继承普通incumbent给对手的停工")
-	check(not refined.plan.commands.any(func(command): return command.action.kind=="activate" and int(command.action.get("tool",-1))==strike),
-		"获选增长计划自身没有夹带罢工操作")
-	check(float(refined.plan.commands[0].at)==0.0 and refined.action==refined.plan.commands[0].action,
-		"当前可执行的宏方案直接发布真实首命令，不把其收益挂到wait")
-	var actual := world.fork_for_bot(815)
-	check(Actions.apply_action(actual,0,refined.action) and not actual.recruitment.is_empty(),
-		"返回的首命令能在原局面正式支付并启动招聘")
-	check(refined.value.score>incumbent.score, "方案确实超过给定普通incumbent，而非只超过原地不动")
+	var money := world.add_card("money",1)
+	world.cards[money].amount=30
+	var quote: Dictionary=world._make_offer("employee")
+	world.offers=[quote]
+	var result := _search(world,func(action):return action.kind=="wait")
+	check(result.action.kind=="wait" and result.principal_variation.any(func(step):
+		return int(step.seat)==1 and step.kind=="buy" and int(step.offer)==int(quote.id)),
+		"当前没钱的己方等待，对方在真实回应中先支付唯一公开报价")
+	var replay := _replay(world,result)
+	check(replay.buy(int(quote.id),0)<0 and not replay.offers.any(func(offer):return not offer.is_empty() and int(offer.id)==int(quote.id)),
+		"真实共同世界已消费报价，己方后来拿到工资也不能重复购买")
+	var own: Dictionary=result.evaluation.sides[0].get("forecast_purchases",{})
+	var other: Dictionary=result.evaluation.sides[1].get("forecast_purchases",{})
+	check(not own.keys().any(func(id):return other.has(id)),"最终双方尾部不会共享同一公开报价")
 
-func _future_funding_requires_wait() -> void:
-	var world := _world(0)
-	var result := _refine(world,_base(world))
-	if not need(result.status.choices==1, "无启动现金时识别工资到账后的真实招聘增长"): return
-	check(result.action.kind=="wait" and float(result.plan.commands[0].at)>0.0,
-		"未来工资才付得起的首命令，当前只能选择等待")
-	var actual := world.fork_for_bot(816)
-	check(actual.available_money(0)<world.config.integer("recruitment","cost_per_employee"),
-		"当前没有足够资金，不能提前搬入不存在的钱")
-	actual.advance(float(result.plan.commands[0].at))
-	check(Actions.apply_action(actual,0,result.plan.commands[0].action) and not actual.recruitment.is_empty(),
-		"等到证据中的真实行动槽后才可支付并开始招聘")
-
-func _public_boss_is_unique() -> void:
-	var world := _world(20,false)
-	var quote: Dictionary = world._make_offer("boss")
-	world.offers = [quote]
-	var result := _refine(world,_base(world))
-	if not need(result.status.choices==1, "公开唯一老板有足够资金时可成为真实增长首购"): return
-	check(result.action.kind=="buy" and int(result.action.offer)==int(quote.id),
-		"宏计划发布当前可见老板的真实购买")
-	var own: Dictionary = result.value.detail.sides[0].forecast_purchases
-	var enemy: Dictionary = result.value.detail.sides[1].forecast_purchases
-	check(own.has(quote.id) and not enemy.has(quote.id), "双方预测不能共享唯一的老板报价")
-	var actual := world.fork_for_bot(817)
-	check(Actions.apply_action(actual,0,result.action) and actual.buy(int(quote.id),1)<0,
-		"规则重放确认己方先买后，对方已无法再买同一报价")
-	world = _world(0,false)
-	quote = world._make_offer("boss")
-	world.offers = [quote]
-	var cash := world.add_card("money",1)
-	world.cards[cash].amount = 30
-	result = _refine(world,_base(world))
-	check(result.status.sides_evaluated[0]>0 and result.status.sides_evaluated[1]>0,
-		"竞争用例确实为双方执行了完整招聘续接")
-	check(result.status.choices==0,
-		"对方先有钱买走唯一老板时，不能奖励己方稍后购买同一老板的增长")
+func _future_funding_is_paid_in_the_world() -> void:
+	var world := _world()
+	world.add_card("boss",0)
+	var baseline := Evaluation.new().evaluate_current(world,0,world.config.rules.bot,-1,[0.0,3.0])
+	var result := _search(world,func(action):return action.kind=="wait")
+	check(world.available_money(0)==0 and result.action.kind=="wait", "零现金局面无法在当前时隙提前支付未来工资")
+	var replay := _replay(world,result)
+	var events: Array=replay.drain_events()
+	var wages := 0
+	var paid := 0
+	for event in events:
+		if int(event.get("owner",-1))!=0: continue
+		if event.kind=="work_complete": wages+=int(event.amount)
+		if event.kind=="recruitment_complete": paid+=int(event.spent)
+	check(paid<=wages and replay.available_money(0)>=0,
+		"完整前缀所有已完成招聘由真实工资支付，没有从独立预测搬入现金")
+	check(paid>0 and float(result.evaluation.sides[0].eta)+float(result.forecast_root_offset_seconds)<float(baseline.detail.sides[0].eta),
+		"工资到账后的实际付费计划确实缩短完工，资金验证不是空等待的恒真断言")
+	print("GROWTH_SEARCH_FUNDING ",JSON.stringify({"wages":wages,"paid":paid,"cash":replay.available_money(0),
+		"baseline_eta":baseline.detail.sides[0].eta,"chosen_eta":float(result.evaluation.sides[0].eta)+float(result.forecast_root_offset_seconds)}))

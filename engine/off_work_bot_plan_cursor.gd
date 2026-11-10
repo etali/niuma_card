@@ -5,6 +5,7 @@ extends RefCounted
 ## quotes. Recipe and purchase continuations use the same branch lifecycle.
 const Actions = preload("res://engine/off_work_bot_actions.gd")
 const Budget = preload("res://engine/off_work_bot_budget.gd")
+const ExecutionPlan = preload("res://engine/off_work_bot_execution_plan.gd")
 
 var source: OffWorkState
 var owner := 0
@@ -58,9 +59,10 @@ func _apply(cursor: Dictionary, actor: int, action: Dictionary) -> bool:
 	if action.kind == "buy":
 		for offer in cursor.world.offers:
 			if not offer.is_empty() and int(offer.id) == int(action.offer): price = int(offer.price)
+	var binding: Dictionary = ExecutionPlan.describe(cursor.world,actor,action)
 	if not Actions.apply_search_action(cursor.world,actor,action): return false
 	var at: float = cursor.world.time-source.time
-	var command := {"at":at,"action":action.duplicate(true)}
+	var command := {"at":at,"action":action.duplicate(true),"binding":binding}
 	if actor == owner: cursor.commands.append(command)
 	else: cursor.replies.append(command)
 	if action.kind == "buy": cursor.purchases[int(action.offer)] = {"at":at,"owner":actor,"price":price}

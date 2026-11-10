@@ -49,13 +49,15 @@ func _run() -> void:
 	TailBoundary.tail_reached = false
 	TailBoundary.interrupt_tail = false
 	var search := Search.new()
-	search.evaluator = TailBoundary.new()
 	var published := []
 	var result: Dictionary = search.search(world,0,world.config.rules.bot,Time.get_ticks_usec()+700000,
-		func(): return TailBoundary.tail_reached,func(row): published.append(row),true,
+		Callable(),func(row): published.append(row),true,
 		func(action): return action.kind=="wait")
-	check(result.cutoff and result.root_complete and result.search_nodes==1, "真实搜索先完成普通层，再于第一根候选的后续枚举立即停止")
-	check(result.evaluation.sides[0].has("production_chain"), "截止后搜索结果保留已完整计算的链收益")
+	var continuation: Dictionary=result.get("root_continuation",{})
+	check(result.root_complete and result.completed_candidates==1 \
+		and int(continuation.get("evaluated",0))>0 and not continuation.get("complete",true),
+		"真实搜索完成唯一合法普通根，统一续搜受原截止约束且保留完整叶")
+	check(result.evaluation.sides[0].has("production_chain"), "截止后搜索结果保留已完整计算的真实续接链")
 	check(published.size()>=2 and published.back().evaluation.sides[0].has("production_chain"),
 		"发布器先发布普通结果，再保留完成链，截止不会吞掉最后有效发布")
 	finish()

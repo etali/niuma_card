@@ -19,6 +19,7 @@ func _run() -> void:
 	game = load("res://scenes/off_work_main.tscn").instantiate()
 	root.add_child(game)
 	await _frames(3)
+	check(game.sfx._action_overrides==game.settings.audio.arrival_actions, "real-time scene installs its own arrival sound limits on the shared effect player")
 	game.set_process(false)
 	game.hud.drawer_window.pin()
 	await _frames(3)

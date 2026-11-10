@@ -1325,6 +1325,17 @@
       0.0
     ],
     "market_move_seconds": 0.34,
+    "action_motion": {
+      "_说明": "对手调组、买牌使用与手动拖牌一致的拿起和落下反馈；批量只展示少量真实代表牌，不改变规则或行动时钟。",
+      "pickup_seconds": 0.12,
+      "travel_seconds": 0.5,
+      "drop_seconds": 0.16,
+      "settle_seconds": 0.12,
+      "lift_height": 0.65,
+      "max_visible": 12,
+      "batch_layers": 3,
+      "layer_gap": 0.045
+    },
     "non_cash_purchase_message": "把金钱拖到商品上购买",
     "insufficient_stack_money_message": "这摞可用金钱不够买这张牌",
     "dismiss_zone": {
@@ -1691,26 +1702,47 @@
       "max_per_frame": 3,
       "pitch_min": 0.96,
       "pitch_max": 1.04,
+      "typing_pitch_min": 0.6,
+      "typing_pitch_max": 2.7,
+      "typing_voice_limit": 8,
+      "arrival_actions": {
+        "produce_land": {
+          "db": -14,
+          "min_interval_seconds": 0.08,
+          "max_voices": 2
+        },
+        "produce_coin": {
+          "db": -18,
+          "min_interval_seconds": 0.10,
+          "max_voices": 2
+        }
+      },
       "actions": {
         "pickup": {
           "file": "pickup.wav",
           "db": -15,
-          "pitch": 1.0
+          "pitch": 1.0,
+          "bypass_frame_limit": true
         },
         "drop": {
           "file": "stack.wav",
           "db": -15,
-          "pitch": 1.0
+          "pitch": 1.0,
+          "bypass_frame_limit": true
         },
         "work_complete": {
           "file": "stamp.wav",
           "db": -17,
-          "pitch": 1.05
+          "pitch": 1.05,
+          "min_interval_seconds": 0.12,
+          "max_voices": 1
         },
         "transfer": {
           "file": "drop.wav",
           "db": -10,
-          "pitch": 0.8
+          "pitch": 0.8,
+          "min_interval_seconds": 0.08,
+          "max_voices": 2
         },
         "meeting_start": {
           "file": "attack.wav",
@@ -1735,7 +1767,9 @@
         "outsource": {
           "file": "drop.wav",
           "db": -12,
-          "pitch": 0.9
+          "pitch": 0.9,
+          "min_interval_seconds": 0.10,
+          "max_voices": 2
         },
         "fire": {
           "file": "drop.wav",
@@ -1745,27 +1779,32 @@
         "win": {
           "file": "bell.wav",
           "db": -13,
-          "pitch": 1.0
+          "pitch": 1.0,
+          "bypass_frame_limit": true
         },
         "lose": {
           "file": "lose.wav",
           "db": -18,
-          "pitch": 1.0
+          "pitch": 1.0,
+          "bypass_frame_limit": true
         },
         "off_work_result_stamp": {
           "file": "stamp.wav",
           "db": -14,
-          "pitch": 0.85
+          "pitch": 0.85,
+          "bypass_frame_limit": true
         },
         "off_work_result_tail": {
           "file": "trombone.wav",
           "db": -18,
-          "pitch": 0.9
+          "pitch": 0.9,
+          "bypass_frame_limit": true
         },
         "deny": {
           "file": "deny.wav",
           "db": -18,
-          "pitch": 1.0
+          "pitch": 1.0,
+          "bypass_frame_limit": true
         },
         "typing": {
           "file": "pickup.wav",
@@ -1775,7 +1814,9 @@
         "coffee_upgrade": {
           "file": "complete.wav",
           "db": -15,
-          "pitch": 1.2
+          "pitch": 1.2,
+          "min_interval_seconds": 0.12,
+          "max_voices": 2
         }
       }
     }

@@ -26,23 +26,41 @@ func _test_visible_reply() -> void:
 	world.new_game(119)
 	world.offers.clear()
 	var safe := Search.new().search(world, 0, config.rules.bot, Time.get_ticks_usec()+10000000)
-	check(safe.root_complete and safe.search_depth == 2, "安全局面完整比较所有首步与真实对方回应")
+	check(safe.root_coverage_complete and safe.short_search_depth == 2, "安全局面完整比较所有首步与真实对方回应")
 	var strike := world.add_card("strike",1)
 	var before := _snapshot(world)
-	var threatened := Search.new().search(world, 0, config.rules.bot, Time.get_ticks_usec()+10000000)
-	check(threatened.root_complete and threatened.search_depth == 2, "持有罢工后的对方回应也完成同层比较")
+	var short_layer := {}
+	var observe := func(layer: Dictionary):
+		# A long prefix may contain more own moves after this real enemy reply.
+		# Compare defense and waiting in the same completed minimax layer.
+		if layer.root_complete and int(layer.short_search_depth)==2 \
+				and is_equal_approx(float(layer.forecast_root_offset_seconds),2.8):
+			short_layer.merge(layer.duplicate(true),true)
+	var threatened := Search.new().search(world, 0, config.rules.bot, Time.get_ticks_usec()+10000000,Callable(),observe)
+	check(threatened.root_coverage_complete and threatened.short_search_depth == 2, "持有罢工后的对方回应也完成同层比较")
 	check(threatened.action != safe.action, "公开罢工改变真实根动作，非旧启发式分数覆盖")
 	var line: Array = threatened.principal_variation
-	check(line.size() == 2 and line[1].kind == "activate" and line[1].get("tool") == strike,
+	check(line.size() >= 2 and int(line[1].seat)==1 and line[1].kind == "activate" and line[1].get("tool") == strike,
 		"最佳防御仍以对方实际罢工回应为依据")
-	var waiting: Array = threatened.candidates.filter(func(row): return row.kind == "wait")
-	check(not waiting.is_empty() and threatened.candidates[0].score > waiting[0].score,
+	var short_candidates: Array = short_layer.get("candidates",[])
+	var waiting: Array = short_candidates.filter(func(row): return row.kind == "wait")
+	check(not waiting.is_empty() and short_candidates[0].score > waiting[0].score,
 		"选择的防御在同一完工时间尺度上优于原地等待")
 	var branch := world.fork_for_bot(71)
-	for i in line.size():
-		check(line[i].seat == i and is_equal_approx(line[i].seconds, branch.time), "双方回应按实际推演时刻交替")
-		check(Actions.apply_action(branch,i,line[i]), "回应主变化每一步均能由真实规则执行")
-		branch.advance(config.rules.bot.think_seconds * 0.5)
+	var period := float(config.rules.bot.think_seconds)
+	var next_action := [world.time,world.time+period*0.5]
+	for step in line:
+		var actor := int(step.seat)
+		var at := float(step.seconds)
+		var valid_actor := actor==0 or actor==1
+		var on_clock := false
+		if valid_actor:
+			var slot := (at-world.time-actor*period*0.5)/period
+			on_clock=at>=float(next_action[actor])-0.000001 and is_equal_approx(slot,roundf(slot))
+		check(valid_actor and on_clock and at>=branch.time-0.000001, "主变化按各方真实行动时钟排序，允许中间没有命令的等待")
+		branch.advance(maxf(0.0,at-branch.time))
+		check(valid_actor and Actions.apply_action(branch,actor,step), "回应主变化每一步均能由真实规则执行")
+		if valid_actor: next_action[actor]=at+period
 	check(_snapshot(world) == before and world.cards[strike].status == "ready", "搜索不消费真人局面中的工具或未来随机流")
 
 func _mixed_partial_batches() -> void:

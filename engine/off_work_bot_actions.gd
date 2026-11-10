@@ -39,12 +39,29 @@ static func apply_action(world: OffWorkState, owner: int, action: Dictionary) ->
 static func apply_search_action(world: OffWorkState, owner: int, action: Dictionary) -> bool:
 	if not world._bot_branch: return false
 	var previous: bool = world._search_queries
-	world._invalidate_group_index()
 	world._search_queries = true
+	# The same authoritative mutations used by live play invalidate membership
+	# and scheduling themselves. Invalidating again here discarded a completed
+	# move's reschedule, forcing advance() to repeat it; even wait became dirty.
 	var applied := apply_action(world, owner, action)
 	world._search_queries = previous
-	world._invalidate_group_index()
+	world._group_index.clear() # End only the command-local query scope.
 	return applied
+
+## The ordinary generator and the bounded UI incumbent assemble the same
+## production command. These helpers only combine already observed materials;
+## they neither choose a destination nor attach a value to a card type.
+class Production extends RefCounted:
+	static func accepts_work(function: String, exclusive: bool) -> bool:
+		return function == "work" or (function.is_empty() and not exclusive)
+
+	static func overtime_is_loose(function: String, has_work: bool, has_workers: bool) -> bool:
+		return function != "work" or not has_work or not has_workers
+
+	static func assemble(workers: Array, work: Array, overtime: Array, has_union: bool) -> Array:
+		var ids: Array = workers + work
+		if not has_union: ids.append_array(overtime)
+		return ids
 
 class Builder extends RefCounted:
 	var world: OffWorkState
@@ -173,7 +190,7 @@ class Builder extends RefCounted:
 				if int(flight.target_group) == int(gid): attacks.append([flight.owner,flight.remaining])
 			row.signature = [row.function, row.job, row.progress, world.groups[gid].get("transfer_progress",0),
 				world.groups[gid].get("slack_progress",0), shape, ordered_people, attacks]
-			if row.owner == owner and not row.work.is_empty() and (row.function == "work" or (row.function.is_empty() and not row.exclusive)):
+			if row.owner == owner and not row.work.is_empty() and Production.accepts_work(row.function, row.exclusive):
 				work_targets.append(gid)
 		person_representatives = _representatives(movable)
 		# Free tail work comes first, retaining the currently assigned batch for
@@ -277,7 +294,7 @@ class Builder extends RefCounted:
 		for id in stock.get("overtime",[]):
 			if not _open(): return
 			var origin: Dictionary = rows[world.cards[id].group]
-			if origin.function != "work" or origin.work.is_empty() or origin.workers.is_empty(): loose_overtime.append(id)
+			if Production.overtime_is_loose(origin.function, not origin.work.is_empty(), not origin.workers.is_empty()): loose_overtime.append(id)
 		var loose_work := []
 		for id in work:
 			if not _open(): return
@@ -292,8 +309,7 @@ class Builder extends RefCounted:
 		sources = _equivalent_groups(sources)
 		for gid in destinations:
 			if not _open(): return
-			var assembly: Array = idle_workers + loose_work
-			if not rows[gid].types.has("union"): assembly += loose_overtime
+			var assembly := Production.assemble(idle_workers, loose_work, loose_overtime, rows[gid].types.has("union"))
 			_move(assembly,gid,"assemble_work","一次合并闲置人员、散工作和未投入生产的加班")
 			for id in representatives:
 				_move([id],gid,"staff","将人员派到工作组合")
@@ -325,7 +341,7 @@ class Builder extends RefCounted:
 				if int(amount) <= 0: continue
 				_move(batch + work.slice(0,int(amount)),-1,"split_work","人员与工作另组生产组合")
 				if not loose_overtime.is_empty():
-					_move(batch + work.slice(0,int(amount)) + loose_overtime,-1,"assemble_work","人员、工作和空闲加班一次另组生产组合")
+					_move(Production.assemble(batch, work.slice(0,int(amount)), loose_overtime, false),-1,"assemble_work","人员、工作和空闲加班一次另组生产组合")
 
 	func _tool_representatives(kind: String, statuses: Array = ["ready"]) -> Array:
 		var result := []

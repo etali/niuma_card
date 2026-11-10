@@ -3,25 +3,23 @@ extends "res://tests/harness.gd"
 
 const Bot = preload("res://engine/off_work_bot.gd")
 const Evaluation = preload("res://engine/off_work_bot_evaluator.gd")
+const Continuations = preload("res://engine/off_work_bot_continuation_plans.gd")
+const Actions = preload("res://engine/off_work_bot_actions.gd")
 
 class ObservedSearch extends "res://engine/off_work_bot_search.gd":
-	var purchased := {}
-	var reply := {}
+	var observed_seed := {}
+	var observed_world: OffWorkState
 
-	# This regression inspects the ordinary adversarial tree's paid UID after
-	# an opponent reply. Root macro selection has independent live coverage.
 	func _growth_pass(_root: Dictionary) -> bool:
 		growth_reserve_us=0
 		return false
 
-	func _extend_option(node: Dictionary, option: Dictionary, root: bool, task_until: int = -1) -> bool:
-		var ok := super._extend_option(node,option,root,task_until)
-		if not ok: return false
-		var snapshot := {"commitments":option.child.production_commitments.duplicate(),
-			"forecast":option.child.value.detail.sides[0].duplicate(true),"time":option.child.world.time}
-		if root and option.action.kind=="buy": purchased=snapshot
-		elif not root and option.action.kind=="wait": reply=snapshot
-		return true
+	func _continuation_seed(root: Dictionary, action: Dictionary, line: Array, value: Dictionary) -> Dictionary:
+		var seed: Dictionary=super._continuation_seed(root,action,line,value)
+		if observed_seed.is_empty() and action.kind=="buy" and not seed.replies.is_empty():
+			observed_seed=seed.duplicate(true)
+			observed_world=root.world.fork_search_node()
+		return seed
 
 func _initialize() -> void:
 	_run.call_deferred()
@@ -147,18 +145,39 @@ func _search_preserves_purchased_tool() -> void:
 	world.offers = [{},{},{},{},{},world._make_offer("slack")]
 	var search := ObservedSearch.new()
 	var observer: WeakRef = weakref(search)
-	# Restrict the root to the real purchase under examination, then stop only
-	# after the actual opponent-wait child was expanded and fully evaluated.
-	# This exercises Search's UID propagation, not a manually supplied context.
-	var result: Dictionary = search.search(world,0,world.config.rules.bot,Time.get_ticks_usec()+5000000,
-		func(): return not observer.get_ref().reply.is_empty(),Callable(),true,
-		func(action): return action.kind=="buy" and action.get("card_type","")=="slack")
-	if not need(not search.purchased.is_empty() and not search.reply.is_empty(), "真实搜索跨根购买及对手wait，完整评估第二层叶子"): return
-	check(result.search_nodes>=2 and search.purchased.commitments.size()==1
-		and search.reply.commitments==search.purchased.commitments, "Search自动传递同一真实付费摸鱼UID，无测试代填")
-	if not need(search.purchased.forecast.has("production_chain") and search.reply.forecast.has("production_chain"),
-		"真实第二层保留购买后的生产收益，不能退回普通ETA"): return
-	var first: Dictionary = search.purchased.forecast.production_chain.commands[0]
-	var second: Dictionary = search.reply.forecast.production_chain.commands[0]
-	check(is_equal_approx(float(first.at)+float(search.purchased.time),float(second.at)+float(search.reply.time)),
-		"真实搜索两层的组堆均使用同一个未来行动槽")
+	search.search(world,0,world.config.rules.bot,Time.get_ticks_usec()+5000000,
+		func():return not observer.get_ref().observed_seed.is_empty(),Callable(),true,
+		func(action):return action.kind=="buy" and action.get("card_type","")=="slack")
+	if not need(not search.observed_seed.is_empty(),"真实短搜索产生包含对手回应的购买joint seed"): return
+	var seed: Dictionary=search.observed_seed
+	var source: OffWorkState=search.observed_world
+	var replay := source.fork_search_node()
+	var timeline: Array=[]
+	for command in seed.commands: timeline.append(command.merged({"actor":0}))
+	for command in seed.replies: timeline.append(command.merged({"actor":1}))
+	timeline.sort_custom(func(a,b):return float(a.at)<float(b.at))
+	var bought := -1
+	var legal := true
+	for command in timeline:
+		replay.advance_for_search(float(command.at)+source.time-replay.time,-1)
+		var before: Array=replay._owner_type(0,"slack").duplicate()
+		legal=Actions.apply_search_action(replay,int(command.actor),command.action) and legal
+		if int(command.actor)==0 and command.action.kind=="buy":
+			var added: Array=replay._owner_type(0,"slack").filter(func(id):return not before.has(id))
+			if added.size()==1: bought=int(added[0])
+	check(legal and bought>=0 and replay.cards.has(bought) and replay.money(0)==0,
+		"购买支付真实资金，对手回应之后仍持有同一真实摸鱼UID，未靠测试代填承诺")
+	var evidence := {"assembled":false,"first":INF,"replies":false}
+	Continuations.visit(source,0,source.config.rules.bot,-1,[0.0,3.0],func(plan):
+		evidence.replies=evidence.replies or not plan.replies.is_empty()
+		if not plan.world.cards.has(bought): return
+		var group: int=plan.world.cards[bought].group
+		if plan.world.groups[group].get("function","")!="slack" or plan.world.group_people(group).is_empty(): return
+		evidence.assembled=true
+		for command in plan.commands.slice(1):
+			if command.action.get("ids",[]).has(bought): evidence.first=minf(float(evidence.first),float(command.at)),
+		Callable(),{"root_candidates":[seed],"root_action_filter":func(_action):return false,
+			"expansion_limit":24,"depth_limit":4})
+	check(evidence.assembled and evidence.replies,"统一续搜保留真实对手回应，并从付费UID继续组建摸鱼生产")
+	check(is_equal_approx(float(evidence.first),float(seed.next_action)),
+		"后续组堆占用原定下个己方行动槽，不能买入或对手回应时免费启动")

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 extends "res://tests/harness.gd"
 const Evaluation = preload("res://engine/off_work_bot_evaluator.gd")
-const Economy = preload("res://engine/off_work_bot_economy.gd")
 const Actions = preload("res://engine/off_work_bot_actions.gd")
 class InterruptedFunding extends Evaluation:
 	func _forecast(model: Dictionary, horizon: float = -1.0) -> Dictionary:
@@ -59,16 +58,19 @@ func _run() -> void:
 	var market := _world(false)
 	var hidden_before := var_to_bytes([market.offers,market._rng.state])
 	var stochastic := _value(market)
-	var future: Dictionary = stochastic.detail.sides[0].cashout
-	check(future.future_supply and future.supply_wait>0.0 and future.tool_price==market.config.cards.outsource.price,"未知工具收取公开分布等待和完整购买价格，不能当作现成免费工具")
-	check(stochastic.detail.sides[0].forecast_purchases.is_empty(),"统计市场估计不能伪造具体报价或抢购归属")
-	check(var_to_bytes([market.offers,market._rng.state])==hidden_before,"供应估计不读写实际未来报价或消耗随机数")
-	var normal := Economy.expected_supply_wait(market.config,"outsource")
-	market.config.rules.conveyor.pool.outsource*=2
-	check(Economy.expected_supply_wait(market.config,"outsource")<normal,"公开供应概率增加才会缩短预计到货等待")
+	check(stochastic.complete and not stochastic.detail.sides[0].has("cashout"),"未知未来工具不能取得已有外包的付款与完工收益")
+	check(stochastic.detail.sides[0].forecast_purchases.is_empty(),"公开经济评价不伪造具体报价或抢购归属")
+	check(var_to_bytes([market.offers,market._rng.state])==hidden_before,"未知供应评价不读写实际未来报价或消耗随机数")
+	market.config.rules.conveyor.pool={"outsource":1}
+	var guaranteed := _value(market)
+	check(guaranteed.complete and not guaranteed.detail.sides[0].has("cashout") \
+		and is_equal_approx(float(guaranteed.detail.sides[0].eta),float(stochastic.detail.sides[0].eta)),
+		"即使以后只会到外包，也不能提前当作已观察、已支付的工具")
 	market.config.rules.conveyor.pool={"employee":1}
-	check(not is_finite(Economy.expected_supply_wait(market.config,"outsource")),"全部到货固定为员工时不能虚构外包供应")
-	check(not _value(market).detail.sides[0].has("cashout"),"无外包工具也无供应时回到真实自然生产，不奖励无用途现金")
+	var no_supplier := _value(market)
+	check(not no_supplier.detail.sides[0].has("cashout") \
+		and is_equal_approx(float(no_supplier.detail.sides[0].eta),float(stochastic.detail.sides[0].eta)),
+		"所有未观察供应使用同一边界，无工具时按真实自然生产评价")
 	var limited := _world()
 	limited.config.cards.outsource.max_per_owner=1
 	limited.config.rules.conveyor.pool={"outsource":1}

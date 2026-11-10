@@ -164,6 +164,7 @@ func _ready() -> void:
 	audio.setup(settings.audio)
 	sfx = Sfx.new()
 	add_child(sfx)
+	sfx.configure_action_overrides(settings.audio.get("arrival_actions", {}))
 	audio.muted = sfx.user_muted
 	sfx.user_muted_changed.connect(func(value: bool):
 		audio.muted = value
@@ -372,6 +373,7 @@ func _process(delta: float) -> void:
 	if has_meta("shift_setup"): return
 	if _shift_hidden or state == null or board == null or settings.is_empty(): return
 	if not practice.is_empty() and hud.practice_reference_open(): return
+	board._action_motion.playback_speed = replay.speed if replay.playing else 1.0
 	if replay.playing:
 		_live_bot.cancel()
 		replay.advance(self, delta)
@@ -646,6 +648,11 @@ func save_work_replay() -> void:
 	hud.show_record_result(ProjectSettings.globalize_path(path) if not path.is_empty() else SavePaths.recordings_dir(), count, path.is_empty())
 
 func open_replay_picker() -> void:
+	# Finish the menu's close/focus callback before mounting the shared panel.
+	_show_replay_picker.call_deferred()
+
+func _show_replay_picker() -> void:
+	if not is_inside_tree() or is_queued_for_deletion(): return
 	if not practice.is_empty() or shift_network_live() or replay.playing:
 		_notify("请先结束练习、录像或联机对局", true)
 		return

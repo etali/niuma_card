@@ -3,14 +3,13 @@ extends RefCounted
 
 ## One completion-time scale for both candidate ordering and search leaves.
 ## Existing batches and explicit public plans keep their real clocks. Economic
-## closure prices earned wages against a fully funded final outsource batch;
-## an unseen supplier adds a distribution-based wait, never a fabricated quote.
+## closure prices earned wages against a fully funded final outsource batch
+## using an owned or current public tool; unseen suppliers receive no credit.
 ## No money, person, ingredient or tool receives an independent asset bonus.
 const WIN := 1000000.0
 const AttackPlans = preload("res://engine/off_work_bot_attack_plans.gd")
 const Economy = preload("res://engine/off_work_bot_economy.gd")
 const ProductionPlans = preload("res://engine/off_work_bot_production_plans.gd")
-const GrowthPlans = preload("res://engine/off_work_bot_growth_plans.gd")
 var _deadline := -1
 var _complete := true
 var _config: RefCounted
@@ -109,7 +108,10 @@ func _prepare_evaluation(world: OffWorkState, owner: int, policy: Dictionary, un
 	for model in models:
 		for group in model.groups.values():
 			if group.mode=="transfer" and not group.workers.is_empty(): _cashout_enabled=false
-	_supply_wait=Economy.expected_supply_wait(_config,"outsource")
+	# Future quotes are masked for every card kind. Expected arrival is not
+	# an owned or executable asset: only existing/paid/publicly buyable tools
+	# may close this forecast. Keep the legacy supply helper unreachable.
+	_supply_wait=INF
 	return {"models":models}
 
 func _evaluation_result(forecasts: Array, owner: int) -> Dictionary:
@@ -123,16 +125,12 @@ func _evaluation_result(forecasts: Array, owner: int) -> Dictionary:
 		"tie_score":int(forecasts[1-owner].required_actions) - int(forecasts[owner].required_actions), "complete":true,
 		"detail":{"terminal":false, "sides":forecasts, "scale":"relative completion time", "projection_seconds":_horizon}}
 
-## An optional complete-rule extension of an already valid ordinary estimate.
-## Search publishes each complete ordinary candidate before extending it;
-## this pass must never invalidate that incumbent or publish an unfinished recipe.
-func has_production_continuation(world: OffWorkState, commitments: Dictionary = {}, sustained := true) -> bool:
+## Detect paid or active recipe commitments for the optional rule-driven helper.
+## Long-term hiring and reinvestment are explored by the shared search, never by
+## an evaluator-owned policy. The third argument only preserves old callers.
+func has_production_continuation(world: OffWorkState, commitments: Dictionary = {}, _legacy_sustained := true) -> bool:
 	for side in 2:
-		if not (sustained and GrowthPlans.available(world,side)) and not ProductionPlans.available(world,side): continue
-		# Between recruitment batches the boss is idle, but already earned
-		# wages can fund the next real command. Do not forget the production
-		# asset just because its previous batch has finished.
-		if sustained and not world._owner_type(side,"boss").is_empty(): return true
+		if not ProductionPlans.available(world,side): continue
 		for id in world._owner_type(side,"slack"):
 			var gid := int(world.cards[id].group)
 			if commitments.has(id) or (str(world.groups[gid].get("function",""))=="slack" and not world.group_people(gid).is_empty()): return true
@@ -150,9 +148,9 @@ func extend_production(world: OffWorkState, owner: int, policy: Dictionary, unti
 	# equivalents. It never recursively invents another production chain.
 	var tail_evaluator: RefCounted = get_script().new()
 	var extension := {"complete":true,"plans":0,"examined":0}
-	# Single-recipe and sustained reinvestment are alternative executable
-	# plans on one ETA scale. Share the remaining budget across both sides and
-	# plan families; a long rollout cannot swallow the next complete estimate.
+	# Keep the existing single-recipe rule helper on both sides of the same ETA
+	# comparison. General long-term continuations belong to the search layer;
+	# recursively running another policy here would give it a private action set.
 	var jobs := []
 	for side in order:
 		var options := {}
@@ -164,10 +162,7 @@ func extend_production(world: OffWorkState, owner: int, policy: Dictionary, unti
 				return str(world.groups[gid].get("function",""))!="slack" or world.group_people(gid).is_empty())
 			options = {"allow_purchase":false,"allow_assembly":idle_tool}
 		if ProductionPlans.available(world,int(side)):
-			jobs.append({"planner":ProductionPlans,"side":side,"options":options})
-		if root_action.get("sustained_growth",true) and GrowthPlans.available(world,int(side)):
-			options=options.merged({"consume_immediately":true})
-			jobs.append({"planner":GrowthPlans,"side":side,"options":options})
+			jobs.append({"side":side,"options":options})
 	for job_index in jobs.size():
 		if (until>=0 and Time.get_ticks_usec()>=until) or (cancelled.is_valid() and cancelled.call()):
 			extension.complete=false
@@ -177,7 +172,7 @@ func extend_production(world: OffWorkState, owner: int, policy: Dictionary, unti
 		var now := Time.get_ticks_usec()
 		var task_until: int = -1 if until<0 else now+maxi(0,(until-now)/(jobs.size()-job_index))
 		var task_status := {"complete":true}
-		var status: Dictionary = job.planner.visit(world,side,policy,task_until,clock,func(plan):
+		var status: Dictionary = ProductionPlans.visit(world,side,policy,task_until,clock,func(plan):
 			var tail_until: int = int(plan.get("evaluation_deadline",task_until))
 			if task_until>=0: tail_until=task_until if tail_until<0 else mini(task_until,tail_until)
 			var held: Dictionary = forecasts[1-int(side)].get("forecast_purchases",{})
@@ -228,7 +223,6 @@ func extend_production(world: OffWorkState, owner: int, policy: Dictionary, unti
 				"commands":plan.commands.duplicate(true),"purchases":plan.purchases.duplicate(true),
 				"opponent_assumption":"prefix advances existing natural events only; opponent ETA is bounded by its faster pre-prefix continuation",
 				"opponent_eta":opponent.eta}
-			if plan.has("growth"): candidate.production_chain["growth"] = plan.growth.duplicate(true)
 			var pair: Array = forecasts.duplicate()
 			pair[int(side)] = candidate
 			pair[1-int(side)] = opponent
@@ -654,15 +648,81 @@ func _forecast_uncached(model: Dictionary, horizon: float = -1.0) -> Dictionary:
 	var context := _context(model)
 	var events: Array = context.scheduled.events.duplicate()
 	events.append({"at":horizon,"kind":"end"})
-	for event in events:
+	var next_event := 0
+	for index in events.size():
+		var event: Dictionary=events[index]
 		if not _open(): break
 		_advance_context(context,minf(horizon,maxf(float(context.time),float(event.at))))
 		if float(event.at) > horizon: break
 		_apply_forecast_event(context,event)
+		next_event=index+1
 		if _remaining(context) <= 0: return _forecast_result(context,float(context.finish),0)
 		if float(context.time) >= horizon: break
 	var left := _remaining(context)
-	return _forecast_result(context,horizon+left*_base_cycle,left)
+	# Cash-flow callers sample remaining work, wages and payments AT horizon.
+	# Keep that context intact. Only completion time continues past it; using
+	# one base cycle per leftover card here made an unchanged position appear
+	# better whenever a deeper wait shifted this sampling window forward.
+	var result := _forecast_result(context,horizon+left*_base_cycle,left)
+	var tail := _finish_sampled_tail(context,events,next_event)
+	result["eta_exact"]=bool(tail.get("exact",false))
+	result["eta_method"]=str(tail.get("method","unresolved_tail"))
+	if bool(tail.get("exact",false)):
+		result.eta=float(tail.eta)
+		# The ETA also depends on commands beyond the sampling horizon. Keep
+		# their executable evidence, while cash, wages and remaining work keep
+		# describing the requested sample time rather than final completion.
+		for field in ["required_actions","_required_commands","forecast_commands"]:
+			result[field]=tail.obligations[field]
+	return result
+
+## Complete only already scheduled effects and stable physical production.
+## No new purchases, recruitment policy or inventory value is introduced.
+## The caller's sampled context must remain at its requested time.
+func _finish_sampled_tail(sample: Dictionary, events: Array, first_event: int) -> Dictionary:
+	var tail: Dictionary=sample
+	var copied := false
+	for index in range(first_event,events.size()):
+		if not _open(): return {"exact":false,"method":"interrupted"}
+		var event: Dictionary=events[index]
+		if event.kind=="end": continue
+		if not is_finite(float(event.at)): return {"exact":false,"method":"nonfinite_scheduled_event"}
+		if not copied:
+			tail=sample.duplicate(true)
+			copied=true
+		_advance_context(tail,maxf(float(tail.time),float(event.at)))
+		# A later irrelevant command cannot postpone a game already finished.
+		if _remaining(tail)<=0: return {"exact":true,"eta":float(tail.finish),"method":"scheduled_discrete_tail",
+			"obligations":_forecast_result(tail,float(tail.finish),0)}
+		_apply_forecast_event(tail,event)
+		if _remaining(tail)<=0: return {"exact":true,"eta":float(tail.finish),"method":"scheduled_discrete_tail",
+			"obligations":_forecast_result(tail,float(tail.finish),0)}
+	if int(tail.pending)>0: return {"exact":false,"method":"unsettled_pending_work"}
+	var eta := maxf(float(tail.time),float(tail.finish))
+	for original in tail.groups.values():
+		if not _open(): return {"exact":false,"method":"interrupted"}
+		if int(original.work)<=0: continue
+		var group: Dictionary=original.duplicate(true)
+		var elapsed := 0.0
+		# work/rate is a conservative span for all full batches. A final
+		# heterogeneous subset can be slower, so let the same _advance_group
+		# routine finish that remaining batch in a second pass. This reuses the
+		# existing discrete batch calculation instead of another work formula.
+		for phase in 2:
+			var stats := _stats(group)
+			if float(stats.rate)<=0.0 or int(stats.batch)<=0:
+				return {"exact":false,"method":"unproductive_remaining_work"}
+			var span := float(int(group.work)+1)/float(stats.rate)
+			if not is_finite(span): return {"exact":false,"method":"nonfinite_production_time"}
+			var completed := _advance_group(group,span)
+			if not _open(): return {"exact":false,"method":"interrupted"}
+			if int(group.work)<=0:
+				eta=maxf(eta,float(tail.time)+elapsed+float(completed.finish))
+				break
+			elapsed+=span
+		if int(group.work)>0: return {"exact":false,"method":"unresolved_discrete_tail"}
+	return {"exact":true,"eta":eta,"method":"scheduled_discrete_tail",
+		"obligations":_forecast_result(tail,eta,_remaining(tail))}
 
 func _apply_forecast_event(context: Dictionary, event: Dictionary) -> void:
 	var groups: Dictionary = context.groups
@@ -846,6 +906,8 @@ func _coupled_forecast(models: Array) -> Array:
 		var eta := float(completed[side]) if completed[side]>=0.0 else _horizon+remaining*_base_cycle
 		var result := _forecast_result(contexts[side],eta,0 if completed[side]>=0.0 else remaining)
 		result["coupled_transfer"] = true
+		result["eta_exact"]=completed[side]>=0.0
+		result["eta_method"]="completed_coupled_transfer" if completed[side]>=0.0 else "coupled_transfer_horizon_fallback"
 		results.append(result)
 	return results
 

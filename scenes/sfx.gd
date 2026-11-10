@@ -27,6 +27,10 @@ signal user_muted_changed(value: bool)
 var _streams := {}
 var _players: Array[AudioStreamPlayer] = []
 var _next := 0
+## Scene-local presentation policy. The turn-based scene retains its original
+## per-card arrival contract; real-time production can coalesce dense arrivals.
+var _action_overrides: Dictionary = {}
+var _last_started_usec: Dictionary = {}
 ## 普通动作的静音状态；完成提醒可穿过抽屉挂起，但仍遵循玩家声音开关。
 var muted := false
 ## 玩家在界面里选择的声音开关；抽屉自动收起不会改这个值。
@@ -72,19 +76,46 @@ func play(action_name: String, pitch_scale := 1.0) -> void:
 	var spec := action(action_name)
 	if spec.is_empty():
 		return
+	if _action_overrides.has(action_name): spec = spec.merged(_action_overrides[action_name], true)
 	if drawer_suspended and not bool(spec.get("notification", false)):
 		return
 	var key := str(spec.get("sound", ""))
 	if not _streams.has(key) or _streams[key] == null:
 		return
+	var now := _now_usec()
+	var interval := float(spec.get("min_interval_seconds", 0.0))
+	if interval > 0.0 and _last_started_usec.has(action_name) \
+		and now-int(_last_started_usec[action_name]) < int(interval*1000000.0): return
+	var voice_limit := int(spec.get("max_voices", 0))
+	if voice_limit > 0:
+		var active := 0
+		for player in _players:
+			if player.playing and player.get_meta("sfx_action", "") == action_name: active += 1
+		if active >= voice_limit: return
+		# Automatic arrivals never truncate a running hit or steal a UI voice.
+		var free := -1
+		for offset in _players.size():
+			var index := (_next+offset)%_players.size()
+			if not _players[index].playing: free=index;break
+		if free < 0: return
+		_next = free
 	var p := _players[_next]
-	_next = (_next + 1) % POOL_SIZE
+	_next = (_next + 1) % _players.size()
 	p.stream = _streams[key]
 	p.volume_db = float(spec.get("db", 0.0))
 	# 微随机音高，重复不机械
 	p.pitch_scale = float(spec.get("pitch", 1.0)) * pitch_scale \
 		* randf_range(0.96, 1.04)
+	p.set_meta("sfx_action", action_name)
 	p.play()
+	_last_started_usec[action_name] = now
+
+func configure_action_overrides(overrides: Dictionary) -> void:
+	_action_overrides = overrides.duplicate(true)
+	_last_started_usec.clear()
+
+func _now_usec() -> int:
+	return Time.get_ticks_usec()
 
 ## 兼容旧调用方：直接设置用户声音偏好。新代码请使用 set_user_muted。
 func set_muted(value: bool) -> void:
@@ -107,6 +138,7 @@ func _apply_mute_state() -> void:
 	if muted:
 		for player in _players:
 			player.stop()
+		_last_started_usec.clear()
 
 ## 离树先解除播放实例对音频资源的引用，退出/换场景不留下仍播放的声音。
 func _exit_tree() -> void:

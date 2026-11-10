@@ -31,6 +31,8 @@ func run() -> void:
 	host._process(1.0)
 	var parked_time := live.time
 	var parked_cards := live.cards.duplicate(true)
+	var parked_serial: int = host.bot.decision_serial
+	var parked_decision: Dictionary = host.bot.last_decision.duplicate(true)
 	var loaded: Dictionary = host._load_replay(path)
 	check(loaded.ok, "can load own recording")
 	if loaded.ok:
@@ -42,6 +44,8 @@ func run() -> void:
 		check(is_equal_approx(host.state.time, parked_time - 1.0), "ends at saved clock")
 		host.replay.seek(host, 0.25)
 		check(is_equal_approx(host.state.time, 0.25), "can seek to an earlier time between actions")
+		check(host.bot.decision_serial == parked_serial and host.bot.last_decision == parked_decision,
+			"playback and seeking never rerun the parked BOT or overwrite its decision evidence")
 		host.stop_replay()
 		check(host.state == live and live.cards == parked_cards and live.time == parked_time, "restores exact game and clock")
 		check(host.bot._policy == parked_policy and Preferences.pref_strength() == .25,

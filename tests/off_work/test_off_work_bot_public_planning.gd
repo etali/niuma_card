@@ -70,7 +70,7 @@ func _run() -> void:
 	dying.advance(1.0) # The second ply crosses the next unknown market arrival.
 	var policy: Dictionary = dying.config.rules.bot
 	var choice: Dictionary = Search.new().search(dying,0,policy,Time.get_ticks_usec()+3000000)
-	check(choice.root_complete and choice.search_depth==2,"无生产但仍有购人资金的局面完成双方推演")
+	check(choice.root_complete and choice.short_search_depth==2,"无生产但仍有购人资金的局面完成双方推演")
 	check(choice.action.kind!="buy","不会为阻止对手加班烧掉自己最后的购人资金")
 	var worker := dying.add_card("employee",0,dying.cards[dying._owner_type(0,"work")[0]].group)
 	dying._spend(0,2)

@@ -1,0 +1,365 @@
+{
+	"source_replay": "/Users/Yitan/.niumapai_record/下班-2026-11-09T23-54-21-203967975.json",
+	"source_trace": "/Users/Yitan/repos/niuma_card/reports/off-work-growth-refactor-20261110/verified-opening-script-s1.0.json.jsonl",
+	"source_trace_sha256": "eb23f35708f080e0d30c02fbcc90ec63a1575cd9020ea204dcaf883a80aa0ced",
+	"source_engine_sha256": "8ebb9f864279e7226e506a42d63edf9e794cd11117568fc21f28ce5c87329b22",
+	"replayed_decisions": 41,
+	"every_decision_legal": true,
+	"every_recorded_summary_matched": true,
+	"cards": {
+		"cards": {
+			"work": {
+				"name": "工作",
+				"category": "work",
+				"description": "交给员工，处理完赚钱。",
+				"price": 0.0,
+				"art": "work",
+				"purchasable": false,
+				"income": 1.0,
+				"work_seconds": 10.0
+			},
+			"employee": {
+				"name": "员工",
+				"category": "person",
+				"description": "与工作组堆可处理工作。拆出后与咖啡单独组堆，可以逐级提升卷度。",
+				"price": 4.0,
+				"art": "employee",
+				"purchasable": true,
+				"refund": 2.0
+			},
+			"money": {
+				"name": "金钱",
+				"category": "money",
+				"description": "买人员和工具，也能付钱外包。",
+				"price": 0.0,
+				"art": "money",
+				"purchasable": false
+			},
+			"overtime": {
+				"name": "加班",
+				"category": "tool",
+				"description": "同组每张加班使工作速度乘 {speed_multiplier}，倍率持续叠加，移走后失效。",
+				"price": 5.0,
+				"art": "overtime",
+				"purchasable": true
+			},
+			"coffee": {
+				"name": "咖啡",
+				"category": "ingredient",
+				"description": "把人员从工作堆拆出，与咖啡单独组堆，按员工、卷王、肝帝、打工皇帝的顺序逐级提升卷度。每段进度读满时消耗该级所需的咖啡。同堆有工作时会先处理工作。",
+				"price": 4.0,
+				"art": "coffee",
+				"purchasable": true
+			},
+			"transfer": {
+				"name": "甩锅",
+				"category": "tool",
+				"description": "人员与工作同组时，每 {seconds} 秒按在场人员的甩锅份数把工作交给对手。甩锅不产生收入。",
+				"price": 6.0,
+				"art": "transfer",
+				"purchasable": true
+			},
+			"meeting": {
+				"name": "开会",
+				"category": "tool",
+				"description": "主持人召集对方可参会人员，最多人数见主持人的卡面说明。会议持续 {duration_seconds} 秒，散会后冷却 {recovery_seconds} 秒。",
+				"price": 6.0,
+				"art": "meeting",
+				"purchasable": true
+			},
+			"slack": {
+				"name": "摸鱼",
+				"category": "tool",
+				"description": "与人员组队持续生产咖啡。基础周期 {seconds} 秒，每多一张摸鱼速度乘 {speed_multiplier}。每批每名在场人员产 {coffee_per_person} 杯。",
+				"price": 5.0,
+				"art": "slack",
+				"purchasable": true
+			},
+			"outsource": {
+				"name": "外包",
+				"category": "tool",
+				"description": "与金钱和工作同组，每份工作支付 {cost_per_work} 钱。读条 {seconds} 秒，期间补入的材料可加入本批次。完成后冷却 {recovery_seconds} 秒。",
+				"price": 6.0,
+				"art": "outsource",
+				"purchasable": true
+			},
+			"strike": {
+				"name": "罢工",
+				"category": "tool",
+				"description": "拖到对方有人员在场的工作或摸鱼组合，成功后消耗。被弹出人员罢工 {duration_seconds} 秒，期间能移动或开除，无法工作或组合。",
+				"price": 7.0,
+				"art": "strike",
+				"purchasable": true
+			},
+			"leader": {
+				"name": "领导",
+				"category": "person",
+				"description": "可主持会议、组织甩锅或带队摸鱼。",
+				"price": 8.0,
+				"art": "leader",
+				"purchasable": true,
+				"refund": 4.0
+			},
+			"grinder": {
+				"name": "卷王",
+				"category": "person",
+				"description": "员工喝咖啡提升卷度后变成卷王。",
+				"price": 8.0,
+				"art": "grinder",
+				"purchasable": false,
+				"refund": 4.0
+			},
+			"workaholic": {
+				"name": "肝帝",
+				"category": "person",
+				"description": "卷王喝咖啡提升卷度后变成肝帝。",
+				"price": 16.0,
+				"art": "workaholic",
+				"purchasable": false,
+				"refund": 4.0
+			},
+			"work_emperor": {
+				"name": "打工皇帝",
+				"category": "person",
+				"description": "肝帝喝咖啡提升卷度后变成打工皇帝，卷度已满。",
+				"price": 32.0,
+				"art": "work_emperor",
+				"purchasable": false,
+				"refund": 4.0
+			},
+			"union": {
+				"name": "工会",
+				"category": "tool",
+				"description": "保护本组免受罢工；人员按普通员工产能工作，牌型不变。加入时弹出全部加班，本组不能加入加班。",
+				"price": 6.0,
+				"art": "union",
+				"purchasable": true
+			},
+			"boss": {
+				"name": "老板",
+				"category": "person",
+				"description": "不亲自工作，也不参加开会或罢工。与金钱组堆，每 {seconds} 秒按每人 {cost_per_employee} 钱批量招募员工；读条期间可补钱，每方最多一名老板。",
+				"price": 12.0,
+				"art": "boss",
+				"purchasable": true,
+				"refund": 6.0,
+				"max_per_owner": 1.0
+			}
+		},
+		"roles": {
+			"employee": {
+				"meeting_multiplier": 1.0,
+				"can_work": true,
+				"work_income_multiplier": 1.0,
+				"can_be_meeting_target": true,
+				"transfer_capacity": 1.0,
+				"work_capacity": 1.0
+			},
+			"leader": {
+				"meeting_multiplier": 2.0,
+				"can_work": false,
+				"work_income_multiplier": 1.0,
+				"can_be_meeting_target": false,
+				"transfer_capacity": 2.0,
+				"work_capacity": 1.0
+			},
+			"grinder": {
+				"meeting_multiplier": 0.5,
+				"can_work": true,
+				"work_income_multiplier": 2.0,
+				"can_be_meeting_target": true,
+				"transfer_capacity": 1.0,
+				"work_capacity": 1.0
+			},
+			"workaholic": {
+				"meeting_multiplier": 0.5,
+				"can_work": true,
+				"work_income_multiplier": 4.0,
+				"can_be_meeting_target": true,
+				"transfer_capacity": 1.0,
+				"work_capacity": 1.0
+			},
+			"work_emperor": {
+				"meeting_multiplier": 0.5,
+				"can_work": true,
+				"work_income_multiplier": 8.0,
+				"can_be_meeting_target": true,
+				"transfer_capacity": 1.0,
+				"work_capacity": 1.0
+			},
+			"boss": {
+				"meeting_multiplier": 2.0,
+				"can_work": false,
+				"work_income_multiplier": 1.0,
+				"can_be_meeting_target": false,
+				"can_be_strike_target": false,
+				"transfer_capacity": 2.0,
+				"work_capacity": 1.0
+			}
+		},
+		"rules": {
+			"simulation": {
+				"epsilon": 1e-06,
+				"default_seed": 20261027.0,
+				"owners": [
+					0.0,
+					1.0
+				],
+				"maximum_events_per_advance": 10000.0,
+				"tie_winner": 2.0
+			},
+			"initial": {
+				"money": 8.0,
+				"groups": [
+					{
+						"work": 800.0
+					},
+					{
+						"employee": 1.0
+					},
+					{
+						"overtime": 1.0
+					},
+					{
+						"coffee": 1.0
+					}
+				]
+			},
+			"overtime": {
+				"speed_multiplier": 1.2
+			},
+			"coffee": {
+				"seconds": 5.0,
+				"upgrades": {
+					"employee": {
+						"to": "grinder",
+						"cost": 1.0
+					},
+					"grinder": {
+						"to": "workaholic",
+						"cost": 2.0
+					},
+					"workaholic": {
+						"to": "work_emperor",
+						"cost": 4.0
+					}
+				}
+			},
+			"transfer": {
+				"seconds": 10.0,
+				"destination_policy": "largest_work_queue"
+			},
+			"meeting": {
+				"base_targets": 2.0,
+				"minimum_targets": 1.0,
+				"duration_seconds": 12.0,
+				"recovery_seconds": 24.0,
+				"auto_repeat": true
+			},
+			"slack": {
+				"seconds": 14.0,
+				"speed_multiplier": 1.2,
+				"coffee_per_person": 1.0
+			},
+			"outsource": {
+				"cost_per_work": 1.0,
+				"recovery_seconds": 18.0,
+				"seconds": 10.0
+			},
+			"strike": {
+				"duration_seconds": 20.0,
+				"flight_seconds": 1.2
+			},
+			"fire": {
+				"minimum_people": 0.0
+			},
+			"conveyor": {
+				"slots": 6.0,
+				"interval_seconds": 2.0,
+				"pool": {
+					"employee": 4.0,
+					"leader": 1.0,
+					"overtime": 2.0,
+					"coffee": 2.0,
+					"transfer": 2.0,
+					"meeting": 2.0,
+					"slack": 1.0,
+					"outsource": 1.0,
+					"strike": 1.0,
+					"union": 1.0,
+					"boss": 1.0
+				}
+			},
+			"income": {
+				"destination_policy": "oldest_cash_pile"
+			},
+			"union": {
+				"work_role": "employee"
+			},
+			"recruitment": {
+				"seconds": 10.0,
+				"cost_per_employee": 5.0
+			}
+		}
+	},
+	"policy": {
+		"enabled": true,
+		"owner": 1.0,
+		"think_seconds": 2.0,
+		"first_action_seconds": 0.0,
+		"decision_budget_ratio": 0.9,
+		"search_max_depth": 4.0,
+		"search_root_width": 6.0,
+		"search_reply_width": 3.0,
+		"evaluation_max_seconds": 1800.0,
+		"decision_publish_reserve_us": 1000.0,
+		"decision_publish_reserve_ratio": 0.2,
+		"live_fallback_budget_us": 1500.0,
+		"live_snapshot_card_limit": 2048.0,
+		"live_snapshot_group_limit": 512.0
+	},
+	"owner": 1,
+	"time": 40.0,
+	"expected": {
+		"money": 4,
+		"available_money": 4,
+		"workers": 1,
+		"employee_quotes": [
+			21,
+			25
+		]
+	},
+	"summary": [
+		{
+			"work": 790,
+			"money": 2,
+			"reserved": 0,
+			"people": {
+				"grinder": 2,
+				"employee": 3
+			},
+			"workers": 5,
+			"work_rate": 0.6,
+			"income_rate": 0.84,
+			"coffee": 0
+		},
+		{
+			"work": 789,
+			"money": 4,
+			"reserved": 0,
+			"people": {
+				"grinder": 1,
+				"employee": 3
+			},
+			"workers": 1,
+			"work_rate": 0.12,
+			"income_rate": 0.12,
+			"coffee": 2
+		}
+	],
+	"snapshot": {
+		"encoding": "godot-variant-zstd-base64",
+		"size": 541012,
+		"data": "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"
+	}
+}

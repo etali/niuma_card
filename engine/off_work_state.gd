@@ -165,6 +165,17 @@ func fork_search_node() -> OffWorkState:
 	assert(_bot_branch)
 	var branch := fork_for_bot(_rng.seed)
 	branch._rng.state = _rng.state
+	# WORLD_FIELDS already contains the authoritative tasks and group clocks.
+	# Preserve a completed schedule instead of rebuilding those same slots in
+	# every child. Membership indexes remain branch-local and rebuild lazily;
+	# seeding only their shape prevents that first read from marking this copied
+	# schedule dirty. Unreconciled direct edits and configuration changes still
+	# take the normal authoritative rescheduling path in advance().
+	branch._membership_card_count = branch.cards.size()
+	branch._membership_group_count = branch.groups.size()
+	branch._schedule_dirty = _schedule_dirty or _membership_card_count != cards.size() or _membership_group_count != groups.size()
+	branch._scheduled_config = _scheduled_config
+	branch._active_groups = _active_groups.duplicate(true)
 	return branch
 
 ## Preserve conveyor positions and expiry, but do not present a sampled future

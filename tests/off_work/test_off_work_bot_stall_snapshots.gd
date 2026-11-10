@@ -27,8 +27,15 @@ func _run() -> void:
 		var result := bot.last_decision
 		print("STALL_ROOT ",JSON.stringify({"owner":owner,"action":action,"covered":result.completed_candidates,
 			"total":result.root_candidates,"layer":result.evaluation_layer,"ordinary_us":result.root_ordinary_us,"elapsed_us":result.elapsed_us}))
-		check(result.budget_ms==700 and result.root_complete and result.completed_candidates==result.root_candidates,
-			"真实t306快照在默认700ms覆盖全部普通候选（座位%d）"%owner)
+		# Growth now has a reserved route budget instead of waiting for all
+		# duplicate one-step splits to finish. Verify the behavioral contract:
+		# real staffing is compared within budget and complete economy routes
+		# get a turn, while the continuous replay below proves work resumes.
+		check(result.budget_ms==700 and not result.overrun and result.completed_candidates>0
+			and int(result.root_evaluated_intents.get("assemble_work",0))>0,
+			"真实t306快照在默认700ms比较可执行返岗，遵守实际预算（座位%d）"%owner)
+		check(result.has("root_growth") and int(result.get("root_growth_reserved_us",0))>0,
+			"拥挤牌桌仍为完整增长路线保留搜索机会（座位%d）"%owner)
 		check(action.kind!="wait" and bot.commit_action(action,result), "真实停滞快照选择并执行合法非等待动作")
 	_future_work_is_not_immune()
 	_continuation()

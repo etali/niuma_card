@@ -223,7 +223,7 @@ func _simultaneous_settlement() -> void:
 	var differences := []
 	for key in OffWorkState.WORLD_FIELDS:
 		if state.get(key) != reference.get(key): differences.append(key)
-	check(differences.is_empty(), "batched index rebuilding agrees with forced schedule reconciliation: %s" % differences)
+	check(differences.is_empty(), "batched index rebuilding agrees with forced schedule reconciliation: %s" % [differences])
 	var group := _work(state)
 	var before_group: Dictionary = state._indexed_group(group)
 	var global_before := state.global_rebuilds
