@@ -336,7 +336,40 @@ const FRAME_BORDER := 0.025
 const FRAME_WOBBLE := 0.0075
 const FRAME_PRESSURE := 0.18
 const FRAME_BAND_HEIGHT := 0.18
-const FRAME_PARAMETERS := ["card_size", "corner_radius", "border_width", "band_height", "stroke_wobble", "stroke_pressure"]
+## 正面、背面、撕片、受击层和卡身之间要原样传递的几何参数。纸的外形也在里面：
+## 撕开、翻面、受击时牌的轮廓不能变回圆角。
+const FRAME_PARAMETERS := ["card_size", "corner_radius", "border_width", "band_height", "stroke_wobble", "stroke_pressure",
+	"paper_kind", "kind_size"]
+
+## 纸的外形（card_frame.gdshaderinc 的 paper_kind）。大小、碰撞和标题带的位置都不变。
+const PAPER_ROUND := 0
+const PAPER_CUT := 1       # 攻击牌：四角切掉，标题带下沿是撕口
+const PAPER_FOLD := 2      # 增益牌：右下角折起来，像便利贴
+const PAPER_CUT_SIZE := 0.15
+const PAPER_FOLD_SIZE := 0.22
+
+## 这张牌用哪种纸。只有上班的攻击牌和增益牌不是圆角；下班的牌、资源牌、
+## 生产牌、传说牌和角色专属牌都保持圆角。
+static func paper_kind(def_id: String, catalog: Script = OnWorkCardDB) -> int:
+	if catalog != OnWorkCardDB:
+		return PAPER_ROUND
+	match str(catalog.get_def(def_id).get("kind", "")):
+		OnWorkCardDB.KIND_ATTACK:
+			return PAPER_CUT
+		OnWorkCardDB.KIND_BUFF:
+			return PAPER_FOLD
+	return PAPER_ROUND
+
+static func paper_size(kind: int) -> float:
+	return PAPER_CUT_SIZE if kind == PAPER_CUT else (PAPER_FOLD_SIZE if kind == PAPER_FOLD else 0.0)
+
+## 传说牌是金框牌：标题带和另外三条边连成一圈金边，星标换成一枚金印。
+static func is_legend(def_id: String, catalog: Script = OnWorkCardDB) -> bool:
+	return catalog == OnWorkCardDB and str(catalog.get_def(def_id).get("kind", "")) == OnWorkCardDB.KIND_LEGEND
+
+## 金边、金印的颜色：传说牌配色里的强调色，可在配色面板里改。
+static func foil_color() -> Color:
+	return Palette.plate_color(PLATE_T3, "accent").lerp(Color("F2CC55"), 0.55)
 
 static func configure_frame(material: ShaderMaterial, scale_factor := 1.0) -> void:
 	material.set_shader_parameter("card_size", FRAME_SIZE * scale_factor)
@@ -345,6 +378,12 @@ static func configure_frame(material: ShaderMaterial, scale_factor := 1.0) -> vo
 	material.set_shader_parameter("band_height", FRAME_BAND_HEIGHT)
 	material.set_shader_parameter("stroke_wobble", FRAME_WOBBLE * scale_factor)
 	material.set_shader_parameter("stroke_pressure", FRAME_PRESSURE)
+
+## 把这张牌的纸型写进材质。正面、背面和卡身各调一次，三者的轮廓才一致。
+static func configure_paper(material: ShaderMaterial, def_id: String, catalog: Script = OnWorkCardDB) -> void:
+	var kind := paper_kind(def_id, catalog)
+	material.set_shader_parameter("paper_kind", kind)
+	material.set_shader_parameter("kind_size", paper_size(kind))
 
 ## 功能图标通常是可着色白色线稿；资源图标自带手绘墨色与纸色，缺失返回 null
 static func icon_texture(def_id: String, catalog: Script = OnWorkCardDB) -> Texture2D:
@@ -400,10 +439,34 @@ static func res_icon_texture(res: String, catalog: Script = OnWorkCardDB) -> Tex
 
 ## 共享资源简笔画含纸色填充与表情，主图和小徽标都保留原色。
 static func icon_preserves_color(texture: Texture2D) -> bool:
+	if texture is AtlasTexture:
+		# 侧边清单的裁切小图标和它取自的那张插画一样保留原色。
+		texture = (texture as AtlasTexture).atlas
 	if texture == null:
 		return false
 	_ensure_loaded()
 	return _untinted_paths.has(texture.resource_path)
+
+## 牌摞侧边清单用的小图标。下班的人员牌只取插画的头部（区域登记在卡表侧，
+## 见 OffWorkCardDB.side_icon_region）：整个人缩到这么小只剩一个点，取头部才分得清谁是谁。
+## 不新画图，只是换了取景；同一张牌始终返回同一个裁切对象，侧边清单按它判断行有没有变。
+static var _side_icons := {}
+
+static func side_icon_texture(def_id: String, catalog: Script = OnWorkCardDB) -> Texture2D:
+	var texture := icon_texture(def_id, catalog)
+	if texture == null or catalog != OffWorkCardDB:
+		return texture
+	var region := OffWorkCardDB.side_icon_region(def_id)
+	if region.size.x <= 0.0 or region.size.y <= 0.0:
+		return texture
+	var key := "%s|%s" % [texture.resource_path, region]
+	if not _side_icons.has(key):
+		var crop := AtlasTexture.new()
+		crop.atlas = texture
+		var size := Vector2(texture.get_size())
+		crop.region = Rect2(region.position * size, region.size * size)
+		_side_icons[key] = crop
+	return _side_icons[key]
 
 static func icon_tint(texture: Texture2D, ink: Color) -> Color:
 	return Color.WHITE if icon_preserves_color(texture) else Palette.icon_color(ink)

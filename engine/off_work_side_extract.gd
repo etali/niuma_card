@@ -33,7 +33,7 @@ func entries(group_id: int) -> Array:
 		if kind == "money":
 			count = 0
 			for uid in grouped[kind]: count += int(state.cards[uid].amount)
-		result.append({"kind": kind, "ids": grouped[kind], "tex": CardArt.icon_texture(kind, OffWorkCardDB), "text": "×%d" % count})
+		result.append({"kind": kind, "ids": grouped[kind], "tex": CardArt.side_icon_texture(kind, OffWorkCardDB), "text": "×%d" % count})
 	return result
 
 func side_rows(group: Dictionary) -> Array:

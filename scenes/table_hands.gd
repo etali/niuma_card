@@ -188,22 +188,29 @@ func paint(canvas: Control) -> void:
 	for batch in _batches:
 		var rect: Rect2 = batch.bounds
 		var hold := float(batch.get("hold", 0.0))
-		var duration := float(batch.get("duration", DURATION))
 		# 顿帧期间时间轴停在抓握完成那一刻；之后的扯开照原节拍走完。
 		var t: float = batch.elapsed
 		var held := clampf(t - GRIP, 0.0, hold)
 		t -= held
-		var span := duration - hold
-		var pull := smoothstep(GRIP, span - 0.10, t)
+		var after := maxf(0.0, t - GRIP)   # 撕开之后过了多久
 		var approach := 1.0 - smoothstep(0.0, GRIP, t)
-		var reach := approach * 35.0 + pull * 45.0
-		var opacity := 1.0 - smoothstep(span - 0.12, span, t)
+		# 手跟着自己那半张纸走（节拍与位移取 CardMotion 的 RIP_*）：
+		# 往斜对角一把扯开，再滑一小段；揉团时停住，扔的时候往外一甩并淡出。
+		var unit := rect.size.y / (CardEntity.CARD_SIZE.z + 0.1)   # 屏幕上每个桌面单位多少像素
+		var snap := 1.0 - pow(1.0 - clampf(after / Motion.RIP_SNAP, 0.0, 1.0), 3.0)
+		var follow := sin(clampf((after - Motion.RIP_SNAP) / Motion.RIP_FOLLOW, 0.0, 1.0) * PI * 0.5)
+		var toss := clampf((after - Motion.RIP_SNAP - Motion.RIP_FOLLOW - Motion.RIP_CRUMPLE) / Motion.RIP_TOSS, 0.0, 1.0)
+		var pull := (Vector2(Motion.RIP_PULL.x, Motion.RIP_PULL.z) * snap
+			+ Vector2(Motion.RIP_DRIFT.x, Motion.RIP_DRIFT.z) * follow
+			+ Vector2(Motion.RIP_THROW.x, Motion.RIP_THROW.z) * 0.22 * sin(toss * PI * 0.5)) * unit
+		var reach := approach * 35.0
+		var opacity := 1.0 - smoothstep(0.30, 1.0, toss)
 		var size_factor := scale_factor * clampf(rect.size.x / 90.0, 1.6, 2.5)
 		var tremble := Vector2.ZERO
 		if held > 0.0 and held < hold:
 			tremble = Vector2(sin(batch.elapsed * 95.0), cos(batch.elapsed * 77.0)) * 2.0 * size_factor
-		_hand(canvas, Vector2(rect.get_center().x - rect.size.x * 0.15, rect.position.y + 18.0 * size_factor - reach) + tremble, PI, size_factor, true, false, opacity)
-		_hand(canvas, Vector2(rect.get_center().x + rect.size.x * 0.15, rect.end.y - 18.0 * size_factor + reach) - tremble, 0, size_factor, true, false, opacity)
+		_hand(canvas, Vector2(rect.get_center().x - rect.size.x * 0.15, rect.position.y + 18.0 * size_factor - reach) - pull + tremble, PI, size_factor, true, false, opacity)
+		_hand(canvas, Vector2(rect.get_center().x + rect.size.x * 0.15, rect.end.y - 18.0 * size_factor + reach) + pull - tremble, 0, size_factor, true, false, opacity)
 	if _drag_hand != Vector2.INF:
 		# 轮廓原点即系统光标热点，交接前后手停在同一处
 		_hand(canvas, _drag_hand, 0.0, _drag_hand_scale(), true, false, 1.0)

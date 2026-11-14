@@ -1716,7 +1716,7 @@ static func side_spec(cards: Array, include_single_core := false) -> Array:
 		core_total += int(core_n[def_id])
 	if core_total >= 2 or (include_single_core and core_total == 1):
 		for def_id in cores:
-			out.append({ "tex": CardArt.icon_texture(def_id, catalog),
+			out.append({ "tex": CardArt.side_icon_texture(def_id, catalog),
 				"text": "×%d" % core_n[def_id] })
 	# 封顶：留前 SIDE_MAX_ROWS-1 行，其余折成一行「还有几种」。
 	# 折行只说数目、不借谁的图标 —— 借了就是拿一张卡的脸指代另外几张卡

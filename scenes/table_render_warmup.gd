@@ -12,7 +12,7 @@ const ComicFx = preload("res://scenes/comic_fx.gd")
 const Materials = preload("res://scenes/effect_materials.gd")
 static var _completed := false
 static var _pending: WeakRef
-enum Sample { CAMERA, BACK, TEAR, RECEIPT, TRACE, OUTLINE, PRODUCTION, BADGE, STAMP, IMPACT, SEAL, LIGHT, UPGRADE, PARTICLES, DONE }
+enum Sample { CAMERA, BACK, TEAR, PAPER, RECEIPT, TRACE, OUTLINE, PRODUCTION, BADGE, STAMP, IMPACT, SEAL, LIGHT, UPGRADE, PARTICLES, DONE }
 const FRAMES_BETWEEN_SAMPLES := 4
 var _sample := Sample.CAMERA
 var _world: Node3D
@@ -74,6 +74,14 @@ func _process(_delta: float) -> void:
 		Sample.TEAR:
 			var front := _warm_card(OnWorkCardDB.RES_CASH, Vector3(2,0,0))
 			front.tear_apart()
+		Sample.PAPER:
+			# 攻击牌、增益牌的卡身跟着外形裁切，用的是另一个着色器；货架上第一次出现这类牌时
+			# 不该才去编译。顺带把墨团的三张底图在开桌时生成好。
+			for kind in [OnWorkCardDB.KIND_ATTACK, OnWorkCardDB.KIND_BUFF]:
+				for id in OnWorkCardDB.all_cards():
+					if str(OnWorkCardDB.get_def(id).get("kind", "")) == kind:
+						_warm_def(str(id), Vector3(0, 0, 2 if kind == OnWorkCardDB.KIND_ATTACK else -2))
+						break
 		Sample.RECEIPT:
 			Feedback.receipt(_world, "warmup", Vector3(0,0,-2), "+1", Color.WHITE)
 		Sample.TRACE:
@@ -110,8 +118,11 @@ func _process(_delta: float) -> void:
 	_sample = (_sample + 1) as Sample
 
 func _warm_card(resource_kind: String, at: Vector3) -> CardEntity:
+	return _warm_def(OnWorkCardDB.unit_id(resource_kind), at)
+
+func _warm_def(def_id: String, at: Vector3) -> CardEntity:
 	var card := CardEntity.new()
-	card.setup(-1, OnWorkCardDB.unit_id(resource_kind))
+	card.setup(-1, def_id)
 	card.freeze = true
 	card.collision_layer = 0
 	card.collision_mask = 0

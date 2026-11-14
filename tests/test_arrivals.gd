@@ -475,13 +475,13 @@ func _t6_real_settle_stacks(main: Node, board: Board) -> void:
 	check(off.is_empty(), "都在左侧结算带里（x ≤ %.1f，跑偏的 %s）" % [
 		main.layout.SETTLE_SPILL_X, "无" if off.is_empty() else ", ".join(off)])
 
-# ---------- T7. 受击的卡从中间撕开再淡掉，不翻面不放泡沫 ----------
+# ---------- T7. 受击的卡从中间撕开、揉成团扔掉，不翻面不放泡沫 ----------
 
-## 钉三件事：撕成两片、两片朝相反方向分开、淡出和位移同时收尾。
-## 第三条是真踩过的坑：淡出补间当初延迟 0.35×TEAR_TIME 却还是整段时长，
-## 收尾拖到 1.35 倍，两片飞停了还满不透明挂在桌上，最后一下才闪掉。
+## 钉三件事：撕成两片、两片被斜着扯开且扔出去之前不变透明、整段正好在 TEAR_TIME 收尾。
+## 第二条是改过的：原先两片是「慢慢滑开、同时淡出」，读作牌蒸发了，不像被撕了。
+## 第三条是真踩过的坑：收尾当初拖到 1.35 倍时长，两片飞停了还挂在桌上，最后一下才闪掉。
 func _t7_tear_splits_card(main: Node, board: Board) -> void:
-	print("--- T7. 受击：从中间撕开再渐变消失 ---")
+	print("--- T7. 受击：从中间撕开、揉成团扔掉 ---")
 	var state: OnWorkState = main.state
 	var victim: Dictionary = state.add_card(OnWorkState.PLAYER, "cash")
 	main._sync_entities()
@@ -536,36 +536,37 @@ func _t7_tear_splits_card(main: Node, board: Board) -> void:
 	# 不翻面：卡背材质不该被装上（翻面是典当/买卡的「离场」语汇）
 	check(not e._face_down, "没有翻面")
 
-	# 演到 60% 时：两片必须已经朝相反方向分开，且都在淡出途中
+	# 演到 60% 时：两片已经被斜着扯开、正在揉成团，而且还没开始变透明
 	#
 	# Tween 由测试直接推进到 60%，避免把动画进度误当成墙钟时间。
-	# 这里掐时刻是**两头都有边**的（fade 要在 0.02 和 0.9 之间）：
-	# 判据验证的是确实经过某个中间态，不是等待某个固定墙钟时长。
+	# 60% 落在「揉团」那一拍里（见 CardMotion 的 RIP_*）：扯开和拖住已经走完，扔还没开始。
 	tear_tween.custom_step(main.TEAR_TIME * 0.6)
 	if not is_instance_valid(e) or not is_instance_valid(halves[0]):
 		check(false, "演到 60% 片就没了")
 		return
-	# 撕口是横的（沿卡面 UV.y），所以两片分开量的是 z，翻的是 x 轴
+	# 撕口是横的（沿卡面 UV.y），两只手往斜对角扯：两片在 z 和 x 上都分开
 	var zs: Array = []
 	var xs: Array = []
-	var tilts: Array = []
+	var swings: Array = []
 	var fades: Array = []
+	var balls: Array = []
 	for h in halves:
 		zs.append(h.position.z)
 		xs.append(h.position.x)
-		tilts.append(h.rotation_degrees.x)
+		swings.append(h.rotation_degrees.y)
 		fades.append(float(_half_mat(h).get_shader_parameter("fade")))
+		balls.append(float(_half_mat(h).get_shader_parameter("ball")))
 	var spread: float = absf(zs[0] - zs[1])
-	check(spread > 0.3, "60%% 时两片沿 z 分开 %.2f（>0.3）" % spread)
+	check(spread > 0.5, "60%% 时两片沿 z 扯开 %.2f（>0.5）" % spread)
 	var side_slip: float = absf(xs[0] - xs[1])
-	check(side_slip < 0.05, "两片没往左右跑（x 差 %.3f，<0.05）" % side_slip)
-	check(absf(tilts[0] - tilts[1]) > 10.0,
-		"两片绕 x 轴反向翻起（%.1f° / %.1f°）" % [tilts[0], tilts[1]])
-	var max_fade: float = maxf(fades[0], fades[1])
-	check(max_fade < 0.9, "60%% 时已经在淡出（fade=%.2f，<0.9）" % max_fade)
-	check(max_fade > 0.02, "60%% 时还没淡光（fade=%.2f，>0.02）" % max_fade)
+	check(side_slip > 0.3, "两只手往斜对角扯，两片在 x 上也分开（x 差 %.2f，>0.3）" % side_slip)
+	check(swings[0] < -4.0 and swings[1] < -4.0,
+		"两片跟在手后面朝同一个方向甩（%.1f° / %.1f°）" % [swings[0], swings[1]])
+	check(minf(fades[0], fades[1]) > 0.99,
+		"扔出去之前纸片不变透明（fade=%.2f / %.2f）" % [fades[0], fades[1]])
+	check(minf(balls[0], balls[1]) > 0.2, "60%% 时两片已经在揉成团（ball=%.2f / %.2f）" % [balls[0], balls[1]])
 
-	# 位移和淡出要一起收尾：再推进剩余 40%，Tween 回调应立即回收卡。
+	# 扔出去和淡出要一起收尾：再推进剩余 40%，Tween 回调应立即回收卡。
 	tear_tween.custom_step(main.TEAR_TIME * 0.4 + 0.001)
 	check(is_instance_valid(e) and e.is_queued_for_deletion(), "撕牌补间完成立即排队回收")
 	await process_frame

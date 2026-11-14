@@ -51,6 +51,21 @@ func _run() -> void:
 	check(demo.mascot.state() == "defeat", "preview includes terminal mascot state")
 	await capture(viewport, "mascot")
 	demo.free()
+	# The race bar demo drives the real bar from a scripted pair of remaining-work counts.
+	demo = Demo.new()
+	viewport.add_child(demo)
+	demo.configure("race_bar", viewport)
+	check(demo.race_bar.get_script() == preload("res://scenes/off_work_race_bar.gd"), "race demo uses the real race bar")
+	check(demo.snapshot().race_remaining == [800, 800] and is_zero_approx(demo.snapshot().race_cleared[0]), "race demo starts with nothing cleared")
+	for i in 420: demo.advance(1.0 / 60.0)
+	var before_transfer: Array = demo.snapshot().race_remaining
+	check(before_transfer[0] < 800 and before_transfer[1] < before_transfer[0], "the opponent pulls ahead mid-way")
+	for i in 12: demo.advance(1.0 / 60.0)
+	check(demo.snapshot().race_remaining[0] > before_transfer[0], "a transfer pushes the local side back")
+	await capture(viewport, "race")
+	for i in 300: demo.advance(1.0 / 60.0)
+	check(demo.snapshot().race_remaining[0] == 0 and is_equal_approx(demo.snapshot().race_cleared[0], 1.0), "the local side reaches the goal first")
+	demo.free()
 	for winner in [0, 1, 2]:
 		demo = Demo.new()
 		viewport.add_child(demo)

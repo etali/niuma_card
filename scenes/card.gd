@@ -21,12 +21,14 @@ const PLATE_SHADER := "res://shaders/card_face.gdshader"
 const TEAR_SHADER := "res://shaders/card_tear.gdshader"
 const BACK_SHADER := "res://shaders/card_back.gdshader"
 const DAMAGE_SHADER := "res://shaders/card_damage.gdshader"
+const BODY_SHADER := "res://shaders/card_body.gdshader"
 ## 特效结束后仍持有着色器。仅在材质上 load 的资源会随最后一张离场牌释放，
 ## 下一次翻背/撕牌又触发驱动编译，Compatibility 下每次会停顿约 100ms。
 const _PLATE_PROGRAM = preload(PLATE_SHADER)
 const _TEAR_PROGRAM = preload(TEAR_SHADER)
 const _BACK_PROGRAM = preload(BACK_SHADER)
 const _DAMAGE_PROGRAM = preload(DAMAGE_SHADER)
+const _BODY_PROGRAM = preload(BODY_SHADER)
 ## 结算章：成功的「到账 / 升级」与失败的「作废」是同一枚章，只换字；
 ## 和牌桌、结果面板上的章也是同一枚（见 ink_stamp.gd），同样大小、同一盒印泥。
 const InkStamp = preload("res://scenes/ink_stamp.gd")
@@ -50,8 +52,9 @@ const BAND_INK_OFFSET := 1.5 / 42.0
 const BADGE_FONT_PX := 150
 
 ## 墨团圆盘的可写直径，占墨团标称直径的比例。
-## badge_base 实测是填满贴图 95% 的深色实心圆盘，再给手绘毛边留一点余量
-const BLOB_DISC_FRAC := 0.95 * 0.93
+## 底图（见 _badge_texture）的圈占贴图 92%，墨线再往里占掉一圈；
+## 0.80 是线内那块纸色的直径，字要落在这里面，不能压到线上。
+const BLOB_DISC_FRAC := 0.80
 
 ## Label3D 会把字形光栅化成纹理再贴到卡面。大窗口与 Retina 需要足够的
 ## 字形采样密度；固定使用 64px 光栅，pixel_size 反向除以同一字号，
@@ -121,6 +124,10 @@ var is_market := false   # 公共区的牌：拖拽用于购买，不参与堆�
 # animated shader inputs remain on each card's own material override.
 static var _body_geometry: BoxMesh
 static var _face_geometry: QuadMesh
+## 撕片的网格：细分过，撕下来的半张纸才能在着色器里揉成团（见 card_tear.gdshader）。
+static var _tear_geometry: QuadMesh
+## 墨团徽标的两张底图，代码生成一次、全桌共用（见 _badge_texture）。
+static var _badge_textures := {}
 static var _card_collision: BoxShape3D
 static var _paper_physics: PhysicsMaterial
 
@@ -173,6 +180,8 @@ var _effect_mult := 1                 # 当前生效倍数（1 = 没有翻倍 Bu
 var _rule_mods := {}
 ## 墨团旁的资源图标（着墨色）。选色面板改图标前景色时要跟着刷，故留引用
 var _badge_icons: Array[Sprite3D] = []
+## 不会变成「填实」的墨团（卡种符号、传说的金印）：配色变更时重取底图和字色。
+var _plain_badges: Array[Dictionary] = []
 ## 卡名 + 墨团内的文字，配色变更时一起刷墨色
 var _badge_labels: Array[Label3D] = []
 var _recipe_need := 0
@@ -302,10 +311,7 @@ func _build_face() -> void:
 		_body_geometry.size = Vector3(CARD_SIZE.x - PLATE_ART_INSET * 2.0, CARD_SIZE.y,
 			CARD_SIZE.z - PLATE_ART_INSET * 2.0)
 	card_mesh.mesh = _body_geometry
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Palette.get_color("card", "body")
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	card_mesh.material_override = mat
+	card_mesh.material_override = _make_body_material()
 	_add_visual(card_mesh)
 
 	_plate = MeshInstance3D.new()
@@ -414,8 +420,10 @@ const RES_ICON_FRAC := 0.14
 ## 数字和图标读不到一起去。故这条缝取小（0.02），中缝自然留到 0.10
 const RES_ICON_GAP := 0.02
 
-## 配方凑满或效果翻倍时，对应墨团换强调色并按此倍数放大。
+## 配方凑满或效果翻倍时，对应墨团填成强调色并按此倍数放大。
 const BADGE_DONE_SCALE := 1.12
+## 传说牌的金印比普通墨团大这么多。
+const SEAL_SCALE := 1.22
 
 ## 资源图标中心 x：贴在墨团朝卡心那一侧的外沿。
 ## 不写死定位表的 UNIT_ICON_CX——那个值是按 112px 图标算的，图标一改大就会压进墨团
@@ -423,20 +431,97 @@ static func _res_icon_cx(blob_cx: float) -> float:
 	var edge: float = CardArt.BLOB_FRAC / 2.0 + RES_ICON_GAP + RES_ICON_FRAC / 2.0
 	return blob_cx - edge if blob_cx > 0.5 else blob_cx + edge
 
-## 墨团徽标：墨团底 + 白字，可选在墨团外侧贴一枚资源图标。
-## 返回 {blob, label}（贴图缺失时 blob 为 null），调用方需要改字或改色时留着引用
+## 墨团底图由代码生成，三种：
+##   "open"  纸色底 + 墨线圈：这一格还是卡面原值、配方还没凑满
+##   "solid" 白底 + 浅灰线圈：乘上强调色后就是一枚填实的色团（凑满、效果翻倍）
+##   "seal"  金印：传说牌的星标
+## 原来的墨团是一张纯黑圆片：它是牌面上最重的东西，压过了插画；而且黑图乘任何
+## 颜色都还是黑，「凑满换强调色」实际显示不出来。底图按墨线色和金色缓存，改配色后重画。
+static func _badge_texture(kind: String) -> Texture2D:
+	var ink := CardArt.frame_color()
+	var foil := CardArt.foil_color()
+	var palette := "/%s/%s" % [ink.to_html(), foil.to_html()]
+	if not _badge_textures.has(kind + palette):
+		# 三张一起生成：第一张牌建出来时（开桌或预热）就全备好，
+		# 对局中第一次凑满配方、第一次出现传说牌时不会现画一张图而卡一下。
+		for each in ["open", "solid", "seal"]:
+			_badge_textures[each + palette] = _paint_badge(each, ink, foil)
+	return _badge_textures[kind + palette]
+
+const _BADGE_PIXELS := 128
+
+static func _paint_badge(kind: String, ink: Color, foil: Color) -> Texture2D:
+	const N := _BADGE_PIXELS
+	var unit := float(N) / 192.0          # 下面的尺寸按 192 像素的画布写
+	var fill := Color("F7EFDC")
+	var line_color := ink
+	var line := 12.5 * unit
+	var radius := 88.0 * unit
+	if kind == "solid":
+		fill = Color.WHITE
+		line_color = Color("6B625A")
+	elif kind == "seal":
+		fill = foil
+		line = 6.5 * unit
+		radius = 82.0 * unit
+	var seal := kind == "seal"
+	var bright := foil.lerp(Color.WHITE, 0.38)
+	var soft := 1.5 * unit
+	var bytes := PackedByteArray()
+	bytes.resize(N * N * 4)
+	var at := 0
+	for y in N:
+		for x in N:
+			var p := Vector2(x + 0.5 - N * 0.5, y + 0.5 - N * 0.5)
+			var length := p.length()
+			# 圈外很远的像素直接留空，不必算角度。
+			if length > radius * 1.08 + soft:
+				at += 4
+				continue
+			var angle := p.angle()
+			# 手画的圈：半径随角度缓慢起伏；金印是一圈齿边。
+			var edge := radius * (1.0 + 0.055 * cos(16.0 * angle)) if seal \
+				else radius * (1.0 + 0.022 * sin(3.0 * angle + 0.7) + 0.013 * sin(7.0 * angle + 2.0))
+			var distance := length - edge
+			var color := fill
+			if seal:
+				# 中间一圈更亮的金，和外圈之间一道墨线。
+				var inner := length - radius * 0.70
+				color = fill.lerp(bright, clampf(0.5 - inner / soft, 0.0, 1.0))
+				color = color.lerp(ink, clampf(1.0 - absf(inner) / (2.2 * unit), 0.0, 1.0))
+			color = color.lerp(line_color, clampf(0.5 + (distance + line) / soft, 0.0, 1.0))
+			bytes[at] = roundi(clampf(color.r, 0.0, 1.0) * 255.0)
+			bytes[at + 1] = roundi(clampf(color.g, 0.0, 1.0) * 255.0)
+			bytes[at + 2] = roundi(clampf(color.b, 0.0, 1.0) * 255.0)
+			bytes[at + 3] = roundi(clampf(0.5 - distance / soft, 0.0, 1.0) * 255.0)
+			at += 4
+	var image := Image.create_from_data(N, N, false, Image.FORMAT_RGBA8, bytes)
+	image.generate_mipmaps()
+	return ImageTexture.create_from_image(image)
+
+## 墨团当前该用哪张底图、什么颜色、字是什么颜色。emphasized = 凑满或效果翻倍。
+func _style_badge(blob: Sprite3D, badge: Label3D, emphasized: bool) -> void:
+	if blob != null and is_instance_valid(blob):
+		blob.texture = _badge_texture("solid" if emphasized else "open")
+		blob.modulate = CardArt.accent_color(def_id, card_catalog) if emphasized else Color.WHITE
+	if badge != null and is_instance_valid(badge):
+		badge.modulate = Color.WHITE if emphasized else CardArt.frame_color()
+
+## 墨团徽标：墨线圈 + 深色字，可选在墨团外侧贴一枚资源图标。
+## 返回 {blob, label}（非贴图模式时 blob 为 null），调用方需要改字或改色时留着引用
 func _add_blob_badge(cx: float, text: String, textured: bool,
-		res_icon: Texture2D = null, icon_cx := -1.0) -> Dictionary:
+		res_icon: Texture2D = null, icon_cx := -1.0, seal := false) -> Dictionary:
 	var cy := CardArt.BLOB_CY if textured else 1.0 - 0.22 / CARD_SIZE.z
 	var x := (cx - 0.5) * CARD_SIZE.x
 	var z := _frac_to_z(cy)
 
-	var badge_tex := CardArt.table_texture("badge_base") if textured else null
+	var badge_tex := _badge_texture("seal" if seal else "open") if textured else null
 	var blob: Sprite3D = null
 	if badge_tex:
 		blob = Sprite3D.new()
 		blob.texture = badge_tex
-		blob.pixel_size = CARD_SIZE.x * CardArt.BLOB_FRAC / float(badge_tex.get_width())
+		# 两张底图同样大小；金印略大一圈，是传说牌上唯一的标记。
+		blob.pixel_size = CARD_SIZE.x * CardArt.BLOB_FRAC * (SEAL_SCALE if seal else 1.0) / float(badge_tex.get_width())
 		blob.rotation_degrees = Vector3(-90, 0, 0)
 		blob.position = Vector3(x, Y_ICON, z)
 		blob.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
@@ -469,13 +554,14 @@ func _add_blob_badge(cx: float, text: String, textured: bool,
 	badge.no_depth_test = false
 	badge.rotation_degrees = Vector3(-90, 0, 0)
 	if badge_tex:
-		# 墨团内白字：统一从 BADGE_FONT_PX 起，再实测缩进圆盘可写区。
+		# 墨团内的字：统一从 BADGE_FONT_PX 起，再实测缩进圆盘可写区。
 		# 按字数分档（比如 150/118 两档）只是这件事的粗略近似，量下来「产12」仍占满
 		# 标称直径 99%、「传说」124% 直接溢出圆盘
-		badge.font = Fonts.zh_bold()   # 使用真实 Semibold，深墨团上的白字保持完整笔画
+		# 用最粗一档：浅色圈里的深色字比深色团上的白字显细，粗一档才压得住。
+		badge.font = Fonts.zh_black()
 		badge.font_size = _raster()
 		badge.pixel_size = _text_scale(BADGE_FONT_PX)
-		badge.modulate = Color.WHITE
+		badge.modulate = CardArt.frame_color()
 		badge.outline_size = 0
 		_fit_label_in_disc(badge, CARD_SIZE.x * CardArt.BLOB_FRAC)
 	else:
@@ -562,7 +648,7 @@ func set_effect_mult(mult: int) -> void:
 	# 翻倍生效：墨团换强调色并略微放大，和 配方位凑满同一套语汇
 	# （桌上「这一格不是原值」只靠这一点区分）
 	if _effect_blob and is_instance_valid(_effect_blob):
-		_effect_blob.modulate = CardArt.accent_color(def_id, card_catalog) if m > 1 else Color.WHITE
+		_style_badge(_effect_blob, _effect_label, m > 1)
 		_effect_blob.scale = _effect_blob_scale * (BADGE_DONE_SCALE if m > 1 else 1.0)
 
 ## 当前效果值：卡面值 × Buff 倍数，产出再按主人的角色修正缩放（和 OnWorkComboRules 同一个式子）
@@ -637,7 +723,10 @@ func _add_kind_badge(def: Dictionary, textured: bool) -> void:
 		return
 	var cx: float = CardArt.BLOB_L_CX if textured else 0.5
 	var tex := CardArt.res_icon_texture(res, card_catalog) if res != "" else null
-	_add_blob_badge(cx, mark, textured, tex, _res_icon_cx(cx))
+	var seal := textured and CardArt.is_legend(def_id, card_catalog)
+	var made := _add_blob_badge(cx, mark, textured, tex, _res_icon_cx(cx), seal)
+	if made["blob"] != null:
+		_plain_badges.append({"blob": made["blob"], "label": made["label"], "seal": seal})
 
 ## 左下角配方进度徽标：资源图标 + 「have/need」。
 ## 未成组时显示 0/N；无配方的卡（单位 / Buff / 传说）不画这一格
@@ -671,8 +760,8 @@ func set_recipe_progress(have: int, done: bool) -> void:
 	_recipe_done = done
 	_recipe_label.text = "%d/%d" % [have, _recipe_need]
 	if _recipe_blob and is_instance_valid(_recipe_blob):
-		# 凑满：墨团换强调色并略微放大
-		_recipe_blob.modulate = CardArt.accent_color(def_id, card_catalog) if done else Color.WHITE
+		# 凑满：墨团填成强调色、字变白，并略微放大
+		_style_badge(_recipe_blob, _recipe_label, done)
 		_recipe_blob.scale = _recipe_blob_scale * (BADGE_DONE_SCALE if done else 1.0)
 
 ## 状态从 Board 的真实组合评估传入；不根据卡面数字另算一遍规则。
@@ -687,11 +776,29 @@ func recipe_status_text() -> String:
 	return "可%s：%s%d%s" % ["攻击" if def.get("kind") == OnWorkCardDB.KIND_ATTACK else "生产", _effect_mark, n,
 		card_catalog.res_label(str(def.get("attack_res" if def.get("kind") == OnWorkCardDB.KIND_ATTACK else "output_res", "")))]
 
-## 卡面材质不使用 mask/PNG；所有卡都走相同的圆角与标题分隔线。
+## 卡身：圆角牌是一块平涂的盒子；攻击牌、增益牌的卡身跟着卡面的外形裁切，
+## 切掉、折掉的角下面不露出深色。只有这两类牌用着色器材质，其余牌不多一个着色器。
+func _make_body_material() -> Material:
+	if CardArt.paper_kind(def_id, card_catalog) == CardArt.PAPER_ROUND:
+		var flat := StandardMaterial3D.new()
+		flat.albedo_color = Palette.get_color("card", "body")
+		flat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		return flat
+	var material := ShaderMaterial.new()
+	material.shader = _BODY_PROGRAM
+	CardArt.configure_frame(material)
+	CardArt.configure_paper(material, def_id, card_catalog)
+	material.set_shader_parameter("body_inset", PLATE_ART_INSET)
+	material.set_shader_parameter("ink_color", Palette.get_color("card", "body"))
+	return material
+
+## 卡面材质不使用 mask/PNG；外形、标题分隔线和传说牌的金框都由同一个着色器画。
 func _make_plate_material() -> ShaderMaterial:
 	var material := ShaderMaterial.new()
 	material.shader = _PLATE_PROGRAM
 	CardArt.configure_frame(material)
+	CardArt.configure_paper(material, def_id, card_catalog)
+	material.set_shader_parameter("legend_frame", CardArt.is_legend(def_id, card_catalog))
 	material.set_shader_parameter("tint", Vector3.ONE)
 	material.set_shader_parameter("handling_light", 0.0)
 	material.set_shader_parameter("feedback_phase", 1.0)
@@ -702,6 +809,7 @@ func _make_back_material() -> ShaderMaterial:
 	var material := ShaderMaterial.new()
 	material.shader = _BACK_PROGRAM
 	CardArt.configure_frame(material)
+	CardArt.configure_paper(material, def_id, card_catalog)
 	var art := CardArt.table_texture("card_back")
 	material.set_shader_parameter("has_artwork", art != null)
 	if art:
@@ -719,9 +827,10 @@ func _push_plate_colors(pmat: ShaderMaterial) -> void:
 	pmat.set_shader_parameter("face_color", CardArt.face_color(def_id, card_catalog))
 	pmat.set_shader_parameter("band_color", CardArt.band_color(def_id, card_catalog))
 	pmat.set_shader_parameter("ink_color", CardArt.frame_color())
+	pmat.set_shader_parameter("foil_color", CardArt.foil_color())
 
 ## 墨团旁资源图标 + 墨团内文字的墨色刷新。
-## 墨团内的字是白的（深色圆盘上），不跟墨色走；只有配方凑满的强调色要重取
+## 墨团的底图按墨线色缓存，配色改了要重取；填实的两格还要重取强调色。
 func _refresh_badge_ink() -> void:
 	for note in _badge_labels:
 		if is_instance_valid(note) and note.text == "→":
@@ -729,9 +838,13 @@ func _refresh_badge_ink() -> void:
 	for ic in _badge_icons:
 		if is_instance_valid(ic):
 			ic.modulate = CardArt.icon_tint(ic.texture, _ink)
-	if _recipe_blob and is_instance_valid(_recipe_blob) \
-		and _recipe_blob.modulate != Color.WHITE:
-		_recipe_blob.modulate = CardArt.accent_color(def_id, card_catalog)
+	for entry in _plain_badges:
+		if is_instance_valid(entry.blob):
+			entry.blob.texture = _badge_texture("seal" if entry.seal else "open")
+		if is_instance_valid(entry.label):
+			entry.label.modulate = CardArt.frame_color()
+	_style_badge(_recipe_blob, _recipe_label, _recipe_done)
+	_style_badge(_effect_blob, _effect_label, _effect_mult > 1)
 
 ## 配色变更后刷新这张卡（选色面板实时预览用）
 func refresh_palette() -> void:
@@ -741,8 +854,10 @@ func refresh_palette() -> void:
 		_push_plate_colors(front)
 	if _back_mat:
 		_push_back_colors(_back_mat)
-	if card_mesh and card_mesh.material_override:
+	if card_mesh and card_mesh.material_override is StandardMaterial3D:
 		(card_mesh.material_override as StandardMaterial3D).albedo_color = Palette.get_color("card", "body")
+	elif card_mesh and card_mesh.material_override is ShaderMaterial:
+		(card_mesh.material_override as ShaderMaterial).set_shader_parameter("ink_color", Palette.get_color("card", "body"))
 	if _icon:
 		_icon.modulate = Color.WHITE if _illustrated else Palette.icon_color(_ink)
 	if label:
@@ -817,6 +932,8 @@ func set_hover_visual(on: bool, lift_allowed := true) -> void:
 	_hover_lift_allowed = lift_allowed
 	_set_market_price_hover(on)
 	_set_handling_light(0.35 if on else 0.0)
+	if on:
+		sweep_foil()
 	_stop_visual_tween()
 	_drag_visual_tween = create_tween().set_parallel(true) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
@@ -824,7 +941,27 @@ func set_hover_visual(on: bool, lift_allowed := true) -> void:
 		Vector3(0, HOVER_LIFT if on and lift_allowed else 0.0, 0), 0.12)
 	_drag_visual_tween.tween_property(_visual, "rotation", Vector3.ZERO, 0.12)
 
+## 传说牌金框上的反光扫过一次：悬停、落桌时各扫一次，别的牌没有这层金边。
+## 只推 foil_glint 这一个参数（两道硬边高光的位置），扫完停回边角的默认位置。
+const FOIL_REST := 0.30
+const FOIL_SWEEP := 0.55
+var _foil_tween: Tween
+
+func sweep_foil() -> void:
+	if _face_down or _visual_retired or not CardArt.is_legend(def_id, card_catalog):
+		return
+	var face := _feedback_material()
+	if face == null:
+		return
+	if _foil_tween != null and _foil_tween.is_valid():
+		_foil_tween.kill()
+	_foil_tween = create_tween().bind_node(self)
+	_foil_tween.tween_method(func(v: float) -> void: face.set_shader_parameter("foil_glint", v),
+		-1.35, 1.45, FOIL_SWEEP).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_foil_tween.tween_callback(func() -> void: face.set_shader_parameter("foil_glint", FOIL_REST))
+
 func pulse_landed() -> void:
+	sweep_foil()
 	_stop_hover_animation()
 	if _visual == null or _visual_retired:
 		return
@@ -1087,9 +1224,12 @@ func tear_apart() -> Array:
 		var piece := Node3D.new()
 		piece.position = Vector3(0, Y_PLATE + 0.002, 0)
 		var half := MeshInstance3D.new()
-		var quad := QuadMesh.new()
-		quad.size = Vector2(CARD_SIZE.x, CARD_SIZE.z)
-		half.mesh = quad
+		if _tear_geometry == null:
+			_tear_geometry = QuadMesh.new()
+			_tear_geometry.size = Vector2(CARD_SIZE.x, CARD_SIZE.z)
+			_tear_geometry.subdivide_width = 10
+			_tear_geometry.subdivide_depth = 14
+		half.mesh = _tear_geometry
 		var mat := ShaderMaterial.new()
 		mat.shader = _TEAR_PROGRAM
 		# 正面与撕片携带同一份几何参数与配色。
@@ -1098,10 +1238,14 @@ func tear_apart() -> Array:
 		mat.set_shader_parameter("face_color", src.get_shader_parameter("face_color"))
 		mat.set_shader_parameter("band_color", src.get_shader_parameter("band_color"))
 		mat.set_shader_parameter("ink_color", src.get_shader_parameter("ink_color"))
+		# 传说牌撕开后两片仍然是金框。
+		for key in ["legend_frame", "foil_color", "foil_glint"]:
+			mat.set_shader_parameter(key, src.get_shader_parameter(key))
 		var t = src.get_shader_parameter("tint")
 		mat.set_shader_parameter("tint", t if t != null else Color.WHITE)
 		mat.set_shader_parameter("side", side)
 		mat.set_shader_parameter("fade", 1.0)
+		mat.set_shader_parameter("ball", 0.0)   # 刚撕开是平的；揉团由 CardMotion 推到 1
 		mat.set_shader_parameter("crumple", _crumple)
 		mat.set_shader_parameter("damage_seed", _damage_seed())
 		_tear_materials.append(mat)

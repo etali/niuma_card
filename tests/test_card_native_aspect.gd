@@ -94,8 +94,8 @@ func _check_card(card: CardEntity) -> void:
 	for badge in [card._effect_label, card._recipe_label]:
 		if badge == null:
 			continue
-		check(badge.modulate.is_equal_approx(Color.WHITE) and badge.visible,
-			"%s 墨团数字保持可见白色" % id)
+		check(badge.modulate.is_equal_approx(CardArt.frame_color()) and badge.visible,
+			"%s 空心墨团里的数字是卡框墨色、保持可见" % id)
 		var glyph_extent: Vector2 = badge.font.get_string_size(badge.text,
 			HORIZONTAL_ALIGNMENT_CENTER, -1, badge.font_size) * badge.pixel_size
 		check(glyph_extent.length() <= 1.2 * CardArt.BLOB_FRAC * CardEntity.BLOB_DISC_FRAC + 0.001,
