@@ -33,12 +33,14 @@ func _run() -> void:
 	await _settle()
 	var timer: float = state.cards[tool].remaining
 	_check(state.outsourcing.has(tool) and state.reserved_money(0) == 8 and state.available_money(0) == 0, "outsource has reserved eight and no shopping balance")
-	_check(main.hud.lbl_player_res.text.contains("可用0") and main.hud.lbl_player_res.text.contains("预留8"), "header distinguishes shopping balance from reserved cash")
+	_check(main.hud.lbl_player_res.text.contains("钱0") and not main.hud.lbl_player_res.text.contains("预留")
+		and main.hud.lbl_player_res.tooltip_text == main.hud.lbl_player_res.text, "header and tooltip show only spendable money in the normal resource format")
 	_check(board._payment_amount([board.by_uid[wallet]]) == 0, "drag-purchase gate excludes reserved wallet money")
 	main.hud.show_card_detail(board.by_uid[wallet], Vector2(500, 500))
-	_check(main.hud._detail_status.text.replace(" ", "").contains("外包预留1"), "hover explains why this individual money card is reserved")
+	_check(main.hud._detail_status.text == board.by_uid[wallet].recipe_status_text()
+		and not main.hud._detail_status.text.contains("预留"), "money hover keeps its normal card status without a reservation override")
 	main.hud.show_card_detail(board.by_uid[tool], Vector2(500, 500))
-	_check(main.hud._detail_status.text.contains("外包中") and main.hud._detail_status.text.contains("预留"), "active outsource hover reports the protected batch without an invalid status lookup")
+	_check(main.hud._detail_status.text == "外包中", "active outsource hover uses the concise active status")
 	main.hud._detail.hide()
 	var offer: Dictionary = state.offers[0].duplicate()
 	var people := state.people_count(0)
@@ -47,7 +49,7 @@ func _run() -> void:
 	_check(state.people_count(0) == people and state.offers[0].id == offer.id, "price click refuses to buy with reserved cash only")
 	_check(state.outsourcing.has(tool) and is_equal_approx(float(state.cards[tool].remaining), timer), "rejected purchase leaves the real outsource timer unchanged")
 	_check(state.money(0) == 8 and state.work_count(0) == 12, "rejected purchase consumes neither money nor work")
-	_check(main.message.text.contains("预留"), "failed purchase gives the reservation reason")
+	_check(main.message.text.contains("钱还不够") and not main.message.text.contains("预留"), "failed purchase uses the ordinary insufficient-money message")
 	var active_group: Dictionary = board.group_of(board.by_uid[tool])
 	await _click(_point(active_group.cards[board._top_index(active_group)]), true)
 	await _drag(board.by_uid[wallet], _point(board.offers_by_id[int(offer.id)]))
@@ -73,13 +75,14 @@ func _run() -> void:
 		root.size = viewport_size
 		main.hud.relayout()
 		await process_frame
-		_check(root.get_visible_rect().encloses(main.hud._header.get_global_rect()), "reservation header fits " + str(viewport_size))
+		_check(root.get_visible_rect().encloses(main.hud._header.get_global_rect()), "money header fits " + str(viewport_size))
 	state.advance(timer)
 	board.sync_state(state)
 	main._update_hud()
 	_check(state.work_count(0) == 4 and state.money(0) == 8 - int(offer.price), "outsource completes its original batch and charges reserved money exactly once")
 	_check(state.reserved_money(0) == 0 and not state.outsourcing.has(tool), "completion releases all reserved balance")
-	_check(not main.hud.lbl_player_res.text.contains("预留"), "header returns to normal after reservation ends")
+	_check(main.hud.lbl_player_res.text.contains("钱%d" % state.available_money(0))
+		and not main.hud.lbl_player_res.text.contains("预留"), "header retains the same spendable-money format after the batch ends")
 	main.queue_free()
 	await process_frame
 	await process_frame

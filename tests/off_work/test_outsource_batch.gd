@@ -188,7 +188,7 @@ func _spending_reserved_cash() -> void:
 	_check(state.reserved_cash_amount(f.cash[0]) == 8 and state.available_cash_amount(f.cash[0]) == 0, "reserved wallet exposes zero spendable amount")
 	_check(state.reserved_money(0) == 8 and state.available_money(0) == 100 and state.money(0) == 108, "available and reserved amounts sum to actual total")
 	_check(state.buy(int(offer.id), 0, [f.cash[0]]) < 0, "explicit reserved wallet cannot fund a purchase")
-	_check(state.last_error.contains("预留") and state.last_error.contains("可用金钱不足"), "rejected reserved payment explains the unavailable funds")
+	_check(state.last_error == "钱还不够", "rejected reserved payment uses the ordinary insufficient-money message")
 	_check(state.cards == cards_before and state.offers == offers_before and state.outsourcing[f.tool] == original, "rejected purchase is atomic and leaves exact outsource timer untouched")
 	_check(state.buy(int(offer.id), 0) >= 0, "normal purchasing uses another unreserved wallet")
 	_check(state.cards[f.cash[0]].amount == 8 and state.outsourcing[f.tool] == original and state.cards[f.tool].status == "active", "successful purchase never disturbs reserved cash or reading progress")
@@ -227,7 +227,7 @@ func _spending_reserved_cash() -> void:
 	_check(state.money(0) == 0 and state.work_count(0) == 20, "protected last funds pay the entire batch once")
 	f = _fixture(0, [])
 	state = f.state
-	_check(not state._spend(0, state.money(0) + 1) and not state.last_error.contains("预留"), "ordinary insufficient funds do not invent a reservation explanation")
+	_check(not state._spend(0, state.money(0) + 1) and state.last_error == "钱还不够", "ordinary insufficient funds use the same insufficient-money message")
 	# Multiple selected wallets can spend each free part without consuming any
 	# protected cash entity, even when it appears first in payment order.
 	f = _fixture(5, [6, 4])

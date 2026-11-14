@@ -289,13 +289,8 @@ func refresh(game_state: RefCounted, _selected_tool := -1) -> void:
 	for item in [[lbl_player_res, 0], [lbl_bot_res, 1]]:
 		var label: Label = item[0]
 		var owner: int = item[1]
-		var reserved: int = state.reserved_money(owner)
-		if reserved > 0:
-			label.text = str(hud_config.resources_reserved) % [hud_config.sides[owner], state.work_count(owner), state.people_count(owner), state.available_money(owner), reserved]
-			label.tooltip_text = str(hud_config.cash_reservation_help) % [state.money(owner), reserved, state.available_money(owner)]
-		else:
-			label.text = str(hud_config.resources) % [hud_config.sides[owner], state.work_count(owner), state.people_count(owner), state.money(owner)]
-			label.tooltip_text = label.text
+		label.text = str(hud_config.resources) % [hud_config.sides[owner], state.work_count(owner), state.people_count(owner), state.available_money(owner)]
+		label.tooltip_text = label.text
 	btn_pause.disabled = (state.winner >= 0 and not host.replay.playing) or host.shift_network_live()
 	_replay_time.visible = host.replay.playing
 	_replay_speed.visible = host.replay.playing
@@ -404,8 +399,6 @@ func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 			child.queue_free()
 		if card.is_market and state.config.can_purchase(id): _detail_fact("购买", "%d 金钱" % int(def.price))
 	_detail_status.text = ("购买后拖入牌组" if state.config.can_purchase(id) else str(hud_config.unpurchasable)) if card.is_market else card.recipe_status_text()
-	if id == "money" and not card.is_market and state.reserved_cash_amount(card.uid) > 0:
-		_detail_status.text = str(hud_config.cash_reservation_status) % [state.available_cash_amount(card.uid), state.reserved_cash_amount(card.uid)]
 	_detail_status.visible = _detail_status.text != ""
 	_place_detail(mouse)
 

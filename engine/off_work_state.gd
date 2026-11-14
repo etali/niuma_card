@@ -2097,15 +2097,13 @@ func _spend(owner: int, amount: int, payment_ids: Array = []) -> bool:
 	var candidates: Array = _owner_type(owner, "money") if payment_ids.is_empty() else payment_ids.duplicate()
 	var seen: Dictionary = {}
 	var available := 0
-	var reserved := 0
 	for id in candidates:
 		if seen.has(id) or not cards.has(id) or cards[id].type != "money" or int(cards[id].owner) != owner:
 			return _fail("付款现金无效")
 		seen[id] = true
 		available += available_cash_amount(int(id))
-		reserved += reserved_cash_amount(int(id))
 	if amount < 0 or available < amount:
-		return _fail("组合资金已预留，可用金钱不足" if reserved > 0 and amount >= 0 else "钱还不够")
+		return _fail("钱还不够")
 	var left: int = amount
 	for id in candidates:
 		if left == 0: break
