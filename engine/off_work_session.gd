@@ -51,9 +51,7 @@ static func read_session(host: Node) -> Dictionary:
 	# Reconcile legacy production locks and invalid upgrade stacks before the
 	# first card face is shown, including when the restored table stays paused.
 	var legacy_functions: bool = state.groups.values().any(func(group): return not group.has("function"))
-	if state.winner < 0 and (legacy_functions or state.tasks.keys().any(func(person):
-		var task: Dictionary = state.tasks[person]
-		return task.kind == "coffee" and not state._coffee_batch_valid(int(person), task))):
+	if state.winner < 0 and (legacy_functions or state.has_invalid_coffee_batch()):
 		state._sync_schedule()
 		state.revision += 1
 		state.drain_events()

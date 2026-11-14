@@ -109,4 +109,20 @@ static func _matches_attack(world: OffWorkState, action: Dictionary, attack: Dic
 	if not world.cards.has(tool) or str(world.cards[tool].type)!=kind: return false
 	if attack.has("tool") and tool!=int(attack.tool): return false
 	if kind=="strike": return action.kind=="activate" and int(action.get("group",-1))==int(attack.target_group)
-	return kind=="meeting" and action.get("intent","")=="meeting" and int(action.get("person",-1))==int(attack.host)
+	if kind!="meeting" or action.get("intent","")!="meeting": return false
+	var expected: Array = attack.get("hosts", [attack.host])
+	if attack.has("meeting_group"):
+		if action.kind!="activate" or int(action.get("group",-1))!=int(attack.meeting_group): return false
+		var hosts: Array = world.group_meeting_hosts(int(attack.meeting_group))
+		var tools: Array = world.group_meeting_tools(int(attack.meeting_group))
+		return hosts.size()==expected.size() and hosts.all(func(id):return expected.has(id)) \
+			and tools.size()==attack.tools.size() and tools.all(func(id):return attack.tools.has(id))
+	if action.kind=="activate" and expected.size()==1:
+		var group := int(action.get("group",-1))
+		var hosts: Array = world.group_meeting_hosts(group)
+		var tools: Array = world.group_meeting_tools(group)
+		return hosts.size()==1 and hosts[0]==attack.host and tools==[tool]
+	# The single-person alternative must really split out that person/tool;
+	# activating an existing larger group has a different opportunity cost.
+	return action.kind=="move" and int(action.get("group",-1))<0 and expected.size()==1 \
+		and int(action.get("person",-1))==int(attack.host) and action.get("ids",[]).has(attack.host)

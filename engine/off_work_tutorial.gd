@@ -120,7 +120,7 @@ func clock_delta(world: OffWorkState, delta: float) -> float:
 			var rate := world.group_transfer_rate(task.group)
 			if rate > 0: first = minf(first, (1.0 - world.group_transfer_progress(task.group)) / rate)
 		if target in ["coffee", "upgrade"] and task.kind == "coffee":
-			first = minf(first, float(task.total) * (1.0 - float(task.progress)))
+			first = minf(first, float(task.total) * (1.0 - world._task_progress(int(id))))
 	return minf(delta, maxf(0.000001, first)) if is_finite(first) else 0.0
 
 func observe(world: OffWorkState, events: Array, interaction: Dictionary = {}) -> bool:

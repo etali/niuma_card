@@ -10,6 +10,7 @@ const WIN := 1000000.0
 const AttackPlans = preload("res://engine/off_work_bot_attack_plans.gd")
 const Economy = preload("res://engine/off_work_bot_economy.gd")
 const ProductionPlans = preload("res://engine/off_work_bot_production_plans.gd")
+const CoffeePlan = preload("res://engine/off_work_coffee_plan.gd")
 var _deadline := -1
 var _complete := true
 var _config: RefCounted
@@ -379,7 +380,7 @@ func _model(world: OffWorkState, side: int, index: Dictionary) -> Dictionary:
 			var upgrade_key := "%s:%s:%s" % [gid,kind,job]
 			if not step.is_empty() and job in ["", "work"] and card.status != "striking" and float(index.paused.get(id,0.0)) <= 0.0 and not upgrade_keys.has(upgrade_key):
 				upgrade_keys[upgrade_key] = true
-				model.upgrade_people.append({"id":id,"kind":kind,"to":str(step.to),"cost":int(step.cost),"seconds":_config.coffee_seconds(kind)})
+				model.upgrade_people.append({"id":id,"kind":kind,"to":str(step.to),"cost":int(step.cost),"seconds":_config.coffee_batch_seconds()})
 			var pause := maxf(float(index.paused.get(id, 0.0)), float(card.remaining) if card.status == "striking" else 0.0)
 			if pause <= 0.0:
 				group.present[id] = _unit(kind,1,bool(group.union),false)
@@ -389,24 +390,17 @@ func _model(world: OffWorkState, side: int, index: Dictionary) -> Dictionary:
 			var needs_action := false
 			var transfer := mode == "transfer" and job in ["", "transfer"]
 			if job == "coffee":
+				# The opening snapshot already fixes this person's final tier.
+				# Later arrivals belong to another round, not this commitment.
 				kind = str(task.to_type)
-				delay += maxf(0.0, float(task.total) * (1.0 - float(task.progress)))
-				# The current highest eligible person immediately continues any
-				# already funded stages in this same stack. Recognize that exact
-				# queue before and after each boundary, not only the current cup.
-				var cups: int = int(row.types.get("coffee",0))-task.coffee_ids.size()
-				var next: Dictionary = _config.coffee_upgrade(kind)
-				while not next.is_empty() and cups>=int(next.cost):
-					if not _open(): return model
-					cups-=int(next.cost)
-					delay+=_config.coffee_seconds(kind)
-					kind=str(next.to)
-					next=_config.coffee_upgrade(kind)
+				delay += maxf(0.0, float(task.total) * (1.0 - world._task_progress(int(id))))
 				delay += _period
 				needs_action = true
 				destination = int(model.target)
 			elif not transfer and (mode not in ["", "work"] or int(group.work) == 0 or job not in ["", "work"]):
-				if job == "meeting" and world.meetings.has(task.tool_id): delay += float(world.meetings[task.tool_id].remaining)
+				if job == "meeting":
+					var meeting: Dictionary = world.meeting_for_tool(int(task.tool_id))
+					if not meeting.is_empty(): delay += float(meeting.remaining)
 				delay += _period
 				needs_action = true
 				destination = int(model.target)
@@ -734,9 +728,10 @@ func _apply_forecast_event(context: Dictionary, event: Dictionary) -> void:
 	match str(event.kind):
 		"commit_attack": _require(event,context.required,context.scheduled.commands)
 		"meeting_host":
-			for group in groups.values():
-				group.workers.erase(event.id)
-				group.present.erase(event.id)
+			for id in event.get("ids", [event.id]):
+				for group in groups.values():
+					group.workers.erase(id)
+					group.present.erase(id)
 			_require(event,context.required,context.scheduled.commands)
 		"meeting_pause":
 			var participants := {}
@@ -1223,8 +1218,9 @@ func _gate_attacks(source: Array) -> Array:
 			if str(event.get("operation",""))==str(plan.operation):
 				if context.failed.has(str(plan.purchase_operation)):valid=false
 				if plan.kind=="meeting":
-					valid=valid and not context.struck.has(plan.host) and not context.paused.has(plan.host)
-					valid=valid and context.groups.values().any(func(group):return group.present.has(plan.host))
+					for id in plan.get("hosts", [plan.host]):
+						valid=valid and not context.struck.has(id) and not context.paused.has(id)
+						valid=valid and context.groups.values().any(func(group):return group.present.has(id))
 				break
 			_apply_forecast_event(context,event)
 		if valid and plan.kind=="strike": valid=_strike_ready_at(models[1-side],int(plan.target_group),float(plan.use_at))
@@ -1272,13 +1268,18 @@ func _attack_candidate(world: OffWorkState, model: Dictionary, opponent: Diction
 	var natural_restart := false
 	if plan.kind=="meeting" and plan.has("tool") and float(plan.ready_seconds)>0.0:
 		var card: Dictionary = world.cards[plan.tool]
-		if bool(card.get("meeting_repeat",false)) and bool(_config.rules.meeting.auto_repeat) and str(world.groups[card.group].get("function","")) in ["","meeting"]:
-			var hosts: Array = world._available_people(int(card.group))
-			hosts.sort_custom(func(a,b):return float(_config.roles[world.cards[a].type].meeting_multiplier)>float(_config.roles[world.cards[b].type].meeting_multiplier))
+		var group_tools: Array = world.group_meeting_tools(int(card.group))
+		if group_tools.any(func(id):return bool(world.cards[id].get("meeting_repeat",false))) \
+				and bool(_config.rules.meeting.auto_repeat) and str(world.groups[card.group].get("function","")) in ["","meeting"]:
+			var hosts: Array = world.group_meeting_hosts(int(card.group))
 			if not hosts.is_empty():
-				# Keeping the existing host causes ONE natural restart on ready.
-				# A different host cannot actively reuse an already restarted tool.
-				if int(hosts[0])!=int(plan.host):return {}
+				# Every eligible host and ready tool in this stack participates.
+				# A split-person forecast cannot borrow the shared auto restart.
+				var planned_hosts: Array = plan.get("hosts", [plan.host])
+				var tools: Array = group_tools
+				var planned_tools: Array = plan.get("tools", [plan.tool])
+				if hosts.size()!=planned_hosts.size() or not hosts.all(func(id):return planned_hosts.has(id)):return {}
+				if tools.size()!=planned_tools.size() or not tools.all(func(id):return planned_tools.has(id)):return {}
 				natural_restart=true
 	var at := maxf(float(model.first_action),float(plan.ready_seconds))
 	if plan.has("offer"):
@@ -1298,7 +1299,8 @@ func _attack_candidate(world: OffWorkState, model: Dictionary, opponent: Diction
 	if plan.kind=="meeting":
 		use.kind="meeting_host"
 		use["id"]=plan.host
-		own.events=own.events.filter(func(event):return not (event.kind=="worker" and str(event.id)==str(plan.host)))
+		use["ids"]=plan.get("hosts", [plan.host]).duplicate()
+		own.events=own.events.filter(func(event):return not (event.kind=="worker" and use.ids.has(event.id)))
 	own.events.append(use)
 	var scheduled := _schedule(own.events,float(model.first_action))
 	if not _open(): return {}
@@ -1314,8 +1316,9 @@ func _attack_candidate(world: OffWorkState, model: Dictionary, opponent: Diction
 			if float(event.at)>use_at or str(event.get("operation",""))==operation: break
 			_advance_context(available,float(event.at))
 			_apply_forecast_event(available,event)
-		if available.struck.has(plan.host) or available.paused.has(plan.host): return {}
-		if not available.groups.values().any(func(group):return group.present.has(plan.host)): return {}
+		for id in plan.get("hosts", [plan.host]):
+			if available.struck.has(id) or available.paused.has(id): return {}
+			if not available.groups.values().any(func(group):return group.present.has(id)): return {}
 	var impact := use_at+float(plan.flight_seconds)
 	if impact>=_horizon:return {}
 	var duration := float(plan.duration_seconds)
@@ -1325,10 +1328,11 @@ func _attack_candidate(world: OffWorkState, model: Dictionary, opponent: Diction
 		if int(plan.target_group)!=recovery: other.events.append({"at":impact+_period,"kind":"strike_feed","group":recovery,"flight":operation,"action":true,"attack_effect":true,"attack_owner":int(model.owner)})
 		other.events.append({"at":impact+duration+_period,"kind":"strike_return","group":recovery,"flight":operation,"action":true,"attack_effect":true,"attack_owner":int(model.owner)})
 	else:
-		var kind := str(world.cards[plan.host].type)
-		if _config.can_work(kind):
-			own.events.append({"at":use_at+duration+_period,"kind":"worker","id":plan.host,"group":model.target,
-				"action":true,"after":operation,"lag":duration+_period,"unit":_unit(kind,1,bool(model.groups[model.target].union),false)})
+		for id in plan.get("hosts", [plan.host]):
+			var kind := str(world.cards[id].type)
+			if _config.can_work(kind):
+				own.events.append({"at":use_at+duration+_period,"kind":"worker","id":id,"group":model.target,
+					"action":true,"after":operation,"lag":duration+_period,"unit":_unit(kind,1,bool(model.groups[model.target].union),false)})
 		other.events.append({"at":impact,"kind":"meeting_pause","meeting":operation,"targets":plan.targets,"attack_effect":true,"attack_owner":int(model.owner)})
 		other.events.append({"at":impact+duration,"kind":"meeting_end","meeting":operation,"attack_effect":true,"attack_owner":int(model.owner)})
 		other.events.append({"at":impact+duration+_period,"kind":"meeting_dispatch","meeting":operation,"group":other.target,"action":true,"attack_effect":true,"attack_owner":int(model.owner)})
@@ -1520,12 +1524,17 @@ func _public_recipe(world: OffWorkState, model: Dictionary, person: Dictionary, 
 ## A complete recipe is one real split/assembly command, timed upgrading,
 ## then a separate return to production. Ingredients receive no asset score.
 func _coffee(model: Dictionary, person: Dictionary, at: float, purchase := "") -> Dictionary:
+	# This continuation assembles exactly the reserved recipe amount. Resolve
+	# its final tier with the same opening-snapshot planner as the rule engine.
+	var batch: Dictionary = CoffeePlan.plan(_config, [{"id":person.id,"kind":person.kind}], int(person.cost))
+	if batch.upgrades.is_empty(): return model.duplicate(true)
+	var upgraded: Dictionary = batch.upgrades[0]
 	var result: Dictionary = model.duplicate(true)
 	result.events = result.events.filter(func(event): return not (event.kind == "worker" and str(event.id) == str(person.id)))
 	var operation := "coffee:%s" % person.id
 	result.events.append({"at":at,"kind":"coffee_start","id":person.id,"action":true,"operation":operation,"after":purchase,"lag":_period})
 	result.events.append({"at":at + float(person.seconds) + _period,"kind":"worker","id":person.id,"group":model.target,
-		"action":true,"after":operation,"lag":float(person.seconds)+_period,"unit":_unit(person.to,1,bool(model.groups[model.target].union),false)})
+		"action":true,"after":operation,"lag":float(person.seconds)+_period,"unit":_unit(str(upgraded.to_type),1,bool(model.groups[model.target].union),false)})
 	return result
 
 func _afford_at(model: Dictionary, price: float, expires: float) -> float:

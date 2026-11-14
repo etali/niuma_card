@@ -469,16 +469,16 @@ test('work and recruitment durations must be positive and employee recruitment f
   }
 });
 
-test('coffee upgrades accept exact zero globally and per tier and preserve it in saved and played cards', async () => {
+test('coffee upgrades use one batch duration, accept exact zero and keep retired tier timers out of the editor', async () => {
   const {ui,requests} = harness();
-  assert.equal(cards.rules.coffee.seconds,5,'the project default is unchanged');
-  ui.candidate.rules.coffee.upgrades.employee.seconds = 3;
+  assert.equal(cards.rules.coffee.seconds,1,'the project default is one second per batch');
   ui.renderCards();
-  for (const path of ['rules.coffee.seconds','rules.coffee.upgrades.employee.seconds']) {
+  for (const path of ['rules.coffee.seconds']) {
     const input = ui.$('cardsView').querySelector(`[data-path="${path}"]`);
-    assert.ok(input.parentElement.textContent.includes('0 表示立即完成升级'));
+    assert.ok(input.parentElement.textContent.includes('0 表示立即完成整批升级'));
     assert.ok(input.parentElement.textContent.includes('仍需消耗对应咖啡'));
-    assert.ok(ui.parameterMetadata(path.split('.'),[ui.candidate]).hint.includes('0 表示立即完成升级'));
+    assert.ok(input.parentElement.textContent.includes('不按人数或跨越等级累加'));
+    assert.ok(ui.parameterMetadata(path.split('.'),[ui.candidate]).hint.includes('批次结束同时升级'));
     const keys = path.split('.');
     const object = keys.slice(0,-1).reduce((value,key) => value[key],ui.candidate);
     const before = object[keys.at(-1)];
@@ -493,7 +493,11 @@ test('coffee upgrades accept exact zero globally and per tier and preserve it in
   }
   const check = doc => {
     assert.equal(doc.rules.coffee.seconds,0);
-    assert.equal(doc.rules.coffee.upgrades.employee.seconds,0);
+    for (const [kind,upgrade] of Object.entries(doc.rules.coffee.upgrades)) {
+      assert.equal(upgrade.seconds,undefined);
+      assert.equal(upgrade.cost,cards.rules.coffee.upgrades[kind].cost);
+      assert.equal(ui.$('cardsView').querySelector(`[data-path="rules.coffee.upgrades.${kind}.seconds"]`),null);
+    }
     assert.equal(doc.rules.slack.seconds,cards.rules.slack.seconds,'coffee production keeps its own duration');
   };
   await ui.saveVersion('cards','即时升级实验',ui.candidate);
@@ -504,6 +508,73 @@ test('coffee upgrades accept exact zero globally and per tier and preserve it in
   }
   await ui.playCurrentCards('playStatus');
   assert.equal(requests.at(-1).url,'api/playtest'); check(requests.at(-1).body.cards);
+  ui.candidate.rules.coffee.upgrades.employee.seconds = 99;
+  ui.renderCards();
+  assert.equal(ui.$('cardsView').querySelector('[data-path="rules.coffee.upgrades.employee.seconds"]'),null,
+    'even an older in-memory object cannot reintroduce a tier-duration editor');
+  const retired = ui.parameterMetadata(['rules','coffee','upgrades','employee','seconds'],[ui.candidate]);
+  assert.ok(retired.label.includes('已停用') && retired.hint.includes('不再生效'),
+    'historical parameter comparisons explain that tier timing no longer applies');
+});
+
+test('meeting host capacities and stacked durations have independent controls and reach saved and played cards', async () => {
+  const {ui,requests} = harness();
+  for (const [kind,role] of Object.entries(cards.roles)) {
+    assert.equal(role.meeting_multiplier,kind === 'leader' ? 2 : 1);
+  }
+  assert.equal(cards.rules.meeting.base_targets,2);
+  assert.equal(cards.rules.meeting.duration_multiplier,1.2);
+  assert.equal(cards.rules.meeting.recovery_seconds,24);
+  ui.renderCards();
+  for (const [path,value,text] of [
+    ['rules.meeting.duration_multiplier',1.5,'不增加参会名额'],
+    ['rules.meeting.duration_seconds',10,'冷却时间独立'],
+    ['rules.meeting.recovery_seconds',7,'不随开会牌数量'],
+  ]) {
+    const input = ui.$('cardsView').querySelector(`[data-path="${path}"]`);
+    assert.ok(input.parentElement.textContent.includes(text));
+    assert.ok(ui.parameterMetadata(path.split('.'),[ui.candidate]).hint.includes(text));
+    let row=input; while (row && row.tagName!=='TR') row=row.parentElement;
+    assert.equal(row?.dataset.card,'meeting');
+    input.value=String(value); await input.dispatch('input');
+    assert.equal(input.validity.valid,true);
+  }
+  const host = ui.$('cardsView').querySelector('[data-path="roles.grinder.meeting_multiplier"]');
+  assert.ok(host.parentElement.textContent.includes('同组所有主持人的名额累加'));
+  host.value='3'; await host.dispatch('input');
+  const check = doc => {
+    assert.equal(doc.rules.meeting.duration_multiplier,1.5);
+    assert.equal(doc.rules.meeting.duration_seconds,10);
+    assert.equal(doc.rules.meeting.recovery_seconds,7);
+    assert.equal(doc.roles.grinder.meeting_multiplier,3);
+    assert.equal(doc.rules.meeting.base_targets,2);
+    assert.equal(doc.roles.boss.can_be_meeting_target,false);
+  };
+  await ui.saveVersion('cards','会议叠加',ui.candidate);
+  assert.equal(requests.at(-1).url,'api/library/cards'); check(requests.at(-1).body.data);
+  for (const mode of ['balance','bot']) {
+    await ui.view(mode); await ui.run();
+    assert.equal(requests.at(-1).url,'api/run'); check(requests.at(-1).body.cards);
+  }
+  await ui.playCurrentCards('playStatus');
+  assert.equal(requests.at(-1).url,'api/playtest'); check(requests.at(-1).body.cards);
+});
+
+test('meeting duration multiplier rejects nonfinite and sub-unit values without saving them', async () => {
+  const {ui,requests} = harness(); ui.renderCards();
+  const input = ui.$('cardsView').querySelector('[data-path="rules.meeting.duration_multiplier"]');
+  assert.equal(input.min,1);
+  for (const value of ['0','0.99','-1','','Infinity','NaN']) {
+    input.value=value; await input.dispatch('input');
+    assert.equal(input.validity.valid,false);
+    assert.equal(ui.candidate.rules.meeting.duration_multiplier,1.2);
+    const count=requests.length;
+    await ui.saveVersion('cards','无效会议',ui.candidate); await ui.run(); await ui.playCurrentCards('playStatus');
+    assert.equal(requests.length,count);
+  }
+  input.value='1'; await input.dispatch('input');
+  assert.equal(input.validity.valid,true);
+  assert.equal(ui.candidate.rules.meeting.duration_multiplier,1);
 });
 
 test('selecting an archived card snapshot migrates through the engine and preserves its identity and original data', async () => {
@@ -515,6 +586,7 @@ test('selecting an archived card snapshot migrates through the engine and preser
   archived.data.roles.grinder.work_seconds = 2.25;
   archived.data.rules.conveyor.employee_every = 3;
   archived.data.rules.conveyor.opening = ['employee'];
+  archived.data.rules.coffee.upgrades.employee.seconds = 7.5;
   const original = copy(archived);
   const normalized = copy(cards);
   normalized.cards.work.work_seconds = 7.125; // Only the endpoint chooses migration values.
@@ -542,9 +614,10 @@ test('selecting an archived card snapshot migrates through the engine and preser
   assert.deepEqual(requests.find(request => request.url === 'api/library/cards').body.data,normalized);
   assert.equal(requests.filter(request => request.url === 'api/validate').length,1,
     'current-schema save responses do not start another migration');
-  for (const field of ['role','employee_every','opening']) {
+  for (const field of ['role','employee_every','opening','coffee_tier_seconds']) {
     const data = copy(normalized);
     if (field === 'role') data.roles.employee.work_seconds = 99;
+    else if (field === 'coffee_tier_seconds') data.rules.coffee.upgrades.employee.seconds = 0;
     else data.rules.conveyor[field] = field === 'opening' ? ['employee'] : 3;
     const before = requests.filter(request => request.url === 'api/validate').length;
     await ui.selectCards({id:'legacy-'+field,name:'旧卡表',data});

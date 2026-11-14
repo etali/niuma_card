@@ -43,18 +43,26 @@ static func remaining(state: Object, uid: int, phase: String, progress: float) -
 		return maxf(0.0, float(data.remaining))
 	if phase == "recruitment":
 		return maxf(0.0, float(data.remaining)) if str(data.activity) == "recruitment" else -1.0
-	if phase in ["meeting", "outsource"]:
-		var timers: Dictionary = state.meetings if phase == "meeting" else state.outsourcing
+	if phase == "meeting":
+		var meeting: Dictionary = state.meeting_for_tool(uid)
+		if not meeting.is_empty(): return maxf(0.0, float(meeting.remaining))
+		for tool in state.group_actions(group):
+			meeting = state.meeting_for_tool(int(tool))
+			if not meeting.is_empty(): return maxf(0.0, float(meeting.remaining))
+		return -1.0
+	if phase == "outsource":
+		var timers: Dictionary = state.outsourcing
 		if timers.has(uid): return maxf(0.0, float(timers[uid].remaining))
 		# The top work/money card can display an active tool's group timer.
 		for tool in state.group_actions(group):
 			if timers.has(tool): return maxf(0.0, float(timers[tool].remaining))
 		return -1.0
 	if phase == "coffee":
-		# Each tier owns its actual reserved task duration. A later tier can
-		# have a different configured duration; never infer it from the icon.
+		# New rounds share the owner's clock; legacy single-person tasks
+		# keep their recorded duration until that in-flight stage completes.
 		if state.tasks.has(uid) and str(state.tasks[uid].kind) == "coffee":
-			return maxf(0.0, 1.0 - progress) * float(state.tasks[uid].total)
+			var task: Dictionary = state.tasks[uid]
+			return maxf(0.0, 1.0 - float(state._task_progress(uid))) * float(task.total)
 		if str(data.type) == "coffee" and float(data.total) > 0.0:
 			return maxf(0.0, float(data.remaining))
 		return -1.0

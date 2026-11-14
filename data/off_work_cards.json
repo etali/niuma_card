@@ -13,7 +13,7 @@
     "employee": {
       "name": "员工",
       "category": "person",
-      "description": "与工作组堆可处理工作。拆出后与咖啡单独组堆，可以逐级提升卷度。",
+      "description": "与工作组堆可处理工作。拆出后与咖啡单独组堆，按现有咖啡确定最终等级，批次结束时统一提升卷度。",
       "price": 4,
       "art": "employee",
       "purchasable": true,
@@ -38,7 +38,7 @@
     "coffee": {
       "name": "咖啡",
       "category": "ingredient",
-      "description": "把人员从工作堆拆出，与咖啡单独组堆，按员工、卷王、肝帝、打工皇帝的顺序逐级提升卷度。每段进度读满时消耗该级所需的咖啡。同堆有工作时会先处理工作。",
+      "description": "把人员从工作堆拆出，与咖啡单独组堆。每批共用 {seconds} 秒，按原等级从高到低、同级按组内顺序分配咖啡，可一次跨越多级，结束时同时消耗材料并升级。中途加入的咖啡和人员留到下一批。同堆有工作时先处理工作。",
       "price": 4,
       "art": "coffee",
       "purchasable": true
@@ -54,7 +54,7 @@
     "meeting": {
       "name": "开会",
       "category": "tool",
-      "description": "主持人召集对方可参会人员，最多人数见主持人的卡面说明。会议持续 {duration_seconds} 秒，散会后冷却 {recovery_seconds} 秒。",
+      "description": "同组所有主持人的参会名额累加，人数见主持人的卡面说明。单张开会持续 {duration_seconds} 秒，每多一张开会牌时长乘 {duration_multiplier}，不增加名额。散会后冷却 {recovery_seconds} 秒，冷却不叠加。",
       "price": 6,
       "art": "meeting",
       "purchasable": true
@@ -156,7 +156,7 @@
       "work_capacity": 1
     },
     "grinder": {
-      "meeting_multiplier": 0.5,
+      "meeting_multiplier": 1.0,
       "can_work": true,
       "work_income_multiplier": 2,
       "can_be_meeting_target": true,
@@ -164,7 +164,7 @@
       "work_capacity": 1
     },
     "workaholic": {
-      "meeting_multiplier": 0.5,
+      "meeting_multiplier": 1.0,
       "can_work": true,
       "work_income_multiplier": 4,
       "can_be_meeting_target": true,
@@ -172,7 +172,7 @@
       "work_capacity": 1
     },
     "work_emperor": {
-      "meeting_multiplier": 0.5,
+      "meeting_multiplier": 1.0,
       "can_work": true,
       "work_income_multiplier": 8,
       "can_be_meeting_target": true,
@@ -180,7 +180,7 @@
       "work_capacity": 1
     },
     "boss": {
-      "meeting_multiplier": 2.0,
+      "meeting_multiplier": 1.0,
       "can_work": false,
       "work_income_multiplier": 1,
       "can_be_meeting_target": false,
@@ -221,7 +221,7 @@
       "speed_multiplier": 1.2
     },
     "coffee": {
-      "seconds": 5.0,
+      "seconds": 1.0,
       "upgrades": {
         "employee": {
           "to": "grinder",
@@ -246,7 +246,8 @@
       "minimum_targets": 1,
       "duration_seconds": 12.0,
       "recovery_seconds": 24.0,
-      "auto_repeat": true
+      "auto_repeat": true,
+      "duration_multiplier": 1.2
     },
     "slack": {
       "seconds": 14.0,

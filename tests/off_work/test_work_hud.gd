@@ -78,6 +78,21 @@ func _run() -> void:
 	await _close_utility()
 	await _open_menu(1)
 	_check(hud._utility.visible and hud._utility.get_meta("source") == hud._bot, "BOT page mounts original BOTPanel Frame")
+	var enabled: CheckBox
+	for row in hud._bot._rows:
+		if row.key == "enabled": enabled = row.node
+	_check(enabled != null and enabled.name == "BOTEnabled" and enabled.text == "启用", "BOT page exposes one named enable checkbox")
+	if enabled != null:
+		_check(enabled.is_visible_in_tree() and root.get_visible_rect().encloses(enabled.get_global_rect())
+			and enabled.get_global_rect().end.y <= hud._bot._slider.get_global_rect().position.y,
+			"enable checkbox is visible above the strength slider on first opening")
+		_check(enabled.button_pressed and game.state.config.rules.bot.enabled and game.bot._policy.enabled,
+			"first opening defaults to enabled in both the checkbox and the live BOT policy")
+		_check(hud._bot._rows.filter(func(row): return row.key == "enabled").size() == 1,
+			"top enable control has no duplicate in the parameter list")
+		await _click(enabled)
+		_check(not enabled.button_pressed and not game.state.config.rules.bot.enabled and not game.bot._policy.enabled,
+			"real mouse unchecking immediately disables the live BOT policy")
 	var old_think: float = game.state.config.rules.bot.think_seconds
 	hud._bot._slider.grab_focus()
 	await _key(KEY_END)
@@ -86,6 +101,9 @@ func _run() -> void:
 		and game.state.config.rules.bot.think_seconds < old_think
 		and is_equal_approx(game.state.config.rules.bot.decision_budget_ratio, 0.9),
 		"maximum strength updates the real action interval and budget")
+	if enabled != null:
+		_check(not enabled.button_pressed and not game.state.config.rules.bot.enabled and not game.bot._policy.enabled,
+			"changing strength to maximum does not enable a disabled BOT")
 	var budget_label: Label
 	var interval: SpinBox
 	for row in hud._bot._rows:
@@ -106,6 +124,12 @@ func _run() -> void:
 		and is_equal_approx(game.state.config.rules.bot.decision_budget_ratio, 596.0 / 9120.0)
 		and OffWorkConfig.decision_budget_ms(game.state.config.rules.bot) == 596,
 		"intermediate keyboard strength preserves exact mapped values through native control refresh")
+	if enabled != null:
+		_check(not enabled.button_pressed and not game.bot._policy.enabled,
+			"intermediate strength and individual settings preserve disabled state")
+		await _click(enabled)
+		_check(enabled.button_pressed and game.state.config.rules.bot.enabled and game.bot._policy.enabled,
+			"real mouse checking again restores the live BOT policy")
 	await _close_utility()
 	game._notify("HUD 真实输入测试")
 	await _open_menu(2)

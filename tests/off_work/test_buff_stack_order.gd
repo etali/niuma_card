@@ -158,7 +158,7 @@ func _dedicated_progress() -> void:
 	state.config.rules.initial.groups = [{"overtime": 2, "employee": 1, "coffee": 1}, {"overtime": 2, "employee": 1, "work": 50}]
 	main._new_game()
 	for owner in [0, 1]: state.activate(_owner_id("coffee", owner))
-	state.advance(1.0)
+	state.advance(state.config.coffee_seconds("employee") * 0.5)
 	board.sync_state(state)
 	for owner in [0, 1]:
 		var coffee := _owner_id("coffee", owner)

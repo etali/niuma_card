@@ -103,9 +103,11 @@ func _run() -> void:
 	_fixture([{"employee": 1}, {"work": 40}])
 	var coffee: int = game.state.add_card("coffee", 0)
 	game.state.move_cards([coffee], 1)
-	_advance(2.0)
-	_expect_timer(_bar(1, "coffee"), 3.0, "visible upgrading staff shows the real five-second coffee countdown")
-	_check(is_equal_approx(board.by_uid[coffee]._debug_remaining, 3.0), "buried coffee retains the same material countdown without drawing through the stack")
+	var coffee_duration: float = game.state.config.coffee_seconds("employee")
+	var coffee_remaining: float = coffee_duration * 0.6
+	_advance(coffee_duration * 0.4)
+	_expect_timer(_bar(1, "coffee"), coffee_remaining, "visible upgrading staff shows the configured coffee countdown")
+	_check(is_equal_approx(board.by_uid[coffee]._debug_remaining, coffee_remaining), "buried coffee retains the same material countdown without drawing through the stack")
 	_fixture([{"slack": 1, "employee": 1, "work": 40}])
 	var slack: int = game.state.group_actions(1)[0]
 	_check(game.state.activate(slack, 1), "slack fixture starts a real task")

@@ -149,15 +149,17 @@ func _test_dismissal_tasks() -> void:
 	_check(not state.dismiss_people([targets[0]], 1), "被强行拉走的人员不能出售逃脱")
 	_check(state.meetings[meeting].targets.has(targets[0]) and state.cards[targets[0]].paused, "拒绝出售不解除会议控制")
 	_check(state.dismiss_people([host], 0), "主持人可以出售")
-	_check(not state.meetings.has(meeting) and state.cards[meeting].status == "recovering", "出售主持人结束会议且保留恢复工具")
-	for person in targets.slice(1):
-		_check(not state.cards[person].paused, "主持离职解除对方每个人控制")
-	state.advance(1.0)
-	for person in targets.slice(1):
-		if state.config.can_work(str(state.cards[person].type)):
-			_check(float(state.cards[person].progress) > 0.0, "散会后对方员工继续原任务")
+	_check(state.meetings.has(meeting) and state.meetings[meeting].hosts.size() == 3
+		and not state.meetings[meeting].hosts.has(host), "出售一名主持后其余员工继续共同主持")
 	var slack: int = state.add_card("slack", 0)
 	group = state.move_cards(state.group_people(group), int(state.cards[slack].group))
+	_check(not state.meetings.has(meeting) and state.cards[meeting].status == "recovering", "最后的主持人员离组后散会且保留恢复工具")
+	for person in targets:
+		_check(not state.cards[person].paused, "全部主持离组后解除对方人员控制")
+	state.advance(1.0)
+	for person in targets:
+		if state.config.can_work(str(state.cards[person].type)):
+			_check(float(state.cards[person].progress) > 0.0, "散会后对方员工继续原任务")
 	_check(state.cards[slack].status == "active", "剩余员工独立组合后能够开始摸鱼")
 	_check(state.dismiss_people(state.group_people(group), 0), "活动批次中的全部人员可出售")
 	_check(state.cards[slack].status == "active" and state.cards[slack].paused and state.groups[group].job == "slack" and state.group_slack_participants(group).is_empty(), "无人组合保留进度并暂停等待人员返场")

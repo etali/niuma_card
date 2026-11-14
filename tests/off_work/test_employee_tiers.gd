@@ -5,7 +5,7 @@ var failures: Array[String] = []
 
 func _initialize() -> void:
 	_config_contract()
-	_sequential_chain()
+	_atomic_chain()
 	_insufficient_and_refill()
 	_move_and_cancel()
 	_queue_and_priority()
@@ -22,6 +22,8 @@ func check(ok: bool, label: String) -> void:
 
 func state(contents: Dictionary = {"employee": 1, "work": 200}, working := false) -> OffWorkState:
 	var cfg := OffWorkConfig.new()
+	# Use a fixed stage duration for the interruption and multi-stage clock fixtures.
+	cfg.rules.coffee.seconds = 5.0
 	var staff := contents.duplicate()
 	staff.erase("work")
 	cfg.rules.initial.groups = [staff, {"work":contents.get("work", 200)}]
@@ -57,7 +59,7 @@ func _config_contract() -> void:
 		if i > 0:
 			check(not cfg.can_purchase(kind) and not cfg.rules.conveyor.pool.has(kind), kind + " cannot be bought")
 		if i < 3:
-			check(cfg.coffee_upgrade(kind).to == kinds[i + 1] and cfg.coffee_upgrade(kind).cost == int(pow(2, i)) and cfg.coffee_seconds(kind) == 5.0, kind + " upgrades exactly one tier with configured cost and time")
+			check(cfg.coffee_upgrade(kind).to == kinds[i + 1] and cfg.coffee_upgrade(kind).cost == int(pow(2, i)) and cfg.coffee_seconds(kind) == 1.0, kind + " upgrades exactly one tier with configured cost and time")
 	check(cfg.coffee_upgrade("leader").is_empty() and cfg.coffee_upgrade("work_emperor").is_empty(), "leader and maximum tier do not consume coffee")
 	for invalid in ["employee", "leader", "unknown", "work_emperor"]:
 		var bad := OffWorkConfig.new()
@@ -78,31 +80,24 @@ func _config_contract() -> void:
 		bad.cards[kind].purchasable = true
 		check(not bad.validate() and not bad.can_purchase(kind), "purchase flag cannot bypass upgrade-only " + kind)
 	var tuned := OffWorkConfig.new()
-	tuned.rules.coffee.upgrades.grinder.seconds = 3.0
-	check(tuned.validate() and tuned.coffee_seconds("grinder") == 3.0 and tuned.coffee_seconds("employee") == 5.0, "per-stage seconds override common duration")
+	tuned.rules.coffee.seconds = 3.0
+	check(tuned.validate() and tuned.coffee_seconds("grinder") == 3.0 and tuned.coffee_seconds("employee") == 3.0, "all ranks use the same configurable batch duration")
 
-func _sequential_chain() -> void:
+func _atomic_chain() -> void:
 	var s := state()
 	var p: int = ids(s, "employee")[0]
 	var material := add_drink(s, p, 8)
-	check(s.tasks[p].coffee_ids.size() == 1 and s.tasks[p].from_type == "employee" and s.tasks[p].to_type == "grinder", "eight cups still begin only first tier")
-	s.advance(4.99)
-	check(s.cards[p].type == "employee" and material.all(func(id): return s.cards.has(id)), "all cups survive before first bar completes")
-	s.advance(0.01)
-	check(s.cards[p].type == "grinder" and ids(s, "coffee").size() == 7, "first bar consumes exactly one and preserves person UID")
-	check(s.tasks[p].from_type == "grinder" and s.tasks[p].to_type == "workaholic" and s.tasks[p].coffee_ids.size() == 2 and is_zero_approx(s.tasks[p].progress), "second stage automatically begins at zero with two cups")
+	check(s.tasks[p].coffee_ids.size() == 7 and s.tasks[p].from_type == "employee" and s.tasks[p].to_type == "work_emperor", "eight cups reserve the exact seven-cup complete chain in one batch")
 	s.advance(2.5)
 	for id in s.tasks[p].coffee_ids:
-		check(is_equal_approx(s.cards[id].progress, 0.5) and is_equal_approx(s.cards[id].remaining, 2.5), "all reserved stage-two cups share one timer")
-	s.advance(2.5)
-	check(s.cards[p].type == "workaholic" and ids(s, "coffee").size() == 5, "second bar consumes two, not the four reserved for later")
-	check(s.tasks[p].coffee_ids.size() == 4 and is_zero_approx(s.tasks[p].progress), "third stage begins a separate four-cup bar")
-	s.advance(4.999)
-	check(s.cards[p].type == "workaholic" and ids(s, "coffee").size() == 5, "no skipped final progress")
+		check(is_equal_approx(s.cards[id].progress, 0.5) and is_equal_approx(s.cards[id].remaining, 2.5), "all seven reserved cups share the one batch timer")
+	check(s.cards[p].type == "employee" and material.all(func(id): return s.cards.has(id)), "half-finished chain preserves original identity, rank and every cup")
+	s.advance(2.499)
+	check(s.cards[p].type == "employee" and ids(s, "coffee").size() == 8, "no partial rank or material settlement before the batch deadline")
 	s.advance(0.001)
-	check(s.cards[p].type == "work_emperor" and ids(s, "coffee").size() == 1, "fifteen seconds consumes seven cups total and leaves surplus")
+	check(s.cards[p].type == "work_emperor" and ids(s, "coffee").size() == 1, "one five-second fixture batch consumes seven cups and leaves surplus")
 	var events := s.drain_events().filter(func(e): return e.kind == "coffee_upgrade")
-	check(events.size() == 3 and events.map(func(e): return e.amount) == [1, 2, 4], "three completion events retain each exact material batch")
+	check(events.size() == 1 and events[0].amount == 7 and events[0].from_type == "employee" and events[0].to_type == "work_emperor", "one completion event records original and final rank with exact total materials")
 	check(events.all(func(e): return e.person == p) and s.people_count(0) == 1, "upgrading never creates another personnel card")
 	var spare: int = ids(s, "coffee")[0]
 	check(not s.activate(spare, s.cards[p].group, p) and s.cards[spare].status == "ready", "maximum-tier person cannot drink spare coffee")
@@ -150,23 +145,21 @@ func _queue_and_priority() -> void:
 	var staff := s.group_people(s.cards[ids(s, "employee")[0]].group)
 	var material := cups(s, 3)
 	s.move_cards(material, s.cards[staff[0]].group, staff[0])
-	check(s.tasks[staff[0]].coffee_ids.size() == 1, "first employee reserves its one-cup stage")
+	check(s.tasks[staff[0]].coffee_ids.size() == 3 and s.tasks[staff[0]].to_type == "workaholic", "first virtual upgrade makes the same person highest affordable priority for the next recipe")
+	check(staff.slice(1).all(func(id): return not s.tasks.has(id)), "unallocated employees remain outside the frozen batch")
 	s.advance(5.0)
-	check(s.cards[staff[0]].type == "grinder" and s.tasks[staff[0]].coffee_ids.size() == 2, "newly upgraded grinder becomes highest affordable priority")
-	check(staff.slice(1).all(func(id): return not s.tasks.has(id)), "lower-ranked employees wait while the higher tier has enough coffee")
-	s.advance(5.0)
-	check(s.cards[staff[0]].type == "workaholic" and ids(s, "coffee").is_empty(), "three cups upgrade the same employee through two configured stages")
+	check(s.cards[staff[0]].type == "workaholic" and ids(s, "coffee").is_empty(), "three cups settle the same employee's two-step recipe in one batch")
 	check(staff.slice(1).all(func(id): return s.cards[id].type == "employee"), "unfunded lower-ranked personnel do not transform")
 	var targeted := state({"employee": 2, "workaholic": 1, "work": 200})
 	var high: int = ids(targeted, "workaholic")[0]
-	add_drink(targeted, high, 6)
-	check(targeted.tasks[high].kind == "coffee" and targeted.tasks[high].coffee_ids.size() == 4, "explicit high-tier target reserves four for the first queue position")
-	check(ids(targeted, "employee").all(func(id): return not targeted.tasks.has(id)), "other personnel wait while specified person drinks")
-	targeted.advance(5.0)
 	var waiting := ids(targeted, "employee")
-	check(targeted.cards[high].type == "work_emperor" and targeted.tasks[waiting[0]].kind == "coffee", "finishing the explicit target continues with the lowest remaining tier")
-	targeted.advance(10.0)
-	check(waiting.all(func(id): return targeted.cards[id].type == "grinder") and ids(targeted, "coffee").is_empty(), "maximum-tier first target never blocks coworkers behind it")
+	add_drink(targeted, high, 6)
+	check(targeted.tasks[high].kind == "coffee" and targeted.tasks[high].coffee_ids.size() == 4, "highest original rank reserves its four-cup recipe first")
+	check(waiting.all(func(id): return targeted.tasks[id].coffee_ids.size() == 1 and targeted.tasks[id].batch_owner == high), "remaining two cups allocate both employees within the same frozen batch")
+	targeted.advance(2.5)
+	check(targeted.cards[high].type == "workaholic" and waiting.all(func(id): return targeted.cards[id].type == "employee"), "different ranks remain unchanged until the common deadline")
+	targeted.advance(2.5)
+	check(targeted.cards[high].type == "work_emperor" and waiting.all(func(id): return targeted.cards[id].type == "grinder") and ids(targeted, "coffee").is_empty(), "all allocated ranks settle together without serial per-person waits")
 
 func _income_and_personnel() -> void:
 	var s := state({"employee": 1, "grinder": 1, "workaholic": 1, "work_emperor": 1, "leader": 1, "work": 200}, true)
@@ -222,17 +215,15 @@ func _step_independence() -> void:
 	var p: int = ids(coarse, "employee")[0]
 	var q: int = ids(fine, "employee")[0]
 	for s in [coarse, fine]:
-		s.config.rules.coffee.upgrades.employee.seconds = 2.0
-		s.config.rules.coffee.upgrades.grinder.seconds = 3.0
-		s.config.rules.coffee.upgrades.workaholic.seconds = 4.0
+		s.config.rules.coffee.seconds = 3.0
 	add_drink(coarse, p, 7)
 	add_drink(fine, q, 7)
-	coarse.advance(9.0)
-	for _i in 90: fine.advance(0.1)
+	coarse.advance(3.0)
+	for _i in 30: fine.advance(0.1)
 	coarse.move_cards([p], coarse.cards[ids(coarse, "work")[0]].group)
 	fine.move_cards([q], fine.cards[ids(fine, "work")[0]].group)
 	coarse.advance(10.0)
 	for _i in 100: fine.advance(0.1)
-	check(coarse.cards[p].type == "work_emperor" and fine.cards[q].type == "work_emperor", "configured two/three/four-second stages finish in both time-step modes")
+	check(coarse.cards[p].type == "work_emperor" and fine.cards[q].type == "work_emperor", "the full chain finishes in one configured three-second batch in both time-step modes")
 	check(coarse.work_count(0) == 199 and fine.work_count(0) == 199 and coarse.money(0) == 8 and fine.money(0) == 8, "coarse and fine clocks agree across chain and first eight-cash settlement")
-	check(coarse.drain_events().filter(func(e): return e.kind == "coffee_upgrade").map(func(e): return e.time) == [2.0, 5.0, 9.0], "stage deadlines follow per-stage config without skipped intermediate tier")
+	check(coarse.drain_events().filter(func(e): return e.kind == "coffee_upgrade").map(func(e): return e.time) == [3.0], "all recipe steps settle at the single configured batch deadline")

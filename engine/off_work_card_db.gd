@@ -77,14 +77,14 @@ static func _description(id: String) -> String:
 			config.work_seconds(), role.work_capacity, config.income_per_work(id)]
 	else:
 		words += " 不处理普通工作。"
-	words += " 每批甩锅 %d 份，主持会议最多拉 %d 人。" % [role.transfer_capacity, config.meeting_capacity(id)]
+	words += " 每批甩锅 %d 份，主持会议提供 %d 个参会名额，多人主持时名额累加。" % [role.transfer_capacity, config.meeting_capacity(id)]
 	if not config.can_be_meeting_target(id):
 		words += " 免疫对方会议。"
 	if not bool(role.get("can_be_strike_target", true)):
 		words += " 本人免疫罢工。"
 	var upgrade := config.coffee_upgrade(id)
 	if not upgrade.is_empty():
-		words += " 用 %d 杯咖啡可升为%s。" % [upgrade.cost, config.cards[upgrade.to].name]
+		words += " 升为%s需%d杯咖啡；每批共用%s秒，可一次跨越多级。" % [config.cards[upgrade.to].name, upgrade.cost, config.coffee_batch_seconds()]
 	return words
 
 static func ensure_loaded() -> void:

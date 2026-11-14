@@ -141,6 +141,7 @@ func _flight_hit_and_fork() -> void:
 
 func _coffee_priority_and_absence() -> void:
 	var s := state()
+	s.config.rules.coffee.seconds = 5.0
 	var employee := int(ids(s, "employee", 1)[0])
 	var group := int(s.cards[employee].group)
 	var high := s.add_card("workaholic", 1, group)
@@ -148,16 +149,17 @@ func _coffee_priority_and_absence() -> void:
 	var cups: Array = []
 	for i in 3: cups.append(s.add_card("coffee", 1))
 	s.move_cards(cups, group, employee)
-	check(s.tasks.has(mid) and s.tasks[mid].kind == "coffee" and not s.tasks.has(employee) and not s.tasks.has(high), "highest affordable tier wins even when the drop points to a lower-tier employee")
-	s.advance(5.0)
-	check(s.cards[mid].type == "workaholic" and s.tasks[employee].kind == "coffee", "unaffordable higher stages yield to a lower affordable employee")
+	check(s.tasks.has(mid) and s.tasks[mid].to_type == "workaholic" and s.tasks.has(employee)
+		and s.tasks[employee].to_type == "grinder" and not s.tasks.has(high), "batch reserves the highest affordable tier first, then uses the remaining cup for an employee")
 	s.advance(1.0)
 	var host := s.add_card("leader", 0)
 	var meeting := s.add_card("meeting", 0, s.cards[host].group)
 	s.activate(meeting)
-	check(not s.tasks.has(employee) and s.cards[cups[2]].status == "ready" and is_zero_approx(s.cards[cups[2]].progress), "last attending drinker releases coffee and clears its progress immediately")
+	check(not s.tasks.has(employee) and not s.tasks.has(mid) and cups.all(func(id): return s.cards[id].status == "ready" and is_zero_approx(s.cards[id].progress)), "meeting interruption cancels the whole batch and releases all reserved coffee")
 	s.advance(s.config.number("meeting", "duration_seconds"))
-	check(s.tasks[employee].kind == "coffee" and is_zero_approx(s.tasks[employee].progress), "returning personnel start a new full upgrade clock")
+	check(s.tasks[employee].kind == "coffee" and s.tasks[mid].kind == "coffee" and is_zero_approx(s._task_progress(employee)), "returning personnel start a new full shared upgrade clock")
+	s.advance(s.config.coffee_batch_seconds())
+	check(s.cards[mid].type == "workaholic" and s.cards[employee].type == "grinder" and cups.all(func(id): return not s.cards.has(id)), "restarted batch settles both final roles together")
 
 func _terminal_cancels_flight() -> void:
 	var s := state()

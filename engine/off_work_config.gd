@@ -144,6 +144,18 @@ static func normalize_balance_document(document: Variant) -> Variant:
 	if not definitions is Dictionary:
 		return normalized
 	var rule_sections: Variant = normalized.get("rules")
+	if rule_sections is Dictionary and rule_sections.get("coffee") is Dictionary:
+		var upgrades: Variant = rule_sections.coffee.get("upgrades")
+		if upgrades is Dictionary:
+			# A round has one shared duration, regardless of people or tier jumps.
+			# Drop retired overrides only in this copy; never rewrite an archive.
+			for upgrade in upgrades.values():
+				if upgrade is Dictionary: upgrade.erase("seconds")
+	if rule_sections is Dictionary and rule_sections.get("meeting") is Dictionary:
+		# Historical tables had no duration stacking. Preserve their effective
+		# timing in the loaded copy; the installed table explicitly opts into 1.2.
+		if not rule_sections.meeting.has("duration_multiplier"):
+			rule_sections.meeting.duration_multiplier = 1.0
 	if rule_sections is Dictionary and rule_sections.get("conveyor") is Dictionary:
 		# Read-only migration distinguishes historical relative weights from
 		# new integer card counts. Never reduce an existing integer bag: 2:2
@@ -300,6 +312,7 @@ func validate() -> bool:
 	for section in ["meeting", "outsource"]:
 		_number_field(rules[section], "recovery_seconds", section, 0.0, true)
 	_number_field(rules.coffee, "seconds", "coffee", 0.0)
+	_number_field(rules.meeting, "duration_multiplier", "meeting", 1.0)
 	for pair in [["strike", "duration_seconds"], ["outsource", "seconds"], ["transfer", "seconds"], ["meeting", "duration_seconds"], ["slack", "seconds"], ["conveyor", "interval_seconds"], ["bot", "think_seconds"]]:
 		_number_field(rules[pair[0]], pair[1], pair[0], 0.0, true)
 	for pair in [["simulation", "maximum_events_per_advance"], ["meeting", "base_targets"], ["meeting", "minimum_targets"], ["outsource", "cost_per_work"], ["conveyor", "slots"]]:
@@ -337,8 +350,6 @@ func validate() -> bool:
 		if not step.get("to") is String or step.to != chain[kind]:
 			errors.append("coffee.upgrades.%s.to：必须逐级升级为 %s" % [kind, chain[kind]])
 		_number_field(step, "cost", "coffee.upgrades." + kind, 0.0, true, true)
-		if step.has("seconds"):
-			_number_field(step, "seconds", "coffee.upgrades." + kind, 0.0)
 	var owner_list: Variant = rules.simulation.get("owners")
 	if not owner_list is Array or owner_list.size() != 2 or not _is_number(owner_list[0]) or not _is_number(owner_list[1]) or float(owner_list[0]) != 0.0 or float(owner_list[1]) != 1.0:
 		errors.append("simulation.owners：当前为双人对局，必须为 [0, 1]")
@@ -374,14 +385,10 @@ func validate() -> bool:
 			if not is_finite(1.0 / number(section, "seconds")):
 				errors.append("%s.seconds：数值过小，任务速度溢出" % section)
 		# Exactly zero completes inside the activation command and has no timer.
-		# Positive values still need a finite rate, including per-tier overrides.
+		# A positive shared batch duration still needs a finite rate.
 		var coffee_duration := number("coffee", "seconds")
 		if coffee_duration > 0.0 and not is_finite(1.0 / coffee_duration):
 			errors.append("coffee.seconds：数值过小，任务速度溢出")
-		for kind in chain:
-			var duration := coffee_seconds(str(kind))
-			if duration > 0.0 and not is_finite(1.0 / duration):
-				errors.append("coffee.upgrades.%s.seconds：数值过小，任务速度溢出" % kind)
 		if not is_finite(slack_rate(2)) or slack_rate(2) <= 0.0:
 			errors.append("slack：组合后生产速度必须为有限正数")
 	return errors.is_empty()
@@ -557,8 +564,12 @@ func can_purchase(kind: String) -> bool:
 func coffee_upgrade(kind: String) -> Dictionary:
 	return rules.get("coffee", {}).get("upgrades", {}).get(kind, {})
 
-func coffee_seconds(kind: String) -> float:
-	return float(coffee_upgrade(kind).get("seconds", number("coffee", "seconds")))
+func coffee_batch_seconds() -> float:
+	return number("coffee", "seconds")
+
+## Compatibility for callers that still supply a role; timing is per batch.
+func coffee_seconds(_kind: String) -> float:
+	return coffee_batch_seconds()
 
 func is_upgrade_role(kind: String) -> bool:
 	return kind in ["grinder", "workaholic", "work_emperor"]
@@ -605,6 +616,19 @@ func slack_rate(tool_count: int) -> float:
 
 func meeting_capacity(kind: String) -> int:
 	return maxi(integer("meeting", "minimum_targets"), int(number("meeting", "base_targets") * float(roles[kind].meeting_multiplier)))
+
+func meeting_duration(tool_count: int) -> float:
+	if tool_count < 1: return 0.0
+	var base := number("meeting", "duration_seconds")
+	var multiplier := number("meeting", "duration_multiplier")
+	if tool_count == 1 or multiplier == 1.0: return base
+	var factor := pow(multiplier, tool_count - 1)
+	if is_finite(factor): return minf(MAX_FINITE_NUMBER, base * factor)
+	# A finite multiplier can overflow at large stack sizes (including 4096
+	# default cards). Keep real timers finite without imposing a gameplay cap.
+	# Combine logarithms first so tiny base durations do not saturate too early.
+	var logarithm := log(base) + float(tool_count - 1) * log(multiplier)
+	return MAX_FINITE_NUMBER if logarithm >= log(MAX_FINITE_NUMBER) else minf(MAX_FINITE_NUMBER, exp(logarithm))
 
 func coffee_rank(kind: String) -> int:
 	# Derive rank from the configured upgrade chain, not from tunable income.

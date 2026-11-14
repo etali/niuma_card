@@ -4,6 +4,7 @@ class_name OffWorkState
 extends RefCounted
 
 const ConfigSource = preload("res://engine/off_work_config.gd")
+const CoffeePlanSource = preload("res://engine/off_work_coffee_plan.gd")
 const CancellationSource = preload("res://engine/bot_cancellation.gd")
 const WORLD_FIELDS := ["cards", "groups", "tasks", "meetings", "outsourcing", "pending_strikes", "recruitment", "offers",
 	"winner", "time", "conveyor_progress", "revision", "_next_card", "_next_group",
@@ -940,42 +941,170 @@ func _sync_slack_groups() -> void:
 		if starting:
 			_emit("slack_start", {"owner": groups[group].owner, "source": tools[0], "group": group, "targets": group_slack_participants(int(group))})
 
+## Meeting combinations share one session, all available hosts and one clock.
+## The representative host/tool remain for old recordings and presentation.
+func group_meeting_hosts(group: int) -> Array:
+	var result: Array = []
+	for person in group_people(group):
+		if _is_paused(int(person)): continue
+		var task: Dictionary = tasks.get(person, {})
+		if task.is_empty() or task.kind == "work" or (task.kind == "meeting" and int(task.group) == group):
+			result.append(person)
+	return result
+
+func group_meeting_tools(group: int) -> Array:
+	return _group_type(group, "meeting").duplicate()
+
+func group_meeting_capacity(group: int) -> int:
+	var capacity := 0
+	for person in group_meeting_hosts(group):
+		capacity += config.meeting_capacity(str(cards[person].type))
+	return capacity
+
+func group_meeting_duration(group: int) -> float:
+	return config.meeting_duration(group_meeting_tools(group).size())
+
+## An idle stack starts only after every participating tool has recovered.
+func group_meeting_ready_seconds(group: int) -> float:
+	var remaining := 0.0
+	for tool in group_meeting_tools(group):
+		if cards[tool].status == "recovering":
+			remaining = maxf(remaining, float(cards[tool].remaining))
+	return remaining
+
+func meeting_for_tool(tool_id: int) -> Dictionary:
+	if meetings.has(tool_id): return meetings[tool_id]
+	for meeting in meetings.values():
+		if meeting.get("tools", []).has(tool_id): return meeting
+	return {}
+
+func _meeting_in_group(group: int) -> int:
+	for tool_id in meetings:
+		if int(meetings[tool_id].group) == group: return int(tool_id)
+	return -1
+
+func _meeting_group_cooling(group: int) -> bool:
+	return group_meeting_tools(group).any(func(id): return cards[id].status == "recovering")
+
+func _draw_meeting_targets(owner: int, capacity: int, retained: Array = []) -> Array:
+	var selected := retained.duplicate()
+	if selected.size() > capacity: selected.resize(capacity)
+	if selected.size() >= capacity: return selected
+	var candidates := meeting_candidates(owner)
+	for person in selected: candidates.erase(person)
+	while not candidates.is_empty() and selected.size() < capacity:
+		selected.append(candidates.pop_at(_rng.randi_range(0, candidates.size() - 1)))
+	return selected
+
+func _assign_meeting(tool_id: int, meeting: Dictionary) -> void:
+	_cancel_group_work(int(meeting.group))
+	groups[meeting.group].job = "meeting"
+	for tool in meeting.tools:
+		cards[tool].status = "active"
+		cards[tool]["meeting_repeat"] = true
+		cards[tool].total = meeting.total
+		cards[tool].remaining = meeting.remaining
+	for person in meeting.hosts:
+		var task: Dictionary = tasks.get(person, {})
+		if task.get("kind") == "meeting" and int(task.tool_id) == tool_id and int(task.group) == int(meeting.group): continue
+		tasks[person] = {"kind": "meeting", "tool_id": tool_id, "group": meeting.group, "work_id": -1, "progress": 0.0}
+	for person in meeting.targets:
+		if tasks.has(person) and tasks[person].kind == "coffee":
+			_cancel_coffee(int(person), tasks[person].duplicate(true))
+
 func _activate_meeting(tool_id: int, group: int, selected_host: int) -> bool:
 	if not _accepts_function(group, "meeting"):
 		return _fail("这个组合已在执行其他功能")
-	var people: Array = _available_people(group)
-	if people.is_empty():
-		return _fail("需要一名空闲的主持人")
+	if _meeting_in_group(group) >= 0:
+		return _fail("这组已经在共同开会")
+	if _meeting_group_cooling(group):
+		return _fail("这组开会牌仍在冷却")
+	var people := group_meeting_hosts(group)
+	if people.is_empty(): return _fail("需要至少一名空闲的主持人")
 	people.sort_custom(func(a: int, b: int) -> bool:
-		return float(config.roles[cards[a].type].meeting_multiplier) > float(config.roles[cards[b].type].meeting_multiplier))
+		return config.meeting_capacity(str(cards[a].type)) > config.meeting_capacity(str(cards[b].type)))
 	var host: int = selected_host if people.has(selected_host) else int(people[0])
-	var capacity: int = config.meeting_capacity(str(cards[host].type))
-	var targets: Array = meeting_candidates(int(cards[tool_id].owner))
-	# Draw without replacement using this match's seeded RNG.
-	var selected: Array = []
-	while not targets.is_empty() and selected.size() < capacity:
-		selected.append(targets.pop_at(_rng.randi_range(0, targets.size() - 1)))
-	targets = selected
-	if targets.is_empty():
-		return _fail("对面没有可叫来开会的人")
-	# Meeting is this combination's only production function.
-	_cancel_group_work(group)
-	tasks.erase(host)
-	groups[group].job = "meeting"
-	cards[tool_id].status = "active"
-	cards[tool_id]["meeting_repeat"] = true
-	var duration: float = config.number("meeting", "duration_seconds")
-	cards[tool_id].total = duration
-	cards[tool_id].remaining = duration
-	meetings[tool_id] = {"host": host, "group": group, "targets": targets, "remaining": duration, "total": duration}
-	tasks[host] = {"kind": "meeting", "tool_id": tool_id, "group": group, "work_id": -1, "progress": 0.0}
-	_emit("meeting_start", {"owner": cards[tool_id].owner, "source": tool_id, "group": group, "host": host, "targets": targets.duplicate()})
-	for person in targets:
-		if tasks.has(person) and tasks[person].kind == "coffee":
-			_cancel_coffee(int(person), tasks[person].duplicate(true))
+	var targets := _draw_meeting_targets(int(cards[tool_id].owner), group_meeting_capacity(group))
+	if targets.is_empty(): return _fail("对面没有可叫来开会的人")
+	var tools := group_meeting_tools(group)
+	var duration: float = config.meeting_duration(tools.size())
+	var meeting := {"id": tool_id, "host": host, "hosts": people, "tools": tools, "group": group,
+		"targets": targets, "remaining": duration, "total": duration}
+	meetings[tool_id] = meeting
+	_assign_meeting(tool_id, meeting)
+	_emit("meeting_start", {"owner": cards[tool_id].owner, "source": tool_id, "group": group,
+		"host": host, "hosts": people.duplicate(), "tools": tools.duplicate(), "targets": targets.duplicate()})
 	_sync_coffee_groups()
 	_refresh_card_views()
 	return true
+
+## Reconcile membership without restarting either the meeting or its cooldown.
+## Added/removed tools preserve completed progress; added hosts fill vacancies
+## while existing targets keep their identities until capacity actually shrinks.
+func _sync_meetings() -> void:
+	_coalesce_meeting_groups()
+	for original_tool in meetings.keys():
+		if not meetings.has(original_tool): continue
+		var meeting: Dictionary = meetings[original_tool]
+		var group := int(meeting.group)
+		var old_tools: Array = meeting.get("tools", [original_tool])
+		var old_hosts: Array = meeting.get("hosts", [meeting.host])
+		var tools: Array = []
+		for tool in group_meeting_tools(group):
+			if cards[tool].status == "ready" or (old_tools.has(tool) and cards[tool].status == "active"):
+				tools.append(tool)
+		var people := group_meeting_hosts(group)
+		if tools.is_empty() or people.is_empty():
+			_end_meeting(int(original_tool))
+			continue
+		for tool in old_tools:
+			if not tools.has(tool) and cards.has(tool): _recover(int(tool))
+		for person in old_hosts:
+			if not people.has(person) and tasks.has(person) and tasks[person].kind == "meeting" and int(tasks[person].tool_id) == int(original_tool):
+				tasks.erase(person)
+		var tool_id := int(original_tool) if tools.has(original_tool) else int(tools[0])
+		if tool_id != int(original_tool):
+			meetings.erase(original_tool)
+			meetings[tool_id] = meeting
+		if not meeting.has("id"): meeting.id = original_tool
+		if not people.has(meeting.host): meeting.host = people[0]
+		if tools.size() != old_tools.size():
+			var fraction := clampf(float(meeting.remaining) / float(meeting.total), 0.0, 1.0)
+			meeting.total = config.meeting_duration(tools.size())
+			meeting.remaining = fraction * float(meeting.total)
+		meeting.hosts = people
+		meeting.tools = tools
+		var retained: Array = meeting.targets.filter(func(id): return cards.has(id))
+		meeting.targets = _draw_meeting_targets(int(cards[tool_id].owner), group_meeting_capacity(group), retained)
+		_assign_meeting(tool_id, meeting)
+
+## Older checkpoints could hold several independent sessions in one stack.
+## Normalize them once through the same shared timer, retaining every visitor
+## without resetting progress or cooling a tool that still participates.
+func _coalesce_meeting_groups() -> void:
+	var primary_by_group := {}
+	for tool_id in meetings.keys():
+		var meeting: Dictionary = meetings[tool_id]
+		var group := int(meeting.group)
+		if not primary_by_group.has(group):
+			primary_by_group[group] = tool_id
+			continue
+		var primary: int = primary_by_group[group]
+		var shared: Dictionary = meetings[primary]
+		var fraction := minf(float(shared.remaining) / float(shared.total), float(meeting.remaining) / float(meeting.total))
+		var tools: Array = shared.get("tools", [primary]).duplicate()
+		var hosts: Array = shared.get("hosts", [shared.host]).duplicate()
+		for tool in meeting.get("tools", [tool_id]):
+			if not tools.has(tool): tools.append(tool)
+		for person in meeting.get("hosts", [meeting.host]):
+			if not hosts.has(person): hosts.append(person)
+		for person in meeting.targets:
+			if not shared.targets.has(person): shared.targets.append(person)
+		shared.tools = tools
+		shared.hosts = hosts
+		shared.total = config.meeting_duration(tools.size())
+		shared.remaining = clampf(fraction, 0.0, 1.0) * float(shared.total)
+		meetings.erase(tool_id)
 
 func meeting_candidates(owner: int) -> Array:
 	var candidates: Array = []
@@ -999,98 +1128,101 @@ func _restart_ready_meetings() -> void:
 		if not groups.has(group) or not _accepts_function(group, "meeting") or _available_people(group).is_empty():
 			continue
 		# Waiting for an eligible opponent is idle, not a failed player command.
+		if _meeting_in_group(group) >= 0 or _meeting_group_cooling(group): continue
 		if meeting_candidates(int(card.owner)).is_empty(): continue
 		_activate_meeting(int(id), group, -1)
 
-func _activate_coffee(coffee_id: int, group: int, target_card: int, drain_instant := true) -> bool:
+func _activate_coffee(coffee_id: int, group: int, target_card: int) -> bool:
 	if not group_work(group).is_empty():
 		return _fail("这组还有工作；请把人员与咖啡另组一摞")
 	if int(cards[coffee_id].group) != group:
 		return _fail("先把人员拆出工作堆，再与咖啡单独组堆")
-	if target_card < -1:
-		return _fail("要提升卷度的人员已经不存在")
+	if target_card < -1: return _fail("要提升卷度的人员已经不存在")
 	if str(groups[group].job) not in ["work", "meeting"]:
 		return _fail("这个组正在执行其他任务")
 	if tasks.values().any(func(task): return task.kind == "coffee" and int(task.group) == group):
-		return _fail("这个组的一名人员正在喝咖啡，其他人员会依次提升卷度")
+		return _fail("这组正在升级，新加入的人员和咖啡将在下一轮处理")
 	var available: Array = _group_type(group, "coffee").filter(func(id): return cards[id].status == "ready")
-	if not available.has(coffee_id):
-		return _fail("这杯咖啡已经分配给其他人员提升卷度")
-	var people: Array = group_people(group)
-	var person := -1
-	var highest_rank := -1
-	for candidate in people:
-		var step: Dictionary = config.coffee_upgrade(str(cards[candidate].type))
-		var rank := _coffee_rank(str(cards[candidate].type))
-		if not step.is_empty() and rank > highest_rank and available.size() >= int(step.cost) and not _is_paused(int(candidate)) and (not tasks.has(candidate) or tasks[candidate].kind == "work"):
-			person = int(candidate)
-			highest_rank = rank
-	if person < 0:
-		return _fail("请为要提升卷度的人员补足咖啡")
-	if is_striking(person):
-		return _fail("罢工跳舞中的人员暂时不能喝咖啡提升卷度")
-	if tasks.has(person) and tasks[person].kind != "work":
-		return _fail("这名人员正在执行其他任务")
-	var from_type := str(cards[person].type)
-	var step: Dictionary = config.coffee_upgrade(from_type)
-	var cost := int(step.cost)
-	if available.size() < cost:
-		return _fail("提升卷度变成%s需要%d杯咖啡" % [config.cards[step.to].name, cost])
-	# Reserve all ingredients atomically; different personnel cannot drink the
-	# same cup. Zero-duration stages use the same completion rules immediately.
+	if not available.has(coffee_id): return _fail("这杯咖啡已分配给本轮升级")
+	var people: Array = []
+	for person in group_people(group):
+		if not _is_paused(int(person)) and (not tasks.has(person) or tasks[person].kind == "work"):
+			people.append({"id": int(person), "kind": str(cards[person].type)})
+	var plan: Dictionary = CoffeePlanSource.plan(config, people, available.size())
+	if plan.upgrades.is_empty(): return _fail("请为要提升卷度的人员补足咖啡")
+	# Freeze every final role and ingredient allocation before publishing the
+	# round. Late arrivals remain ready and cannot change this committed plan.
 	available.erase(coffee_id)
-	var ingredients: Array = [coffee_id]
-	ingredients.append_array(available.slice(0, cost - 1))
-	var duration: float = config.coffee_seconds(from_type)
-	var resume: Dictionary = tasks.get(person, {}).duplicate(true)
-	tasks[person] = {"kind": "coffee", "group": group, "tool_id": coffee_id,
-		"coffee_ids": ingredients, "from_type": from_type, "to_type": str(step.to), "total": duration,
-		"work_id": int(resume.get("work_id", -1)), "progress": 0.0, "resume_task": resume}
-	for id in ingredients:
-		cards[id].status = "active"
-		cards[id].total = duration
-		cards[id].remaining = duration
-	_emit("coffee_start", {"source": coffee_id, "owner": cards[coffee_id].owner,
-		"group": group, "person": person, "targets": [person], "coffee_ids": ingredients.duplicate(),
-		"from_type": from_type, "to_type": str(step.to), "amount": cost})
-	if duration == 0.0:
-		_complete_task(person)
-		if drain_instant:
-			_drain_instant_coffee_group(group)
-		else:
-			return true
+	available.push_front(coffee_id)
+	var members: Array = plan.upgrades.map(func(upgrade): return int(upgrade.person))
+	var batch_owner := int(members[0])
+	var duration: float = config.coffee_batch_seconds()
+	var offset := 0
+	for upgrade in plan.upgrades:
+		var person := int(upgrade.person)
+		var ingredients := available.slice(offset, offset + int(upgrade.cost))
+		offset += int(upgrade.cost)
+		var resume: Dictionary = tasks.get(person, {}).duplicate(true)
+		tasks[person] = {"kind": "coffee", "group": group, "tool_id": ingredients[0],
+			"coffee_ids": ingredients, "from_type": upgrade.from_type, "to_type": upgrade.to_type,
+			"steps": upgrade.steps.duplicate(true), "total": duration, "batch_owner": batch_owner,
+			"work_id": int(resume.get("work_id", -1)),
+			"progress": 0.0, "resume_task": resume}
+		if person == batch_owner: tasks[person]["batch_members"] = members.duplicate()
+		for id in ingredients:
+			cards[id].status = "active"
+			cards[id].total = duration
+			cards[id].remaining = duration
+	for person in members:
+		var task: Dictionary = tasks[person]
+		var event := {"source": task.tool_id, "owner": cards[person].owner,
+			"group": group, "person": person, "targets": [person], "batch_owner": batch_owner,
+			"coffee_ids": task.coffee_ids.duplicate(),
+			"from_type": task.from_type, "to_type": task.to_type,
+			"steps": task.steps.duplicate(true), "amount": task.coffee_ids.size()}
+		if int(person) == batch_owner: event["batch_members"] = members.duplicate()
+		_emit("coffee_start", event)
+	if duration == 0.0: _complete_task(batch_owner)
 	_refresh_card_views()
 	return true
 
-func _drain_instant_coffee_group(group: int) -> void:
-	# Finish every immediately affordable stage in the same command/time. Each
-	# successful zero stage consumes at least one cup, so this loop is finite
-	# without recursion, advancing time, or imposing an artificial queue limit.
-	var previous_error := last_error
-	while groups.has(group):
-		if tasks.values().any(func(task): return task.kind == "coffee" and int(task.group) == group): break
-		var ready := _group_type(group, "coffee").filter(func(id): return cards[id].status == "ready")
-		if ready.is_empty() or not _activate_coffee(int(ready[0]), group, -1, false): break
-	# A later unaffordable stage must not turn the first successful command
-	# into an error; positive stages keep their ordinary task and event order.
-	last_error = previous_error
+func _coffee_batch_members(person: int, task: Dictionary) -> Array:
+	# Store the roster once, so many-person rounds and their saved replays grow
+	# linearly. Legacy tasks without a batch owner retain their one-person clock.
+	var owner := int(task.get("batch_owner", person))
+	var source: Dictionary = task if owner == person else tasks.get(owner, task)
+	return source.get("batch_members", [person])
 
 func _coffee_batch_valid(person: int, task: Dictionary) -> bool:
-	if not cards.has(person) or str(cards[person].type) != str(task.from_type) or is_meeting_target(person): return false
+	if not cards.has(person): return false
 	var group := int(cards[person].group)
 	if not group_work(group).is_empty(): return false
-	for id in task.coffee_ids:
-		if not cards.has(id) or cards[id].type != "coffee" or int(cards[id].group) != group: return false
+	var batch_owner := int(task.get("batch_owner", person))
+	var members := _coffee_batch_members(person, task)
+	if not members.has(batch_owner) or not tasks.has(batch_owner): return false
+	for member in members:
+		var current: Dictionary = task if int(member) == person else tasks.get(member, {})
+		if current.get("kind") != "coffee" or int(current.get("batch_owner", member)) != batch_owner: return false
+		if not cards.has(member) or str(cards[member].type) != str(current.from_type) \
+				or int(cards[member].group) != group or _is_paused(int(member)): return false
+		for id in current.coffee_ids:
+			if not cards.has(id) or cards[id].type != "coffee" or int(cards[id].group) != group: return false
 	return true
 
-func _coffee_rank(kind: String) -> int:
-	return config.coffee_rank(kind)
+func has_invalid_coffee_batch() -> bool:
+	var seen := {}
+	for person in tasks:
+		var task: Dictionary = tasks[person]
+		if task.kind != "coffee": continue
+		var owner := int(task.get("batch_owner", person))
+		if seen.has(owner): continue
+		seen[owner] = true
+		if not _coffee_batch_valid(int(person), task): return true
+	return false
 
 func _sync_coffee_groups() -> void:
-	# One shared queue per combination: finish the current person's stage,
-	# then take the highest affordable eligible tier in stable group order. Ready coffee
-	# is rescanned when materials arrive, meetings finish, or
-	# a cancelled participant leaves; an unrelated coffee-only pile stays idle.
+	# One immutable upgrade round per combination. Only after it settles or is
+	# cancelled do ready materials and eligible personnel form a new snapshot.
 	var previous_error := last_error
 	for group in groups:
 		if str(groups[group].job) not in ["work", "meeting"] or not group_work(int(group)).is_empty(): continue
@@ -1112,20 +1244,23 @@ func _restore_coffee_work(person: int, task: Dictionary) -> void:
 	tasks[person] = resume
 
 func _cancel_coffee(person: int, task: Dictionary) -> void:
-	tasks.erase(person)
-	for id in task.coffee_ids:
-		if not cards.has(id): continue
-		cards[id].status = "ready"
-		cards[id].progress = 0.0
-		cards[id].total = 0.0
-		cards[id].remaining = 0.0
-		cards[id].paused = false
-	_restore_coffee_work(person, task)
-	_emit("coffee_cancel", {"source": task.tool_id, "person": person, "group": task.group,
-		"coffee_ids": task.coffee_ids.duplicate()})
+	var snapshots := {}
+	for member in _coffee_batch_members(person, task):
+		var current: Dictionary = task if int(member) == person else tasks.get(member, {})
+		if current.get("kind") == "coffee": snapshots[member] = current.duplicate(true)
+	for member in snapshots: tasks.erase(member)
+	for member in snapshots:
+		var current: Dictionary = snapshots[member]
+		for id in current.coffee_ids:
+			if not cards.has(id): continue
+			cards[id].status = "ready"
+			cards[id].progress = 0.0
+			cards[id].total = 0.0
+			cards[id].remaining = 0.0
+		_restore_coffee_work(int(member), current)
+		_emit("coffee_cancel", {"source": current.tool_id, "person": member, "group": current.group,
+			"coffee_ids": current.coffee_ids.duplicate()})
 
-## Only a working combination with personnel present is a strike target.
-## Staff visiting another meeting are physically absent, so cannot be ejected.
 func can_strike_group(group: int, attacker_owner: int) -> bool:
 	if winner >= 0 or not groups.has(group) or int(groups[group].owner) == attacker_owner:
 		return false
@@ -1503,22 +1638,26 @@ func _reschedule(start_coffee := true) -> void:
 	for group in groups: _sync_group_function(int(group))
 	_validate_outsource_batches()
 	_validate_recruitment_batches()
-	for tool_id in meetings.keys():
-		var meeting: Dictionary = meetings[tool_id]
-		var host: int = int(meeting.host)
-		if not cards.has(tool_id) or not cards.has(host) or int(cards[host].group) != int(meeting.group) or int(cards[tool_id].group) != int(meeting.group):
-			_end_meeting(int(tool_id))
+	_sync_meetings()
+	var valid_coffee_batches := {}
 	for person in tasks.keys():
+		if not tasks.has(person): continue
 		var task: Dictionary = tasks[person]
-		# Moving the person with every reserved cup keeps the same stage timer.
-		if task.kind == "coffee" and _coffee_batch_valid(int(person), task):
+		var coffee_valid := true
+		if task.kind == "coffee":
+			var batch_owner := int(task.get("batch_owner", person))
+			if not valid_coffee_batches.has(batch_owner):
+				valid_coffee_batches[batch_owner] = _coffee_batch_valid(int(person), task)
+			coffee_valid = bool(valid_coffee_batches[batch_owner])
+		# Moving the complete batch with its reserved cups preserves its timer.
+		if task.kind == "coffee" and coffee_valid:
 			task.group = cards[person].group
 			# The pair may leave its work behind. Keep that file's progress, but
 			# release its reservation so the old group's coworkers can take it.
 			if int(task.work_id) >= 0 and (not cards.has(task.work_id) or cards[task.work_id].group != task.group):
 				task.work_id = -1
 				task.resume_task = {}
-		var invalid: bool = not cards.has(person) or (task.kind == "coffee" and not _coffee_batch_valid(int(person), task))
+		var invalid: bool = not cards.has(person) or not coffee_valid
 		if not invalid:
 			invalid = int(cards[person].group) != int(task.group)
 			if task.kind == "work":
@@ -1534,14 +1673,16 @@ func _reschedule(start_coffee := true) -> void:
 		if invalid:
 			if task.kind == "coffee": _cancel_coffee(int(person), task)
 			else: tasks.erase(person)
-	# If two active upgrade stacks are combined, keep the destination's first
-	# participant and release the incoming materials for its turn in the queue.
+	# Merging running batches keeps the destination's round. The incoming
+	# batch releases its materials and waits for the next opening snapshot.
 	for group in groups:
-		var drinking := false
+		var batch_owner := -1
 		for person in group_people(int(group)):
 			if not tasks.has(person) or tasks[person].kind != "coffee": continue
-			if drinking: _cancel_coffee(int(person), tasks[person].duplicate(true))
-			else: drinking = true
+			var owner := int(tasks[person].get("batch_owner", person))
+			if batch_owner >= 0 and batch_owner != owner:
+				_cancel_coffee(int(person), tasks[person].duplicate(true))
+			else: batch_owner = owner
 	_finish_empty_batches()
 	_sync_transfer_groups()
 	_sync_outsource_groups()
@@ -1596,6 +1737,7 @@ func _progress_time(delta: float) -> void:
 		if rate > 0.0: groups[group]["slack_progress"] = minf(1.0, group_slack_progress(int(group)) + rate * delta)
 	for person in tasks:
 		var task: Dictionary = tasks[person]
+		if task.kind == "coffee" and int(task.get("batch_owner", person)) != int(person): continue
 		if task.kind == "work":
 			task.progress = group_work_progress(int(task.group))
 		elif task.kind == "transfer":
@@ -1638,6 +1780,7 @@ func _settle_due() -> void:
 	for group in slack_groups: _complete_slack_group(int(group))
 	var completed: Array = []
 	for person in tasks:
+		if tasks[person].kind == "coffee" and int(tasks[person].get("batch_owner", person)) != int(person): continue
 		if str(tasks[person].kind) not in ["meeting", "work", "transfer", "slack", "recruitment"] and _task_progress(int(person)) >= 1.0 - epsilon:
 			completed.append(person)
 	for person in completed:
@@ -1686,6 +1829,8 @@ func _task_progress(person: int) -> float:
 		return 1.0 - float(recruitment[person].remaining) / float(recruitment[person].total)
 	if task.kind == "meeting" and meetings.has(task.tool_id):
 		return 1.0 - float(meetings[task.tool_id].remaining) / float(meetings[task.tool_id].total)
+	if task.kind == "coffee":
+		return float(tasks.get(int(task.get("batch_owner", person)), task).progress)
 	return float(task.progress)
 
 func _task_rate(person: int) -> float:
@@ -1749,23 +1894,34 @@ func _complete_transfer_group(group: int) -> void:
 		"ids": works, "target_owner": other, "target_group": destination})
 
 func _complete_task(person: int) -> void:
+	if not tasks.has(person): return
 	var task: Dictionary = tasks[person].duplicate(true)
-	tasks.erase(person)
-	if not cards.has(person):
+	if task.kind != "coffee":
+		tasks.erase(person)
 		return
-	var owner: int = int(cards[person].owner)
-	if task.kind == "coffee":
-		if not _coffee_batch_valid(person, task):
-			_cancel_coffee(person, task)
-			return
-		var source: int = int(task.tool_id)
-		cards[person].type = str(task.to_type)
-		_invalidate_group_index()
-		for id in task.coffee_ids: _consume(int(id))
-		_restore_coffee_work(person, task)
-		_emit("coffee_upgrade", {"source": source, "owner": owner, "group": int(task.group), "person": person,
-			"targets": [person], "from_type": task.from_type, "to_type": cards[person].type,
-			"coffee_ids": task.coffee_ids.duplicate(), "amount": task.coffee_ids.size()})
+	if not _coffee_batch_valid(person, task):
+		_cancel_coffee(person, task)
+		return
+	var snapshots := {}
+	for member in _coffee_batch_members(person, task):
+		snapshots[member] = tasks[member].duplicate(true)
+	# All final personnel types change before any completion event is emitted.
+	# No intermediate grade can work, earn income or enter another recipe.
+	for member in snapshots:
+		tasks.erase(member)
+		cards[member].type = str(snapshots[member].to_type)
+	_invalidate_group_index()
+	for member in snapshots:
+		for id in snapshots[member].coffee_ids: _consume(int(id))
+	for member in snapshots:
+		var current: Dictionary = snapshots[member]
+		_restore_coffee_work(int(member), current)
+		_emit("coffee_upgrade", {"source": current.tool_id, "owner": cards[member].owner,
+			"group": int(current.group), "person": member, "targets": [member],
+			"from_type": current.from_type, "to_type": cards[member].type,
+			"batch_owner": current.get("batch_owner", member),
+			"steps": current.get("steps", []).duplicate(true),
+			"coffee_ids": current.coffee_ids.duplicate(), "amount": current.coffee_ids.size()})
 
 func _complete_slack_group(group: int) -> void:
 	var participants := group_slack_participants(group)
@@ -1795,17 +1951,19 @@ func _finish_empty_batches() -> void:
 
 func _end_meeting(tool_id: int) -> void:
 	_schedule_dirty = true
-	if not meetings.has(tool_id):
-		return
+	if not meetings.has(tool_id): return
 	var meeting: Dictionary = meetings[tool_id]
 	meetings.erase(tool_id)
-	if tasks.has(meeting.host) and tasks[meeting.host].kind == "meeting":
-		tasks.erase(meeting.host)
-	if cards.has(tool_id):
-		_recover(tool_id)
-	_emit("meeting_end", {"source": tool_id, "host": meeting.host, "group": meeting.group, "targets": meeting.targets.duplicate()})
-	if groups.has(meeting.group):
-		_sync_group_function(int(meeting.group))
+	var hosts: Array = meeting.get("hosts", [meeting.host])
+	var tools: Array = meeting.get("tools", [tool_id])
+	for person in hosts:
+		if tasks.has(person) and tasks[person].kind == "meeting" and int(tasks[person].tool_id) == tool_id:
+			tasks.erase(person)
+	for tool in tools:
+		if cards.has(tool): _recover(int(tool))
+	_emit("meeting_end", {"source": tool_id, "host": meeting.host, "hosts": hosts.duplicate(),
+		"tools": tools.duplicate(), "group": meeting.group, "targets": meeting.targets.duplicate()})
+	if groups.has(meeting.group): _sync_group_function(int(meeting.group))
 
 func _recover(tool_id: int) -> void:
 	_schedule_dirty = true
@@ -1846,6 +2004,8 @@ func _cancel_group_work(group: int) -> void:
 
 func _refresh_card_views() -> void:
 	var group_rates: Dictionary = {}
+	var coffee_views: Dictionary = {}
+	var coffee_views_ready := false
 	for id in activity_card_ids():
 		var card: Dictionary = cards[id]
 		if config.is_person(str(card.type)):
@@ -1878,9 +2038,12 @@ func _refresh_card_views() -> void:
 			elif outsourcing.has(id):
 				card.remaining = outsourcing[id].remaining
 				card.progress = 1.0 - float(card.remaining) / float(card.total)
-			elif meetings.has(id):
-				card.remaining = meetings[id].remaining
-				card.progress = 1.0 - float(card.remaining) / float(card.total)
+			elif card.type == "meeting" and card.status == "active":
+				var meeting := meeting_for_tool(int(id))
+				if not meeting.is_empty():
+					card.total = meeting.total
+					card.remaining = meeting.remaining
+					card.progress = 1.0 - float(card.remaining) / float(card.total)
 			elif card.type == "transfer" and card.status == "active":
 				card.progress = group_transfer_progress(int(card.group))
 				card.remaining = (1.0 - float(card.progress)) * float(card.total)
@@ -1890,15 +2053,19 @@ func _refresh_card_views() -> void:
 				card.remaining = (1.0 - float(card.progress)) * float(card.total)
 				card.paused = group_slack_participants(int(card.group)).is_empty()
 			elif card.status == "active" and card.type == "coffee":
-				var minimum := 1.0
-				for person in tasks:
-					var task: Dictionary = tasks[person]
-					if task.kind == "coffee" and task.coffee_ids.has(id):
-						minimum = minf(minimum, float(task.progress))
-						if card.type == "coffee":
-							card.paused = _is_paused(int(person))
-				card.progress = minimum
-				card.remaining = (1.0 - minimum) * float(card.total)
+				# Index ingredient views once for a many-person batch, rather than
+				# scanning every personnel task separately for every coffee card.
+				if not coffee_views_ready:
+					for person in tasks:
+						var task: Dictionary = tasks[person]
+						if task.kind != "coffee": continue
+						var view := {"progress": _task_progress(int(person)), "paused": _is_paused(int(person))}
+						for ingredient in task.coffee_ids: coffee_views[ingredient] = view
+					coffee_views_ready = true
+				var view: Dictionary = coffee_views.get(id, {"progress": 1.0, "paused": false})
+				card.progress = view.progress
+				card.paused = view.paused
+				card.remaining = (1.0 - float(card.progress)) * float(card.total)
 			else:
 				card.progress = 0.0
 

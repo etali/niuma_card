@@ -38,7 +38,8 @@ func _run() -> void:
 		"图鉴可以按人员类别筛选")
 	game.state.config.cards.employee.name = "调参员工"
 	game.state.config.rules.coffee.upgrades.employee.cost = 2
-	game.state.config.rules.coffee.upgrades.employee.seconds = 7.5
+	game.state.config.rules.coffee.seconds = 7.5
+	game.state.config.rules.coffee.upgrades.employee.seconds = 99.0
 	OffWorkCardDB.configure(game.state.config)
 	book.get_node("LearningNavigation/Learning_upgrades").pressed.emit()
 	atlas = book._page.get_child(0)
@@ -47,8 +48,12 @@ func _run() -> void:
 	var route: Node = atlas._ordinary_grid.get_node("Ordinary_employee")
 	check(route.get_meta("route").target_id == "grinder"
 		and route.find_child("CoffeeCost", true, false).text == "2 杯咖啡"
-		and route.find_child("CoffeeTime", true, false).text == "7.5 秒",
-		"关系图使用当前配置的目标、咖啡数量和时长")
+		and route.find_child("CoffeeTime", true, false) == null,
+		"关系图逐级显示目标和咖啡数量，不把共享批次时长重复标成逐级耗时")
+	var batch_text: String = atlas._map.get_node("CoffeeBatchTime").text
+	check(batch_text.contains("每批耗时 7.5 秒") and batch_text.contains("只计时一次")
+		and batch_text.contains("同时升级") and batch_text.contains("下一批") and not batch_text.contains("99"),
+		"关系图一次显示当前共享批次耗时，说明并行升级与后续入料，忽略旧级别覆盖")
 	var source_preview: Node = route.get_child(0).get_child(0)
 	check(source_preview.accessibility_name == "调参员工" and source_preview.card.label.text == "调参员工",
 		"改名后关系图沿用当前人员卡名")

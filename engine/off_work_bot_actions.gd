@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 extends RefCounted
 
+const CoffeePlan = preload("res://engine/off_work_coffee_plan.gd")
+
 ## Enumerate effects, not preferences. The search applies each proposal to its
 ## own rule-state copy; this layer neither scores actions nor touches the world
 ## or its random stream. In particular, old shopping/personnel/material caps do
@@ -382,15 +384,10 @@ class Builder extends RefCounted:
 		for person in person_representatives:
 			if not _open(): return
 			var kind: String = world.cards[person].type
-			var recipe: Dictionary = world.config.coffee_upgrade(kind)
-			if recipe.is_empty() or int(recipe.cost) > cups.size(): continue
-			var total := 0
-			var amounts := [int(recipe.cost)]
-			while not recipe.is_empty() and total + int(recipe.cost) <= cups.size():
-				if not _open(): return
-				total += int(recipe.cost)
-				recipe = world.config.coffee_upgrade(str(recipe.to))
-			amounts.append(total)
+			var batch: Dictionary = CoffeePlan.plan(world.config, [{"id":person,"kind":kind}], cups.size())
+			if batch.upgrades.is_empty(): continue
+			var upgrade: Dictionary = batch.upgrades[0]
+			var amounts := [int(upgrade.steps[0].cost), int(batch.coffee_used)]
 			for count in amounts:
 				_move([person] + cups.slice(0,count),-1,"coffee","拆出人员并备齐完整升级配方",person)
 			var gid: int = int(world.cards[person].group)

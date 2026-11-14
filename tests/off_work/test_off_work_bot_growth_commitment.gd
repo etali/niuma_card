@@ -95,8 +95,7 @@ func _unfinished_upgrade_stays_put() -> void:
 	# A slower actual recipe makes the saved expected return time stale. It
 	# remains a real paid upgrade, and must never be cancelled by dispatch.
 	world.config.rules.coffee.seconds = 18.0
-	world.config.rules.coffee.upgrades.employee["seconds"] = 18.0
-	check(Actions.apply_action(world,0,report.action), "真实升级按当前18秒配方开始")
+	check(Actions.apply_action(world,0,report.action), "真实升级按当前18秒共享轮时长开始")
 	var context := Commitment.remember(world,0,report.action,report)
 	if not need(not context.is_empty(), "已支付升级产生返岗承诺"): return
 	world.advance(float(context.ready_at)-world.time)

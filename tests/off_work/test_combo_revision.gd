@@ -31,6 +31,8 @@ func _check(ok: bool, label: String) -> void:
 
 func _upgrade_material() -> void:
 	var state := _state({"employee": 2, "work": 200, "leader": 1})
+	# Preserve the concurrent work-progress checkpoints used by this fixture.
+	state.config.rules.coffee.seconds = 5.0
 	var employees := _owned(state, "employee")
 	var target: int = employees[1]
 	var group: int = state.cards[target].group

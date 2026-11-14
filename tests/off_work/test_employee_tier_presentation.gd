@@ -18,9 +18,11 @@ func _run() -> void:
 	state.config.rules.bot.enabled = false
 	state.config.rules.initial.groups = [{"employee": 1}, {"work": 40}, {"coffee": 8}]
 	state.config.rules.initial.money = 0
-	state.config.rules.coffee.upgrades.employee.seconds = 2.0
-	state.config.rules.coffee.upgrades.grinder.seconds = 3.0
-	state.config.rules.coffee.upgrades.workaholic.seconds = 4.0
+	state.config.rules.coffee.seconds = 2.0
+	# Retired role overrides cannot lengthen a new shared batch.
+	state.config.rules.coffee.upgrades.employee.seconds = 20.0
+	state.config.rules.coffee.upgrades.grinder.seconds = 30.0
+	state.config.rules.coffee.upgrades.workaholic.seconds = 40.0
 	main._new_game()
 	await _settle()
 	_check_upgrade_highlights()
@@ -33,42 +35,29 @@ func _run() -> void:
 	state.drain_events()
 	board.sync_state(state)
 	board.set_debug_mode(true)
-	var stages := ["employee", "grinder", "workaholic"]
-	var results := ["grinder", "workaholic", "work_emperor"]
-	var costs := [1, 2, 4]
-	var retained_coffee := coffee.size()
-	for stage in stages.size():
-		var from_type: String = stages[stage]
-		var to_type: String = results[stage]
-		var duration: float = state.config.coffee_seconds(from_type)
-		_check(state.cards[person].type == from_type and state.tasks[person].kind == "coffee", "%s starts its own upgrade task" % from_type)
-		var materials: Array = state.tasks[person].coffee_ids.duplicate()
-		_check(materials.size() == costs[stage], "%s reserves its own required number of cups" % from_type)
-		state.advance(duration * 0.5)
-		board.sync_state(state)
-		_check(card.get_instance_id() == identity and card.type == from_type, "%s remains the same visible personnel node while drinking" % from_type)
-		_check(card._task_progress_active and card._task_progress_phase == "coffee" and is_equal_approx(card._task_progress_value, 0.5), "%s personnel shows real halfway progress" % from_type)
-		_check(is_equal_approx(card._debug_remaining, duration * 0.5), "%s Debug reads this stage's remaining time" % from_type)
-		for uid in materials:
-			var cup: OffWorkCard = board.by_uid[uid]
-			_check(cup._task_progress_active and is_equal_approx(cup._task_progress_value, 0.5) and is_equal_approx(cup._debug_remaining, duration * 0.5), "%s reserved cup remains visible with the actual stage timer" % from_type)
-		_check(_owned_ids("coffee").size() == retained_coffee, "%s does not consume materials before the deadline" % from_type)
-		state.advance(duration * 0.5)
-		var events: Array = state.drain_events().filter(func(e): return e.kind == "coffee_upgrade" and e.owner == 0)
-		_check(events.size() == 1, "%s produces one upgrade completion event" % from_type)
-		retained_coffee -= costs[stage]
-		board.sync_state(state)
-		for event in events: board.play_event(event)
-		_check(card.get_instance_id() == identity and board.by_uid[person] == card, "%s keeps physics, pointer and stack identity" % to_type)
-		_check(card.type == to_type and card.def_id == to_type and card.label.text == state.config.cards[to_type].name, "%s refreshes title and definition on the existing card" % to_type)
-		_check(card._icon.texture == CardArt.illustration_texture(to_type, OffWorkCardDB), "%s switches to its configured real artwork" % to_type)
-		_check(card.uses_continuous_animation() and card.illustration_profile() == to_type and card._motion_material != null, "%s uses its own continuous motion profile" % to_type)
-		_check(card._upgrade_visual_active and card._upgrade_remaining > 0.0, "%s plays the production upgrade ring" % to_type)
-		_check(card.stamp_text() == str(state.config.cards[to_type].name), "%s upgrade stamp names the attained role" % to_type)
-		_check(_owned_ids("coffee").size() == retained_coffee and materials.all(func(uid): return not board.by_uid.has(uid)), "%s removes exactly the consumed real coffee cards from the table" % to_type)
-		if stage + 1 < stages.size():
-			_check(card._task_progress_active and is_zero_approx(card._task_progress_value), "%s starts the next stage at an empty progress bar" % to_type)
-	_check(state.cards[person].type == "work_emperor" and _owned_ids("coffee").size() == 1, "seven cups complete three stages and leave the eighth cup intact")
+	var duration: float = state.config.coffee_batch_seconds()
+	_check(state.cards[person].type == "employee" and state.tasks[person].kind == "coffee"
+		and state.tasks[person].to_type == "work_emperor", "one batch reserves the employee's final attainable tier")
+	var materials: Array = state.tasks[person].coffee_ids.duplicate()
+	_check(materials.size() == 7 and is_equal_approx(state.tasks[person].total, duration),
+		"three tier jumps reserve seven cups but use only one shared two-second timer")
+	state.advance(duration * 0.5)
+	board.sync_state(state)
+	_check(card.get_instance_id() == identity and card.type == "employee", "employee remains the same visible personnel node before the batch deadline")
+	_check(card._task_progress_active and card._task_progress_phase == "coffee" and is_equal_approx(card._task_progress_value, 0.5), "personnel shows real halfway batch progress")
+	_check(is_equal_approx(card._debug_remaining, duration * 0.5), "personnel Debug reads shared batch remaining time")
+	for uid in materials:
+		var cup: OffWorkCard = board.by_uid[uid]
+		_check(cup._task_progress_active and is_equal_approx(cup._task_progress_value, 0.5) and is_equal_approx(cup._debug_remaining, duration * 0.5), "each reserved cup remains visible with the actual shared batch timer")
+	_check(_owned_ids("coffee").size() == 8, "no batch materials are consumed before the deadline")
+	state.advance(duration * 0.5)
+	var events: Array = state.drain_events().filter(func(e): return e.kind == "coffee_upgrade" and e.owner == 0)
+	_check(events.size() == 1 and events[0].person == person, "multi-level batch emits one final upgrade completion for the actual person")
+	board.sync_state(state)
+	for event in events: board.play_event(event)
+	_check(card.get_instance_id() == identity and board.by_uid[person] == card, "final upgrade keeps physics, pointer and stack identity")
+	_check_personnel_presentation(card, "work_emperor")
+	_check(_owned_ids("coffee").size() == 1 and materials.all(func(uid): return not board.by_uid.has(uid)), "the batch removes exactly seven consumed real coffee cards and leaves the eighth intact")
 	_check(not state.tasks.has(person), "maximum tier waits for reassignment and leaves spare coffee intact")
 	var work_group: int = state.cards[_owned("work")].group
 	state.move_cards([person], work_group)
@@ -86,7 +75,7 @@ func _run() -> void:
 	_check(paid.size() == 1 and paid[0].money_ids.size() == 8, "maximum tier's first full cycle produces eight real money cards")
 	_check(board._cash_flights.size() == 8, "all eight earned cards use the existing bounded cash flight presentation")
 	_check(_owned_ids("coffee").size() == 1, "working at maximum tier preserves spare coffee")
-	await _queue_presentation()
+	await _batch_presentation()
 	main.queue_free()
 	await process_frame
 	await process_frame
@@ -97,34 +86,55 @@ func _run() -> void:
 func _combination(kinds: Array) -> Dictionary:
 	return OffWorkComboRules.evaluate(kinds.map(func(kind): return {"type": kind}))
 
-func _queue_presentation() -> void:
-	state.config.rules.initial.groups = [{"employee": 2}, {"work": 40}, {"coffee": 2}]
-	state.config.rules.coffee.upgrades.employee.seconds = 5.0
+func _check_personnel_presentation(card: OffWorkCard, to_type: String) -> void:
+	_check(card.type == to_type and card.def_id == to_type and card.label.text == state.config.cards[to_type].name, "%s refreshes title and definition on the existing card" % to_type)
+	_check(card._icon.texture == CardArt.illustration_texture(to_type, OffWorkCardDB), "%s switches to its configured real artwork" % to_type)
+	_check(card.uses_continuous_animation() and card.illustration_profile() == to_type and card._motion_material != null, "%s uses its own continuous motion profile" % to_type)
+	_check(card._upgrade_visual_active and card._upgrade_remaining > 0.0, "%s plays the production upgrade ring" % to_type)
+	_check(card.stamp_text() == str(state.config.cards[to_type].name), "%s upgrade stamp names the attained role" % to_type)
+
+func _batch_presentation() -> void:
+	state.config.rules.initial.groups = [{"employee": 2}, {"work": 40}, {"coffee": 4}]
+	state.config.rules.coffee.seconds = 5.0
 	main._new_game()
 	await _settle()
 	var people := _owned_ids("employee")
 	var material := _owned_ids("coffee")
 	var group: int = state.cards[people[0]].group
 	var visible_people: Array = people.map(func(uid): return board.by_uid[uid])
+	var final_types := ["workaholic", "grinder"]
 	state.move_cards(material, group, people[0])
 	state.drain_events()
 	board.sync_state(state)
+	_check(state.tasks[people[0]].coffee_ids.size() == 3 and state.tasks[people[1]].coffee_ids.size() == 1,
+		"batch plans all participants up front, allocating three then one cup in equal-tier group order")
 	for index in people.size():
 		var person: int = people[index]
-		var cup: int = state.tasks[person].coffee_ids[0]
-		var visible_cup: OffWorkCard = board.by_uid[cup]
-		_check(visible_cup._task_progress_active and visible_cup._task_progress_phase == "coffee" and is_zero_approx(visible_cup._task_progress_value), "queued cup %d starts its visible timer from zero" % index)
-		state.advance(2.5)
-		board.sync_state(state)
-		_check(is_equal_approx(visible_cup._task_progress_value, 0.5) and is_equal_approx(visible_cup._debug_remaining, 2.5), "queued cup %d displays its own real half-progress and remaining time" % index)
-		state.advance(2.5)
-		var completed: Array = state.drain_events().filter(func(event): return event.kind == "coffee_upgrade" and event.owner == 0)
-		board.sync_state(state)
-		for event in completed: board.play_event(event)
-		_check(completed.size() == 1 and completed[0].person == person, "queued stage %d emits one matching visual completion" % index)
-		_check(board.by_uid[person] == visible_people[index] and visible_people[index].type == "grinder" and visible_people[index].label.text == "卷王", "queued stage %d refreshes the same personnel node into a grinder" % index)
-		_check(not board.by_uid.has(cup) and visible_people[index]._upgrade_visual_active, "queued stage %d removes its consumed cup and plays the real upgrade animation" % index)
-	_check(people.all(func(uid): return board.by_uid[uid].type == "grinder") and _owned_ids("coffee").is_empty(), "two real visible employees complete without another stacking gesture")
+		_check(state.tasks[person].to_type == final_types[index] and visible_people[index]._task_progress_active
+			and is_zero_approx(visible_people[index]._task_progress_value), "batch participant %d starts at zero with its planned final tier" % index)
+	for uid in material:
+		_check(board.by_uid[uid]._task_progress_active and board.by_uid[uid]._task_progress_phase == "coffee"
+			and is_zero_approx(board.by_uid[uid]._task_progress_value), "every reserved cup starts the same visible batch timer")
+	state.advance(2.5)
+	board.sync_state(state)
+	for uid in people + material:
+		var visible: OffWorkCard = board.by_uid[uid]
+		_check(is_equal_approx(visible._task_progress_value, 0.5) and is_equal_approx(visible._debug_remaining, 2.5),
+			"every participant and cup displays shared half-progress and remaining time")
+	_check(people.all(func(uid): return state.cards[uid].type == "employee") and _owned_ids("coffee").size() == 4,
+		"all participants retain original types and materials until the common deadline")
+	state.advance(2.5)
+	var completed: Array = state.drain_events().filter(func(event): return event.kind == "coffee_upgrade" and event.owner == 0)
+	board.sync_state(state)
+	for event in completed: board.play_event(event)
+	_check(completed.size() == 2 and people.all(func(uid): return completed.any(func(event): return event.person == uid)),
+		"one batch deadline emits exactly one completion per actual person")
+	for index in people.size():
+		var person: int = people[index]
+		_check(board.by_uid[person] == visible_people[index], "simultaneous upgrade keeps participant %d's existing visible node" % index)
+		_check_personnel_presentation(visible_people[index], final_types[index])
+	_check(material.all(func(uid): return not board.by_uid.has(uid)) and _owned_ids("coffee").is_empty(),
+		"the shared deadline removes all four consumed cups without another stacking gesture")
 
 func _check_upgrade_highlights() -> void:
 	var working := _combination(["employee", "coffee", "work"])

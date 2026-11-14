@@ -144,8 +144,8 @@ func _coffee_and_function_locks() -> void:
 	check(brewing.tasks.get(staff[0], {}).get("kind") == "coffee", "咖啡真实进入升级任务")
 	_compare(brewing, {"kind":"move", "ids":[cups[0]]}, true, "取消咖啡释放材料")
 	_compare(brewing, {"kind":"dismiss", "ids":[staff[0]]}, true, "升级中解雇")
-	brewing.advance(5.0)
-	check(brewing.cards[staff[0]].type == "grinder", "真实咖啡结算改变人员类型")
+	brewing.advance(brewing.config.coffee_seconds("employee"))
+	check(brewing.cards[staff[0]].type == "workaholic", "四杯咖啡按完整批次产出肝帝并保留一杯")
 	_generated(brewing, "升级后缓存类型")
 	var meeting: int = _add(state, "meeting")[0]
 	var locked := _compare(state, {"kind":"move", "ids":[meeting], "group":_work(state)}, true, "工作中添会议")

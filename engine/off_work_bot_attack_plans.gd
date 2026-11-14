@@ -4,11 +4,12 @@ extends RefCounted
 ## A single possible attack continuation, not an attack bonus or a second
 ## scheduler. The evaluator must pay and schedule purchase/use on its existing
 ## action clock, then recheck these targets at use/arrival. Each alternative
-## uses ONE tool. No live state or private random stream is changed here.
+## uses one attack. An existing meeting stack uses its shared hosts/tools;
+## split assembly still uses one tool/person. No live state or RNG changes.
 ##
 ## Public purchases carry their real price and expiry, including purchases not
 ## affordable yet: the caller's cash forecast decides whether they can occur.
-## Owned tools carry ready_seconds. A meeting additionally occupies its host
+## Owned tools carry ready_seconds. A meeting additionally occupies all hosts
 ## for duration_seconds; its sampled targets are one legal public hypothesis.
 static func available_kinds(world: OffWorkState, owner: int, until: int = -1) -> Dictionary:
 	var kinds := []
@@ -56,11 +57,13 @@ static func plans(world: OffWorkState, owner: int, until: int = -1, future_targe
 			var recovering := kind == "meeting" and str(card.status) == "recovering"
 			if not ready and not recovering: continue
 			var seconds := maxf(0.0, float(card.remaining)) if recovering else 0.0
-			# With one attack per continuation, identical owned tools have the
-			# same effect. Keep the one available first, without an inventory cap.
-			if not owned.has(kind) or seconds < float(owned[kind].ready_seconds):
-				owned[kind] = {"kind":kind, "tool":int(id), "ready_seconds":seconds}
+			# Meeting groups are not equivalent now: shared hosts and tools can
+			# change both capacity and duration. Retain each existing group.
+			var key := kind if kind == "strike" else "%s:%s" % [kind, card.group]
+			if not owned.has(key) or seconds < float(owned[key].ready_seconds):
+				owned[key] = {"kind":kind, "tool":int(id), "ready_seconds":seconds}
 		elif world.config.is_person(kind):
+			if world.config.meeting_capacity(kind) <= 0: continue
 			if world.is_striking(int(id)) or world.is_meeting_target(int(id)): continue
 			var task: Dictionary = world.tasks.get(id, {})
 			if str(task.get("kind", "")) not in ["", "work"]: continue
@@ -122,11 +125,27 @@ static func plans(world: OffWorkState, owner: int, until: int = -1, future_targe
 					"flight_seconds":float(world.config.rules.strike.get("flight_seconds",0.0)),
 					"duration_seconds":world.config.number("strike", "duration_seconds")}))
 		elif not meeting_targets.is_empty():
+			var combinations := []
 			for host in hosts:
+				combinations.append({"host":host, "hosts":[host], "capacity":world.config.meeting_capacity(str(world.cards[host].type)),
+					"duration_seconds":world.config.meeting_duration(1)})
+			if source.has("tool"):
+				var group := int(world.cards[source.tool].group)
+				var grouped: Array = world.group_meeting_hosts(group)
+				var tools: Array = world.group_meeting_tools(group)
+				# A new shared session waits for the entire stack's cooldown.
+				if not grouped.is_empty() and world.meeting_for_tool(int(source.tool)).is_empty() \
+						and str(world.groups[group].get("function", "")) in ["", "meeting"] \
+						and tools.all(func(id): return str(world.cards[id].status) in ["ready", "recovering"]):
+					combinations.append({"host":grouped[0], "hosts":grouped, "tools":tools, "meeting_group":group,
+						"ready_seconds":world.group_meeting_ready_seconds(group),
+						"capacity":world.group_meeting_capacity(group), "duration_seconds":world.group_meeting_duration(group)})
+			for combination in combinations:
+				var host: int = combination.host
 				if not _open(until):
 					result.complete = false
 					return result
-				var capacity: int = world.config.meeting_capacity(str(world.cards[host].type))
+				var capacity: int = combination.capacity
 				if not samples.has(capacity):
 					var remaining: Array = meeting_targets.duplicate()
 					var selected := []
@@ -138,9 +157,9 @@ static func plans(world: OffWorkState, owner: int, until: int = -1, future_targe
 							return result
 						selected.append(remaining.pop_at(rng.randi_range(0,remaining.size()-1)))
 					samples[capacity] = selected
-				result.plans.append(source.merged({"owner":owner, "host":host,
+				result.plans.append(source.merged(combination, true).merged({"owner":owner, "host":host,
 					"targets":samples[capacity].duplicate(), "sampled_targets":true, "sample_seed":sample_seed,
-					"flight_seconds":0.0, "duration_seconds":world.config.number("meeting", "duration_seconds")}))
+					"flight_seconds":0.0}))
 	result.complete = _open(until)
 	return result
 

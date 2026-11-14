@@ -64,6 +64,8 @@ func _upgrade_clock() -> void:
 
 func _split_and_move() -> void:
 	var s := state()
+	# Keep cancellation checkpoints inside an explicitly configured long stage.
+	s.config.rules.coffee.seconds = 5.0
 	var p := person(s)
 	s.advance(1.0)
 	var work: int = s.tasks[p].work_id
@@ -88,6 +90,7 @@ func _split_and_move() -> void:
 	s.advance(10.0)
 	check(not s.cards.has(p) and s.cards.has(c), "dismissal cannot resurrect a grinder")
 	var claimed := state()
+	claimed.config.rules.coffee.seconds = 5.0
 	var cp := person(claimed)
 	var reserved: int = claimed.tasks[cp].work_id
 	var workplace: int = claimed.cards[cp].group
@@ -102,6 +105,8 @@ func _split_and_move() -> void:
 
 func _pause_and_cooldown() -> void:
 	var s := state()
+	# Interrupt a running stage before it can complete.
+	s.config.rules.coffee.seconds = 5.0
 	var p := person(s, 1)
 	var c := drink(s, p)
 	s.advance(1.0)

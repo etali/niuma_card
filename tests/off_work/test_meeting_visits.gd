@@ -226,8 +226,9 @@ func _enemy_meeting_upgrade() -> void:
 	game._process(0.0)
 	_check(state.cards[person].type == "grinder" and not state.cards.has(coffee) and board.by_uid[person] == node, "returned employee completes upgrade only after reading its full timer")
 	# Restart while another person is in flight must discard only old view state.
-	var fresh: int = state.add_card("meeting", 1, int(state.cards[host].group))
-	state.activate(fresh, int(state.cards[host].group), host)
+	# A fresh independent combination does not bypass the old stack's cooldown.
+	var fresh: int = state.add_card("meeting", 1)
+	state.move_cards([host], int(state.cards[fresh].group))
 	board.sync_state(state)
 	_check(not board._meeting_visitors.is_empty(), "restart fixture has an actual ongoing pull")
 	game._new_game()

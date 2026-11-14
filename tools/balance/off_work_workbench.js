@@ -30,7 +30,7 @@ const fieldLabels = {
   flight_seconds:"罢工飞行时间（秒）", work_role:"工会生产标准",
   income:"每份工作收入", money:"起始金钱", groups:"开局牌组", speed_multiplier:"速度倍率",
   seconds:"耗时（秒）", upgrades:"提升卷度配方", to:"卷度提升后", cost:"咖啡用量",
-  minimum_targets:"最少目标数", base_targets:"基础目标数", duration_seconds:"持续时间（秒）",
+  minimum_targets:"最少目标数", base_targets:"基础目标数", duration_seconds:"持续时间（秒）", duration_multiplier:"每多一张开会的时长倍率",
   recovery_seconds:"冷却时间（秒）", auto_repeat:"自动重复", coffee_per_person:"每人产咖啡数",
   cost_per_work:"每份工作成本", minimum_people:"最低保留人数", slots:"传送带槽位",
   interval_seconds:"刷新间隔（秒）",
@@ -206,8 +206,14 @@ function parameterFieldOptions(path) {
   const exact = {
     "cards.work.work_seconds": {label:"每份工作基础耗时（秒）",min:0,positive:true,unit:"秒",
       hint:"员工及各升级等级共用；加班会影响实际工作速度。"},
-    "rules.coffee.seconds": {label:"提升卷度耗时（秒）",min:0,unit:"秒",
-      hint:"0 表示立即完成升级，仍需消耗对应咖啡；摸鱼生产咖啡的耗时单独设置。"},
+    "rules.coffee.seconds": {label:"每批提升卷度耗时（秒）",min:0,unit:"秒/批",
+      hint:"每批只计时一次，不按人数或跨越等级累加；批次结束同时升级。0 表示立即完成整批升级，仍需消耗对应咖啡；摸鱼生产咖啡的耗时单独设置。"},
+    "rules.meeting.duration_multiplier": {label:"每多一张开会的时长倍率",min:1,unit:"倍",
+      hint:"同组每多一张开会牌，持续时间乘以此倍率；不增加参会名额，也不改变散会后的冷却时间。"},
+    "rules.meeting.duration_seconds": {label:"单张开会持续时间（秒）",min:0,positive:true,unit:"秒",
+      hint:"一张开会牌的基础持续时间；多张按时长倍率叠乘，冷却时间独立。"},
+    "rules.meeting.recovery_seconds": {label:"散会后冷却时间（秒）",min:0,positive:true,unit:"秒",
+      hint:"散会后每张开会牌的冷却时间，不随开会牌数量或时长倍率增加。"},
     "rules.recruitment.cost_per_employee": {label:"每名员工招聘费用",kind:"int",min:1,unit:"钱/人",
       hint:"老板每招募一名员工消耗的金钱，须高于购牌区员工价格。"},
     "rules.recruitment.seconds": {label:"招聘耗时（秒）",min:0,positive:true,unit:"秒",
@@ -223,7 +229,7 @@ function parameterFieldOptions(path) {
     work_capacity:{unit:"份/批",hint:"每名在场人员一次工作周期最多处理的工作份数，不是工资倍率。"},
     work_income_multiplier:{unit:"倍",hint:"该人员每完成一份工作时的收入倍率，不改变每批工作份数。"},
     transfer_capacity:{unit:"份/人",hint:"该人员每次甩锅可转交的工作份数；甩锅不产生收入。"},
-    meeting_multiplier:{unit:"倍",hint:"作为会议主持人时，基础目标人数乘以此倍率。"},
+    meeting_multiplier:{unit:"倍",hint:"每名主持人的参会名额为基础人数乘以此倍率；同组所有主持人的名额累加。"},
     coffee_per_person:{unit:"杯/人/批",hint:"摸鱼每批每位在场人员产出的咖啡数量；每分钟产量还取决于周期和速度倍率。"},
     speed_multiplier:{unit:"倍",hint:"同组效果叠加使用的速度倍率；实际速度还取决于牌数和组合规则。"},
     seconds:{unit:"秒",hint:"完成一次或一批此效果所需的基础时间；适用加速时实际周期会变化。"},
@@ -236,8 +242,8 @@ function parameterFieldOptions(path) {
     money:{unit:"钱/方",hint:"双方开局各自获得的金钱，不是两方合计。"},
     cost:{unit:"杯",hint:"完成这一段提升卷度消耗的咖啡数量，不是累计到最高级的总用量。"},
     max_per_owner:{unit:"名/方",hint:"每方同时持有这种牌的上限。"},
-    base_targets:{unit:"人",hint:"会议基础目标人数，再按主持人类型的倍率计算。"},
-    minimum_targets:{unit:"人",hint:"会议目标人数的下限。"},
+    base_targets:{unit:"人/主持人",hint:"每名主持人的基础参会名额，乘以人员倍率后按主持人数累加；开会牌数量不增加名额。"},
+    minimum_targets:{unit:"人/主持人",hint:"每名主持人计算倍率后的最低参会名额。"},
     minimum_people:{unit:"人",hint:"开除后至少保留的人员数量。"},
     flight_seconds:{unit:"秒",hint:"罢工牌飞到对方目标所需的时间，不是罢工持续时间。"},
     can_work:{hint:"决定该类人员能否处理工作；其他功能由对应组合规则决定。"},
@@ -252,7 +258,7 @@ function parameterFieldOptions(path) {
   };
   const key = path.split(".").at(-1);
   const specific = /^rules\.coffee\.upgrades\.[^.]+\.seconds$/.test(path)
-    ? exact["rules.coffee.seconds"] : exact[path];
+    ? {label:"旧版逐级耗时（已停用）",unit:"秒",hint:"旧版逐级耗时不再生效；当前每批只使用 rules.coffee.seconds，读取时移除此旧字段，原归档保留。"} : exact[path];
   return {...common[key],...specific};
 }
 function fields(parent, values, path, excluded = []) {
@@ -367,10 +373,6 @@ function renderCards() {
         label:"提升卷度的咖啡用量 → " + candidate.cards[upgrade.to].name,
         path:"rules.coffee.upgrades." + id + ".cost",kind:"int",min:1
       });
-      if (Object.hasOwn(upgrade,"seconds")) {
-        const path = "rules.coffee.upgrades." + id + ".seconds";
-        field(values,upgrade,"seconds",{...parameterFieldOptions(path),path});
-      }
     }
     const text = element("details",undefined,"card-copy");
     identity.append(element("small",card.description));
@@ -1151,7 +1153,8 @@ async function selectCards(record) {
   const conveyor = data.rules?.conveyor || {};
   const legacy = !Object.hasOwn(data.cards?.work || {},"work_seconds") ||
     Object.values(data.roles || {}).some(role => Object.hasOwn(role,"work_seconds")) ||
-    Object.hasOwn(conveyor,"employee_every") || Object.hasOwn(conveyor,"opening");
+    Object.hasOwn(conveyor,"employee_every") || Object.hasOwn(conveyor,"opening") ||
+    Object.values(data.rules?.coffee?.upgrades || {}).some(upgrade => Object.hasOwn(upgrade,"seconds"));
   // A running service can still hold an older snapshot in memory. Ask the
   // engine to migrate its data before editing, preserving the archive and ID.
   const normalized = legacy ? await normalizedCards(data) : data;

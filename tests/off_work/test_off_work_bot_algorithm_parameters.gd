@@ -15,6 +15,7 @@ func world(groups: Array, cash := 0) -> OffWorkState:
 	var config := Config.new()
 	# Exact event fixtures retain their original clock across preset calibration.
 	config.rules.bot.think_seconds = 2.8
+	config.rules.coffee.seconds = 5.0
 	config.rules.initial.groups = groups
 	config.rules.initial.money = cash
 	# These are exact finite-resource service-clock tests. No later random
@@ -136,7 +137,7 @@ func run() -> void:
 	_public_quotes_have_one_owner()
 	_recipe_claims_are_atomic()
 	_secondary_strike_queue_survives()
-	_queued_coffee_is_continuous()
+	_batched_coffee_is_continuous()
 	_public_attack_continuations()
 	_coupled_transfers()
 	_public_four_cup_recipe()
@@ -337,16 +338,22 @@ func _public_attack_continuations() -> void:
 	check(held.detail.sides[1].get("forecast_attack",{}).get("kind","")=="meeting", "手中现成会议按真实抽样对象与主持占用形成可行威胁")
 	check(held.detail.sides[1].required_actions>=1 and held.score>0.0, "会议主持施放有真实动作成本，暂停目标才改善竞速评价")
 
-func _queued_coffee_is_continuous() -> void:
+func _batched_coffee_is_continuous() -> void:
 	var game := world([{"work":80},{"employee":1,"coffee":3}])
 	game.config.roles.grinder.work_capacity=2
 	game.config.roles.workaholic.work_capacity=4
+	var person := first(game,"employee")
+	check(game.tasks[person].to_type=="workaholic" and game.tasks[person].total==5.0,
+		"三杯开轮快照一次确定肝帝结果，跨两级只读一次共享进度")
 	game.advance(4.999);game.offers.clear()
+	check(game.cards[person].type=="employee", "结算前仍保持原等级，不提前获得中间等级的产能")
 	var before: Dictionary = value(game,1,[5.6-game.time,5.6-game.time]).detail.sides[1]
 	game.advance(0.001);game.offers.clear()
 	var after: Dictionary = value(game,1,[5.6-game.time,5.6-game.time]).detail.sides[1]
-	check(absf(float(before.eta)-float(after.eta)-0.001)<0.0001, "已有三杯自动连升在阶段切换前后连续，不能只兑现当前一杯或把下一阶段免费变出")
-	check(before.current_rate==0.0 and after.current_rate==0.0, "连续升级全过程保持停工，最终仍需要真实返岗动作")
+	check(game.cards[person].type=="workaholic" and game._owner_type(1,"coffee").is_empty(),
+		"共享一轮结束同时落地最终等级并消耗已冻结三杯")
+	check(absf(float(before.eta)-float(after.eta)-0.001)<0.0001, "BOT在整轮完成前后连续兑现已冻结最终等级，不串联两段耗时")
+	check(before.current_rate==0.0 and after.current_rate==0.0, "整轮升级保持停工，最终仍需要真实返岗动作")
 
 func _secondary_strike_queue_survives() -> void:
 	var game := world([{"work":100,"grinder":1,"overtime":1},{"work":10,"employee":2}])

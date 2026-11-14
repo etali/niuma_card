@@ -2404,7 +2404,8 @@ func _sync_meeting_visitors() -> void:
 			var meeting: Dictionary = _state.meetings[meeting_id]
 			for index in meeting.targets.size():
 				var uid := int(meeting.targets[index])
-				if by_uid.has(uid): wanted[uid] = {"meeting": int(meeting_id), "host": int(meeting.host), "index": index, "total": meeting.targets.size()}
+				if by_uid.has(uid): wanted[uid] = {"meeting": int(meeting_id), "identity": int(meeting.get("id", meeting_id)),
+					"host": int(meeting.host), "index": index, "total": meeting.targets.size()}
 	# 被会议选中的在手人员必须先按原按下快照放下，不能靠拖住牌逃会。
 	var interrupted := false
 	for card in _drag_cards + _press_snap.get("cards", []):
@@ -2416,7 +2417,8 @@ func _sync_meeting_visitors() -> void:
 		var card: OffWorkCard = by_uid[uid]
 		var info: Dictionary = wanted[uid]
 		card.set_meeting_participant(true)
-		if _meeting_visitors.has(uid) and _meeting_visitors[uid].phase != "return" and int(_meeting_visitors[uid].meeting) == int(info.meeting):
+		if _meeting_visitors.has(uid) and _meeting_visitors[uid].phase != "return" \
+				and int(_meeting_visitors[uid].get("identity", _meeting_visitors[uid].meeting)) == int(info.identity):
 			_meeting_visitors[uid].merge(info, true)
 			card.draggable = false
 			continue
@@ -2469,7 +2471,14 @@ func _sync_meeting_centers() -> void:
 	for id in active:
 		if not by_uid.has(id): continue
 		if not _meeting_centers.has(id):
-			_meeting_centers[id] = {"elapsed": 0.0}
+			# Replacing the representative tool does not start a new meeting.
+			var identity := int(active[id].get("id", id))
+			var elapsed := 0.0
+			for old_id in _meeting_centers:
+				if int(_meeting_centers[old_id].get("identity", old_id)) == identity:
+					elapsed = float(_meeting_centers[old_id].elapsed)
+					break
+			_meeting_centers[id] = {"elapsed": elapsed, "identity": identity}
 		_meeting_centers[id].host = int(active[id].host)
 		_meeting_centers[id].total = active[id].targets.size()
 	for id in _meeting_centers.keys():

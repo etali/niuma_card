@@ -34,6 +34,8 @@ func _run() -> void:
 	var sandbox := OS.get_cache_dir().path_join("niuma-tests/coffee-session-%d" % OS.get_process_id())
 	OS.set_environment("CARD_DATA_DIR", sandbox)
 	var config := OffWorkConfig.new()
+	# Match the five-second promotion stored in this legacy checkpoint.
+	config.rules.coffee.seconds = 5.0
 	config.rules.initial.groups = [{"employee": 1, "work": 10}]
 	var original := OffWorkState.new(config)
 	original.new_game(43)

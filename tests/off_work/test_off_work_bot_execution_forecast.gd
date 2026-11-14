@@ -18,8 +18,8 @@ func _fixture(upgrading := true) -> Dictionary:
 	config.rules.conveyor.interval_seconds=1000.0
 	config.rules.bot.think_seconds=6.0
 	config.rules.bot.evaluation_max_seconds=60.0
+	# Keep the unfinished batch across two six-second command slots.
 	config.rules.coffee.seconds=10.0
-	config.rules.coffee.upgrades.employee["seconds"]=10.0
 	var world := OffWorkState.new(config)
 	world.new_game(20261110)
 	world.advance(100.0)

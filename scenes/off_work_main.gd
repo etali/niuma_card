@@ -199,6 +199,7 @@ func _ready() -> void:
 	opponent = hud.opponent
 	message = hud.message
 	Palette.bus().changed.connect(_on_palette_changed)
+	BotPreferences.bus().changed.connect(_on_bot_preferences_changed)
 	if setup: await setup.checkpoint(get_tree())
 	if not saved.is_empty():
 		replay.frames = saved.get("replay_frames", [])
@@ -368,6 +369,12 @@ func _new_game(setup: RefCounted = null) -> bool:
 	replay.record(self, [], true)
 	if _shift_enabled: save_shift_session()
 	return true
+
+func _on_bot_preferences_changed(_strength: float) -> void:
+	# Replay/practice settings belong to their bound table, never to the
+	# parked game's worker or saved continuation.
+	if state == null or BotPreferences._state != state: return
+	_live_bot.policy_changed(bot if bot != null and bot.state == state else null)
 
 func _process(delta: float) -> void:
 	if has_meta("shift_setup"): return

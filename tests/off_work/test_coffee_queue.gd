@@ -22,6 +22,8 @@ func check(ok: bool, message: String) -> void:
 
 func state(contents := {"employee": 2, "work": 200}) -> OffWorkState:
 	var cfg := OffWorkConfig.new()
+	# Queue event timestamps below use explicit five-second stages.
+	cfg.rules.coffee.seconds = 5.0
 	var staff := contents.duplicate()
 	staff.erase("work")
 	cfg.rules.initial.groups = [staff, {"work":contents.get("work", 200)}]
@@ -54,17 +56,14 @@ func _two_people() -> void:
 	var group: int = s.cards[people[0]].group
 	var material := cups(s, 2)
 	s.move_cards(material, group, people[0])
-	check(drinkers(s, group) == [people[0]], "two stacked cups begin exactly one employee upgrade")
+	check(drinkers(s, group) == people and s.tasks[people[0]].batch_members == people, "two stacked cups allocate both employees in one shared batch")
 	s.advance(4.999)
 	check(people.all(func(id): return s.cards[id].type == "employee") and material.all(func(id): return s.cards.has(id)), "first bar consumes nothing before completion")
 	s.advance(0.001)
-	check(s.cards[people[0]].type == "grinder" and s.cards[people[1]].type == "employee", "first completion upgrades only the first employee")
-	check(drinkers(s, group) == [people[1]] and is_zero_approx(s.tasks[people[1]].progress), "the second employee immediately starts a fresh bar without another drag")
-	check(ids(s, "coffee").size() == 1 and s.tasks[people[1]].coffee_ids.size() == 1, "the remaining cup is reserved for the waiting employee, not the first grinder")
-	s.advance(5.0)
-	check(people.all(func(id): return s.cards[id].type == "grinder") and ids(s, "coffee").is_empty(), "two employees plus two cups finish as two grinders")
+	check(people.all(func(id): return s.cards[id].type == "grinder") and ids(s, "coffee").is_empty(), "two employees plus two cups finish simultaneously as two grinders")
+	check(drinkers(s, group).is_empty(), "the completed shared batch leaves neither participant with a second timer")
 	var completed := events(s)
-	check(completed.map(func(event): return event.time) == [5.0, 10.0] and completed.map(func(event): return event.person) == people, "queue completion events preserve separate configured deadlines and stable order")
+	check(completed.map(func(event): return event.time) == [5.0, 5.0] and completed.map(func(event): return event.person) == people, "same-rank allocation keeps group order while sharing one deadline")
 
 func _fair_tiers() -> void:
 	var s := state({"workaholic": 1, "grinder": 1, "employee": 2, "leader": 1, "work_emperor": 1, "work": 200})
@@ -73,13 +72,12 @@ func _fair_tiers() -> void:
 	var original_high: int = ids(s, "workaholic")[0]
 	var group: int = s.cards[people[0]].group
 	s.move_cards(cups(s, 8), group)
-	check(drinkers(s, group) == [original_high], "highest affordable tier is selected first")
-	s.advance(5.0)
-	check(s.cards[original_high].type == "work_emperor" and drinkers(s, group) == [original_grinder], "after highest upgrade the next affordable tier begins")
-	s.advance(5.0)
-	check(drinkers(s, group) == [people[0]], "insufficient coffee for a higher tier allows an employee to begin")
-	s.advance(10.0)
-	check(s.cards[original_grinder].type == "workaholic" and people.all(func(id): return s.cards[id].type == "grinder"), "queue follows affordability after higher tiers consume materials")
+	check(s.tasks[original_high].coffee_ids.size() == 4 and s.tasks[original_grinder].coffee_ids.size() == 2, "highest affordable original ranks receive their recipe budgets first")
+	check(people.all(func(id): return s.tasks[id].coffee_ids.size() == 1 and s.tasks[id].batch_owner == original_high), "leftover cups allocate lower ranks within the same frozen batch")
+	s.advance(2.5)
+	check(s.cards[original_high].type == "workaholic" and s.cards[original_grinder].type == "grinder" and people.all(func(id): return s.cards[id].type == "employee"), "allocation does not change any rank midway through the batch")
+	s.advance(2.5)
+	check(s.cards[original_high].type == "work_emperor" and s.cards[original_grinder].type == "workaholic" and people.all(func(id): return s.cards[id].type == "grinder"), "all affordable recipe results settle together")
 	check(ids(s, "coffee").is_empty(), "all reserved coffee is consumed once")
 	var completed := events(s)
 	check(completed.map(func(event): return event.amount) == [4, 2, 1, 1], "mixed queue consumes the highest affordable configured stage first")
@@ -105,11 +103,22 @@ func _refill_and_fresh_output() -> void:
 	check(material.size() == 2 and material.all(func(id): return fresh.cards[id].status == "ready" and is_zero_approx(fresh.cards[id].remaining)), "a real production batch supplies two immediately usable coffees")
 	fresh.move_cards([slack])
 	fresh.move_cards(material, group, people[0])
-	check(drinkers(fresh, group) == [people[0]] and is_zero_approx(fresh.tasks[people[0]].progress), "fresh output immediately starts the first full upgrade bar")
+	check(drinkers(fresh, group) == people and is_zero_approx(fresh.tasks[people[0]].progress), "fresh output allocates both employees in one full batch")
 	fresh.advance(5.0)
-	check(drinkers(fresh, group) == [people[1]] and is_zero_approx(fresh.tasks[people[1]].progress), "second fresh cup immediately continues the next employee's full bar")
-	fresh.advance(5.0)
-	check(ids(fresh, "coffee").is_empty() and people.all(func(id): return fresh.cards[id].type == "grinder"), "fresh output upgrades both employees without any extra waiting phase")
+	check(ids(fresh, "coffee").is_empty() and people.all(func(id): return fresh.cards[id].type == "grinder"), "fresh output upgrades both employees at the same deadline")
+	var late := state({"employee":1,"work":200})
+	var original: int = ids(late, "employee")[0]
+	group = late.cards[original].group
+	late.move_cards(cups(late, 1), group)
+	late.advance(2.0)
+	var newcomer := late.add_card("employee", 0)
+	var more := cups(late, 1)
+	late.move_cards([newcomer] + more, group)
+	check(late.tasks[original].batch_members == [original] and not late.tasks.has(newcomer) and late.cards[more[0]].status == "ready", "mid-batch personnel and coffee wait without modifying frozen inputs")
+	late.advance(3.0)
+	check(late.cards[original].type == "grinder" and late.cards[newcomer].type == "employee" and is_zero_approx(late.tasks[newcomer].progress), "late inputs start their own complete batch only after the current deadline")
+	late.advance(5.0)
+	check(late.cards[newcomer].type == "grinder" and ids(late,"coffee").is_empty(), "late allocation completes once in the next batch")
 
 func _move_and_merge() -> void:
 	var s := state()
@@ -120,12 +129,12 @@ func _move_and_merge() -> void:
 	s.advance(2.0)
 	var first_material: Array = s.tasks[people[0]].coffee_ids.duplicate()
 	var destination := s.move_cards([people[0]] + first_material)
-	check(drinkers(s, destination) == [people[0]] and is_equal_approx(s.tasks[people[0]].progress, 0.4), "moving a complete active batch preserves its progress")
-	check(drinkers(s, group) == [people[1]] and is_zero_approx(s.tasks[people[1]].progress), "source queue continues with its remaining employee and coffee")
-	s.advance(3.0)
-	check(s.cards[people[0]].type == "grinder" and s.cards[people[1]].type == "employee", "independent groups keep independent upgrade clocks")
-	s.advance(2.0)
-	check(s.cards[people[1]].type == "grinder" and ids(s, "coffee").is_empty(), "both relocated batches consume one unique cup")
+	check(drinkers(s, destination) == [people[0]] and is_zero_approx(s.tasks[people[0]].progress), "moving only one member and its quota cancels the shared batch and starts a fresh destination batch")
+	check(drinkers(s, group) == [people[1]] and is_zero_approx(s.tasks[people[1]].progress), "the remaining source participant also restarts from zero after atomic cancellation")
+	s.advance(4.999)
+	check(people.all(func(id): return s.cards[id].type == "employee") and material.all(func(id): return s.cards.has(id)), "a partial batch move cannot carry old shared progress into either replacement batch")
+	s.advance(0.001)
+	check(people.all(func(id): return s.cards[id].type == "grinder") and ids(s, "coffee").is_empty(), "both restarted groups consume their own unique cup at their new deadline")
 
 	var merged := state()
 	people = ids(merged, "employee")
@@ -138,7 +147,7 @@ func _move_and_merge() -> void:
 	merged.move_cards(second_cups, other, people[1])
 	merged.advance(1.0)
 	merged.move_cards([people[1]] + second_cups, group)
-	check(drinkers(merged, group) == [people[0]] and is_equal_approx(merged.tasks[people[0]].progress, 0.4), "merging active upgrade stacks keeps the destination's current stage")
+	check(drinkers(merged, group) == [people[0]] and is_equal_approx(merged.tasks[people[0]].progress, 0.4), "merging active upgrade stacks keeps only the destination's current frozen batch")
 	check(merged.cards[second_cups[0]].status == "ready", "incoming unfinished stage returns its coffee to the shared queue")
 	merged.advance(3.0)
 	check(drinkers(merged, group) == [people[1]] and is_zero_approx(merged.tasks[people[1]].progress), "merged queue starts the incoming employee after the existing stage")
@@ -183,9 +192,9 @@ func _meeting_and_strike() -> void:
 	check(s.activate(meeting, s.cards[leader].group, leader), "meeting starts against queued personnel")
 	check(people.all(func(id): return s.is_meeting_target(id)), "both queued employees are pulled into the meeting")
 	s.advance(12.0)
-	check(drinkers(s, group) == [people[0]] and is_zero_approx(s.tasks[people[0]].progress), "meeting return restarts an abandoned upgrade at zero")
-	s.advance(10.0)
-	check(people.all(func(id): return s.cards[id].type == "grinder") and ids(s, "coffee", 1).is_empty(), "meeting return restarts the first bar and then the waiting employee")
+	check(drinkers(s, group) == people and is_zero_approx(s.tasks[people[0]].progress), "meeting return starts a fresh shared batch for both returned employees")
+	s.advance(5.0)
+	check(people.all(func(id): return s.cards[id].type == "grinder") and ids(s, "coffee", 1).is_empty(), "returned participants upgrade simultaneously after one complete batch")
 
 	var struck := state()
 	people = ids(struck, "employee", 1)
@@ -203,8 +212,8 @@ func _meeting_and_strike() -> void:
 	check(ids(struck, "coffee", 1).size() == 2, "dispersed striking personnel never consume the abandoned material")
 	struck.move_cards([incoming])
 	struck.move_cards(people, group)
-	check(drinkers(struck, group) == [people[0]], "recombining recovered personnel restarts the queue")
-	struck.advance(10.0)
+	check(drinkers(struck, group) == people, "recombining recovered personnel allocates both in one fresh batch")
+	struck.advance(5.0)
 	check(people.all(func(id): return struck.cards[id].type == "grinder") and ids(struck, "coffee", 1).is_empty(), "recovered queue upgrades both employees exactly once")
 
 func _step_independence() -> void:
@@ -213,11 +222,11 @@ func _step_independence() -> void:
 	for s in [coarse, fine]:
 		var people := ids(s, "employee")
 		s.move_cards(cups(s, 6), s.cards[people[0]].group, people[0])
-	coarse.advance(20.0)
-	for _index in 200: fine.advance(0.1)
-	check(ids(coarse, "workaholic").size() == 2 and ids(fine, "workaholic").size() == 2, "coarse and fine clocks complete the same four queued stages")
+	coarse.advance(5.0)
+	for _index in 50: fine.advance(0.1)
+	check(ids(coarse, "workaholic").size() == 2 and ids(fine, "workaholic").size() == 2, "coarse and fine clocks settle both two-step recipes in the same batch")
 	var completed := events(coarse)
-	check(completed.map(func(event): return event.time) == [5.0, 10.0, 15.0, 20.0], "queued deadlines do not depend on frames or new input")
+	check(completed.map(func(event): return event.time) == [5.0, 5.0], "batch deadline does not depend on rank count, frames or new input")
 	check(ids(coarse, "coffee").is_empty() and ids(fine, "coffee").is_empty(), "time slicing never changes material consumption")
 
 func _work_priority() -> void:

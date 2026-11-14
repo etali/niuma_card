@@ -15,7 +15,7 @@ func _upgrade_routes() -> Dictionary:
 	var config: OffWorkConfig = _presentation.state.config
 	for id in config.rules.coffee.upgrades:
 		var recipe: Dictionary = config.coffee_upgrade(str(id))
-		routes.append({"source_id": id, "target_id": recipe.to, "count": int(recipe.cost), "seconds": config.coffee_seconds(str(id))})
+		routes.append({"source_id": id, "target_id": recipe.to, "count": int(recipe.cost)})
 	return {"ordinary": routes, "legends": [], "no_ordinary": []}
 
 func _build_map() -> void:
@@ -27,6 +27,9 @@ func _build_map() -> void:
 	var coffee := _label("人员与咖啡需单独成堆。含有工作时，只处理工作。", 14)
 	coffee.name = "CoffeeCombination"
 	_map.add_child(coffee)
+	var batch := _label("每批耗时 %s 秒，多人或跨越多级也只计时一次，结束时同时升级。开批按原等级从高到低分配咖啡，同级按组内顺序；中途加入的咖啡和人员留到下一批。" % String.num(_presentation.state.config.coffee_batch_seconds()), 14)
+	batch.name = "CoffeeBatchTime"
+	_map.add_child(batch)
 	_ordinary_grid = GridContainer.new()
 	_ordinary_grid.name = "OrdinaryRoutes"
 	_ordinary_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -49,11 +52,6 @@ func _build_map() -> void:
 		amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		condition.add_child(amount)
 		condition.add_child(_arrow())
-		var timing := _label("%s 秒" % String.num(float(route.seconds)), 14)
-		timing.name = "CoffeeTime"
-		timing.autowrap_mode = TextServer.AUTOWRAP_OFF
-		timing.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		condition.add_child(timing)
 		row.add_child(_card_node(_entry(str(route.target_id)), true))
 	var working := _label("人员＋工作处理待办，加班牌可以提效。喝咖啡提升卷度后，再把人员放回工作堆。", 14)
 	working.name = "WorkCombination"
@@ -77,5 +75,5 @@ func _ui(key: String, values: Dictionary = {}) -> String:
 	if key.begins_with("kind."): return str(CATEGORY_NAMES.get(key.trim_prefix("kind."), key))
 	if key == "title": return "下班卡牌总览"
 	if key == "upgrade_title": return "咖啡提升卷度"
-	if key == "upgrade_intro": return "咖啡用量和时长按当前卡表显示。"
+	if key == "upgrade_intro": return "各级咖啡用量与共享批次耗时按当前卡表显示。"
 	return super._ui(key, values)

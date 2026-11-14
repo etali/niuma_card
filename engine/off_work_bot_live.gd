@@ -125,7 +125,7 @@ func tick(bot: OffWorkBot, frame_delta: float, frozen_frame: Dictionary = {}) ->
 	_collect()
 	var due := bot.next_action_time()
 	if not bot.is_started() or not is_finite(due) or bot.state.winner >= 0:
-		cancel()
+		policy_changed(bot)
 		return
 	var in_flight := _ready if _ready != null else _search
 	if in_flight != null and (in_flight.bot_id != bot.get_instance_id() or in_flight.due != due
@@ -244,6 +244,14 @@ func _collect() -> void:
 		_ready = _search
 	_task = -1
 	_search = null
+
+## Settings can change while the table is paused, so invalidate publications
+## immediately instead of waiting for the next gameplay tick. Already paid
+## production remains in the world; only pending BOT commands are discarded.
+func policy_changed(bot: OffWorkBot) -> void:
+	cancel()
+	if bot != null and not bool(bot._policy.enabled):
+		bot.import_decision_context({})
 
 func cancel() -> void:
 	_retained_source = null

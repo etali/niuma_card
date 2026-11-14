@@ -31,10 +31,10 @@
     "knobs": [
       {
         "key": "enabled",
-        "label": "启用对手",
+        "label": "启用",
         "kind": "bool",
         "group": "对手设置",
-        "hint": "是否让该座位的 BOT 获得行动机会。"
+        "hint": "关闭后 BOT 停止主动行动；已组成的生产组合继续运转。重新勾选后恢复行动，强度设置保留。"
       },
       {
         "key": "think_seconds",

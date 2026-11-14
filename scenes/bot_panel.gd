@@ -36,6 +36,7 @@ var _slider: HSlider
 var _slider_val: Label       # 收起时也看得见的档位读数
 var _rows: Array = []        # [{key, kind, node}]，改强度之后要整体回填
 var _model_choice: OptionButton
+var _enabled_row: HBoxContainer
 var _knobs_box: VBoxContainer
 var _knobs_scroll: ScrollContainer
 var _schema_model := ""
@@ -81,6 +82,9 @@ func _build() -> void:
 	_body.add_theme_constant_override("separation", 6)
 	_body.visible = false        # 与 _build_header 里 _toggle.text = "展开" 对应
 	root.add_child(_body)
+	_enabled_row = HBoxContainer.new()
+	_enabled_row.hide()
+	_body.add_child(_enabled_row)
 	_model_choice = OptionButton.new()
 	_model_choice.add_theme_font_override("font", Fonts.zh())
 	_model_choice.item_selected.connect(_on_model)
@@ -167,6 +171,10 @@ func _build_presets() -> VBoxContainer:
 ## 切换模型时按该模型的元数据重建；不保留上个模型的控件或信号。
 func _rebuild_knobs(model: String) -> void:
 	_rows.clear()
+	_enabled_row.hide()
+	for child in _enabled_row.get_children():
+		_enabled_row.remove_child(child)
+		child.queue_free()
 	for child in _knobs_box.get_children():
 		_knobs_box.remove_child(child)
 		child.queue_free()
@@ -175,6 +183,19 @@ func _rebuild_knobs(model: String) -> void:
 	_knobs_box.add_child(_label("逐项（改任一项 = 自定义）", 13, Color(0.72, 0.82, 0.62)))
 	var grouped := {}
 	for spec in preferences.editable_knobs(model):
+		# 总开关置顶，继续复用同一份参数和回填逻辑；不支持开关的玩法不显示。
+		if str(spec.get("key", "")) == "enabled" and str(spec.get("kind", "")) == "bool":
+			var enabled := CheckBox.new()
+			enabled.name = "BOTEnabled"
+			enabled.text = str(spec["label"])
+			enabled.tooltip_text = str(spec.get("hint", ""))
+			enabled.add_theme_font_override("font", Fonts.zh())
+			enabled.add_theme_font_size_override("font_size", 16)
+			enabled.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			enabled.toggled.connect(_on_knob_bool.bind("enabled"))
+			_enabled_row.add_child(enabled)
+			_rows.append({"key": "enabled", "kind": "bool", "node": enabled})
+			continue
 		var group := str(spec.get("group", ""))
 		if not grouped.has(group): grouped[group] = []
 		grouped[group].append(spec)
