@@ -35,9 +35,9 @@
         </div>
         <div class="play-controls"><button class="primary" id="playtest" data-edit disabled>用当前卡表试玩</button><p class="muted" id="playStatus" role="status"></p></div>
         <section class="market-pool" aria-labelledby="market-title">
-          <h3 id="market-title">购牌区出现概率</h3>
-          <p class="muted">开局和后续补牌统一按权重抽取，出现概率 = 本牌权重 ÷ 总权重。支持小数，0 表示不出现；工作、金钱和升级牌不参与购牌抽取。</p>
-          <div class="market-pool-heading"><span>卡牌 / 出场权重</span><span>出现概率</span></div>
+          <h3 id="market-title">购牌区每轮牌袋</h3>
+        <p class="muted">填写的张数决定每轮放入多少张牌，整袋洗牌后依次发完，再重新洗牌。开局与后续补牌共用同一牌袋；每轮比例 = 本牌张数 ÷ 总张数。只接受非负整数，0 表示不出现，每轮最多 4096 张；工作、金钱和升级牌不参与供牌。</p>
+          <div class="market-pool-heading"><span>卡牌 / 每轮张数</span><span>每轮比例</span></div>
           <div id="market-fields"></div>
           <p id="market-total" class="muted" role="status" aria-live="polite"></p>
           <p id="market-error" class="notice error" role="alert" hidden></p>

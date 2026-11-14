@@ -266,6 +266,7 @@
       "minimum_people": 0
     },
     "conveyor": {
+      "draw_mode": "shuffle_bag_v1",
       "slots": 6,
       "interval_seconds": 2.0,
       "pool": {

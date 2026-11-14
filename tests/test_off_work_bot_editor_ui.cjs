@@ -245,14 +245,14 @@ test('loading sparse and complete archived policies fills defaults while preserv
   assert.equal(input(ui,'q','decision_budget_ms'),null);
 });
 
-test('purchase probabilities expose each purchasable card once and save exact fractional weights', async () => {
+test('integer bag counts expose each purchasable card once and preserve exact round composition', async () => {
   const {ui,requests} = harness();
   ui.renderCards();
   const inputs = ui.$('market-fields').querySelectorAll('input');
   const purchasable = Object.entries(ui.candidate.cards).filter(([,card]) => card.purchasable).map(([id]) => id);
   assert.equal(inputs.length,11);
   assert.deepEqual(inputs.map(input => input.dataset.path.split('.').at(-1)),purchasable);
-  for (const old of ['employee_every','opening']) {
+  for (const old of ['employee_every','opening','draw_mode']) {
     assert.equal(ui.$('global-fields').querySelector(`[data-path="rules.conveyor.${old}"]`),null);
   }
   assert.equal(ui.$('fields').querySelectorAll('input').filter(input => input.dataset.path.startsWith('rules.conveyor.pool.')).length,0);
@@ -260,15 +260,16 @@ test('purchase probabilities expose each purchasable card once and save exact fr
   const chance = id => ui.$('market-fields').querySelectorAll('output').find(output => output.dataset.card === id).textContent;
   for (const input of inputs) {input.value = '0'; await input.dispatch('input');}
   assert.match(ui.$('market-error').textContent,/至少一张/);
-  weight('employee').value = '.5'; await weight('employee').dispatch('input');
-  weight('leader').value = '1.5'; await weight('leader').dispatch('input');
+  for (const input of inputs) assert.equal(Number(input.step),1,'bag input advances by one card');
+  weight('employee').value = '1'; await weight('employee').dispatch('input');
+  weight('leader').value = '3'; await weight('leader').dispatch('input');
   assert.equal(chance('employee'),'25%');
   assert.equal(chance('leader'),'75%');
   assert.equal(chance('strike'),'0%');
   assert.equal(ui.$('market-error').hidden,true);
-  assert.match(ui.$('market-total').textContent,/总权重 2$/);
+  assert.match(ui.$('market-total').textContent,/每轮 4 张$/);
   const expected = copy(ui.candidate.rules.conveyor.pool);
-  await ui.saveVersion('cards','分数权重',ui.candidate);
+  await ui.saveVersion('cards','每轮整数牌袋',ui.candidate);
   assert.equal(requests.at(-1).url,'api/library/cards');
   assert.deepEqual(requests.at(-1).body.data.rules.conveyor.pool,expected);
   await ui.run();
@@ -278,22 +279,22 @@ test('purchase probabilities expose each purchasable card once and save exact fr
   assert.equal(requests.at(-1).url,'api/playtest');
   assert.deepEqual(requests.at(-1).body.cards.rules.conveyor.pool,expected);
   const imported = copy(ui.candidate);
-  imported.rules.conveyor.pool.employee = 1.5;
-  imported.rules.conveyor.pool.leader = .5;
+  imported.rules.conveyor.pool.employee = 3;
+  imported.rules.conveyor.pool.leader = 1;
   ui.candidate = imported;
   ui.renderCards();
   assert.equal(chance('employee'),'75%','loading another card document recalculates probabilities');
   assert.equal(chance('leader'),'25%');
 });
 
-test('zero or invalid purchase weights block save, both evaluations and current-card playtests', async () => {
+test('zero, fractional or oversized bags block save, both evaluations and current-card playtests', async () => {
   const {ui,requests} = harness();
   ui.renderCards();
   const inputs = ui.$('market-fields').querySelectorAll('input');
   const first = inputs[0];
   for (const input of inputs) {input.value = '0'; await input.dispatch('input');}
   loadFunctions(ui,['controls']);
-  for (const value of ['0','','-1','Infinity','NaN']) {
+  for (const value of ['0','','-1','.5','Infinity','NaN','4097']) {
     first.value = value; await first.dispatch('input');
     assert.notEqual(ui.marketPoolIssue(),'');
     assert.equal(ui.$('market-error').hidden,false);
@@ -304,12 +305,19 @@ test('zero or invalid purchase weights block save, both evaluations and current-
     await ui.playCurrentCards('playStatus');
     assert.equal(requests.length,count,'invalid weights never reach a write or launch endpoint');
   }
-  first.value = '.01'; await first.dispatch('input');
+  first.value = '1'; await first.dispatch('input');
   assert.equal(ui.marketPoolIssue(),'');
   assert.equal(ui.$('run').disabled,false);
-  // Individually finite weights can still overflow their total.
-  for (const input of inputs.slice(0,2)) {input.value = '1e308'; await input.dispatch('input');}
-  assert.match(ui.marketPoolIssue(),/总权重过大/);
+  // Individually valid counts can still exceed the shared bag capacity.
+  first.value = '4096'; await first.dispatch('input');
+  assert.equal(ui.marketPoolIssue(),'');
+  inputs[1].value = '1'; await inputs[1].dispatch('input');
+  assert.match(ui.marketPoolIssue(),/总张数不能超过 4096/);
+  const count = requests.length;
+  await ui.saveVersion('cards','超过整袋上限',ui.candidate);
+  await ui.run();
+  await ui.playCurrentCards('playStatus');
+  assert.equal(requests.length,count);
 });
 
 test('income placement and transfer destination use Chinese choices with stable saved enum values', async () => {
@@ -336,7 +344,7 @@ test('initial work is directly editable, shares the group document and reaches s
   ui.renderCards();
   const workInput = index => ui.$('global-fields').querySelector(`[data-path="rules.initial.groups.${index}.work"]`);
   const work = workInput(0);
-  assert.equal(work.value,'200');
+  assert.equal(work.value,'800');
   assert.equal(work.type,'number');
   assert.equal(work.step,'1');
   assert.equal(work.min,1);
@@ -459,6 +467,43 @@ test('work and recruitment durations must be positive and employee recruitment f
     assert.equal(input.validity.valid,true);
     assert.equal(object[keys.at(-1)],Number(valid));
   }
+});
+
+test('coffee upgrades accept exact zero globally and per tier and preserve it in saved and played cards', async () => {
+  const {ui,requests} = harness();
+  assert.equal(cards.rules.coffee.seconds,5,'the project default is unchanged');
+  ui.candidate.rules.coffee.upgrades.employee.seconds = 3;
+  ui.renderCards();
+  for (const path of ['rules.coffee.seconds','rules.coffee.upgrades.employee.seconds']) {
+    const input = ui.$('cardsView').querySelector(`[data-path="${path}"]`);
+    assert.ok(input.parentElement.textContent.includes('0 表示立即完成升级'));
+    assert.ok(input.parentElement.textContent.includes('仍需消耗对应咖啡'));
+    assert.ok(ui.parameterMetadata(path.split('.'),[ui.candidate]).hint.includes('0 表示立即完成升级'));
+    const keys = path.split('.');
+    const object = keys.slice(0,-1).reduce((value,key) => value[key],ui.candidate);
+    const before = object[keys.at(-1)];
+    for (const value of ['-1','','Infinity']) {
+      input.value = value; await input.dispatch('input');
+      assert.equal(input.validity.valid,false);
+      assert.equal(object[keys.at(-1)],before);
+    }
+    input.value = '0'; await input.dispatch('input');
+    assert.equal(input.validity.valid,true);
+    assert.equal(object[keys.at(-1)],0);
+  }
+  const check = doc => {
+    assert.equal(doc.rules.coffee.seconds,0);
+    assert.equal(doc.rules.coffee.upgrades.employee.seconds,0);
+    assert.equal(doc.rules.slack.seconds,cards.rules.slack.seconds,'coffee production keeps its own duration');
+  };
+  await ui.saveVersion('cards','即时升级实验',ui.candidate);
+  assert.equal(requests.at(-1).url,'api/library/cards'); check(requests.at(-1).body.data);
+  for (const mode of ['balance','bot']) {
+    await ui.view(mode); await ui.run();
+    assert.equal(requests.at(-1).url,'api/run'); check(requests.at(-1).body.cards);
+  }
+  await ui.playCurrentCards('playStatus');
+  assert.equal(requests.at(-1).url,'api/playtest'); check(requests.at(-1).body.cards);
 });
 
 test('selecting an archived card snapshot migrates through the engine and preserves its identity and original data', async () => {
@@ -1050,6 +1095,7 @@ test('all 101 real engine profiles preserve exact mappings, focus, save and run 
 test('参数差异按快照解释价格、升级与每方工作，保留原始字段并且不修改配置', () => {
   const {ui} = harness();
   const left = copy(cards), right = copy(cards);
+  left.rules.initial.groups[0].work = 200; // Explicit historical comparison fixture, not today's default.
   right.cards.employee.name = '研发员工';
   right.cards.employee.price = 2;
   right.rules.initial.groups[0].work = 800;
@@ -1071,7 +1117,7 @@ test('参数差异按快照解释价格、升级与每方工作，保留原始�
   assert.equal(JSON.stringify([left,right]),before);
 });
 
-test('权重差异用各自卡表的总权重归一，权重不等于概率', () => {
+test('牌袋差异按各自总张数计算每轮比例，张数不是独立抽牌概率', () => {
   const {ui} = harness();
   const left = copy(cards), right = copy(cards);
   for (const c of [left,right]) {
@@ -1084,8 +1130,8 @@ test('权重差异用各自卡表的总权重归一，权重不等于概率', ()
   const rows = ui.parameterDifferences(left,right);
   const row = rows.find(r => r[0].querySelector('small').textContent === 'rules.conveyor.pool.employee');
   assert.match(row[3],/增加 1/);
-  assert.match(row[3],/权重不是百分比/);
-  assert.match(row[3],/50% → 25%/,'weight increased while normalized probability decreased');
+  assert.match(row[3],/整袋洗牌.*固定独立概率/);
+  assert.match(row[3],/每轮比例：50% → 25%/,'count increased while share of the larger bag decreased');
   right.rules.conveyor.pool.coffee = -1;
   assert.match(ui.parameterDifferences(left,right).find(r => r[0].querySelector('small').textContent === 'rules.conveyor.pool.employee')[3],/无法计算/);
 });

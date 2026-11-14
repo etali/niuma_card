@@ -96,3 +96,17 @@ Godot 测试启动前，入口串行执行资源导入，补齐首次运行或�
 "$GODOT" --headless --path . --script tests/off_work/benchmark_work_runtime.gd -- --frames=90 --output=build/work-runtime-cpu.json
 "$GODOT" --path . --script tests/off_work/benchmark_work_runtime.gd -- --real-window --frames=90 --output=build/work-runtime-window.json
 ```
+
+## 下班规则与供牌回归
+
+新供牌按整数配额整袋洗牌，开局与后续补牌共用同一牌袋。配置回归覆盖整数配额、旧小数比例的精确迁移及 4096 张上限；规则回归检查每袋数量、洗牌次序和剩余袋状态。新存档与录像保留供牌版本及袋状态，缺少版本的旧记录继续原独立抽牌规则。
+
+咖啡升级共享耗时与逐级覆盖均接受精确的 0，材料充足时在本次合法操作中逐级结算；正耗时阶段继续真实计时。测试同时检查材料消耗、组合要求、参数校验与界面说明，不把升级时间改成免费的咖啡生产。
+
+招聘容量回归 `test_off_work_boss_rules.gd` 保留百万金额单钱包只能使用实际剩余名额的原断言，并覆盖单位现金释放实体、非单调的 6 钱钱包加 4 张单位钱、两个老板预留、共享钱包、补款不重置时钟、超限世界净减少和单批 4096 上限。30 个小规模枚举对照独立构建每个候选付款并计算实体存量。
+
+```bash
+tools/run_tests.sh --suite off-work off_work_conveyor
+tools/run_tests.sh --suite off-work off_work_zero_duration_coffee
+tools/run_tests.sh --suite off-work off_work_boss_rules --jobs 1
+```

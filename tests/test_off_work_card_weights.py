@@ -16,7 +16,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.balance import off_work_workbench as workbench
-from tools.balance.storage import read_json
+from tools.balance.storage import atomic_json, read_json
 
 GODOT = shutil.which(os.environ.get("GODOT", "godot"))
 
@@ -80,14 +80,15 @@ class OffWorkCardWeights(unittest.TestCase):
     def assert_weight_only(self, cards, pool):
         conveyor = cards["rules"]["conveyor"]
         self.assertEqual(conveyor["pool"], pool)
+        self.assertEqual(conveyor["draw_mode"], "shuffle_bag_v1")
         self.assertNotIn("employee_every", conveyor)
         self.assertNotIn("opening", conveyor)
 
-    def test_fractional_and_zero_weights_survive_save_and_reopen(self):
-        cards = self.cards(employee=0.125, coffee=1.75)
+    def test_integer_and_zero_counts_survive_save_and_reopen(self):
+        cards = self.cards(employee=1, coffee=14)
         original = copy.deepcopy(cards)
         pool = cards["rules"]["conveyor"]["pool"]
-        saved = self.lab.save_config("cards", {"name": "小数与零权重", "data": cards})
+        saved = self.lab.save_config("cards", {"name": "整数与零张数", "data": cards})
         self.assert_weight_only(saved["data"], pool)
         self.assertEqual(cards, original)
         self.assertEqual(self.lab.library_info(saved["id"])["data"], saved["data"])
@@ -101,9 +102,9 @@ class OffWorkCardWeights(unittest.TestCase):
         self.assertEqual(path.read_bytes(), before)
 
     def test_weight_snapshot_reaches_both_real_evaluation_modes(self):
-        # A single nonzero fractional weight gives an exact observable outcome:
+        # A single nonzero card kind gives an exact observable outcome:
         # all actual opening offers must be coffee, including formerly forced slots.
-        cards = self.cards(coffee=0.375)
+        cards = self.cards(coffee=3)
         pool = cards["rules"]["conveyor"]["pool"]
         saved = self.lab.save_config("cards", {"name": "权重试验卡表", "data": cards})
         for kind in ("balance", "bot"):
@@ -122,7 +123,7 @@ class OffWorkCardWeights(unittest.TestCase):
                 self.assertEqual(result["decision_samples"], [])
 
     def test_playtest_exports_the_same_validated_cards_without_opening_a_window(self):
-        cards = self.cards(employee=0.125, coffee=1.75)
+        cards = self.cards(employee=1, coffee=14)
         saved = self.lab.save_config("cards", {"name": "试玩权重", "data": cards})
         launches = []
         real_popen = subprocess.Popen
@@ -171,6 +172,8 @@ class OffWorkCardWeights(unittest.TestCase):
             return real_popen(command, *args, **kwargs)
 
         for name, weights in (("全零", {}), ("负数", {"employee": -0.125, "coffee": 1}),
+                              ("新牌袋小数", {"employee": 0.125, "coffee": 1.75}),
+                              ("超大牌袋", {"employee": 4096, "coffee": 1}),
                               ("NaN", {"employee": float("nan")}),
                               ("正无穷", {"employee": float("inf")}),
                               ("负无穷", {"employee": -float("inf")})):
@@ -194,10 +197,11 @@ class OffWorkCardWeights(unittest.TestCase):
     def test_legacy_forced_offer_fields_are_removed_by_actual_engine_normalization(self):
         legacy = self.cards(coffee=0.375)
         conveyor = legacy["rules"]["conveyor"]
+        conveyor.pop("draw_mode")
         conveyor.update(employee_every=1, opening=["employee"] * int(conveyor["slots"]))
         original = copy.deepcopy(legacy)
         normalized = self.lab.check_request({"cards": legacy, "validate_only": True})["cards"]
-        self.assert_weight_only(normalized, conveyor["pool"])
+        self.assert_weight_only(normalized, self.cards(coffee=1)["rules"]["conveyor"]["pool"])
         saved = self.lab.save_config("cards", {"name": "导入旧卡表", "data": legacy})
         self.assertEqual(saved["data"], normalized)
         self.assertEqual(read_json(self.store / "configs" / (saved["id"] + ".json"))["data"], normalized)
@@ -208,6 +212,24 @@ class OffWorkCardWeights(unittest.TestCase):
         result = self.wait_for_job(submitted["id"])["result"]
         self.assertEqual(result["market_offers"]["coffee"], int(conveyor["slots"]) * 2)
         self.assertEqual(result["market_offers"]["employee"], 0)
+
+    def test_legacy_fractional_archive_migrates_without_overwriting_original(self):
+        legacy = self.cards(employee=0.125, coffee=1.75)
+        legacy["rules"]["conveyor"].pop("draw_mode")
+        key = workbench.config_id("cards", legacy)
+        record = {"id": key, "kind": "cards", "name": "旧小数供牌",
+                  "source": "manual", "created_at": "2026-09-01T00:00:00Z", "data": legacy}
+        path = self.store / "configs" / (key + ".json")
+        atomic_json(path, record)
+        original_bytes = path.read_bytes()
+        with workbench.OffWorkWorkbench(
+                GODOT, 0, handler=BaseHTTPRequestHandler, store=self.store) as reopened:
+            migrated = reopened.library_info(key)
+            self.assertNotEqual(migrated["id"], key)
+            self.assert_weight_only(migrated["data"], self.cards(employee=1, coffee=14)["rules"]["conveyor"]["pool"])
+            self.assertEqual(reopened.warnings, [])
+            self.assertEqual(read_json(path), record)
+        self.assertEqual(path.read_bytes(), original_bytes)
 
 
 if __name__ == "__main__":

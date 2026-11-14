@@ -30,6 +30,7 @@ class Search extends RefCounted:
 			var entry := Replay.decode_frame(frame, world)
 			if entry.is_empty() or control.is_cancelled(): return
 			for key in OffWorkState.WORLD_FIELDS: world.set(key,entry.world[key])
+			world.sample_hidden_supply()
 			# The private market RNG in the recorded game is never restored. Only
 			# entities visible in this observation may be used by the root action.
 			visible_offer_end = mini(visible_offer_end, world._next_offer)

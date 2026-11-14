@@ -83,7 +83,7 @@ func _play_complete_game(seed_value: int) -> void:
 	_check(config.errors.is_empty(), "shipped configuration valid")
 	var state := State.new(config)
 	state.new_game(seed_value)
-	_check(state.work_count(0) == 200 and state.work_count(1) == 200, "shipped opening gives each side 200 work cards")
+	_check(state.work_count(0) == 800 and state.work_count(1) == 800, "shipped opening gives each side 800 work cards")
 	_check(state.people_count(0) == 1 and state.people_count(1) == 1, "shipped opening retains one employee per side")
 	var first_snapshot := _snapshot(state)
 	var bots := [Bot.new(state, 0), Bot.new(state, 1)]

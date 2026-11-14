@@ -4,9 +4,12 @@ class_name OffWorkState
 extends RefCounted
 
 const ConfigSource = preload("res://engine/off_work_config.gd")
+const CancellationSource = preload("res://engine/bot_cancellation.gd")
 const WORLD_FIELDS := ["cards", "groups", "tasks", "meetings", "outsourcing", "pending_strikes", "recruitment", "offers",
 	"winner", "time", "conveyor_progress", "revision", "_next_card", "_next_group",
-	"_next_offer", "_conveyor_elapsed", "_supply_count"]
+	"_next_offer", "_conveyor_elapsed", "_supply_count", "_supply_mode", "_supply_bag", "_supply_bag_signature"]
+const SHUFFLE_SUPPLY := "shuffle_bag_v1"
+const LEGACY_SUPPLY := "weighted_v0"
 
 var config: RefCounted
 var cards: Dictionary = {}
@@ -28,6 +31,9 @@ var _next_group: int = 1
 var _next_offer: int = 1
 var _conveyor_elapsed: float = 0.0
 var _supply_count: int = 0
+var _supply_mode: String = SHUFFLE_SUPPLY
+var _supply_bag: Array = []
+var _supply_bag_signature: String = ""
 var _rng := RandomNumberGenerator.new()
 var _bot_branch := false
 # These flags retain the command-local query scope used by BOT search. The
@@ -36,6 +42,8 @@ var _index_queries := false
 # Search commands may reuse membership queries without postponing any normal
 # card refresh. Keep this separate from advance()'s event batching flag.
 var _search_queries := false
+# Scoped to one validated middle passive activation in move_cards().
+var _defer_passive_schedule := false
 var _group_index: Dictionary = {}
 var _membership_index: Dictionary = {}
 var _owner_index: Dictionary = {}
@@ -44,6 +52,11 @@ var _activity_ids: Array = []
 var _people_ids: Array = []
 var _indexed_card_count := -1
 var _indexed_group_count := -1
+var _indexed_config_signature := 0
+# Arbitrary cancellation callbacks may mutate data outside the usual helpers.
+# Their next structural change keeps the old full-invalidation behavior.
+var _incremental_membership_safe := true
+var _inside_membership_callback := false
 var _membership_card_count := -1
 var _membership_group_count := -1
 var _membership_generation := 0
@@ -63,38 +76,101 @@ func _invalidate_group_index() -> void:
 	_people_ids.clear()
 	_indexed_card_count = -1
 	_indexed_group_count = -1
+	_indexed_config_signature = 0
+	_incremental_membership_safe = true
 	_membership_card_count = cards.size()
 	_membership_group_count = groups.size()
 	_schedule_dirty = true
 
 func _ensure_membership_shape() -> void:
-	if _membership_card_count != cards.size() or _membership_group_count != groups.size():
+	if _membership_card_count != cards.size():
 		_invalidate_group_index()
+	elif _membership_group_count != groups.size():
+		_invalidate_group_layout()
+
+## Layout is independent of global owner/type membership. Unknown imports and
+## polymorphic implementations keep the full invalidation contract above.
+func _invalidate_group_layout(affected: Array = []) -> void:
+	if get_script() != OffWorkState or config.get_script() != ConfigSource \
+			or not _incremental_membership_safe or _inside_membership_callback \
+			or (not _index_queries and _scheduled_config != _config_schedule_signature()):
+		_invalidate_group_index()
+		return
+	_membership_generation += 1
+	if affected.is_empty():
+		_group_index.clear()
+		_membership_index.clear()
+	else:
+		for group in affected:
+			_group_index.erase(group)
+			_membership_index.erase(group)
+	_membership_card_count = cards.size()
+	_membership_group_count = groups.size()
+	# Retained for callers that inspect cache shape; global validity no longer
+	# depends on the number of groups, which cannot change owner/type arrays.
+	if _indexed_card_count == cards.size(): _indexed_group_count = groups.size()
+	_schedule_dirty = true
+
+func _can_update_membership_index() -> bool:
+	_ensure_membership_shape()
+	if get_script() != OffWorkState or config.get_script() != ConfigSource \
+			or not _incremental_membership_safe or _inside_membership_callback \
+			or _indexed_card_count != cards.size(): return false
+	# advance() already validates this configuration before entering its event
+	# batch. Do not hash it again for every real coin in one settled wage.
+	if _index_queries and _indexed_config_signature == _scheduled_config: return true
+	return _indexed_config_signature == _config_schedule_signature()
+
+func _index_card(id: int) -> void:
+	var card: Dictionary = cards[id]
+	var kind := str(card.type)
+	var owner := int(card.owner)
+	if not _type_index.has(kind): _type_index[kind] = []
+	_type_index[kind].append(id)
+	if not _owner_index.has(owner): _owner_index[owner] = {"types": {}, "people": [], "activity": []}
+	var entry: Dictionary = _owner_index[owner]
+	if not entry.types.has(kind): entry.types[kind] = []
+	entry.types[kind].append(id)
+	var category: String = config.category(kind)
+	if category == "person":
+		_people_ids.append(id)
+		entry.people.append(id)
+	if category in ["person", "tool", "ingredient"]:
+		_activity_ids.append(id)
+		entry.activity.append(id)
+
+func _unindex_card(id: int) -> void:
+	var card: Dictionary = cards[id]
+	var kind := str(card.type)
+	var owner := int(card.owner)
+	_type_index[kind].erase(id)
+	if _type_index[kind].is_empty(): _type_index.erase(kind)
+	var entry: Dictionary = _owner_index[owner]
+	entry.types[kind].erase(id)
+	if entry.types[kind].is_empty(): entry.types.erase(kind)
+	var category: String = config.category(kind)
+	if category == "person":
+		_people_ids.erase(id)
+		entry.people.erase(id)
+	if category in ["person", "tool", "ingredient"]:
+		_activity_ids.erase(id)
+		entry.activity.erase(id)
+	if entry.types.is_empty(): _owner_index.erase(owner)
 
 func _ensure_membership_index() -> void:
 	_ensure_membership_shape()
-	if _indexed_card_count == cards.size() and _indexed_group_count == groups.size(): return
+	if _indexed_card_count == cards.size(): return
 	# A single-group query may already have rebuilt that group's membership
 	# since the last mutation. Building owner/type indexes must not discard it.
+	_owner_index.clear()
+	_type_index.clear()
+	_activity_ids.clear()
+	_people_ids.clear()
 	for id in cards:
-		var card: Dictionary = cards[id]
-		var kind := str(card.type)
-		var owner := int(card.owner)
-		if not _type_index.has(kind): _type_index[kind] = []
-		_type_index[kind].append(id)
-		if not _owner_index.has(owner): _owner_index[owner] = {"types": {}, "people": [], "activity": []}
-		var entry: Dictionary = _owner_index[owner]
-		if not entry.types.has(kind): entry.types[kind] = []
-		entry.types[kind].append(id)
-		var category: String = config.category(kind)
-		if category == "person":
-			_people_ids.append(id)
-			entry.people.append(id)
-		if category in ["person", "tool", "ingredient"]:
-			_activity_ids.append(id)
-			entry.activity.append(id)
+		_index_card(int(id))
 	_indexed_card_count = cards.size()
 	_indexed_group_count = groups.size()
+	_indexed_config_signature = _config_schedule_signature()
 
 ## Local cache lifetime, separate from gameplay/replay revision. Transfers and
 ## restored snapshots can change membership without increasing that revision.
@@ -157,7 +233,19 @@ func fork_for_bot(sample_seed: int, isolate_config := false) -> OffWorkState:
 		branch.set(key, value.duplicate(true) if value is Dictionary or value is Array else value)
 	branch._bot_branch = true
 	branch._rng.seed = sample_seed
+	# The remaining multiset follows from the public bag counts and cards
+	# already dealt. Its real order is private: canonicalize before sampling,
+	# so changing the hidden real permutation cannot influence a BOT forecast.
+	branch.sample_hidden_supply()
 	return branch
+
+## Used by both live snapshot paths. Only an isolated hypothetical world may
+## replace the hidden permutation; the already public remaining counts stay.
+func sample_hidden_supply() -> void:
+	assert(_bot_branch)
+	if _supply_mode == SHUFFLE_SUPPLY and not _supply_bag.is_empty():
+		_supply_bag.sort()
+		_shuffle_supply_bag()
 
 ## Descendants share the same hypothetical supply stream, including how far
 ## it advanced in their parent. Unrelated branches never modify each other.
@@ -165,6 +253,9 @@ func fork_search_node() -> OffWorkState:
 	assert(_bot_branch)
 	var branch := fork_for_bot(_rng.seed)
 	branch._rng.state = _rng.state
+	# This is a descendant of an existing hypothetical world, not a fresh
+	# observation. Preserve that scenario's already sampled future sequence.
+	branch._supply_bag = _supply_bag.duplicate()
 	# WORLD_FIELDS already contains the authoritative tasks and group clocks.
 	# Preserve a completed schedule instead of rebuilding those same slots in
 	# every child. Membership indexes remain branch-local and rebuild lazily;
@@ -206,6 +297,9 @@ func new_game(seed_value: int = 0) -> void:
 	conveyor_progress = 0.0
 	_conveyor_elapsed = 0.0
 	_supply_count = 0
+	_supply_mode = SHUFFLE_SUPPLY
+	_supply_bag.clear()
+	_supply_bag_signature = ""
 	_next_card = 1
 	_next_group = 1
 	_next_offer = 1
@@ -226,10 +320,11 @@ func new_game(seed_value: int = 0) -> void:
 	revision += 1
 
 func create_group(owner: int) -> int:
+	_ensure_membership_shape()
 	var id: int = _next_group
 	_next_group += 1
 	groups[id] = {"id": id, "owner": owner, "cards": [], "job": "work", "function": ""}
-	_schedule_dirty = true
+	_invalidate_group_layout([id])
 	return id
 
 ## A production combination keeps its first function while its defining cards
@@ -285,12 +380,18 @@ func add_card(kind: String, owner: int, group: int = -1) -> int:
 		group = create_group(owner)
 	assert(int(groups[group].owner) == owner)
 	var id: int = _next_card
+	var indexed := _can_update_membership_index() and not cards.has(id)
 	_next_card += 1
 	cards[id] = {"id": id, "type": kind, "owner": owner, "group": group,
 		"progress": 0.0, "status": "ready", "remaining": 0.0, "total": 0.0,
 		"amount": 1 if kind == "money" else 0, "activity": "idle", "paused": false, "rate_multiplier": 0.0}
 	groups[group].cards.append(id)
-	_invalidate_group_index()
+	if indexed:
+		_index_card(id)
+		_indexed_card_count = cards.size()
+		_invalidate_group_layout([group])
+	else:
+		_invalidate_group_index()
 	revision += 1
 	return id
 
@@ -366,7 +467,7 @@ func _eject_union_overtime() -> void:
 			cards[id].group = destination
 			groups[destination].cards.append(id)
 		if not ejected.is_empty():
-			_invalidate_group_index()
+			_invalidate_group_layout([group])
 			_emit("union_eject", {"source": _group_type(int(group), "union")[0], "owner": groups[group].owner,
 				"group": group, "ids": ejected})
 
@@ -398,8 +499,15 @@ func group_work_rate(group: int) -> float:
 	if participants.is_empty(): return 0.0
 	var rate := 0.0
 	var overtime := _group_type(group, "overtime").size()
-	for person in participants:
-		rate += config.work_rate(effective_work_kind(str(cards[person].type), group), overtime)
+	if get_script() == OffWorkState and config.get_script() == ConfigSource:
+		# Standard roles share one work-card duration. Keep every addition in
+		# the original order so the shared clock retains its exact rounding.
+		var unit_rate: float = config.work_rate(effective_work_kind(str(cards[participants[0]].type), group), overtime)
+		for _person in participants: rate += unit_rate
+	else:
+		# State/config overrides may give different participants different rates.
+		for person in participants:
+			rate += config.work_rate(effective_work_kind(str(cards[person].type), group), overtime)
 	return rate / float(participants.size())
 
 ## Transfer is a continuous combination cycle, just like ordinary work.
@@ -490,15 +598,17 @@ func move_cards(ids: Array, target_group: int = -1, target_card: int = -1) -> in
 	elif not groups.has(target_group):
 		_fail("目标组已经不存在")
 		return -1
+	var affected_groups: Array = [target_group]
 	for id in unique:
 		var previous: int = int(cards[id].group)
 		if previous == target_group:
 			continue
 		if groups.has(previous):
 			groups[previous].cards.erase(id)
+		if not affected_groups.has(previous): affected_groups.append(previous)
 		cards[id].group = target_group
 		groups[target_group].cards.append(id)
-	_invalidate_group_index()
+	_invalidate_group_layout(affected_groups)
 	_cleanup_groups()
 	_reschedule(false)
 	# New combinations may start ready tools. Meetings additionally repeat after
@@ -508,14 +618,38 @@ func move_cards(ids: Array, target_group: int = -1, target_card: int = -1) -> in
 		if cards.has(id) and config.category(str(cards[id].type)) in ["tool", "ingredient"]:
 			moved_tools.append(id)
 	var candidates: Array = moved_tools if not moved_tools.is_empty() else group_actions(target_group)
-	for tool in candidates:
+	var batch_passives := _can_batch_passive_activation(candidates, target_group, owner)
+	for index in candidates.size():
+		var tool: Variant = candidates[index]
 		if cards.has(tool) and str(cards[tool].status) == "ready" and str(cards[tool].type) != "strike":
-			activate(int(tool), target_group, target_card)
+			if batch_passives and index > 0 and index < candidates.size() - 1:
+				_defer_passive_schedule = true
+				activate(int(tool), target_group, target_card)
+				_defer_passive_schedule = false
+			else:
+				activate(int(tool), target_group, target_card)
 	_sync_coffee_groups()
 	last_error = ""
 	_emit("group_changed", {"owner": owner, "group": target_group, "ids": unique})
 	revision += 1
 	return target_group
+
+func _can_batch_passive_activation(candidates: Array, target_group: int, owner: int) -> bool:
+	if get_script() != OffWorkState or config.get_script() != ConfigSource or candidates.size() < 3:
+		return false
+	if not groups.has(target_group) or int(groups[target_group].owner) != owner: return false
+	var protected_group := group_has_union(target_group)
+	for tool in candidates:
+		if not cards.has(tool): return false
+		var card: Dictionary = cards[tool]
+		if str(card.type) not in ["overtime", "union"] or str(card.status) != "ready" \
+				or int(card.owner) != owner or int(card.group) != target_group: return false
+		if config.category(str(card.type)) not in ["tool", "ingredient"]: return false
+		if str(card.type) == "overtime" and protected_group: return false
+	# Keep the first and last full schedules. The first can start coffee in
+	# another group; the second places rebuilt work tasks after those new tasks,
+	# preserving their original dictionary order as well as all rule events.
+	return true
 
 func activate(tool_id: int, target_group: int = -1, target_card: int = -1) -> bool:
 	return _activate_tool(tool_id, target_group, target_card, false)
@@ -562,7 +696,7 @@ func _activate_tool(tool_id: int, target_group: int, target_card: int, delivered
 	if kind == "overtime" and group_has_union(target_group):
 		return _fail("工会组合不能使用加班牌")
 	if kind in ["overtime", "union"]:
-		_reschedule()
+		if not _defer_passive_schedule: _reschedule()
 		return true
 	if kind == "slack":
 		return _activate_slack(tool_id, target_group)
@@ -604,6 +738,20 @@ func advance_for_search(delta: float, deadline_usec: int, cancelled: Callable = 
 	assert(_bot_branch)
 	return _advance_events(delta, deadline_usec, cancelled)
 
+func _read_only_cancel_probe(probe: Callable) -> bool:
+	if not probe.is_valid() or probe.get_bound_arguments_count() != 0: return false
+	var target := probe.get_object()
+	return target != null and target.get_script() == CancellationSource and probe.get_method() == &"is_cancelled"
+
+func _poll_cancelled(probe: Callable) -> bool:
+	if _read_only_cancel_probe(probe): return bool(probe.call())
+	var was_inside := _inside_membership_callback
+	_inside_membership_callback = true
+	var stopped := bool(probe.call())
+	_inside_membership_callback = was_inside
+	_incremental_membership_safe = false
+	return stopped
+
 func _advance_events(delta: float, deadline_usec: int, cancelled: Callable = Callable()) -> bool:
 	if not config.errors.is_empty() or winner >= 0 or delta <= 0.0:
 		return config.errors.is_empty()
@@ -616,7 +764,7 @@ func _advance_events(delta: float, deadline_usec: int, cancelled: Callable = Cal
 	# epsilon controls event settlement, while the clock must consume every
 	# positive delta, including the small tail before a bot or timeout deadline.
 	while left > 0.0 and winner < 0:
-		if deadline_usec >= 0 and (Time.get_ticks_usec() >= deadline_usec or (cancelled.is_valid() and cancelled.call())):
+		if deadline_usec >= 0 and (Time.get_ticks_usec() >= deadline_usec or (cancelled.is_valid() and _poll_cancelled(cancelled))):
 			_index_queries = false
 			_group_index.clear()
 			return false
@@ -854,7 +1002,7 @@ func _restart_ready_meetings() -> void:
 		if meeting_candidates(int(card.owner)).is_empty(): continue
 		_activate_meeting(int(id), group, -1)
 
-func _activate_coffee(coffee_id: int, group: int, target_card: int) -> bool:
+func _activate_coffee(coffee_id: int, group: int, target_card: int, drain_instant := true) -> bool:
 	if not group_work(group).is_empty():
 		return _fail("这组还有工作；请把人员与咖啡另组一摞")
 	if int(cards[coffee_id].group) != group:
@@ -889,7 +1037,7 @@ func _activate_coffee(coffee_id: int, group: int, target_card: int) -> bool:
 	if available.size() < cost:
 		return _fail("提升卷度变成%s需要%d杯咖啡" % [config.cards[step.to].name, cost])
 	# Reserve all ingredients atomically; different personnel cannot drink the
-	# same cup. A stage is a real timed task, even when every later cup is here.
+	# same cup. Zero-duration stages use the same completion rules immediately.
 	available.erase(coffee_id)
 	var ingredients: Array = [coffee_id]
 	ingredients.append_array(available.slice(0, cost - 1))
@@ -905,8 +1053,27 @@ func _activate_coffee(coffee_id: int, group: int, target_card: int) -> bool:
 	_emit("coffee_start", {"source": coffee_id, "owner": cards[coffee_id].owner,
 		"group": group, "person": person, "targets": [person], "coffee_ids": ingredients.duplicate(),
 		"from_type": from_type, "to_type": str(step.to), "amount": cost})
+	if duration == 0.0:
+		_complete_task(person)
+		if drain_instant:
+			_drain_instant_coffee_group(group)
+		else:
+			return true
 	_refresh_card_views()
 	return true
+
+func _drain_instant_coffee_group(group: int) -> void:
+	# Finish every immediately affordable stage in the same command/time. Each
+	# successful zero stage consumes at least one cup, so this loop is finite
+	# without recursion, advancing time, or imposing an artificial queue limit.
+	var previous_error := last_error
+	while groups.has(group):
+		if tasks.values().any(func(task): return task.kind == "coffee" and int(task.group) == group): break
+		var ready := _group_type(group, "coffee").filter(func(id): return cards[id].status == "ready")
+		if ready.is_empty() or not _activate_coffee(int(ready[0]), group, -1, false): break
+	# A later unaffordable stage must not turn the first successful command
+	# into an error; positive stages keep their ordinary task and event order.
+	last_error = previous_error
 
 func _coffee_batch_valid(person: int, task: Dictionary) -> bool:
 	if not cards.has(person) or str(cards[person].type) != str(task.from_type) or is_meeting_target(person): return false
@@ -1034,6 +1201,7 @@ func _apply_strike(tool_id: int, group: int) -> void:
 		cards[person].status = "striking"
 		cards[person].total = duration
 		cards[person].remaining = duration
+	_invalidate_group_layout([group])
 	_consume(tool_id)
 	_cleanup_groups()
 	_reschedule()
@@ -1175,29 +1343,82 @@ func _complete_outsource(tool_id: int) -> void:
 	_emit("outsource", {"source": tool_id, "owner": batch.owner, "group": batch.group,
 		"ids": batch.work_ids, "spent": batch.amount, "amount": batch.work_ids.size()})
 
-func _recruitment_additions(group: int) -> Dictionary:
-	var cash: Array = _group_type(group, "money")
-	var funds := 0
-	for id in cash: funds += available_cash_amount(int(id))
-	var reserved_count := 0
-	for batch in recruitment.values(): reserved_count += int(batch.count)
-	var capacity := maxi(0, OffWorkConfig.MAX_CARD_ALLOCATION - cards.size() - reserved_count)
-	var unit: int = config.integer("recruitment", "cost_per_employee")
-	var count := mini(funds / unit, capacity)
+## Capacity concerns physical cards, not money amounts. Only this payment's
+## fully consumed UIDs release space; another batch's promised payment cannot.
+func _recruitment_net_growth(count: int, payments: Dictionary) -> int:
+	var freed := 0
+	for id in payments:
+		if cards.has(id) and cards[id].type == "money" and int(payments[id]) > 0 \
+				and int(payments[id]) == int(cards[id].amount): freed += 1
+	return count - freed
+
+func _recruitment_payments(cash: Array, available: Array, amount: int) -> Dictionary:
 	var payments: Dictionary = {}
-	var left := count * unit
-	for id in cash:
-		var take := mini(left, available_cash_amount(int(id)))
-		if take > 0: payments[id] = take
-		left -= take
+	var left := amount
+	for index in cash.size():
 		if left == 0: break
+		var take := mini(left, int(available[index]))
+		if take > 0: payments[int(cash[index])] = take
+		left -= take
+	return payments
+
+func _recruitment_additions(group: int, boss_id: int = -1) -> Dictionary:
+	var cash: Array = _group_type(group, "money")
+	var available: Array = []
+	var funds := 0
+	for id in cash:
+		var amount := available_cash_amount(int(id))
+		available.append(amount)
+		funds += amount
+	var current: Dictionary = recruitment.get(boss_id, {})
+	var existing_count := int(current.get("count", 0))
+	var existing_payments: Dictionary = current.get("payments", {})
+	var reserved_growth := 0
+	for other in recruitment:
+		if int(other) == boss_id: continue
+		var batch: Dictionary = recruitment[other]
+		reserved_growth += maxi(0, _recruitment_net_growth(int(batch.count), batch.payments))
+	# Existing worlds may already exceed the allocation guard through ordinary
+	# income. A non-growing transaction can still clean them up in several steps.
+	var capacity := maxi(0, OffWorkConfig.MAX_CARD_ALLOCATION - cards.size() - reserved_growth)
+	var unit: int = config.integer("recruitment", "cost_per_employee")
+	var limit := maxi(0, mini(funds / unit, OffWorkConfig.MAX_CARD_ALLOCATION - existing_count))
+	if limit == 0: return {"count": 0, "payments": {}, "amount": 0}
+	var freed := existing_count - _recruitment_net_growth(existing_count, existing_payments)
+	var maximum := _recruitment_payments(cash, available, limit * unit)
+	var maximum_freed := freed
+	for id in maximum:
+		if int(existing_payments.get(id, 0)) + int(maximum[id]) == int(cards[id].amount): maximum_freed += 1
+	# Ordinary unit-money payments usually shrink the world. Admit the maximum
+	# immediately instead of walking thousands of employee thresholds per tick.
+	if existing_count + limit - maximum_freed <= capacity:
+		return {"count": limit, "payments": maximum, "amount": limit * unit}
+	var count := 0
+	var cash_index := 0
+	var taken_from_card := 0
+	# Feasibility is not monotone: spending five from a six-money wallet frees
+	# nothing, but spending ten across that wallet and four unit cards frees five
+	# UIDs. Visit every bounded employee threshold with one forward cash scan.
+	for addition in range(1, limit + 1):
+		var needed := unit
+		while needed > 0 and cash_index < cash.size():
+			var id: int = cash[cash_index]
+			var take := mini(needed, int(available[cash_index]) - taken_from_card)
+			needed -= take
+			taken_from_card += take
+			if take > 0 and int(existing_payments.get(id, 0)) + taken_from_card == int(cards[id].amount): freed += 1
+			if taken_from_card == int(available[cash_index]):
+				cash_index += 1
+				taken_from_card = 0
+		if existing_count + addition - freed <= capacity: count = addition
+	var payments := _recruitment_payments(cash, available, count * unit)
 	return {"count": count, "payments": payments, "amount": count * unit}
 
 func _sync_recruitment_groups() -> void:
 	if not config.cards.has("boss"): return
 	for boss_id in recruitment:
 		var batch: Dictionary = recruitment[boss_id]
-		var additions := _recruitment_additions(int(batch.group))
+		var additions := _recruitment_additions(int(batch.group), int(boss_id))
 		batch.count += int(additions.count)
 		batch.amount += int(additions.amount)
 		for id in additions.payments: batch.payments[id] = int(batch.payments.get(id, 0)) + int(additions.payments[id])
@@ -1205,7 +1426,7 @@ func _sync_recruitment_groups() -> void:
 		if cards[boss_id].type != "boss" or tasks.has(boss_id) or recruitment.has(boss_id): continue
 		var group := int(cards[boss_id].group)
 		if str(groups[group].job) != "work": continue
-		var materials := _recruitment_additions(group)
+		var materials := _recruitment_additions(group, int(boss_id))
 		if int(materials.count) == 0: continue
 		var duration: float = config.number("recruitment", "seconds")
 		var owner := int(cards[boss_id].owner)
@@ -1250,7 +1471,8 @@ func _complete_recruitment(boss_id: int) -> void:
 		_cancel_recruitment(boss_id)
 		return
 	var batch: Dictionary = recruitment[boss_id]
-	if int(batch.count) > OffWorkConfig.MAX_CARD_ALLOCATION - cards.size():
+	if int(batch.count) < 1 or int(batch.count) > OffWorkConfig.MAX_CARD_ALLOCATION \
+			or _recruitment_net_growth(int(batch.count), batch.payments) > maxi(0, OffWorkConfig.MAX_CARD_ALLOCATION - cards.size()):
 		_cancel_recruitment(boss_id)
 		return
 	recruitment.erase(boss_id)
@@ -1731,16 +1953,26 @@ func _spend(owner: int, amount: int, payment_ids: Array = []) -> bool:
 func _consume(id: int) -> void:
 	assert(cards.has(id))
 	assert(str(cards[id].type) == "strike" or ["work", "money", "person", "ingredient"].has(config.category(str(cards[id].type))), "耐用工具不得被消耗")
+	var indexed := _can_update_membership_index()
 	var group: int = int(cards[id].group)
+	if indexed: _unindex_card(id)
 	if groups.has(group):
 		groups[group].cards.erase(id)
 	cards.erase(id)
-	_invalidate_group_index()
+	if indexed:
+		_indexed_card_count = cards.size()
+		_invalidate_group_layout([group])
+	else:
+		_invalidate_group_index()
 	revision += 1
 
 func _cleanup_groups() -> void:
+	var removed: Array = []
 	for group in groups.keys():
-		if groups[group].cards.is_empty(): groups.erase(group)
+		if groups[group].cards.is_empty():
+			groups.erase(group)
+			removed.append(group)
+	if not removed.is_empty(): _invalidate_group_layout(removed)
 
 func _transfer_destination(owner: int) -> int:
 	# All files in one shared settlement use the same destination. The next
@@ -1802,6 +2034,36 @@ func _make_offer(kind: String) -> Dictionary:
 
 func _new_offer() -> Dictionary:
 	_supply_count += 1
+	if _supply_mode == LEGACY_SUPPLY: return _legacy_weighted_offer()
+	var signature := _supply_signature()
+	if _supply_bag.is_empty() or _supply_bag_signature != signature:
+		_supply_bag.clear()
+		var kinds: Array = config.rules.conveyor.pool.keys()
+		kinds.sort()
+		for kind in kinds:
+			for _copy in int(config.rules.conveyor.pool[kind]): _supply_bag.append(str(kind))
+		_supply_bag_signature = signature
+		_shuffle_supply_bag()
+	return _make_offer(str(_supply_bag.pop_front()))
+
+func _supply_signature() -> String:
+	var entries := []
+	var kinds: Array = config.rules.conveyor.pool.keys()
+	kinds.sort()
+	for kind in kinds: entries.append([str(kind), int(config.rules.conveyor.pool[kind])])
+	return JSON.stringify(entries)
+
+func _shuffle_supply_bag() -> void:
+	# Fisher–Yates uses this world's RNG, never Array.shuffle's global stream.
+	for index in range(_supply_bag.size() - 1, 0, -1):
+		var other := _rng.randi_range(0, index)
+		var previous: Variant = _supply_bag[index]
+		_supply_bag[index] = _supply_bag[other]
+		_supply_bag[other] = previous
+
+## Old recordings keep their original supply rule between keyframes. New
+## matches always start with SHUFFLE_SUPPLY; this path is import-only.
+func _legacy_weighted_offer() -> Dictionary:
 	var probabilities: Dictionary = config.conveyor_probabilities()
 	var choice := _rng.randf()
 	var last_available := ""
@@ -1813,6 +2075,25 @@ func _new_offer() -> Dictionary:
 		if choice <= 0.0:
 			return _make_offer(str(kind))
 	return _make_offer(last_available)
+
+static func migrate_supply_snapshot(world: Dictionary) -> void:
+	if not world.has("_supply_mode"): world._supply_mode = LEGACY_SUPPLY
+	if not world.has("_supply_bag"): world._supply_bag = []
+	if not world.has("_supply_bag_signature"): world._supply_bag_signature = ""
+
+func valid_supply_snapshot(world: Dictionary) -> bool:
+	if world.get("_supply_mode") not in [SHUFFLE_SUPPLY, LEGACY_SUPPLY]: return false
+	if not world.get("_supply_bag") is Array or not world.get("_supply_bag_signature") is String: return false
+	if world._supply_bag.size() > OffWorkConfig.MAX_CONVEYOR_BAG: return false
+	if not world._supply_bag.all(func(kind): return kind is String and config.cards.has(kind)): return false
+	if world._supply_mode == LEGACY_SUPPLY: return world._supply_bag.is_empty()
+	# A changed live card table deliberately starts a new bag on the next draw.
+	if world._supply_bag_signature != _supply_signature(): return true
+	var counts := {}
+	for kind in world._supply_bag:
+		counts[kind] = int(counts.get(kind, 0)) + 1
+		if int(counts[kind]) > int(config.rules.conveyor.pool.get(kind, 0)): return false
+	return true
 
 func _emit(kind: String, data: Dictionary) -> void:
 	if _bot_branch: return

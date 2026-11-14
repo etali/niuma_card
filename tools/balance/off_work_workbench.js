@@ -34,7 +34,7 @@ const fieldLabels = {
   recovery_seconds:"冷却时间（秒）", auto_repeat:"自动重复", coffee_per_person:"每人产咖啡数",
   cost_per_work:"每份工作成本", minimum_people:"最低保留人数", slots:"传送带槽位",
   interval_seconds:"刷新间隔（秒）",
-  pool:"掉落权重", purchase_priority:"采购优先级", tool_priority:"工具优先级",
+  pool:"每轮牌袋张数", purchase_priority:"采购优先级", tool_priority:"工具优先级",
   first_action_seconds:"首次行动时间（秒）", max_tool_copies:"同类工具上限",
   max_support_people:"辅助人员上限", production_reserve_people:"生产预留人员",
   transfer_batch_size:"每批交接工作数", max_card_copies:"各卡持有上限",
@@ -124,7 +124,7 @@ function controls() {
     ? "将保存共用卡表「" + currentCardsName() + "」、BOT A「" + strategyNames.a + "」和 BOT B「" + strategyNames.b + "」，再启动一条对战记录。相同参数复用已有配置；同名修改会先确认覆盖。"
     : "将保存当前卡表和双方共用的 BOT 策略，再启动一条评估记录。相同参数复用已有配置；同名修改会先确认覆盖。";
   $("duelCards").textContent = "双方共用当前卡表「" + currentCardsName() + "」" + (dirty ? "，含未保存的修改；运行时会自动保存。" : "，本次对战只比较 BOT A 与 BOT B。");
-  if (marketIssue) $("duelCards").textContent += " 购牌区权重无效：" + marketIssue + " 请点击“编辑这份卡表”修正。";
+  if (marketIssue) $("duelCards").textContent += " 购牌区牌袋无效：" + marketIssue + " 请点击“编辑这份卡表”修正。";
   renderBotCards();
   $("playtest").textContent = "试玩当前配置 · " + currentCardsName();
   $("notesStatus").textContent = dirty ? "保存当前卡表后可记录其试玩感受。" :
@@ -206,6 +206,8 @@ function parameterFieldOptions(path) {
   const exact = {
     "cards.work.work_seconds": {label:"每份工作基础耗时（秒）",min:0,positive:true,unit:"秒",
       hint:"员工及各升级等级共用；加班会影响实际工作速度。"},
+    "rules.coffee.seconds": {label:"提升卷度耗时（秒）",min:0,unit:"秒",
+      hint:"0 表示立即完成升级，仍需消耗对应咖啡；摸鱼生产咖啡的耗时单独设置。"},
     "rules.recruitment.cost_per_employee": {label:"每名员工招聘费用",kind:"int",min:1,unit:"钱/人",
       hint:"老板每招募一名员工消耗的金钱，须高于购牌区员工价格。"},
     "rules.recruitment.seconds": {label:"招聘耗时（秒）",min:0,positive:true,unit:"秒",
@@ -242,14 +244,16 @@ function parameterFieldOptions(path) {
     can_be_meeting_target:{hint:"决定该类人员能否被对方会议拉走。"},
     can_be_strike_target:{hint:"决定该类人员能否受到罢工影响。"},
     work_role:{hint:"工会组合按这个人员类型的工作标准结算，原牌型不变。"},
-    purchasable:{hint:"决定这张牌能否进入购牌区；实际概率还由权重决定。"},
+    purchasable:{hint:"决定这张牌能否进入购牌区；每轮数量由牌袋张数决定。"},
     auto_repeat:{hint:"会议冷却完成且有合法目标时是否自动再次开始。"},
     description:{hint:"牌面显示文字；文字修改本身不改变规则参数。"},
     name:{hint:"显示名称；改名本身不改变规则。"},
     art:{hint:"卡面美术资源标识，不影响数值效果。"}
   };
   const key = path.split(".").at(-1);
-  return {...common[key],...exact[path]};
+  const specific = /^rules\.coffee\.upgrades\.[^.]+\.seconds$/.test(path)
+    ? exact["rules.coffee.seconds"] : exact[path];
+  return {...common[key],...specific};
 }
 function fields(parent, values, path, excluded = []) {
   for (const key of Object.keys(values)) {
@@ -260,18 +264,18 @@ function fields(parent, values, path, excluded = []) {
 function marketPoolIssue() {
   if (!candidate) return "";
   for (const input of $("market-fields").querySelectorAll("input")) {
-    if (!input.validity.valid || !Number.isFinite(input.valueAsNumber) || input.valueAsNumber < 0) {
-      return "出场权重须为大于或等于 0 的有限数值，支持小数。";
+    if (!input.validity.valid || !Number.isSafeInteger(input.valueAsNumber) || input.valueAsNumber < 0) {
+      return "每轮牌袋张数须为大于或等于 0 的整数，不接受小数。";
     }
   }
   const weights = Object.entries(candidate.cards).filter(([,card]) => card.purchasable)
     .map(([id]) => candidate.rules.conveyor.pool[id] ?? 0);
-  if (weights.some(value => typeof value !== "number" || !Number.isFinite(value) || value < 0)) {
-    return "出场权重须为大于或等于 0 的有限数值，支持小数。";
+  if (weights.some(value => !Number.isSafeInteger(value) || value < 0)) {
+    return "每轮牌袋张数须为大于或等于 0 的整数，不接受小数。";
   }
   const total = weights.reduce((sum,value) => sum + value,0);
-  if (!Number.isFinite(total)) return "出场总权重过大，请减小权重后重试。";
-  return total > 0 ? "" : "至少一张可购买牌的出场权重必须大于 0。";
+  if (!Number.isFinite(total) || total > 4096) return "每轮牌袋总张数不能超过 4096 张。";
+  return total > 0 ? "" : "至少一张可购买牌的每轮张数必须大于 0。";
 }
 function updateMarketProbabilities() {
   const issue = marketPoolIssue();
@@ -282,8 +286,8 @@ function updateMarketProbabilities() {
     const percent = weight / total * 100;
     output.textContent = issue ? "—" : weight > 0 && percent < .01 ? "< 0.01%" : percent.toLocaleString("zh-CN",{maximumFractionDigits:2}) + "%";
   }
-  $("market-total").textContent = issue ? "暂时无法计算出现概率" :
-    entries.length + " 种可购买牌 · 总权重 " + total.toLocaleString("zh-CN",{maximumSignificantDigits:12});
+  $("market-total").textContent = issue ? "暂时无法计算每轮比例" :
+    entries.length + " 种可购买牌 · 每轮 " + total.toLocaleString("zh-CN") + " 张";
   $("market-error").textContent = issue;
   $("market-error").hidden = !issue;
   controls();
@@ -296,12 +300,12 @@ function renderMarketPool() {
     if (!card.purchasable) continue;
     const row = element("div",undefined,"market-pool-row");
     const weight = {[id]:pool[id] ?? 0};
-    const input = field(row,weight,id,{label:card.name,path:"rules.conveyor.pool." + id,min:0,
+    const input = field(row,weight,id,{label:card.name,path:"rules.conveyor.pool." + id,min:0,max:4096,kind:"int",step:1,
       change:() => {pool[id] = weight[id];}});
     input.addEventListener("input",updateMarketProbabilities);
     const probability = element("output");
     probability.dataset.card = id;
-    probability.setAttribute("aria-label",card.name + "出现概率");
+    probability.setAttribute("aria-label",card.name + "每轮比例");
     row.append(probability);
     container.append(row);
   }
@@ -344,7 +348,7 @@ function renderCards() {
   grid.replaceChildren();
   renderInitialFields(grid);
   for (const key of ["conveyor","fire","income"]) {
-    fields(grid,candidate.rules[key],"rules." + key,key === "conveyor" ? ["pool","employee_every","opening"] : []);
+    fields(grid,candidate.rules[key],"rules." + key,key === "conveyor" ? ["pool","draw_mode","employee_every","opening"] : []);
   }
   renderMarketPool();
   const rows = [];
@@ -364,7 +368,8 @@ function renderCards() {
         path:"rules.coffee.upgrades." + id + ".cost",kind:"int",min:1
       });
       if (Object.hasOwn(upgrade,"seconds")) {
-        field(values,upgrade,"seconds",{label:"提升卷度耗时（秒）",path:"rules.coffee.upgrades." + id + ".seconds"});
+        const path = "rules.coffee.upgrades." + id + ".seconds";
+        field(values,upgrade,"seconds",{...parameterFieldOptions(path),path});
       }
     }
     const text = element("details",undefined,"card-copy");
@@ -695,7 +700,7 @@ function parameterMetadata(path,snapshots) {
         unit:key === "work" ? "份/方" : "张/方",hint:"双方开局各自在这一牌组获得的数量；组号变化也可能只是开局布局变化。"};
     }
     if (path[1] === "conveyor" && path[2] === "pool") {
-      return {label:"购牌区 · " + cardName(key) + "出现权重",hint:"权重不是百分比；出现概率取决于本列所有可购牌的权重总和。"};
+      return {label:"购牌区 · " + cardName(key) + "每轮张数",unit:"张/轮",hint:"每轮按张数装袋，整袋洗牌后依次发完再重新洗牌；比例不代表下一张的固定独立概率。"};
     }
     if (path[1] === "coffee" && path[2] === "upgrades") {
       const targets = [...new Set(snapshots.map(s => s?.rules?.coffee?.upgrades?.[path[3]]?.to).filter(Boolean))];
@@ -752,7 +757,7 @@ function parameterDifferenceNote(path,a,b,spec,snapshots) {
       const id = path.at(-1);
       return snapshot.cards[id]?.purchasable ? parameterNumber((pool[id] ?? 0)/total*100) + "%" : "不可购买";
     });
-    notes.push("归一后出现概率：" + chances[0] + " → " + chances[1] + "（双方共享）。");
+    notes.push("每轮比例：" + chances[0] + " → " + chances[1] + "（双方共享；旧权重档案显示原比例）。");
   }
   if (path.slice(0,3).join(".") === "rules.initial.groups" && path.at(-1) === "work") {
     const totals = snapshots.map(snapshot => {

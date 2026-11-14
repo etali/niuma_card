@@ -44,6 +44,7 @@ func _dispatch_recorded_purchase() -> void:
 	var frame: Dictionary = fixture.frame
 	var raw := Marshalls.base64_to_raw(frame.data).decompress(int(frame.size),FileAccess.COMPRESSION_ZSTD)
 	var entry: Dictionary = bytes_to_var(raw)
+	OffWorkState.migrate_supply_snapshot(entry.world)
 	for key in OffWorkState.WORLD_FIELDS: world.set(key,entry.world[key])
 	world._rng.state=entry.rng
 	world._invalidate_group_index()

@@ -174,6 +174,8 @@ static func decode_frame(frame: Variant, model: OffWorkState) -> Dictionary:
 	if not entry.layout.has_all(Session.BOARD_FIELDS): return {}
 	for key in ["pending_strikes", "recruitment"]:
 		if not entry.world.has(key): entry.world[key] = {}
+	OffWorkState.migrate_supply_snapshot(entry.world)
+	if not model.valid_supply_snapshot(entry.world): return {}
 	for key in Session.STATE_FIELDS:
 		if typeof(entry.world.get(key)) != typeof(model.get(key)): return {}
 	for card in entry.world.cards.values():

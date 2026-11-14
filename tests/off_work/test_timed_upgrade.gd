@@ -141,7 +141,7 @@ func _no_market_grinder() -> void:
 	check(not config.validate(), "configuration rejects grinder in conveyor pool")
 	config = OffWorkConfig.new()
 	config.rules.coffee.seconds = 0
-	check(not config.validate(), "instant upgrade duration is rejected")
+	check(config.validate(), "zero upgrade duration is accepted as an immediate stage")
 	config = OffWorkConfig.new()
 	config.cards.grinder.purchasable = true
 	check(not config.validate() and not config.can_purchase("grinder"), "purchase flag cannot bypass upgrade-only grinder rule")

@@ -93,10 +93,10 @@ func _invalid_duration() -> void:
 
 func _shared_distribution() -> void:
 	var config := OffWorkConfig.new()
-	config.rules.conveyor.pool = {"employee":0, "coffee":0.01, "outsource":0.03}
+	config.rules.conveyor.pool = {"employee":0, "coffee":1, "outsource":3}
 	var chances := config.conveyor_probabilities()
-	check(chances == {"employee":0.0, "coffee":0.25, "outsource":0.75}, "游戏与BOT共用权重概率归一化接口")
+	check(chances == {"employee":0.0, "coffee":0.25, "outsource":0.75}, "游戏与BOT共用每轮张数比例归一化接口")
 	check(is_equal_approx(Economy.expected_supply_wait(config, "outsource"), config.rules.conveyor.interval_seconds / chances.outsource), "BOT到货等待直接采用共享概率")
 	check(not is_finite(Economy.expected_supply_wait(config, "employee")), "共享零概率不会被BOT补成保底员工")
 	OffWorkCardDB.configure(config)
-	check(OffWorkCardDB.CARDS.coffee.weight == 0.01, "共享卡牌展示保留小数权重而非截成零")
+	check(OffWorkCardDB.CARDS.coffee.weight == 1, "共享卡牌展示保留每轮整数张数")

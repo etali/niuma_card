@@ -6,6 +6,7 @@ extends RefCounted
 # 每份工作、现金和咖啡都是独立的牌实体。加载配置前先限制一次性分配的规模。
 const MAX_CARD_ALLOCATION := 4096
 const MAX_CONVEYOR_SLOTS := 64
+const MAX_CONVEYOR_BAG := 4096
 const MAX_EXACT_INTEGER := 9007199254740991
 const MAX_FINITE_NUMBER := 1.7976931348623157e308
 const LEGACY_DECISION_BUDGET_MS := 12
@@ -144,8 +145,13 @@ static func normalize_balance_document(document: Variant) -> Variant:
 		return normalized
 	var rule_sections: Variant = normalized.get("rules")
 	if rule_sections is Dictionary and rule_sections.get("conveyor") is Dictionary:
-		# Opening offers and every subsequent offer now share the same weights.
-		# Discard the two retired overrides when loading an older card document.
+		# Read-only migration distinguishes historical relative weights from
+		# new integer card counts. Never reduce an existing integer bag: 2:2
+		# deliberately has a different round length from 1:1.
+		if not rule_sections.conveyor.has("draw_mode"):
+			if rule_sections.conveyor.get("pool") is Dictionary:
+				rule_sections.conveyor.pool = _legacy_conveyor_counts(rule_sections.conveyor.pool)
+			rule_sections.conveyor.draw_mode = "shuffle_bag_v1"
 		rule_sections.conveyor.erase("employee_every")
 		rule_sections.conveyor.erase("opening")
 	if rule_sections is Dictionary and rule_sections.get("simulation") is Dictionary:
@@ -170,6 +176,35 @@ static func normalize_balance_document(document: Variant) -> Variant:
 					definitions[kind].refund = role.refund
 				role.erase("refund")
 	return normalized
+
+static func _legacy_conveyor_counts(pool: Dictionary) -> Dictionary:
+	var fractional := false
+	var total := 0.0
+	for value in pool.values():
+		if (not value is int and not value is float) or not is_finite(float(value)) or float(value) < 0.0: return pool
+		fractional = fractional or float(value) != floor(float(value))
+		total += float(value)
+	if not fractional or not is_finite(total) or total <= 0.0: return pool
+	# Find the smallest exact ratio representable by a bounded real bag.
+	# The tolerance covers JSON floating-point representation only; every
+	# positive historical weight must retain at least one card.
+	for size in range(1, MAX_CONVEYOR_BAG + 1):
+		var counts := {}
+		var sum_counts := 0
+		var matches := true
+		for kind in pool:
+			var quantity := float(pool[kind]) / total * size
+			var count := roundi(quantity)
+			var rounding_tolerance := maxf(1.0, absf(quantity)) * 0.0000000000000017763568394002505
+			if absf(quantity-count) > rounding_tolerance or (float(pool[kind]) > 0.0 and count == 0):
+				matches = false
+				break
+			counts[kind] = count
+			sum_counts += count
+		if matches and sum_counts == size: return counts
+	# Preserve unsupported input for validation to reject, rather than losing
+	# a rare card or silently approximating an archived distribution.
+	return pool
 
 ## 返回可导出的规范卡表；局内对手参数属于 off_work_bot.json。
 func balance_document() -> Dictionary:
@@ -264,7 +299,8 @@ func validate() -> bool:
 		_number_field(rules.strike, "flight_seconds", "strike", 0.0)
 	for section in ["meeting", "outsource"]:
 		_number_field(rules[section], "recovery_seconds", section, 0.0, true)
-	for pair in [["strike", "duration_seconds"], ["coffee", "seconds"], ["outsource", "seconds"], ["transfer", "seconds"], ["meeting", "duration_seconds"], ["slack", "seconds"], ["conveyor", "interval_seconds"], ["bot", "think_seconds"]]:
+	_number_field(rules.coffee, "seconds", "coffee", 0.0)
+	for pair in [["strike", "duration_seconds"], ["outsource", "seconds"], ["transfer", "seconds"], ["meeting", "duration_seconds"], ["slack", "seconds"], ["conveyor", "interval_seconds"], ["bot", "think_seconds"]]:
 		_number_field(rules[pair[0]], pair[1], pair[0], 0.0, true)
 	for pair in [["simulation", "maximum_events_per_advance"], ["meeting", "base_targets"], ["meeting", "minimum_targets"], ["outsource", "cost_per_work"], ["conveyor", "slots"]]:
 		_number_field(rules[pair[0]], pair[1], pair[0], 0.0, true, true)
@@ -302,7 +338,7 @@ func validate() -> bool:
 			errors.append("coffee.upgrades.%s.to：必须逐级升级为 %s" % [kind, chain[kind]])
 		_number_field(step, "cost", "coffee.upgrades." + kind, 0.0, true, true)
 		if step.has("seconds"):
-			_number_field(step, "seconds", "coffee.upgrades." + kind, 0.0, true)
+			_number_field(step, "seconds", "coffee.upgrades." + kind, 0.0)
 	var owner_list: Variant = rules.simulation.get("owners")
 	if not owner_list is Array or owner_list.size() != 2 or not _is_number(owner_list[0]) or not _is_number(owner_list[1]) or float(owner_list[0]) != 0.0 or float(owner_list[1]) != 1.0:
 		errors.append("simulation.owners：当前为双人对局，必须为 [0, 1]")
@@ -334,9 +370,18 @@ func validate() -> bool:
 			var rate: float = work_rate(str(role), 1)
 			if not is_finite(rate) or (can_work(str(role)) and rate <= 0.0) or (not can_work(str(role)) and rate != 0.0):
 				errors.append("roles.%s：组合后工作速度必须为有限正数" % role)
-		for section in ["transfer", "slack", "coffee"]:
+		for section in ["transfer", "slack"]:
 			if not is_finite(1.0 / number(section, "seconds")):
 				errors.append("%s.seconds：数值过小，任务速度溢出" % section)
+		# Exactly zero completes inside the activation command and has no timer.
+		# Positive values still need a finite rate, including per-tier overrides.
+		var coffee_duration := number("coffee", "seconds")
+		if coffee_duration > 0.0 and not is_finite(1.0 / coffee_duration):
+			errors.append("coffee.seconds：数值过小，任务速度溢出")
+		for kind in chain:
+			var duration := coffee_seconds(str(kind))
+			if duration > 0.0 and not is_finite(1.0 / duration):
+				errors.append("coffee.upgrades.%s.seconds：数值过小，任务速度溢出" % kind)
 		if not is_finite(slack_rate(2)) or slack_rate(2) <= 0.0:
 			errors.append("slack：组合后生产速度必须为有限正数")
 	return errors.is_empty()
@@ -451,15 +496,17 @@ func _validate_initial() -> void:
 		errors.append("initial.groups：每方开局必须拥有工作和至少一名人员")
 
 func _validate_conveyor() -> void:
+	if rules.conveyor.get("draw_mode") != "shuffle_bag_v1":
+		errors.append("conveyor.draw_mode：必须为 shuffle_bag_v1")
 	var pool: Dictionary = _object(rules.conveyor, "pool", "conveyor")
-	var sum_weight := 0.0
+	var total := 0.0
 	for kind in pool:
 		if not cards.has(kind) or not can_purchase(str(kind)):
 			errors.append("conveyor.pool：不是可购买卡种 %s" % str(kind))
-		elif _number_field(pool, str(kind), "conveyor.pool", 0.0):
-			sum_weight += float(pool[kind])
-	if sum_weight <= 0.0 or not is_finite(sum_weight):
-		errors.append("conveyor.pool：总权重必须为正且有限")
+		elif _number_field(pool, str(kind), "conveyor.pool", 0.0, false, true):
+			total += float(pool[kind])
+	if total <= 0.0 or not is_finite(total) or total > MAX_CONVEYOR_BAG:
+		errors.append("conveyor.pool：每轮牌袋总张数须为 1 至 %d，旧小数权重须能无损换算到此范围" % MAX_CONVEYOR_BAG)
 
 func _object(parent: Dictionary, key: String, path: String) -> Dictionary:
 	if not parent.get(key) is Dictionary:

@@ -36,12 +36,14 @@ static func read_session(host: Node) -> Dictionary:
 	# Sessions from before attacks had a travel phase have no in-flight strikes.
 	for key in ["pending_strikes", "recruitment"]:
 		if not world.has(key): world[key] = {}
+	State.migrate_supply_snapshot(world)
 	if not world.has_all(STATE_FIELDS) or not saved.layout.has_all(BOARD_FIELDS): return {}
 	var strategy: Variant = saved.get("bot", saved.get("ai")) # 兼容旧下班存档
 	if not saved.get("balance") is Dictionary or not strategy is Dictionary: return {}
 	var config := Config.new(saved.balance, strategy)
 	if not config.errors.is_empty(): return {}
 	var state := State.new(config)
+	if not state.valid_supply_snapshot(world): return {}
 	for key in STATE_FIELDS:
 		if typeof(world[key]) != typeof(state.get(key)): return {}
 		state.set(key, world[key])
