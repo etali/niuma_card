@@ -147,6 +147,13 @@ func _check_upgrade_highlights() -> void:
 	_check(bool(final_stage.valid) and final_stage.type == "upgrade" and final_stage.output_card == "work_emperor", "four cups highlight the actual final upgrade")
 	var maximum := _combination(["work_emperor", "coffee"])
 	_check(not bool(maximum.valid) and maximum.type != "upgrade", "maximum tier does not show a nonexistent coffee upgrade")
-	var income := _combination(["employee", "grinder", "workaholic", "work_emperor", "work", "work", "work", "work"])
-	_check(bool(income.valid) and income.type == "production" and income.output_n == 15, "combination preview reports the four tiers' real fifteen-money income")
-	_check(OffWorkCardDB.get_def("workaholic").output_n == 4 and OffWorkCardDB.get_def("work_emperor").output_n == 8, "high-tier card definitions expose their actual individual income")
+	var tiers: Array = ["employee", "grinder", "workaholic", "work_emperor"]
+	var full_queue := tiers.duplicate()
+	for _i in 15: full_queue.append("work")
+	var income := _combination(full_queue)
+	_check(bool(income.valid) and income.type == "production" and income.recipe_pay_n == 15 and income.output_n == 15, "combination preview reports the four tiers clearing fifteen work for fifteen money")
+	var short_queue := _combination(tiers + ["work", "work", "work", "work"])
+	_check(bool(short_queue.valid) and short_queue.recipe_pay_n == 4 and short_queue.output_n == 4, "a four-work queue pays only for the four files actually cleared")
+	for kind in tiers:
+		var definition := OffWorkCardDB.get_def(kind)
+		_check(int(definition.recipe_n) == int(definition.output_n) and int(definition.output_n) == int(pow(2, tiers.find(kind))), "%s card definition clears and earns the same per batch" % kind)

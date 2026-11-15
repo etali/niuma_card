@@ -74,7 +74,7 @@ func _protection_and_production() -> void:
 	s.move_cards([protection])
 	check(s.tasks[person].work_ids.size() == 3 and is_equal_approx(s.group_work_rate(group), 0.1), "removing union restores original capacity while retaining the shared work clock")
 	s.advance(s.config.work_seconds())
-	check(s.work_count(0) == 96 and s.money(0) == 25, "restored emperor earns original income")
+	check(s.work_count(0) == 96 and s.money(0) == 4, "restored emperor clears its own batch again and earns one cash per file")
 	var leader := s.add_card("leader", 0, group)
 	s.move_cards([protection], group)
 	s.advance(0.01)

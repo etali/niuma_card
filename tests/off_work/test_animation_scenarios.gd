@@ -47,8 +47,8 @@ func _run() -> void:
 			_check(upgrades.map(func(event): return snappedf(float(event.time), 0.01)) == [5.5, 10.5, 15.5], "each stage reads its full five-second bar before changing role")
 		if str(entry.id) == "employee_tier_income":
 			var settlements: Array = snapshot.events.filter(func(event): return event.kind == "work_complete" and int(event.owner) == 0)
-			_check(settlements.size() == 1 and settlements[0].participants.size() == 4 and settlements[0].ids.size() == 4, "four tiers complete one shared batch of four work cards")
-			_check(settlements.size() == 1 and settlements[0].money_ids.size() == 15, "four-tier preview produces fifteen real money cards in one batch")
+			_check(settlements.size() == 1 and settlements[0].participants.size() == 4 and settlements[0].ids.size() == 15, "four tiers complete one shared batch of 1+2+4+8 work cards")
+			_check(settlements.size() == 1 and settlements[0].money_ids.size() == settlements[0].ids.size(), "four-tier preview produces one real money card per cleared work card")
 		if str(entry.id) == "side_extract":
 			_check(runner.state.group_people(runner._groups.source).size() == 2 and runner.state.group_people(runner._groups.target).size() == 3, "side preview commits the exact three-person suffix through native drag")
 			_check(runner.state.group_work(runner._groups.source).size() == 198, "source personnel keep working after the extraction")

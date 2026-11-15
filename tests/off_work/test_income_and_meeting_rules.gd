@@ -65,9 +65,9 @@ func _income_frequency() -> void:
 			state.advance(23.75)
 		var ordinary := _income_events(employee)
 		var doubled := _income_events(grinder)
-		_check(ordinary.size() == doubled.size() and employee.work_count(0) == grinder.work_count(0), "equal combinations produce at identical frequency, overtime=%d" % overtime_count)
+		_check(ordinary.size() == doubled.size() and 100 - grinder.work_count(0) == (100 - employee.work_count(0)) * 2, "both tiers settle at identical frequency and the grinder clears a doubled batch, overtime=%d" % overtime_count)
 		_check(is_equal_approx(employee.cards[_person(employee, "employee")].progress, grinder.cards[_person(grinder, "grinder")].progress), "next task progress also matches employee")
-		_check(grinder.money(0) == employee.money(0) * 2, "grinder doubles actual cash without processing extra work")
+		_check(grinder.money(0) == employee.money(0) * 2 and grinder.money(0) == 100 - grinder.work_count(0), "grinder doubles actual cash by clearing twice the work, one cash per file")
 		_check_income(grinder, doubled, 2)
 
 func _income_configuration() -> void:
@@ -75,13 +75,13 @@ func _income_configuration() -> void:
 		var state := _state({kind: 1, "work": 100})
 		state.advance(10.0)
 		var expected := 1 if kind == "employee" else 2
-		_check(state.money(0) == expected, "role income multiplier applies to the base work payment")
+		_check(state.money(0) == expected and state.work_count(0) == 100 - expected, "each tier is paid the base work payment for every file in its batch")
 		_check_income(state, _income_events(state), expected)
 	var configured := _state({"grinder": 1, "work": 100})
 	configured.config.cards.work.income = 3
 	configured.config.roles.grinder.work_income_multiplier = 4
 	configured.advance(10.0)
-	_check(configured.money(0) == 12 and configured.work_count(0) == 99, "base money and role multiplier are both read from configuration")
+	_check(configured.money(0) == 24 and configured.work_count(0) == 98, "base money, role multiplier and batch capacity are all read from configuration")
 
 func _legacy_card_values() -> void:
 	var legacy := OffWorkConfig.new().balance_document()

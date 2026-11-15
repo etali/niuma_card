@@ -62,6 +62,9 @@ func _real_tools_keep_their_return() -> void:
 
 func _unspent_wages_are_not_production() -> void:
     var world:=_world()
+    # A tier that only pays more per work: same batch as an employee, double the wage.
+    world.config.roles.grinder.work_capacity=1
+    world.config.roles.grinder.work_income_multiplier=2
     var baseline:=_value(world,true)
     var worker:int=world._owner_type(0,"employee")[0]
     var cup:=world.add_card("coffee",0)
@@ -70,6 +73,16 @@ func _unspent_wages_are_not_production() -> void:
     check(world.move_cards([worker,cup],-1)>=0,"counterfactual pays the actual coffee recipe and removes the worker from production")
     var upgrading:=_value(world,true)
     check(upgrading.detail.sides[0].eta>baseline.detail.sides[0].eta,"equal-capacity upgrade with no executable use for extra wages includes its lost work time")
+    # The default table doubles the batch instead, which is real throughput.
+    var doubled:=_world()
+    var slower:=_value(doubled,true)
+    worker=doubled._owner_type(0,"employee")[0]
+    cup=doubled.add_card("coffee",0)
+    var planned:=_value(doubled)
+    check(planned.detail.sides[0].public_investment.get("kind","")=="coffee" and planned.detail.sides[0].eta<slower.detail.sides[0].eta,"default double-batch upgrade is chosen for its real extra throughput")
+    check(doubled.move_cards([worker,cup],-1)>=0,"the default upgrade pays the same actual coffee recipe")
+    var faster:=_value(doubled,true)
+    check(faster.detail.sides[0].eta<slower.detail.sides[0].eta,"double-batch upgrade repays its lost work time with earlier completion")
 
 func _wages_can_fund_owned_recruitment() -> void:
     var outcomes:=[]
