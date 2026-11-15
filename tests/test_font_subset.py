@@ -34,6 +34,8 @@ class FontSubsetTest(unittest.TestCase):
             (self.root / name).mkdir(parents=True)
         for name in SCRIPTS:
             shutil.copy2(ROOT / name, self.root / name)
+        for name in ("LICENSE", "NOTICE"):
+            shutil.copy2(ROOT / name, self.root / name)
         shutil.copy2(ROOT / "tools/font_subset.sh", self.root / "tools/font_subset.sh")
         for tool in ("build_art.py", "ensure_app_icon.py", "build_android_icons.py", "godot_build.sh", "project_paths.py", "release_bundle.py",
                      "build_deps.py", "install_build_env.py", "install_android_dependencies.py"):
@@ -118,6 +120,16 @@ else:
         binary.write_text("fixture app")
         binary.chmod(0o755)
         (output / "Contents/Resources/game.pck").write_bytes(b"pck")
+    elif output.suffix == ".exe":
+        import struct
+        binary = bytearray(512)
+        binary[:2] = b"MZ"
+        struct.pack_into("<I", binary, 0x3C, 128)
+        binary[128:132] = b"PE\\0\\0"
+        struct.pack_into("<H", binary, 132, 0x8664)
+        struct.pack_into("<H", binary, 152, 0x20B)
+        output.write_bytes(binary)
+        output.with_suffix(".pck").write_bytes(struct.pack("<6I", 0x43504447, 4, 4, 7, 1, 0))
     else:
         raise ValueError("unexpected export: " + str(output))
 ''')
@@ -154,6 +166,37 @@ else:
                          sorted((FONTDATA.name, MD5.name)))
         self.assertFalse(list((self.root / "scratch").iterdir()))
         self.assertFalse((self.root / (str(FONT) + ".orig")).exists())
+
+    def test_windows_entry_restores_font_and_keeps_macos_app(self):
+        old_app = self.root / "build/牛马牌.app"
+        old_app.mkdir(parents=True)
+        (old_app / "previous").write_text("keep macOS")
+        result = subprocess.run(["/bin/bash", SCRIPTS[0], "--windows"], cwd=self.root,
+                                env=self.env, text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_restored()
+        self.assertEqual((old_app / "previous").read_text(), "keep macOS")
+        self.assertTrue((self.root / "build/windows/牛马牌.exe").is_file())
+        self.assertTrue((self.root / "build/windows/牛马牌.pck").is_file())
+        self.assertTrue((self.root / "build/牛马牌_windows.zip").is_file())
+        self.assertFalse([path for path in (self.root / "build").glob(".export-stage.*")])
+        self.assertFalse([event for event in self.events() if event["kind"] == "export" and event["full"]])
+
+    def test_windows_failed_export_preserves_previous_package_and_restores_font(self):
+        old = self.root / "build/windows/牛马牌.exe"
+        old.parent.mkdir(parents=True)
+        old.write_bytes(b"previous")
+        archive = self.root / "build/牛马牌_windows.zip"
+        archive.write_bytes(b"previous archive")
+        for key, value in (("EXPORT_FAIL", "1"), ("EXPORT_ERROR", "2"), ("EXPORT_MISSING", "3")):
+            with self.subTest(failure=key):
+                result = subprocess.run(["/bin/bash", SCRIPTS[0], "--windows"], cwd=self.root,
+                                        env={**self.env, key: value}, text=True, capture_output=True, timeout=30)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assert_restored()
+                self.assertEqual(old.read_bytes(), b"previous")
+                self.assertEqual(archive.read_bytes(), b"previous archive")
+                self.assertIn("构建失败", result.stderr)
 
     def test_both_build_entrypoints_restore_the_complete_font_group(self):
         for name in SCRIPTS:

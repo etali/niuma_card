@@ -7,6 +7,7 @@
 
 目标：
 - macos   标准 macOS 构建：macOS 导出模板、Pillow；fonttools 可选（缺失只跳过字体子集化）
+- windows Windows x86_64 导出模板、Pillow；fonttools 可选
 - slim    精简引擎：macos 全部依赖 + git/lipo + Apple Clang 16+
 - android Android 构建：Android 导出模板、apksigner、JDK
 
@@ -143,7 +144,7 @@ def template_check(version: tuple[str, str] | None, names: tuple[str, ...], purp
     if not missing:
         return []
     return [Missing(f"Godot {version[0]} 导出模板（{purpose}）", missing,
-                    lambda: env.install_templates(version[0], version[1], False),
+                    lambda: env.install_templates(version[0], version[1], False, names),
                     "./安装构建环境.command",
                     details=["将下载全套导出模板（约 1GB，仅一次），安装到 ~/Library/Application Support/Godot/export_templates/"])]
 
@@ -219,6 +220,8 @@ def android_check(godot: Path, version: tuple[str, str] | None) -> list[Missing]
 
 def collect(target: str, godot: Path) -> list[Missing]:
     version = godot_version(godot)
+    if target == "windows":
+        return template_check(version, env.WINDOWS_TEMPLATES, "Windows x86_64 导出") + python_check()
     if target == "android":
         return android_check(godot, version)
     # 精简构建复用标准模板里的 App 骨架，并在隔离副本里跑一次标准构建。
@@ -279,7 +282,7 @@ def ensure(target: str, godot: Path) -> None:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("target", choices=("macos", "slim", "android"))
+    parser.add_argument("target", choices=("macos", "windows", "slim", "android"))
     parser.add_argument("--godot", default=os.environ.get("GODOT", GODOT_DEFAULT))
     args = parser.parse_args(argv)
     try:

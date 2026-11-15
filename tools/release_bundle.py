@@ -11,6 +11,7 @@ from pathlib import Path
 import plistlib
 import shutil
 import signal
+import struct
 import tempfile
 import zipfile
 
@@ -57,6 +58,48 @@ def package(stage):
         if archive.testzip() is not None:
             raise ValueError(f"压缩包校验失败：{name}")
     return ["牛马牌.app", *card_tables, name]
+
+
+def validate_windows(directory):
+    binary = directory / "牛马牌.exe"
+    nonempty(binary)
+    with binary.open("rb") as stream:
+        if stream.read(2) != b"MZ":
+            raise ValueError("Windows 可执行文件缺少 MZ 头")
+        stream.seek(0x3C)
+        offset = int.from_bytes(stream.read(4), "little")
+        if offset < 64 or offset + 26 > binary.stat().st_size:
+            raise ValueError("Windows 可执行文件 PE 头无效")
+        stream.seek(offset)
+        header = stream.read(26)
+        if header[:4] != b"PE\0\0" or header[4:6] != b"\x64\x86" or header[24:26] != b"\x0b\x02":
+            raise ValueError("Windows 可执行文件必须是 x86_64 PE32+")
+    pack = binary.with_suffix(".pck")
+    nonempty(pack)
+    with pack.open("rb") as stream:
+        header = stream.read(24)
+    if len(header) != 24:
+        raise ValueError("Windows 游戏 PCK 头不完整")
+    magic, version, _, _, _, flags = struct.unpack("<6I", header)
+    if magic != 0x43504447 or version not in (2, 3, 4) or flags & 1:
+        raise ValueError("Windows 游戏 PCK 头无效或已加密")
+    if {p.name for p in directory.glob("*.pck")} != {pack.name}:
+        raise ValueError("Windows 包必须有且只有一份同名游戏 PCK")
+
+
+def package_windows(stage):
+    directory = stage / "windows"
+    validate_windows(directory)
+    for filename in ("on_work_cards.json", "off_work_cards.json", "LICENSE", "NOTICE"):
+        nonempty(directory / filename)
+    name = "牛马牌_windows.zip"
+    with zipfile.ZipFile(stage / name, "w", zipfile.ZIP_DEFLATED) as archive:
+        # 包含 Godot 生成的附属 DLL；EXE/PCK 和卡表保持同目录。
+        archive_tree(archive, directory, "牛马牌")
+    with zipfile.ZipFile(stage / name) as archive:
+        if archive.testzip() is not None:
+            raise ValueError(f"压缩包校验失败：{name}")
+    return ["windows", name]
 
 
 @contextmanager
@@ -107,9 +150,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("stage", type=Path)
     parser.add_argument("destination", type=Path)
-    parser.add_argument("--app-only", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--app-only", action="store_true")
+    modes.add_argument("--windows", action="store_true", help="验证并发布 Windows x86_64 EXE/PCK 和 ZIP")
     args = parser.parse_args()
-    if args.app_only:
+    if args.windows:
+        names = package_windows(args.stage)
+    elif args.app_only:
         validate_app(args.stage / "牛马牌.app")
         names = ["牛马牌.app"]
     else:

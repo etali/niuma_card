@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See LICENSE in the project root.
 
-# 牛马牌 · 构建可运行 App（build/牛马牌.app）
+# 牛马牌 · 构建 macOS App / Windows 可执行文件 / Android 包
 # 首次使用先运行 ./安装构建环境.command，之后每次运行本脚本即可出包
 set -e
 cd "$(dirname "$0")"
@@ -71,8 +71,13 @@ GODOT="${GODOT:-/Applications/Godot.app/Contents/MacOS/Godot}"
 
 # 不带参数继续使用已安装的完整模板；精简模式由独立工具准备专用模板后调用原流程。
 release_package=0
+windows_package=0
 if [ "$#" -gt 0 ]; then
 	case "$1" in
+		--windows|--windows-release)
+			[ "$#" -eq 1 ] || { echo "Windows 构建不接受额外参数（使用 --help 查看用法）" >&2; exit 2; }
+			windows_package=1
+			;;
 		--release) release_package=1 ;;
 		--slim-engine|--slim|--engine-plan)
 			exec python3 tools/slim_engine.py --godot "$GODOT" "$@"
@@ -90,6 +95,7 @@ if [ "$#" -gt 0 ]; then
   ./安装构建环境.command                     首次使用：安装导出模板与 Python 依赖
   ./构建游戏.command                         标准构建（上班和下班共用一个 App）
   ./构建游戏.command --release               生成同一 App 和 macOS 发布压缩包
+  ./构建游戏.command --windows               交叉导出 Windows x86_64 EXE/PCK 和 ZIP 发布包
   ./构建游戏.command --engine-plan           扫描当前功能并查看裁剪计划，不下载、不编译
   ./构建游戏.command --slim-engine           编译精简模板后构建 App（首次较慢，之后使用缓存）
   ./安装安卓构建环境.command                   安装 Android SDK/JDK/导出模板
@@ -116,7 +122,11 @@ FONT="assets/fonts/NotoSansSC.ttf"
 
 # ---------- 构建环境预检 ----------
 # 缺少依赖时询问 Y/N：安装后继续，或终止构建；不会等到资源导入完才报错。
-python3 tools/build_deps.py macos --godot "$GODOT" || exit $?
+if [ "$windows_package" = 1 ]; then
+	python3 tools/build_deps.py windows --godot "$GODOT" || exit $?
+else
+	python3 tools/build_deps.py macos --godot "$GODOT" || exit $?
+fi
 
 # ---------- 字体子集化与完整导入状态恢复 ----------
 source tools/font_subset.sh
@@ -139,8 +149,23 @@ subset_font
 echo "[3/4] 导入资源..."
 font_import_resources
 
-echo "[4/4] 导出 macOS App..."
 build_stage
+if [ "$windows_package" = 1 ]; then
+	echo "[4/4] 导出 Windows x86_64..."
+	mkdir "$_BUILD_STAGE/windows"
+	godot_checked --headless --export-release "Windows Desktop" "$_BUILD_STAGE/windows/牛马牌.exe"
+	restore_font
+	cp data/on_work_cards.json data/off_work_cards.json "$_BUILD_STAGE/windows/"
+	cp LICENSE NOTICE "$_BUILD_STAGE/windows/"
+	python3 tools/release_bundle.py "$_BUILD_STAGE" build --windows
+	echo ""
+	echo "构建完成：build/windows/牛马牌.exe"
+	echo "发布包就绪：build/牛马牌_windows.zip"
+	echo "请在 Windows 上解压完整 ZIP 后运行牛马牌.exe，不要单独移动 EXE（需要同目录 PCK）。"
+	exit 0
+fi
+
+echo "[4/4] 导出 macOS App..."
 godot_checked --headless --export-release "macOS" "$_BUILD_STAGE/牛马牌.app"
 
 restore_font

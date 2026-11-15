@@ -7,7 +7,7 @@
 
 检查与安装范围：
 - Godot 编辑器（只检查，不自动安装；可用 --godot 或 GODOT 指定路径）
-- 与当前 Godot 版本匹配的全套导出模板（macOS / Android 共用一次下载）
+- 与当前 Godot 版本匹配的全套导出模板（macOS / Windows / Android 共用一次下载）
 - Python 依赖：Pillow（应用图标与素材检查）、fonttools（字体子集化）
 - --toolchain：精简引擎所需的 Apple Clang 16+（Xcode 16 或更新的命令行工具）
 
@@ -33,9 +33,11 @@ from project_paths import redact_paths
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES_ROOT = Path.home() / "Library/Application Support/Godot/export_templates"
-# 标准 macOS 构建必须有 macos.zip；其余模板供 打包发布 / 安卓构建使用。
+# 默认安装各平台模板；Windows 模板是 PE 可执行文件，不是 ZIP。
+WINDOWS_TEMPLATES = ("windows_debug_x86_64.exe", "windows_release_x86_64.exe")
 REQUIRED_TEMPLATES = ("macos.zip",
-                      "android_debug.apk", "android_release.apk", "android_source.zip")
+                      "android_debug.apk", "android_release.apk", "android_source.zip",
+                      *WINDOWS_TEMPLATES)
 PYTHON_PACKAGES = (("PIL", "Pillow"), ("fontTools", "fonttools"))
 # 当前 Godot 的 SConstruct 拒绝 Apple Clang <16。
 MINIMUM_CLANG = 16
@@ -72,13 +74,34 @@ def godot_bundle_version(godot: Path) -> tuple[str, str] | None:
     return version, version + ".stable"
 
 
+def valid_template(path: Path) -> bool:
+    if path.suffix != ".exe":
+        return zipfile.is_zipfile(path)
+    # Windows x86_64 模板必须是完整的 PE32+，不能把下载错误页当作模板。
+    try:
+        with path.open("rb") as stream:
+            if stream.read(2) != b"MZ":
+                return False
+            stream.seek(0x3C)
+            offset = int.from_bytes(stream.read(4), "little")
+            if offset < 64 or offset + 26 > path.stat().st_size:
+                return False
+            stream.seek(offset)
+            header = stream.read(26)
+            return (header[:4] == b"PE\0\0" and header[4:6] == b"\x64\x86"
+                    and header[24:26] == b"\x0b\x02")
+    except OSError:
+        return False
+
+
 def missing_templates(folder: str, names: tuple[str, ...] = REQUIRED_TEMPLATES) -> list[str]:
     directory = TEMPLATES_ROOT / folder
-    return [name for name in names if not zipfile.is_zipfile(directory / name)]
+    return [name for name in names if not valid_template(directory / name)]
 
 
-def install_templates(version: str, folder: str, dry_run: bool) -> None:
-    missing = missing_templates(folder)
+def install_templates(version: str, folder: str, dry_run: bool,
+                      names: tuple[str, ...] = REQUIRED_TEMPLATES) -> None:
+    missing = missing_templates(folder, names)
     if not missing:
         log(f"导出模板已就位：{TEMPLATES_ROOT / folder}")
         return
@@ -115,8 +138,10 @@ def install_templates(version: str, folder: str, dry_run: bool) -> None:
             staged = Path(temp) / name
             with zipped.open(names[name]) as source, staged.open("wb") as output:
                 shutil.copyfileobj(source, output)
-            if name != "version.txt" and not zipfile.is_zipfile(staged):
+            if name != "version.txt" and not valid_template(staged):
                 raise InstallError(f"无效 Godot 导出模板：{name}")
+        for name in [*missing, "version.txt"]:
+            staged = Path(temp) / name
             temporary = destination / (name + ".partial")
             shutil.copyfile(staged, temporary)
             temporary.replace(destination / name)

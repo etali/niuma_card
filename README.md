@@ -2,7 +2,7 @@
 
 [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](LICENSE)
 [![Godot: 4.7.1](https://img.shields.io/badge/Godot-4.7.1-478CBF.svg?logo=godotengine&logoColor=white)](https://godotengine.org/)
-[![Platforms: macOS / Android](https://img.shields.io/badge/Platforms-macOS%20%7C%20Android-606060.svg)](#构建打包与测试)
+[![Platforms: macOS / Windows / Android](https://img.shields.io/badge/Platforms-macOS%20%7C%20Windows%20%7C%20Android-606060.svg)](#构建打包与测试)
 
 ![example](ref_image/onwork_example.png) ![example](ref_image/offwork_example.png)
 
@@ -14,7 +14,7 @@
 
 ## 开始游玩
 
-双击构建后的「牛马牌.app」打开游戏。首次展开时，顶部的「牛马牌」招牌约五秒后翻到「上班」。点击招牌，桌上的牌会收拢，购牌区和理牌区的桌布向右卷起并展开，牌堆翻面后散开进入「下班」。再次点击即可回到原局。两种玩法各自保存单机进度。日常启动会回到上次所在的班次。下班在处理中的批次可以续跑，上班结算或 BOT 连续行动中退出时从最近的决策点恢复。
+macOS 双击构建后的「牛马牌.app」；Windows 解压完整发布包后双击「牛马牌.exe」打开游戏。首次展开时，顶部的「牛马牌」招牌约五秒后翻到「上班」。点击招牌，桌上的牌会收拢，购牌区和理牌区的桌布向右卷起并展开，牌堆翻面后散开进入「下班」。再次点击即可回到原局。两种玩法各自保存单机进度。日常启动会回到上次所在的班次。下班在处理中的批次可以续跑，上班结算或 BOT 连续行动中退出时从最近的决策点恢复。
 
 | | 上班 | 下班 |
 | --- | --- | --- |
@@ -448,7 +448,7 @@ python3 tools/balance/off_work_cli.py --kind balance --cards data/off_work_cards
 ├── tests/                      # GDScript、Python、JavaScript 回归测试及夹具
 ├── tools/                      # 构建、检查、模拟、调参、发布和诊断工具
 ├── project.godot               # Godot 项目设置
-├── export_presets.cfg          # macOS、Android APK/AAB 导出预设
+├── export_presets.cfg          # macOS、Windows、Android APK/AAB 导出预设
 ├── README.md                   # 项目说明、玩法、操作入口和许可说明
 ├── LICENSE                     # AGPL v3 标准许可证全文
 ├── NOTICE                      # 项目来源与许可标识
@@ -456,7 +456,7 @@ python3 tools/balance/off_work_cli.py --kind balance --cards data/off_work_cards
 ├── bot.md                      # 两班 BOT 的搜索与评估
 ├── role.md                     # 玩家开局选择、扮演的角色
 ├── anime.md                    # 两班共用的动画预览及素材说明
-├── 构建游戏.command            # 构建 macOS App / Android 包
+├── 构建游戏.command            # 构建 macOS App / Windows EXE / Android 包
 ├── 启动游戏.command            # 启动已构建 App
 ├── 安装构建环境.command        # 安装 Godot 导出模板与 Python 依赖（首次构建前运行）
 ├── 安装安卓构建环境.command    # 安装 Android SDK、JDK 和导出模板
@@ -521,6 +521,22 @@ python3 tools/balance/off_work_cli.py --kind balance --cards data/off_work_cards
 ```
 
 默认读取已编译的 `build/牛马牌.app`，输出 `build/牛马牌.dmg`。双击 DMG 后，将应用拖到盘内的“Applications”入口即可安装。打包过程保留 App 的权限和符号链接，校验新镜像成功后才替换已有安装包；日志保存在 `build/logs/`。
+
+### 构建 Windows 版
+
+在 macOS 上交叉导出 Windows x86_64 发布包，复用同一套游戏逻辑、素材和字体构建事务：
+
+```bash
+./安装构建环境.command --dry-run
+./安装构建环境.command
+./构建游戏.command --windows
+```
+
+生成 `build/windows/牛马牌.exe`、同目录的 `牛马牌.pck`，以及 `build/牛马牌_windows.zip`。ZIP 包含两班卡表、LICENSE、NOTICE 和 Godot 导出的附属文件；必须解压完整目录后运行 EXE，不能只复制 EXE。此入口不会替换已有的 macOS App 或 Android 包，导出或验证失败时保留旧 Windows 产物，日志仍在 `build/logs/`。
+
+Windows 沿用两种玩法共用的桌面窗口与抽屉控制逻辑，不修改 macOS 的启动窗口设置。玩家数据位于 `%USERPROFILE%/.niumapai_record/`；局域网联机首次可能需要在 Windows 防火墙中允许游戏访问专用网络。当前预设未配置代码签名，发布前仍需 Windows 真机验证启动、字体、音效、抽屉透明与收放、窗口缩放及联机；交叉导出成功不等于已完成这些验证。
+
+Windows 电脑也可在匹配版本的 Godot 编辑器中使用「Windows Desktop」预设导出；上述 `.command` 构建脚本和依赖安装器在 macOS 上运行。
 
 ### Android
 

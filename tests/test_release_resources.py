@@ -25,7 +25,7 @@ class ReleaseResourcesTest(unittest.TestCase):
         presets = [name for name in config.sections() if re.fullmatch(r'preset\.\d+', name)]
         self.assertTrue(presets, '至少有一个真实导出目标，不能空循环通过')
         platforms = {config.get(name, 'platform').strip('"') for name in presets}
-        self.assertEqual({'macOS', 'Android'}, platforms)
+        self.assertEqual({'macOS', 'Windows Desktop', 'Android'}, platforms)
         for name in presets:
             with self.subTest(preset=config.get(name, 'name')):
                 # 每个目标各自必须有完整过滤器；不能只数全文件里出现几次字符串。
