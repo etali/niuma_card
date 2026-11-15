@@ -27,9 +27,32 @@ float card_stroke(vec2 uv) {
 	return border_width * (1.0 + stroke_pressure * pressure);
 }
 
+// 纸的外形按卡牌类别区分（CardArt.PAPER_*）。大小、标题带的位置都不变，只改轮廓：
+// 0 圆角（默认） 1 切角加撕口（攻击） 2 右下角折起（增益）
+// 正面、背面、撕片、受击层和卡身都走同一个 card_silhouette，外形只有这一处定义。
+uniform int paper_kind = 0;
+uniform float kind_size = 0.14;
+// 传说牌的金框：标题带和另外三条边连成一圈金边，中间裱一张白纸。
+uniform bool legend_frame = false;
+uniform vec3 foil_color : source_color = vec3(0.87, 0.71, 0.27);
+// 金边上两道硬边高光的位置；悬停时由卡牌推着扫过去，平时停在边角。
+uniform float foil_glint = 0.30;
+
+// 没有手绘起伏的外形距离；p 是以卡心为原点的桌面坐标，h 是半宽半高。
+float card_silhouette(vec2 p, vec2 h) {
+	vec2 q = abs(p) - h + vec2(corner_radius);
+	float d = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - corner_radius;
+	if (paper_kind == 1) {
+		float box = max(abs(p.x) - h.x, abs(p.y) - h.y);
+		d = max(box, (abs(p.x) + abs(p.y) - (h.x + h.y - kind_size)) * 0.70710678);
+	} else if (paper_kind == 2) {
+		d = max(d, (p.x + p.y - (h.x + h.y - kind_size)) * 0.70710678);
+	}
+	return d;
+}
+
 float card_distance(vec2 uv) {
-	vec2 q = abs((uv - vec2(0.5)) * card_size) - card_size * 0.5 + vec2(corner_radius);
-	float distance_to_card = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - corner_radius;
+	float distance_to_card = card_silhouette((uv - vec2(0.5)) * card_size, card_size * 0.5);
 	// 起伏只向画布内收，最外边仍不会越过实体边界或被 Quad 截成断线。
 	return distance_to_card + stroke_wobble * (0.55 + 0.45 * hand_curve(uv));
 }
@@ -44,16 +67,52 @@ vec3 card_outline(vec2 uv, vec3 fill, float distance_to_edge) {
 vec3 card_front(vec2 uv, float distance_to_edge) {
 	// 分隔线也有手绘弧度，标题与卡面填充贴着同一条线，不露白缝。
 	float bend = stroke_wobble * 0.75 * hand_curve(vec2(uv.x, band_height));
+	if (paper_kind == 1) {
+		// 攻击牌的标题带下沿是一道撕口。
+		bend += 0.022 * (abs(fract(uv.x * 8.0 + 0.25) - 0.5) * 4.0 - 1.0);
+	}
 	float y = (uv.y - band_height) * card_size.y + bend;
 	float aa = max(fwidth(y), 0.0005);
-	vec3 fill = mix(band_color, face_color, smoothstep(-aa, aa, y));
 	// 固定在纸面上的细纤维，不用TIME，拖动和撕开时保持同一笔触。
 	float fiber = sin(uv.x * 410.0 + sin(uv.y * 31.0)) * sin(uv.y * 287.0 + uv.x * 23.0);
 	float weave = sin(uv.x * 59.0 + uv.y * 17.0) * sin(uv.y * 83.0);
-	fill *= 1.0 + fiber * 0.009 + weave * 0.006;
+	float grain = 1.0 + fiber * 0.009 + weave * 0.006;
+	vec3 fill = mix(band_color, face_color, smoothstep(-aa, aa, y)) * grain;
 	float width = card_stroke(vec2(uv.x, band_height)) * 0.5;
 	float divider = 1.0 - smoothstep(width - aa, width + aa, abs(y));
-	return card_outline(uv, mix(fill, ink_color, divider), distance_to_edge);
+	vec3 body = mix(fill, ink_color, divider);
+	vec2 p = (uv - vec2(0.5)) * card_size;
+	vec2 h = card_size * 0.5;
+	if (paper_kind == 2) {
+		// 折回来的纸角露出纸背，两条折边是墨线。
+		vec2 fold = h - vec2(kind_size);
+		float in_x = step(fold.x, p.x);
+		float in_y = step(fold.y, p.y);
+		body = mix(body, mix(band_color, vec3(1.0), 0.35) * grain, in_x * in_y);
+		float crease_edge = min(abs(p.x - fold.x) + (1.0 - in_y) * 9.0, abs(p.y - fold.y) + (1.0 - in_x) * 9.0);
+		float crease_aa = max(max(fwidth(p.x), fwidth(p.y)), 0.0005);
+		float crease_width = card_stroke(uv) * 0.5;
+		body = mix(body, ink_color, 1.0 - smoothstep(crease_width - crease_aa, crease_width + crease_aa, crease_edge));
+	}
+	if (legend_frame) {
+		float frame = 0.080;
+		float band_y = (band_height - 0.5) * card_size.y;
+		vec2 center = vec2(0.0, (band_y + h.y - frame) * 0.5);
+		vec2 half_size = vec2(h.x - frame, (h.y - frame - band_y) * 0.5);
+		float inner_radius = 0.055;
+		vec2 q = abs(p - center) - half_size + vec2(inner_radius);
+		float inner = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - inner_radius;
+		inner += stroke_wobble * 0.5 * hand_curve(uv * 1.3 + vec2(0.37, 0.11));
+		float inner_aa = max(fwidth(inner), 0.0005);
+		// 两道硬边高光，像金属牌上的反光；没有渐变。
+		float streak = p.x * 0.8 + p.y * 0.6 - foil_glint;
+		float shine = clamp(step(abs(streak), 0.050) + step(abs(streak - 0.13), 0.018), 0.0, 1.0);
+		vec3 foil = mix(foil_color, mix(foil_color, vec3(1.0), 0.50), shine) * grain;
+		body = mix(foil, face_color * grain, 1.0 - smoothstep(-inner_aa, inner_aa, inner));
+		float inner_width = card_stroke(uv) * 0.42;
+		body = mix(body, ink_color, 1.0 - smoothstep(inner_width - inner_aa, inner_width + inner_aa, abs(inner)));
+	}
+	return card_outline(uv, body, distance_to_edge);
 }
 
 // 正面和撕片共用高亮口径，避免完整卡的纸色在撕开瞬间变成旧的荧光色。

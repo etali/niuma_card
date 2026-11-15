@@ -53,6 +53,8 @@ func _spending_before_supply() -> void:
 	config.rules.initial.groups = [{"work_emperor":1, "work":6}]
 	config.rules.initial.money = 12
 	config.cards.work.work_seconds = 10.0
+	# One work per ten seconds for eight cash: the wage arrives late and the queue stays long.
+	config.roles.work_emperor.work_capacity = 1
 	config.roles.work_emperor.work_income_multiplier = 8
 	config.rules.strike.duration_seconds = 45.0
 	check(config.validate(), "晚到工资的外包回归使用合法公开规则")

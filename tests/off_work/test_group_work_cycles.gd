@@ -66,7 +66,7 @@ func _role_mix_and_short_queue() -> void:
 	var group := _group(state)
 	state.advance(10.0)
 	var event: Dictionary = _events(state)[0]
-	_check(event.ids.size() == 5 and event.amount == 7 and event.participants.size() == 5, "mixed batch sums three employee incomes and two doubled grinder incomes")
+	_check(event.ids.size() == 7 and event.amount == 7 and event.participants.size() == 5 and state.work_count(0) == 23, "mixed batch clears three employee files plus two double-capacity grinder batches and pays one cash per file")
 	_check(event.participants.all(func(person): return state.cards[person].type != "leader"), "leaders contribute neither a work slot nor income")
 	var short := _state({"employee": 5, "work": 2})
 	short.advance(10.0)
@@ -76,12 +76,14 @@ func _role_mix_and_short_queue() -> void:
 	var rewarded := _state({"employee": 1, "grinder": 1, "work": 30})
 	rewarded.advance(10.0)
 	var paid: Dictionary = _events(rewarded)[0]
-	_check(paid.amount == 3 and paid.participants.size() == 2, "mixed batch pays one employee plus doubled grinder income once")
+	_check(paid.ids.size() == 3 and paid.amount == 3 and paid.participants.size() == 2, "mixed batch clears and pays one employee file plus two grinder files once")
 
 func _configured_work_capacity() -> void:
 	var state := _state({"employee": 1, "grinder": 1, "work": 9})
 	state.config.roles.employee.work_capacity = 2
 	state.config.roles.grinder.work_capacity = 3
+	# The default table pays one cash per work at every tier; the multiplier stays configurable.
+	state.config.roles.grinder.work_income_multiplier = 2
 	OffWorkCardDB.configure(state.config)
 	var recipe := OffWorkCardDB.get_def("grinder")
 	_check(recipe.recipe_n == 3 and recipe.output_n == 6, "card recipe uses full configured grinder capacity")
@@ -178,7 +180,7 @@ func _coffee_capacity() -> void:
 	_check(state.cards[upgrading].type == "grinder" and is_equal_approx(state.group_work_progress(group), 0.1) and is_equal_approx(state.cards[upgrading].progress, 0.1), "finished upgrade joins current shared progress with same UID")
 	state.advance(9.0)
 	events = _events(state)
-	_check(events.size() == 1 and events[0].ids.size() == 2 and events[0].amount == 3, "upgraded grinder contributes doubled income to next shared batch")
+	_check(events.size() == 1 and events[0].ids.size() == 3 and events[0].amount == 3, "upgraded grinder contributes a doubled batch and matching income to next shared batch")
 	var only := _state({"employee": 1, "work": 30})
 	var person: int = _ids(only, "employee")[0]
 	only.advance(4.0)

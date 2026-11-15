@@ -17,12 +17,16 @@ const FX_PAGE := 2
 ## 特效页的按钮：调用与正式牌桌相同的组合演出，只是位置取预览台中央。
 const FX_DEMOS := [
 	["hit", "撕掉用户"], ["coins", "撕掉现金"], ["final", "终结一击"], ["void", "组合作废"],
+	["recipe", "配方凑满"], ["double", "效果翻倍"], ["foil", "传说金框"], ["kinds", "三种纸型"],
 	["cash", "产出资金"], ["user", "产出用户"], ["upgrade", "升级"], ["legend", "传说登场"],
 	["listing", "胜利 · 上市"], ["bankrupt", "胜利 · 对手破产"], ["exodus", "胜利 · 对手跑光"], ["defeat", "失败"],
 ]
 ## 特效页台面：左边一张生产牌（产出、升级、作废都盖在它身上），右边一叠被攻击的资源牌。
 const FX_CORE := Vector3(-1.9, 0.05, 0.0)
 const FX_TARGET := Vector3(1.9, 0.05, 0.0)
+## 牌面样式的演示牌摆在下面一排：传说牌看金框反光，攻击牌、增益牌看纸的外形。
+const FX_SHOWCASE := Vector3(0.0, 0.05, 1.75)
+const FX_SHOWCASE_IDS := ["shangshi", "butie", "yinqing996"]
 @export var start_off_work := false
 var off_work_active := false
 var off_work_preview: Control
@@ -625,6 +629,19 @@ func _fx_place(id: String, offset: Vector3, count := 1) -> Array:
 		made.append(card)
 	return made
 
+## 牌面样式的演示牌：摆在台面中间一排，换一组时先收掉上一组。
+func _fx_showcase(ids: Array) -> Array:
+	for old in _fx_root.get_children():
+		if old is CardEntity and old.has_meta("fx_showcase"):
+			old.queue_free()
+	var made: Array = []
+	for index in ids.size():
+		var card: CardEntity = _fx_place(str(ids[index]),
+			FX_SHOWCASE + Vector3((float(index) - float(ids.size() - 1) * 0.5) * 1.45, 0.0, 0.0))[0]
+		card.set_meta("fx_showcase", true)
+		made.append(card)
+	return made
+
 func _fx_cards(id: String) -> Array:
 	return _fx_root.get_children().filter(func(node): return node is CardEntity and node.def_id == id \
 		and not node._visual_retired and not node.is_queued_for_deletion())
@@ -656,6 +673,28 @@ func play_fx(kind: String) -> void:
 			core.set_void_stamp(true)
 			_motion.delayed_call(func() -> void:
 				if is_instance_valid(core): core.set_void_stamp(false), 1.4)
+		"recipe":
+			# 配方凑满：左下的墨团从空心圈填成强调色、字变白；过一会儿还原。
+			_sound.play("combo_complete")
+			core.set_recipe_progress(core.recipe_need(), true)
+			core.pulse_feedback("produce")
+			_status.text = "配方凑满：墨团填成强调色"
+			_motion.delayed_call(func() -> void:
+				if is_instance_valid(core): core.set_recipe_progress(0, false), 1.6)
+		"double":
+			# 效果翻倍：右下的产出墨团同样填实，数字跟着翻倍。
+			_sound.play("combo_complete")
+			core.set_effect_mult(2)
+			core.pulse_feedback("produce")
+			_status.text = "效果翻倍：产出墨团填实，数字 ×2"
+			_motion.delayed_call(func() -> void:
+				if is_instance_valid(core): core.set_effect_mult(1), 1.6)
+		"foil", "kinds":
+			var showcase := _fx_showcase(["shangshi"] if kind == "foil" else FX_SHOWCASE_IDS)
+			for card in showcase:
+				card.pulse_landed()
+			_status.text = "传说牌：金框、金印，悬停或落桌时反光扫过" if kind == "foil" \
+				else "传说牌是金框；攻击牌切角加撕口；增益牌右下折角"
 		"cash", "user":
 			var cash := kind == "cash"
 			var color := Palette.semantic("cash" if cash else "user")

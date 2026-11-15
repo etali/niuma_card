@@ -134,6 +134,8 @@ func _group_assignment_effects() -> void:
 	config.rules.initial.money=0
 	config.roles.employee.work_capacity=2
 	config.roles.grinder.work_capacity=4
+	# Unequal pay per work is what makes the allocation order observable; the default table pays one everywhere.
+	config.roles.grinder.work_income_multiplier=2
 	var state := OffWorkState.new(config)
 	state.new_game(77)
 	state.offers.clear()

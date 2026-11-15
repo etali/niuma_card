@@ -96,6 +96,9 @@ func _funded_purchase(early: int) -> void:
 func _insufficient_cash(early: int) -> void:
 	var late := 1-early
 	var fixture := _fixture(early,3)
+	# The idle grinder only stands for a second person of another kind. At its default double batch
+	# it would finish level with the late side's two employees and the race would end in a draw.
+	fixture.world.config.roles.grinder.work_capacity = 1
 	var world: OffWorkState = fixture.world
 	var offer: Dictionary = fixture.offer
 	var evaluator := Evaluation.new()

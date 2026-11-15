@@ -13,6 +13,25 @@ const SPAWN_FLY_RING := 0.85
 const TEAR_TIME := UIMotion.TEAR
 const BATCH_GRIP := 0.16
 const BATCH_DURATION := 0.74
+## 撕开的四拍，合计正好是 TEAR_TIME，整批时长和以前一样：
+##   扯开 RIP_SNAP     两只手往斜对角一把扯开，纸片跟着各自那只手甩过去；
+##   拖住 RIP_FOLLOW   手和纸片再滑一小段慢下来，看得清撕成了两半；
+##   揉团 RIP_CRUMPLE  两片各自在手里揉成纸团；
+##   扔掉 RIP_TOSS     纸团沿弧线抛出去，最后一小段才变透明。
+## 纸片在扔出去之前一直不透明。原来是「两片慢慢滑开、同时淡出」，读作牌蒸发了，不像被撕了。
+const RIP_SNAP := 0.08
+const RIP_FOLLOW := 0.10
+const RIP_CRUMPLE := 0.10
+const RIP_TOSS := TEAR_TIME - RIP_SNAP - RIP_FOLLOW - RIP_CRUMPLE
+## 扯开、拖住时下片的位移（上片取反）；撕口是横的，手往斜对角扯。
+const RIP_PULL := Vector3(0.20, 0.03, 0.36)
+const RIP_DRIFT := Vector3(0.07, -0.02, 0.12)
+## 纸片跟在手后面，两片朝同一个方向甩：扯开时甩到 RIP_SWING，拖住时回到 RIP_REST（度）。
+const RIP_SWING := -17.0
+const RIP_REST := -9.0
+## 纸团抛出的水平位移（上片取反）和弧线高度。
+const RIP_THROW := Vector3(1.5, 0.0, 1.1)
+const RIP_ARC := 0.75
 const SUCK_TIME := UIMotion.TRANSFER
 const PAWN_TRAVEL_TIME := UIMotion.ANTICIPATE + UIMotion.ACT + UIMotion.SETTLE + UIMotion.SETTLE + SUCK_TIME
 ## 同批到货逐张升调的步长与封顶张数；再多也停在这个音高，不会尖到刺耳。
@@ -240,33 +259,39 @@ func _tear_out(card: CardEntity, dir: Vector3) -> void:
 		piece.add_child(n)
 		n.position = keep      # 换了父节点，减掉父节点偏移才留在原来的视觉位置
 
-	# 两片各自朝上下翻出去：沿卡面纵向（z）平移 + 绕横轴（x）翻 + 略微下沉
+	# 扯开、拖住、揉团、扔掉（时长见 RIP_* 的说明）。四拍加起来正好是 TEAR_TIME。
 	var tw := create_tween().bind_node(card).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	var crumple_at := RIP_SNAP + RIP_FOLLOW
 	for i in halves.size():
 		var piece: Node3D = halves[i]
 		var sign := -1.0 if i == 0 else 1.0
 		var mat := (piece.get_child(0) as MeshInstance3D).material_override as ShaderMaterial
 		var p0: Vector3 = piece.position
-		tw.parallel().tween_property(piece, "position",
-			p0 + Vector3(0.0, -0.05, sign * 0.55), TEAR_TIME)
-		# 绕 x 轴翻：撕口是横的，两片该像书页一样朝上下掀开
-		tw.parallel().tween_property(piece, "rotation_degrees:x", sign * 34.0, TEAR_TIME)
-		# 淡出走 shader 的 fade，不用 modulate —— MeshInstance3D 没有 modulate
-		# 淡出要和撕开的位移同时收尾：延迟 0.35 之后只剩 0.65 可用，
-		# 若还按 TEAR_TIME 整段淡，收尾会拖到 1.35 倍时长（0.62s），
-		# 两片早就飞停了还挂在桌上，最后一下才闪掉。
-		# 缓动也不能沿用外层的 EASE_IN：那样大半程都是满不透明，
-		# 观感是「突然消失」而不是「渐变消失」，这里单独压成线性
-		tw.parallel().tween_method(
-			func(v: float): mat.set_shader_parameter("fade", v),
-			1.0, 0.0, TEAR_TIME * 0.65).set_delay(TEAR_TIME * 0.35) \
-			.set_trans(Tween.TRANS_LINEAR)
-		# 跟着走的文字一起淡：它们是 Label3D/Sprite3D，吃不到 shader 的 fade
-		for n in piece.get_children():
-			if n is Label3D or n is Sprite3D:
-				tw.parallel().tween_property(n, "modulate:a", 0.0,
-					TEAR_TIME * 0.65).set_delay(TEAR_TIME * 0.35) \
-					.set_trans(Tween.TRANS_LINEAR)
+		var torn := p0 + Vector3(sign * RIP_PULL.x, RIP_PULL.y, sign * RIP_PULL.z)
+		var held := torn + Vector3(sign * RIP_DRIFT.x, RIP_DRIFT.y, sign * RIP_DRIFT.z)
+		var landing := held + Vector3(sign * RIP_THROW.x, RIP_THROW.y, sign * RIP_THROW.z)
+		# 扯开：快出慢收，一下子就分开了；纸片绕竖轴甩一下，像被手带着走。
+		tw.parallel().tween_property(piece, "position", torn, RIP_SNAP) \
+			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tw.parallel().tween_property(piece, "rotation_degrees:y", RIP_SWING, RIP_SNAP) \
+			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		# 拖住：再滑一小段慢下来。
+		tw.parallel().tween_property(piece, "position", held, RIP_FOLLOW).set_delay(RIP_SNAP) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		tw.parallel().tween_property(piece, "rotation_degrees:y", RIP_REST, RIP_FOLLOW).set_delay(RIP_SNAP) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		# 揉团：卡名、墨团这些贴在纸上的字跟不了顶点形变，揉的那一刻就收进纸团里。
+		var overlays: Array = piece.get_children().filter(func(n): return n is Label3D or n is Sprite3D)
+		tw.parallel().tween_callback(func() -> void:
+			for n in overlays:
+				if is_instance_valid(n): n.hide()).set_delay(crumple_at)
+		tw.parallel().tween_method(func(v: float) -> void: mat.set_shader_parameter("ball", v),
+			0.0, 1.0, RIP_CRUMPLE).set_delay(crumple_at).set_trans(Tween.TRANS_LINEAR)
+		# 扔掉：沿弧线抛出去，飞过六成才开始变透明。淡出走 shader 的 fade（MeshInstance3D 没有 modulate）。
+		tw.parallel().tween_method(func(v: float) -> void:
+			piece.position = held.lerp(landing, v) + Vector3.UP * sin(v * PI) * RIP_ARC
+			mat.set_shader_parameter("fade", 1.0 - smoothstep(0.62, 1.0, v)),
+			0.0, 1.0, RIP_TOSS).set_delay(crumple_at + RIP_CRUMPLE).set_trans(Tween.TRANS_LINEAR)
 	# 整张卡跟着朝受击方向飘一点，别让两片在原地对称展开（太机械）
 	tw.parallel().tween_property(card, "position",
 		card.position + dir.normalized() * 0.35 + Vector3(0, 0.12, 0), TEAR_TIME)

@@ -52,7 +52,8 @@ func _run() -> void:
 	_check(is_equal_approx(float(state.cards[tool].remaining), remaining), "refilling keeps the existing deadline")
 	_check(is_equal_approx(card.task_progress_display_value(), 0.4) and card._task_progress.visible, "refilling keeps the visible progress instead of restarting or hiding it")
 	_check(state.reserved_money(0) == 31 and state.available_money(0) == 125, "newly included work reserves only its matching funds")
-	_check(main.hud.lbl_player_res.text.contains("预留31"), "HUD immediately exposes the expanded reservation")
+	_check(main.hud.lbl_player_res.text.contains("钱125") and not main.hud.lbl_player_res.text.contains("预留")
+		and main.hud.lbl_player_res.tooltip_text == main.hud.lbl_player_res.text, "HUD and tooltip immediately show the remaining spendable money without reservation wording")
 	if OS.get_environment("WORK_OUTSOURCE_REFILL_CAPTURE") == "1" and DisplayServer.get_name() != "headless":
 		await _frames_for_capture()
 		DirAccess.make_dir_recursive_absolute("res://reports")

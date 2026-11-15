@@ -4,6 +4,7 @@ extends Node
 ## Isolated adapters for the actual drawer geometry, mascot and result builder.
 ## Never bind a live HUD or resize the operating-system window.
 const SPEC_PATH := "res://data/animation_preview.json"
+const OffWorkRaceBar = preload("res://scenes/off_work_race_bar.gd")
 
 class PreviewResultHUD extends "res://scenes/off_work_hud.gd":
 	func _init() -> void:
@@ -12,9 +13,22 @@ class PreviewResultHUD extends "res://scenes/off_work_hud.gd":
 		_main = self
 	func close_panels() -> void:
 		pass
+	## 放映室没有绑定牌局，失败结算的那束光落在画面下方正中，和正式牌桌没有待办堆时一样。
+	func _off_work_result_focus() -> Vector2:
+		return Vector2(_last_size) * Vector2(0.5, 0.72)
 	func register_result_panel(panel: CanvasLayer) -> void:
 		for child in panel.get_children():
 			if child is Control: _apply_tree_theme(child)
+
+## 竞速条演示用的假牌局：只提供竞速条要读的三样东西（时间、开局张数、双方剩余工作）。
+class RaceState extends RefCounted:
+	class Rules extends RefCounted:
+		var rules := {"initial": {"groups": [{"work": 800}]}}
+	var time := 0.0
+	var config := Rules.new()
+	var counts := [800, 800]
+	func work_count(owner: int) -> int:
+		return int(counts[owner])
 
 class PreviewDrawer extends DrawerWindow:
 	var elapsed := 0.0
@@ -48,6 +62,18 @@ var elapsed := 0.0
 var drawer: PreviewDrawer
 var mascot: DrawerMascot
 var result_hud: PreviewResultHUD
+var race_bar: Control
+var race_state: RaceState
+var _race_header: PanelContainer
+## 正式 HUD 的结算面板把这个节点当牌局宿主用，会问它两件事：
+## 牌桌是不是被换班藏起来了（放映室里永远没有），以及让它播结算的章声。
+## 放映室的声音由预览自己的播放控制管，这里给一个不出声的替身。
+var _shift_hidden := false
+var audio := SilentAudio.new()
+
+class SilentAudio extends RefCounted:
+	func play(_action: String) -> void:
+		pass
 var clip: Control
 var content: PanelContainer
 var _layer: CanvasLayer
@@ -63,6 +89,7 @@ func configure(id: String, viewport: SubViewport) -> void:
 	add_child(_layer)
 	if id == "drawer": _build_drawer()
 	elif id == "drawer_mascot": _build_mascot()
+	elif id == "race_bar": _build_race()
 	else:
 		result_hud = PreviewResultHUD.new()
 		add_child(result_hud)
@@ -99,6 +126,44 @@ func _build_mascot() -> void:
 	mascot = _new_mascot(float(spec.mascot.render_scale))
 	mascot.position = (Vector2(_viewport.size) - mascot.size) * 0.5
 	advance(0.0)
+
+## 竞速条：一条假顶栏下面挂着正式的竞速条，双方的剩余工作按排期变化
+## （稳步清理、对手加速、被甩锅倒退、冲刺到下班）。
+func _build_race() -> void:
+	_background()
+	var styles := PreviewResultHUD.new()
+	add_child(styles)
+	_race_header = PanelContainer.new()
+	_race_header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_race_header.add_theme_stylebox_override("panel", styles._style(Palette.get_color("world", "table_frame"), 10))
+	var title: Label = styles._label(str(spec.race.title), int(spec.race.title_font))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_race_header.add_child(title)
+	_layer.add_child(_race_header)
+	var width := float(_viewport.size.x) * float(spec.race.width_fraction)
+	_race_header.size = Vector2(width, float(spec.race.header_height))
+	_race_header.position = Vector2((float(_viewport.size.x) - width) * 0.5, float(_viewport.size.y) * float(spec.race.top_fraction))
+	race_state = RaceState.new()
+	race_state.config.rules.initial.groups = [{"work": int(spec.race.total)}]
+	race_bar = OffWorkRaceBar.new()
+	_layer.add_child(race_bar)
+	_sync_race()
+
+func _sync_race() -> void:
+	var keys: Array = spec.race.keys
+	var previous: Dictionary = keys[0]
+	var next: Dictionary = keys[keys.size() - 1]
+	for index in keys.size():
+		if float(keys[index].at) <= elapsed: previous = keys[index]
+		if float(keys[index].at) >= elapsed:
+			next = keys[index]
+			break
+	var span := float(next.at) - float(previous.at)
+	var weight := clampf((elapsed - float(previous.at)) / span, 0.0, 1.0) if span > 0.0 else 1.0
+	race_state.counts = [roundi(lerpf(float(previous.mine), float(next.mine), weight)),
+		roundi(lerpf(float(previous.foe), float(next.foe), weight))]
+	race_state.time = elapsed
+	race_bar.sync(race_state, _race_header, float(spec.race.scale))
 
 func _build_drawer() -> void:
 	_background()
@@ -155,6 +220,8 @@ func advance(delta: float) -> void:
 				if str(event.state) == "opening": mascot.greet()
 				mascot.set_process(false)
 		mascot._process(delta)
+	elif race_bar != null:
+		_sync_race()
 
 func _sync_drawer() -> void:
 	clip.position = Vector2(drawer._geometry.position)
@@ -170,4 +237,6 @@ func snapshot() -> Dictionary:
 		"drawer_transitioning": drawer._transitioning if drawer != null else false,
 		"mascot_state": mascot.state() if mascot != null else "",
 		"mascot_tilt": mascot._face_tilt if mascot != null else 0.0,
+		"race_remaining": race_state.counts.duplicate() if race_state != null else [],
+		"race_cleared": [race_bar.cleared_fraction(0), race_bar.cleared_fraction(1)] if race_bar != null else [],
 		"result_visible": result_hud != null and is_instance_valid(result_hud.result_layer)}

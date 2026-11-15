@@ -206,6 +206,10 @@ func _test_bot_support() -> void:
 	state.config.rules.conveyor.interval_seconds = 1000.0
 	state.config.rules.slack.seconds = 1.0
 	state.config.roles.grinder.work_capacity = 2
+	# Only that single doubling is available here. With larger later tiers a one-second cup is
+	# worth pulling the employee off the queue as well, which is a different decision.
+	state.config.roles.workaholic.work_capacity = 2
+	state.config.roles.work_emperor.work_capacity = 2
 	leader = state.add_card("leader", 0)
 	var slack: int = state.add_card("slack", 0)
 	bot = Bot.new(state, 0)

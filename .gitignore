@@ -22,6 +22,7 @@
 .vite/
 
 # ===== 临时文件 =====
+upgrade.md
 *.tmp
 *.bak
 refactor.md

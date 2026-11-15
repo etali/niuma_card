@@ -22,9 +22,33 @@ uniform float jag = 0.022;
 uniform float edge = 0.012;
 uniform vec3 edge_color : source_color = vec3(0.35, 0.3, 0.28);
 
+// 撕下来的半张纸揉成团：ball 0→1 把这半张收成一个带褶的小球。撕片的网格是细分过的，
+// 这里做顶点位移；单纯把半张牌缩小只会像一张很小的牌。
+uniform float ball = 0.0;
+uniform float ball_size = 0.34;
+varying float ball_crease;
+
 // 撕口曲线与受击裂口共用 card_frame 里的 tear_curve：先裂开的那道就是撕开的这条。
 float tear_y(float u) {
 	return tear_curve(u, jag);
+}
+
+void vertex() {
+	ball_crease = 0.0;
+	if (ball > 0.0) {
+		float t = smoothstep(0.0, 1.0, ball);
+		// 这半张纸在整张卡面 UV 里的中线；网格平面里 +y 朝 UV.y=0 那头，+z 是纸面朝上。
+		float half_v = side < 0.0 ? 0.25 : 0.75;
+		vec2 sheet = vec2(UV.x - 0.5, clamp((UV.y - half_v) * 2.0, -0.5, 0.5));
+		float ridge = sin(sheet.x * 29.0) * cos(sheet.y * 23.0);
+		float longitude = sheet.x * 6.2831853;
+		float latitude = (sheet.y + 0.5) * 3.1415927;
+		float radius = ball_size * (0.5 + ridge * 0.085);
+		vec3 centre = vec3(0.0, (0.5 - half_v) * card_size.y, ball_size * 0.5);
+		vec3 sphere = vec3(cos(longitude) * sin(latitude), cos(latitude), sin(longitude) * sin(latitude)) * radius;
+		VERTEX = mix(VERTEX, centre + sphere, t);
+		ball_crease = ridge * t;
+	}
 }
 
 void fragment() {
@@ -52,6 +76,8 @@ void fragment() {
 	// 撕口两侧压一条暗边：纸被撕开会露出纤维，没有这条边看着像刀切
 	float d = abs(UV.y - ty);
 	c = mix(edge_color, c, clamp(d / edge, 0.0, 1.0));
+	// 揉成团之后：整体压暗一点，褶子上有明暗。
+	c *= 1.0 - smoothstep(0.0, 1.0, ball) * 0.12 + ball_crease * 0.14;
 
 	ALBEDO = c;
 	ALPHA = fade;

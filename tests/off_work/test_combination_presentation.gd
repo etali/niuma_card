@@ -49,8 +49,8 @@ func _run() -> void:
 	game._cache_positions(events)
 	game.board.sync_state(game.state)
 	for event in events:
-		_check(event.ids.size() == 5 and event.participants.size() == 5, "one event owns all five completed documents and workers")
-		_check(event.amount == 7, "three employees and two grinders earn seven together")
+		_check(event.ids.size() == 7 and event.participants.size() == 5, "one event owns all seven completed documents and five workers")
+		_check(event.amount == 7, "three employees and two double-capacity grinders earn seven together")
 		_check(game.state.money(event.owner) - before[event.owner] == 7, "wallet matches the combined settlement")
 		game._present(event)
 	_check(game.board._cash_flights.size() == 14, "two combination settlements launch fourteen real one-money cards")
@@ -58,7 +58,7 @@ func _run() -> void:
 		_check(event.money_ids.size() == 7 and event.money_ids.all(func(uid): return game.board._cash_flights.has(uid) and game.state.cards[uid].amount == 1), "all seven actual income cards follow the combined settlement")
 	for gid in groups:
 		_check(_work_bars(gid).size() == 1, "batch flash does not expose individual worker bars")
-	_check(game.state.work_count(0) == 10 and game.state.work_count(1) == 10, "each group removes exactly five work cards")
+	_check(game.state.work_count(0) == 8 and game.state.work_count(1) == 8, "each group removes exactly seven work cards")
 	await _frames(3)
 	await _capture("settlement")
 	await create_timer(OffWorkUI.number("task_progress", "completion_hold_seconds") + 0.05, true).timeout

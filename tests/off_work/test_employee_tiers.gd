@@ -55,7 +55,8 @@ func _config_contract() -> void:
 	for i in kinds.size():
 		var kind: String = kinds[i]
 		check(cfg.is_person(kind) and cfg.can_work(kind) and cfg.can_be_meeting_target(kind), kind + " is a working, meeting-eligible person")
-		check(is_equal_approx(cfg.work_rate(kind, 0), 0.1) and int(cfg.roles[kind].work_income_multiplier) == int(pow(2, i)), kind + " changes income without changing work speed")
+		check(is_equal_approx(cfg.work_rate(kind, 0), 0.1) and int(cfg.roles[kind].work_capacity) == int(pow(2, i)) and int(cfg.roles[kind].work_income_multiplier) == 1, kind + " doubles batch capacity per tier at the same cycle speed and one cash per work")
+		check(cfg.work_batch_size(kind, 200) * cfg.income_per_work(kind) == cfg.work_batch_size(kind, 200), kind + " earns exactly as much cash as the work it clears")
 		if i > 0:
 			check(not cfg.can_purchase(kind) and not cfg.rules.conveyor.pool.has(kind), kind + " cannot be bought")
 		if i < 3:
@@ -103,7 +104,7 @@ func _atomic_chain() -> void:
 	check(not s.activate(spare, s.cards[p].group, p) and s.cards[spare].status == "ready", "maximum-tier person cannot drink spare coffee")
 	s.move_cards([p], s.cards[ids(s, "work")[0]].group)
 	s.advance(10.0)
-	check(s.work_count(0) == 199 and s.money(0) == 8 and s.cards.has(spare), "maximum tier handles one work and earns eight without consuming spare coffee")
+	check(s.work_count(0) == 192 and s.money(0) == 8 and s.cards.has(spare), "maximum tier clears eight work and earns eight without consuming spare coffee")
 
 func _insufficient_and_refill() -> void:
 	for spec in [{"kind": "grinder", "cost": 2}, {"kind": "workaholic", "cost": 4}]:
@@ -166,20 +167,23 @@ func _income_and_personnel() -> void:
 	var group: int = s.cards[ids(s, "employee")[0]].group
 	check(s.people_count(0) == 5 and s.group_work_participants(group).size() == 4, "all four ranks count one worker each and leader cannot work")
 	s.advance(10.0)
-	check(s.work_count(0) == 196 and s.money(0) == 15, "one shared ten-second settlement produces four work and 1+2+4+8 cash")
+	check(s.work_count(0) == 185 and s.money(0) == 15, "one shared ten-second settlement clears 1+2+4+8 work and pays the same fifteen cash")
 	var event := s.drain_events().filter(func(e): return e.kind == "work_complete" and e.owner == 0)
 	check(event.size() == 1 and event[0].participants.size() == 4 and event[0].amount == 15, "mixed tiers preserve shared group settlement event")
 	var slack := s.add_card("slack", 0)
 	s.move_cards(s.group_people(group), int(s.cards[slack].group))
 	s.advance(14.0)
-	check(ids(s, "coffee").size() == 5, "higher tiers still produce one coffee per person, not income-multiplied coffee")
+	check(ids(s, "coffee").size() == 5, "higher tiers still produce one coffee per person, not capacity-multiplied coffee")
 	for kind in ["workaholic", "work_emperor"]:
+		var batch: int = OffWorkConfig.new().work_batch_size(kind, 200)
 		var transfer := state({kind: 1, "work": 200}, true)
 		var p: int = ids(transfer, kind)[0]
 		var tool := transfer.add_card("transfer", 0)
 		transfer.move_cards(transfer.group_cards(int(transfer.cards[p].group)), int(transfer.cards[tool].group))
 		transfer.advance(10.0)
-		check(transfer.work_count(0) == 199 and transfer.work_count(1) == 200 and transfer.money(0) == 0, kind + " transfers one work without earning money")
+		# Transfer volume is the separate transfer_capacity (one), not the work batch. The opponent's
+		# mirrored worker clears one paid batch of its own in the same ten seconds and receives one file.
+		check(transfer.work_count(0) == 199 and transfer.work_count(1) == 200 - batch + 1 and transfer.money(0) == 0 and transfer.money(1) == batch, kind + " transfers one work without earning money")
 		var fire := state({kind: 1, "work": 200}, true)
 		check(fire.dismiss_people(ids(fire, kind), 0) and fire.money(0) == 4, kind + " can be fired for configured current refund")
 
@@ -225,5 +229,5 @@ func _step_independence() -> void:
 	coarse.advance(10.0)
 	for _i in 100: fine.advance(0.1)
 	check(coarse.cards[p].type == "work_emperor" and fine.cards[q].type == "work_emperor", "the full chain finishes in one configured three-second batch in both time-step modes")
-	check(coarse.work_count(0) == 199 and fine.work_count(0) == 199 and coarse.money(0) == 8 and fine.money(0) == 8, "coarse and fine clocks agree across chain and first eight-cash settlement")
+	check(coarse.work_count(0) == 192 and fine.work_count(0) == 192 and coarse.money(0) == 8 and fine.money(0) == 8, "coarse and fine clocks agree across chain and first eight-work, eight-cash settlement")
 	check(coarse.drain_events().filter(func(e): return e.kind == "coffee_upgrade").map(func(e): return e.time) == [3.0], "all recipe steps settle at the single configured batch deadline")

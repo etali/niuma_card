@@ -31,7 +31,7 @@ func _run() -> void:
 	check(not shared.side_include_single_core, "共享上班侧栏默认行为不变")
 	shared.free()
 	check(not Board.side_spec([board.by_uid[state._owner_type(1, "employee")[0]]]).any(
-		func(row): return row.tex == CardArt.icon_texture("employee", OffWorkCardDB)),
+		func(row): return row.tex == CardArt.side_icon_texture("employee", OffWorkCardDB)),
 		"共享静态侧栏调用仍省略已露顶的单核心")
 	state.advance(2.0)
 	for owner in [0, 1]:
@@ -105,7 +105,8 @@ func _check_meeting() -> void:
 	await process_frame
 
 func _row(group: Dictionary, kind: String) -> Array:
-	var texture := CardArt.icon_texture(kind, OffWorkCardDB)
+	# 侧边清单的人员小图标只取插画的头部（见 CardArt.side_icon_texture）。
+	var texture := CardArt.side_icon_texture(kind, OffWorkCardDB)
 	var nodes: Array = group.get("side", [])
 	for index in range(0, nodes.size() - 1, 2):
 		if is_instance_valid(nodes[index]) and nodes[index] is Sprite3D and nodes[index].texture == texture:

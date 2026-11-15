@@ -28,6 +28,13 @@ static var loaded_from := ""
 static var config: OffWorkConfig
 static var display: Dictionary = {}
 
+## 侧边清单的小图标只取这张牌插画的哪一块（归一化矩形）；没有登记的牌返回空矩形，用整张。
+static func side_icon_region(def_id: String) -> Rect2:
+	var values: Variant = OffWorkUI.data().get("side_heads", {}).get(def_id)
+	if not values is Array or values.size() < 4:
+		return Rect2()
+	return Rect2(float(values[0]), float(values[1]), float(values[2]), float(values[3]))
+
 static func configure(off_work_config: OffWorkConfig) -> void:
 	config = off_work_config
 	CARDS.clear()

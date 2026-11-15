@@ -178,6 +178,9 @@ func _pending_attack_services() -> void:
 	check(is_equal_approx(finish_value.eta,0.5) and finish_value.required_actions == 0, "目标在飞行结束前完成，攻击和无用返岗不增加完工时间或命令数")
 
 	var support := world([{"work":20},{"employee":1,"slack":1}])
+	# This case isolates the dispatch clock. With the default larger batches the slack, coffee and
+	# upgrade chain is the better plan before the landing and is not offered while staff strike.
+	for kind in ["grinder","workaholic","work_emperor"]: support.config.roles[kind].work_capacity=1
 	tool = support.add_card("strike",0)
 	target = support.cards[first(support,"employee")].group
 	check(support._activate_strike(tool,target), "真实摸鱼组也可成为已发射攻击目标")
@@ -482,6 +485,9 @@ func _recipe_claims_are_atomic() -> void:
 	var game := world([{"work":200,"workaholic":1}],40)
 	game.config.roles.workaholic.work_capacity=4
 	game.config.roles.work_emperor.work_capacity=8
+	# Pay per work rises with the tier here, so a leaked emperor wage would show in the income.
+	game.config.roles.workaholic.work_income_multiplier=4
+	game.config.roles.work_emperor.work_income_multiplier=8
 	game.config.rules.conveyor.interval_seconds=10.0
 	game._sync_schedule()
 	for i in 4: game.offers.append(game._make_offer("coffee"))

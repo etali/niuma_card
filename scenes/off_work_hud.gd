@@ -20,6 +20,7 @@ const ColorView = preload("res://scenes/palette_panel.gd")
 const BotView = preload("res://scenes/bot_panel.gd")
 const OffWorkResultFx = preload("res://scenes/off_work_result_fx.gd")
 const OffWorkResultHero = preload("res://scenes/off_work_result_hero.gd")
+const OffWorkRaceBar = preload("res://scenes/off_work_race_bar.gd")
 var host: Node
 var board: Node
 var state: RefCounted
@@ -51,6 +52,8 @@ var _off_work_finale: Control
 var _off_work_result_animation: Tween
 var _practice_panel: PanelContainer
 var _practice_gesture: WorkLessonGesture
+## 顶栏下面的竞速条：谁清得快一眼可见。
+var race_bar: Control
 
 class WorkLessonGesture extends "res://scenes/tutorial_gesture.gd":
 	var hud: CanvasLayer
@@ -105,6 +108,11 @@ func bind(game: Node) -> void:
 	board.player_max_z = PLAYER_RECT.end.y
 	board.hover_description_enabled = false
 	_build_header()
+	# 先于其它面板加入：画在顶栏、底栏之上，设置面板和卡牌说明之下。
+	race_bar = OffWorkRaceBar.new()
+	race_bar.local_owner = int(board._settings.local_owner)
+	race_bar.opponent_owner = int(board._settings.opponent_owner)
+	add_child(race_bar)
 	_build_debug_option()
 	lbl_round.minimum_size_changed.connect(_sync_header_status)
 	_sync_header_status()
@@ -286,16 +294,12 @@ func set_manual_paused(on: bool) -> void:
 func refresh(game_state: RefCounted, _selected_tool := -1) -> void:
 	state = game_state
 	_sync_header_status()
+	_sync_race_bar()
 	for item in [[lbl_player_res, 0], [lbl_bot_res, 1]]:
 		var label: Label = item[0]
 		var owner: int = item[1]
-		var reserved: int = state.reserved_money(owner)
-		if reserved > 0:
-			label.text = str(hud_config.resources_reserved) % [hud_config.sides[owner], state.work_count(owner), state.people_count(owner), state.available_money(owner), reserved]
-			label.tooltip_text = str(hud_config.cash_reservation_help) % [state.money(owner), reserved, state.available_money(owner)]
-		else:
-			label.text = str(hud_config.resources) % [hud_config.sides[owner], state.work_count(owner), state.people_count(owner), state.money(owner)]
-			label.tooltip_text = label.text
+		label.text = str(hud_config.resources) % [hud_config.sides[owner], state.work_count(owner), state.people_count(owner), state.available_money(owner)]
+		label.tooltip_text = label.text
 	btn_pause.disabled = (state.winner >= 0 and not host.replay.playing) or host.shift_network_live()
 	_replay_time.visible = host.replay.playing
 	_replay_speed.visible = host.replay.playing
@@ -319,6 +323,12 @@ func refresh(game_state: RefCounted, _selected_tool := -1) -> void:
 		_fit_header_width(_last_size.x - _px(PAD * 2))
 		_header.position.x = roundf((_last_size.x - _header.size.x) * 0.5)
 
+## 竞速条跟着顶栏走：顶栏收起、教学里藏起顶栏时它一起不见。
+func _sync_race_bar() -> void:
+	if not is_instance_valid(race_bar) or not is_instance_valid(_header): return
+	race_bar.visible = _header.visible and not _collapsed
+	if race_bar.visible: race_bar.sync(state, _header, _responsive_factor())
+
 func present_message(text: String, color: Color) -> void:
 	super.present_message(text, color)
 	if is_instance_valid(msg_log): msg_log.append(text, color, msg_log.total() + 1)
@@ -330,8 +340,10 @@ func _process(_delta: float) -> void:
 	if not is_instance_valid(host) or not is_instance_valid(board) or not is_instance_valid(_detail): return
 	if _collapsed or _window_blocked():
 		_detail.hide()
+		if is_instance_valid(race_bar): race_bar.hide()
 		return
 	if get_viewport().get_visible_rect().size != _viewport_pixels: relayout()
+	_sync_race_bar()
 	if host._shift_enabled and not host._shift_hidden:
 		_offer_learning_invitation()
 	if is_instance_valid(_practice_panel):
@@ -404,8 +416,6 @@ func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 			child.queue_free()
 		if card.is_market and state.config.can_purchase(id): _detail_fact("购买", "%d 金钱" % int(def.price))
 	_detail_status.text = ("购买后拖入牌组" if state.config.can_purchase(id) else str(hud_config.unpurchasable)) if card.is_market else card.recipe_status_text()
-	if id == "money" and not card.is_market and state.reserved_cash_amount(card.uid) > 0:
-		_detail_status.text = str(hud_config.cash_reservation_status) % [state.available_cash_amount(card.uid), state.reserved_cash_amount(card.uid)]
 	_detail_status.visible = _detail_status.text != ""
 	_place_detail(mouse)
 

@@ -4,7 +4,9 @@ extends "res://tests/off_work/test_continuous_icon_motion.gd"
 ## sampling changes while the authoritative twenty-second strike is active.
 func _run() -> void:
 	config = OffWorkConfig.new()
-	config.rules.initial.groups = [{"employee": 1, "grinder": 1, "workaholic": 1, "work_emperor": 1, "leader": 1, "work": 20}]
+	# Enough work that the opponent's mirrored four tiers (fifteen per batch) cannot finish the
+	# match, and freeze the clock, before the strike expires.
+	config.rules.initial.groups = [{"employee": 1, "grinder": 1, "workaholic": 1, "work_emperor": 1, "leader": 1, "work": 200}]
 	config.rules.bot.enabled = false
 	OffWorkCardDB.configure(config)
 	var state := OffWorkState.new(config)

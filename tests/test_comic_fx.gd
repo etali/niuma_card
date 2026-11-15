@@ -743,6 +743,29 @@ func _preview_page() -> void:
 	check(targets.all(func(card): return not is_instance_valid(card) or card._visual_retired)
 		and not restocked.is_empty() and not restocked.any(func(card): return targets.has(card)),
 		"「撕掉用户」真的撕掉台面那叠用户牌，撕完再补一张")
+	# 牌面样式的四个演示：墨团填实、效果翻倍、传说金框、三种纸型。
+	core = preview._fx_cards("yunketang")[0]
+	preview.play_fx("recipe")
+	check(core._recipe_done and core._recipe_blob.modulate == CardArt.accent_color("yunketang")
+		and core._recipe_label.modulate == Color.WHITE, "「配方凑满」把生产牌的配方墨团填成强调色")
+	preview.play_fx("double")
+	check(core.effect_mult() == 2 and core._effect_blob.modulate == CardArt.accent_color("yunketang"),
+		"「效果翻倍」把产出墨团填实、数字翻倍")
+	preview.play_fx("kinds")
+	var showcase: Array = preview._fx_root.get_children().filter(func(node): return node is CardEntity and node.has_meta("fx_showcase"))
+	var showcase_ids: Array = showcase.map(func(card): return card.def_id)
+	showcase_ids.sort()
+	var expected_ids: Array = preview.FX_SHOWCASE_IDS.duplicate()
+	expected_ids.sort()
+	check(showcase_ids == expected_ids, "「三种纸型」摆出传说、攻击、增益各一张")
+	check(showcase.all(func(card): return CardArt.is_legend(card.def_id) or CardArt.paper_kind(card.def_id) != CardArt.PAPER_ROUND),
+		"演示牌确实是金框、切角和折角三种")
+	preview.play_fx("foil")
+	await process_frame
+	showcase = preview._fx_root.get_children().filter(func(node):
+		return node is CardEntity and node.has_meta("fx_showcase") and not node.is_queued_for_deletion())
+	check(showcase.size() == 1 and CardArt.is_legend(showcase[0].def_id) and showcase[0]._foil_tween != null
+		and showcase[0]._foil_tween.is_valid(), "「传说金框」只留一张传说牌，并让金框反光扫过")
 	for demo in preview.FX_DEMOS:
 		preview.play_fx(str(demo[0]))
 		for i in 3:
