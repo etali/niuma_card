@@ -46,7 +46,7 @@ func _batch(people: int) -> void:
 	var completed := state.drain_events().filter(func(event): return event.kind == "work_complete")
 	board.sync_state(state)
 	_check(completed.size() == 2 and state.work_count(0) == 80 - people and state.work_count(1) == 80 - people
-		and state.money(0) == people * config.income_per_work("employee")
+		and state.money(0) == people * config.income_per_work()
 		and board.by_uid.size() == state.cards.size(),
 		"a real %d-person batch replaces exactly its consumed work with real income on both desks" % people)
 	state.advance(2.5)

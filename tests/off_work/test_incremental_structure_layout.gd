@@ -115,7 +115,7 @@ func _fixture(people: int) -> void:
 		_check(fast.motion_calls < 200 and full.motion_calls > 7900,
 			"completed motion records do not restart a full-pile movement pass (%d local / %d full, people%d batch%d %s)" % [fast.motion_calls, full.motion_calls, people, batch, str(fast.layout_debug)])
 		_check(state.work_count(0) == 4000 - people * (batch + 1)
-			and state.money(0) == people * (batch + 1) * config.income_per_work("employee"),
+			and state.money(0) == people * (batch + 1) * config.income_per_work(),
 			"%d-person batch settles real work and cash without dropping identities" % people)
 		_equal_views(fast, full, "batch %d immediate" % batch)
 		_step_motion([fast, full])

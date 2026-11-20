@@ -20,11 +20,14 @@ func _run() -> void:
 	host.audio.muted = true
 	host.sfx.user_muted = true
 	host.state.config.rules.initial.groups = [{"employee": 2, "work": 12}]
-	host.state.config.rules.bot.enabled = false
 	host._new_game()
 	host.hud.drawer_window.pin()
 	var live: OffWorkState = host.state
 	var bot: RefCounted = host.bot
+	# The opponent stays enabled but is never started: it only begins after the player's first
+	# action, and this test makes none. A disabled BOT has its pending context discarded on
+	# purpose, which would leave nothing for the picker to preserve.
+	check(bool(bot._policy.enabled) and not bot.is_started(), "夹具中的BOT保持启用但尚未开始行动")
 	live.advance(2.0)
 	host.board.sync_state(live)
 	# Keep a nonempty, real-card binding in the parked BOT context. The picker

@@ -119,7 +119,7 @@ func _bulk_opening() -> void:
 	var work_before := state.work_count(1)
 	var cash_before := state.money(1)
 	state.advance(1.0/state.config.work_rate("employee",3)+0.000001)
-	check(state.work_count(1)==work_before-3 and state.money(1)==cash_before+3*state.config.income_per_work("employee"),
+	check(state.work_count(1)==work_before-3 and state.money(1)==cash_before+3*state.config.income_per_work(),
 		"真实一轮结算由3名员工完成3份工作并领取对应工资")
 
 func _union_destination() -> void:

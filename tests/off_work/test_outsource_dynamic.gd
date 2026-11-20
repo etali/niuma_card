@@ -19,6 +19,8 @@ func _auto_start_and_recover() -> void:
 		if owner == 1:
 			state.groups[f.group].owner = owner
 			for id in state.group_cards(f.group): state.cards[id].owner = owner
+			# Records were rewritten by hand: rebuild the owner index the way restore and import do.
+			state._invalidate_group_index()
 		var money_before := state.money(owner)
 		var works_before := state.work_count(owner)
 		state.advance(0.25)

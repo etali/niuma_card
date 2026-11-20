@@ -28,12 +28,8 @@ func _run() -> void:
 	finish()
 
 func _certificate(work: int, upgrade: bool) -> Dictionary:
+	# The base world doubles the batch per tier; the upgraded person's extra wage is the extra work.
 	var world := _world(work,true,true,10)
-	var wage := 1
-	for kind in ["employee","grinder","workaholic","work_emperor"]:
-		world.config.roles[kind].work_capacity=1
-		world.config.roles[kind].work_income_multiplier=wage
-		wage*=2
 	world.config.rules.bot.evaluation_max_seconds=1800.0
 	world.drain_events()
 	var person: int=world._owner_type(0,"employee")[0]

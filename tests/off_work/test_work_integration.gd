@@ -81,6 +81,12 @@ func _configuration_changes_real_behavior() -> void:
 func _play_complete_game(seed_value: int) -> void:
 	var config := Config.new()
 	_check(config.errors.is_empty(), "shipped configuration valid")
+	# Decisions cost wall time, not game time. Since the shipped opening grew to 800 files, four
+	# complete games at the default 700 ms per decision take over three minutes, longer than the
+	# runner allows one file. 300 ms is inside the range the strength slider offers (240 to
+	# 1800 ms) and keeps all four markets; the rules, cards and opening are the shipped ones.
+	config.rules.bot.decision_budget_ratio = 0.05
+	_check(config.validate() and Config.decision_budget_ms(config.rules.bot) == 300, "both seats think for 300 ms per decision")
 	var state := State.new(config)
 	state.new_game(seed_value)
 	_check(state.work_count(0) == 800 and state.work_count(1) == 800, "shipped opening gives each side 800 work cards")

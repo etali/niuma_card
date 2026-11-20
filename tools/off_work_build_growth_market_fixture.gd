@@ -113,7 +113,7 @@ func _summary(world: OffWorkState) -> Array:
 				var role: String=world.effective_work_kind(str(world.cards[person].type),gid)
 				var capacity: int=world.config.work_batch_size(role,world.group_work(gid).size())
 				work_rate+=rate*capacity
-				income_rate+=rate*capacity*world.config.income_per_work(role)
+				income_rate+=rate*capacity*world.config.income_per_work()
 		sides.append({"work":world.work_count(owner),"money":world.money(owner),"reserved":world.reserved_money(owner),
 			"people":people,"workers":workers,"work_rate":work_rate,"income_rate":income_rate,"coffee":world._owner_type(owner,"coffee").size()})
 	return sides

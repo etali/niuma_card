@@ -222,7 +222,15 @@ func _simultaneous_settlement() -> void:
 		"one shared boundary consumes all 24 actual files and creates all 24 actual cash cards")
 	var differences := []
 	for key in OffWorkState.WORLD_FIELDS:
-		if state.get(key) != reference.get(key): differences.append(key)
+		var actual: Variant = state.get(key)
+		var expected: Variant = reference.get(key)
+		if key == "_supply_bag":
+			# A BOT branch resamples the private order of the remaining supply; only its contents are shared.
+			actual = actual.duplicate()
+			expected = expected.duplicate()
+			actual.sort()
+			expected.sort()
+		if actual != expected: differences.append(key)
 	check(differences.is_empty(), "batched index rebuilding agrees with forced schedule reconciliation: %s" % [differences])
 	var group := _work(state)
 	var before_group: Dictionary = state._indexed_group(group)

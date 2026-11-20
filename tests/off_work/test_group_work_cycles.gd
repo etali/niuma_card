@@ -8,6 +8,7 @@ func _initialize() -> void:
 	_role_mix_and_short_queue()
 	_configured_work_capacity()
 	_join_split_and_merge()
+	_split_never_duplicates_progress()
 	_meeting_capacity()
 	_coffee_capacity()
 	_strike_and_other_jobs()
@@ -82,22 +83,20 @@ func _configured_work_capacity() -> void:
 	var state := _state({"employee": 1, "grinder": 1, "work": 9})
 	state.config.roles.employee.work_capacity = 2
 	state.config.roles.grinder.work_capacity = 3
-	# The default table pays one cash per work at every tier; the multiplier stays configurable.
-	state.config.roles.grinder.work_income_multiplier = 2
 	OffWorkCardDB.configure(state.config)
 	var recipe := OffWorkCardDB.get_def("grinder")
-	_check(recipe.recipe_n == 3 and recipe.output_n == 6, "card recipe uses full configured grinder capacity")
+	_check(recipe.recipe_n == 3 and recipe.output_n == 3, "card recipe clears and earns the full configured grinder capacity")
 	var cards: Array = [{"type": "employee"}, {"type": "grinder"}]
 	for _i in range(4): cards.append({"type": "work"})
 	var preview := OffWorkComboRules.evaluate(cards)
-	_check(preview.recipe_pay_n == 4 and preview.output_n == 6, "short queue preview pays two employee and two grinder files")
+	_check(preview.recipe_pay_n == 4 and preview.output_n == 4, "short queue preview pays two employee and two grinder files, one cash each")
 	state.advance(10.0)
 	var full: Dictionary = _events(state)[0]
-	_check(full.participants.size() == 2 and full.ids.size() == 5 and full.amount == 8, "two workers use their individual capacities and income multipliers")
+	_check(full.participants.size() == 2 and full.ids.size() == 5 and full.amount == 5, "two workers use their individual capacities and earn what they clear")
 	state.advance(10.0)
 	var tail: Dictionary = _events(state)[0]
 	_check(tail.participants.size() == 2 and tail.ids.size() == preview.recipe_pay_n and tail.amount == preview.output_n, "partial final batch matches composition preview")
-	_check(state.work_count(0) == 0 and state.money(0) == 14, "full and partial batches settle actual work and cash once")
+	_check(state.work_count(0) == 0 and state.money(0) == 9, "full and partial batches settle actual work and cash once")
 
 func _join_split_and_merge() -> void:
 	var state := _state({"employee": 1, "work": 30})
@@ -134,6 +133,43 @@ func _join_split_and_merge() -> void:
 	merge.advance(9.0)
 	events = _events(merge)
 	_check(events.size() == 1 and events[0].ids.size() == 2 and merge.money(0) == 2, "merged group settles once at target deadline")
+
+## The bar is labour already spent by the people present. Splitting a pile must not turn one
+## nearly finished batch into two.
+func _split_never_duplicates_progress() -> void:
+	# Shuttle: the only worker leaves with one file when the bar is almost full, finishes it,
+	# then returns. The pile he left starts over; before, both batches needed one second each.
+	var shuttle := _state({"employee": 1, "work": 40})
+	var pile := _group(shuttle)
+	var person: int = _ids(shuttle, "employee")[0]
+	shuttle.advance(9.0)
+	var side := shuttle.move_cards([person, shuttle.group_work(pile)[0]], -1)
+	_check(is_equal_approx(shuttle.group_work_progress(side), 0.9) and is_zero_approx(shuttle.group_work_progress(pile)),
+		"the worker carries his batch to the new pile; the pile he left starts over")
+	shuttle.advance(1.0)
+	_check(shuttle.work_count(0) == 39 and shuttle.money(0) == 1, "the carried batch still completes on time")
+	shuttle.move_cards([person], pile)
+	shuttle.advance(1.0)
+	_check(shuttle.work_count(0) == 39 and shuttle.money(0) == 1, "returning to the old pile does not complete a second batch a second later")
+	shuttle.advance(9.0)
+	_check(shuttle.work_count(0) == 38 and shuttle.money(0) == 2, "the old pile needs its full cycle again")
+	# Files moved without the people working on them start a fresh bar.
+	var handed := _state({"employee": 1, "work": 40})
+	pile = _group(handed)
+	handed.advance(9.0)
+	var idle := handed.add_card("employee", 0)
+	handed.move_cards([handed.group_work(pile)[0]], int(handed.cards[idle].group))
+	_check(is_zero_approx(handed.group_work_progress(int(handed.cards[idle].group))) and is_equal_approx(handed.group_work_progress(pile), 0.9),
+		"a file handed to an idle colleague starts from zero; the original batch keeps its progress")
+	handed.advance(1.0)
+	_check(handed.work_count(0) == 38 + 1 and handed.money(0) == 1, "only the original batch completes at its deadline")
+	# Moving the whole pile, with or without its people, keeps the bar: nothing is left behind.
+	var whole := _state({"employee": 1, "work": 40})
+	pile = _group(whole)
+	whole.advance(4.0)
+	var spare := whole.add_card("employee", 0)
+	whole.move_cards(whole.group_work(pile), int(whole.cards[spare].group))
+	_check(is_equal_approx(whole.group_work_progress(int(whole.cards[spare].group)), 0.4), "relocating an entire pile keeps its progress")
 
 func _meeting_capacity() -> void:
 	var state := _state({"employee": 5, "work": 100})

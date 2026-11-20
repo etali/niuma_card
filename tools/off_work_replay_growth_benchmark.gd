@@ -323,7 +323,7 @@ func _side(seat: int) -> Dictionary:
 			var kind: String = world.effective_work_kind(str(world.cards[person].type),group)
 			var capacity: int = world.config.work_batch_size(kind,world.group_work(group).size())
 			work_rate+=rate*capacity
-			income_rate+=rate*capacity*world.config.income_per_work(kind)
+			income_rate+=rate*capacity*world.config.income_per_work()
 	return {"work":world.work_count(seat),"money":world.money(seat),"reserved":world.reserved_money(seat),
 		"people":counts,"workers":workers,"work_rate":work_rate,"income_rate":income_rate,
 		"coffee":world._owner_type(seat,"coffee").size()}

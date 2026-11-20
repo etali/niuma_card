@@ -80,6 +80,18 @@ func _configuration_and_hosts() -> void:
 		check(meeting.targets.all(func(id): return s.is_meeting_target(id) and s.cards[id].paused), "每个名额对应真实被暂停的对方人员")
 	var limited := _scene(["leader", "leader"], 1, 3)
 	check(_meeting(limited).targets.size() == 3, "可用人员不足时只召集真实存在的人员")
+	# Seats that were empty when the meeting was called stay empty: people who only become
+	# available afterwards are not pulled in mid-meeting.
+	var called: Array = _meeting(limited).targets.duplicate()
+	var crowd: int = int(limited.cards[called[0]].group)
+	var late: Array = []
+	for _i in 4: late.append(limited.add_card("employee", 1, crowd))
+	limited.advance(1.0)
+	check(_meeting(limited).targets == called and late.all(func(id): return not limited.is_meeting_target(id)), "开会时就空着的名额不补人，后到场的对方人员不被拉走")
+	var meeting_group: int = int(_meeting(limited).group)
+	check(limited.move_cards([limited.add_card("employee", 0)], meeting_group) == meeting_group, "新增一名员工主持")
+	var grown: Array = _meeting(limited).targets
+	check(grown.size() == 5 and grown.slice(0, 3) == called and grown.slice(3).all(func(id): return late.has(id)), "新增主持只补足他带来的2个名额")
 
 func _stacked_tools() -> void:
 	for count in [1, 2, 3]:

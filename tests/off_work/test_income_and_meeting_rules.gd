@@ -79,9 +79,9 @@ func _income_configuration() -> void:
 		_check_income(state, _income_events(state), expected)
 	var configured := _state({"grinder": 1, "work": 100})
 	configured.config.cards.work.income = 3
-	configured.config.roles.grinder.work_income_multiplier = 4
+	configured.config.roles.grinder.work_capacity = 4
 	configured.advance(10.0)
-	_check(configured.money(0) == 24 and configured.work_count(0) == 98, "base money, role multiplier and batch capacity are all read from configuration")
+	_check(configured.money(0) == 12 and configured.work_count(0) == 96, "the price of one work and the batch capacity are both read from configuration")
 
 func _legacy_card_values() -> void:
 	var legacy := OffWorkConfig.new().balance_document()
@@ -230,10 +230,13 @@ func _meeting_waits_for_conditions() -> void:
 	_check(manual.meetings.is_empty() and manual.cards[_ids(manual, "meeting")[0]].status == "ready", "automatic repeat is a real configurable rule")
 
 func _config_validation() -> void:
-	for field in ["work_income_multiplier", "can_be_meeting_target"]:
+	for field in ["work_capacity", "can_be_meeting_target"]:
 		var missing := OffWorkConfig.new()
 		missing.roles.grinder.erase(field)
 		_check(not missing.validate(), "missing role capability rejects configuration: " + field)
+	var doubled := OffWorkConfig.new()
+	doubled.roles.grinder["work_income_multiplier"] = 2
+	_check(not doubled.validate(), "a separate income multiplier on a role is rejected: people earn what they clear")
 	for value in [0, -1, 1.5, "two"]:
 		var invalid := OffWorkConfig.new()
 		invalid.roles.grinder.work_income_multiplier = value

@@ -13,9 +13,12 @@ func _restore(owner: int) -> OffWorkState:
 	var bytes := Marshalls.base64_to_raw(row.gzip_base64).decompress(int(row.bytes),FileAccess.COMPRESSION_GZIP)
 	var snapshot: Dictionary = bytes_to_var(bytes)
 	var world := OffWorkState.new(OffWorkConfig.new(fixture.cards,fixture.bot))
+	# The snapshot predates the shuffled supply bag: load it the way sessions and replays do.
+	OffWorkState.migrate_supply_snapshot(snapshot)
 	for key in OffWorkState.WORLD_FIELDS: world.set(key,snapshot[key])
 	world._rng.seed=snapshot.rng_seed
 	world._rng.state=snapshot.rng_state
+	world._invalidate_group_index()
 	return world
 
 func _run() -> void:

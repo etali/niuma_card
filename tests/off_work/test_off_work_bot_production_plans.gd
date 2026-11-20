@@ -21,6 +21,8 @@ func _world(groups: Array, money := 0) -> OffWorkState:
 	config.rules.initial.money = money
 	config.rules.bot.think_seconds = 6.0
 	config.rules.bot.evaluation_max_seconds = 120.0
+	# These chains are timed against a five-second upgrade; the shipped duration is a tuning value.
+	config.rules.coffee.seconds = 5.0
 	var world := OffWorkState.new(config)
 	world.new_game(814)
 	world.offers.clear()

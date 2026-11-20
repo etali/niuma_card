@@ -45,9 +45,9 @@ func _world(name: String) -> OffWorkState:
 	config.rules.conveyor.pool=fixture.public_supply.duplicate(true)
 	config.rules.bot.think_seconds=float(fixture.think_seconds)
 	config.rules.bot.evaluation_max_seconds=float(fixture.evaluation_max_seconds)
-	if spec.has("all_work_income_multiplier"):
+	if spec.has("all_work_capacity"):
 		for kind in ["employee","grinder","workaholic","work_emperor"]:
-			config.roles[kind].work_income_multiplier=float(spec.all_work_income_multiplier)
+			config.roles[kind].work_capacity=int(spec.all_work_capacity)
 	if spec.has("recruitment_cost"): config.rules.recruitment.cost_per_employee=int(spec.recruitment_cost)
 	if spec.has("recruitment_seconds"): config.rules.recruitment.seconds=float(spec.recruitment_seconds)
 	var world := OffWorkState.new(config)
@@ -130,8 +130,8 @@ func _near_finish() -> void:
 func _zero_return_upgrade() -> void:
 	var direct := _world("coffee_zero_return")
 	for kind in ["employee","grinder","workaholic","work_emperor"]:
-		check(direct.config.work_batch_size(kind,80)==1 and direct.config.roles[kind].work_income_multiplier==1.0,
-			"零收益变体%s没有容量或工资提升"%kind)
+		check(direct.config.work_batch_size(kind,80)==1,
+			"零收益变体%s升级后每批仍只清一份，也就不多赚"%kind)
 	var baseline := _finish(direct,[],_eta(direct))
 	var upgrade := _upgrade_route("coffee_zero_return")
 	print("LONG_RETURN_ZERO_COFFEE ",JSON.stringify({"direct":_summary(baseline),"upgrade":_summary(upgrade)}))
@@ -197,8 +197,10 @@ func _expensive_slow_recruitment() -> void:
 
 func _positive_reinvestment(name: String) -> void:
 	var direct := _world(name)
-	for kind in ["employee","grinder","workaholic","work_emperor"]:
-		check(direct.config.work_batch_size(kind,int(fixture.cases[name].work))==1,"%s%s仍每轮一份工作"%[name,kind])
+	# The recorded table, read under the rule that people earn what they clear: the tiers clear
+	# 1, 2, 4 and 8 per batch, exactly what they used to earn. No capacity was added on top.
+	var recorded_batches: Array=["employee","grinder","workaholic","work_emperor"].map(func(kind):return direct.config.work_batch_size(kind,int(fixture.cases[name].work)))
+	check(recorded_batches==[1,2,4,8],"%s沿用录像卡表折算后的每批1、2、4、8份，没有另改容量"%name)
 	var baseline := _finish(direct,[],_eta(direct))
 	var routes: Array=[]
 	for upgrade_first in [false,true]: routes.append(_reinvest_route(name,upgrade_first))
@@ -281,12 +283,16 @@ func _cash_flow_sample_keeps_its_time() -> void:
 	var forecast := _sample_forecast(world,13.25)
 	check(forecast.get("eta_exact",false) and forecast.get("eta_method","")=="scheduled_discrete_tail",
 		"稳定尾明确标为离散完工外推，不伪称已在采样点完成")
-	check(forecast.remaining==797 and forecast.income==4.0 and forecast.cash==14.0,
-		"13.25秒现金流样本仍只含当时3份工作和4钱工资，不混入最终收入")
+	# Two employees and one grinder clear 1+1+2 files per batch and earn as many coins; one
+	# overtime card shortens the ten-second cycle to 10/1.2 seconds.
+	var per_batch := 4
+	var cycle := 10.0/1.2
+	check(forecast.remaining==800-per_batch and forecast.income==float(per_batch) and forecast.cash==10.0+per_batch,
+		"13.25秒现金流样本仍只含当时一批的4份工作和4钱工资，不混入最终收入")
 	world.advance(13.25)
 	check(world.work_count(0)==int(forecast.remaining) and world.available_money(0)==int(forecast.cash),
 		"外推只修改ETA；样本工作/现金与同一真实时刻一致")
-	check(absf(float(forecast.eta)-2225.0)<0.00001,"短现金流采样同时得到正确的长期稳定完工时间")
+	check(absf(float(forecast.eta)-ceilf(800.0/per_batch)*cycle)<0.00001,"短现金流采样同时得到正确的长期稳定完工时间")
 
 func _known_recruitment_after_horizon() -> void:
 	var world := _world("long_800")

@@ -142,7 +142,6 @@
     "employee": {
       "meeting_multiplier": 1.0,
       "can_work": true,
-      "work_income_multiplier": 1,
       "can_be_meeting_target": true,
       "transfer_capacity": 1,
       "work_capacity": 1
@@ -150,7 +149,6 @@
     "leader": {
       "meeting_multiplier": 2.0,
       "can_work": false,
-      "work_income_multiplier": 1,
       "can_be_meeting_target": false,
       "transfer_capacity": 2,
       "work_capacity": 1
@@ -158,7 +156,6 @@
     "grinder": {
       "meeting_multiplier": 1.0,
       "can_work": true,
-      "work_income_multiplier": 1,
       "can_be_meeting_target": true,
       "transfer_capacity": 1,
       "work_capacity": 2
@@ -166,7 +163,6 @@
     "workaholic": {
       "meeting_multiplier": 1.0,
       "can_work": true,
-      "work_income_multiplier": 1,
       "can_be_meeting_target": true,
       "transfer_capacity": 1,
       "work_capacity": 4
@@ -174,7 +170,6 @@
     "work_emperor": {
       "meeting_multiplier": 1.0,
       "can_work": true,
-      "work_income_multiplier": 1,
       "can_be_meeting_target": true,
       "transfer_capacity": 1,
       "work_capacity": 8
@@ -182,7 +177,6 @@
     "boss": {
       "meeting_multiplier": 1.0,
       "can_work": false,
-      "work_income_multiplier": 1,
       "can_be_meeting_target": false,
       "can_be_strike_target": false,
       "transfer_capacity": 2,

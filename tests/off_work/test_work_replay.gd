@@ -24,8 +24,9 @@ func run() -> void:
 	var path: String = host.replay.save(host)
 	check(FileAccess.file_exists(path), "writes realtime recording")
 	var tape: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path))
-	check(tape.bot.policy == host.bot._policy and tape.bot.model_version == 2,
-		"recording stores the actual match policy and model, independent of the action cadence")
+	check(tape.bot.policy == host.bot._policy and int(tape.bot.model_version) == int(live.config.bot_preferences.model_version)
+		and int(tape.bot.model_version) >= 2,
+		"recording stores the actual match policy and installed model version, independent of the action cadence")
 	Preferences.set_pref_strength(.25)
 	var parked_policy: Dictionary = host.bot._policy.duplicate(true)
 	host._process(1.0)

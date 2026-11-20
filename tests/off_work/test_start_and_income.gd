@@ -22,6 +22,10 @@ func _owned(state: OffWorkState, kind: String, owner := 0) -> Array:
 func _test_opening() -> void:
 	var state := OffWorkState.new()
 	state.new_game(234)
+	# The opening workload is a tuning value of the shipped table, not of this test.
+	var opening_work := 0
+	for opening_group in state.config.rules.initial.groups: opening_work += int(opening_group.get("work", 0))
+	_check(opening_work > 0, "卡表给出了开局工作数")
 	for owner in [0, 1]:
 		var pile_sizes: Array = []
 		for gid in state.groups:
@@ -29,14 +33,14 @@ func _test_opening() -> void:
 			if not state.group_work(gid).is_empty():
 				pile_sizes.append(state.group_work(gid).size())
 				_check(state.group_people(gid).is_empty(), "开局工作各自成摞，未配员工")
-		_check(pile_sizes == [200] and state.work_count(owner) == 200, "每方 200 份工作集中在同一摞")
+		_check(pile_sizes == [opening_work] and state.work_count(owner) == opening_work, "每方的开局工作集中在同一摞，数量来自卡表")
 		for id in _owned(state, "employee", owner):
 			_check(state.group_cards(state.cards[id].group).size() == 1, "开局每名员工独立")
 		_check(state.people_count(owner) == 1, "正式开局只有一名员工")
 		_check(_owned(state, "money", owner).size() == 8 and _owned(state, "money", owner).all(func(id): return state.cards[id].amount == 1), "开局八元就是八张独立金钱牌")
 	_check(state.tasks.is_empty(), "未组合前没有自动工作任务")
 	state.advance(10.0)
-	_check(state.work_count(0) == 200 and state.work_count(1) == 200 and state.money(0) == 8, "未安排员工不会凭空开工或产钱")
+	_check(state.work_count(0) == opening_work and state.work_count(1) == opening_work and state.money(0) == 8, "未安排员工不会凭空开工或产钱")
 
 func _test_income_route() -> void:
 	var state := OffWorkState.new()

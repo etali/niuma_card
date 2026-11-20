@@ -40,11 +40,14 @@ func _run() -> void:
 				_check(snapshot.events.any(func(event): return str(event.kind) == str(kind) and int(event.get("owner", -1)) == 0), "%s demonstrated action originates from the fixture player" % entry.id)
 		print("SCENARIO ", entry.id, " ", kinds)
 		if str(entry.id) == "coffee_upgrade_chain":
+			# One batch plans the whole chain and settles it on a single shared bar.
 			var upgrades: Array = snapshot.events.filter(func(event): return event.kind == "coffee_upgrade" and int(event.owner) == 0)
-			_check(upgrades.size() == 3, "seven-cup preview completes three distinct real upgrades")
-			_check(upgrades.map(func(event): return str(event.to_type)) == ["grinder", "workaholic", "work_emperor"], "upgrade preview shows every intermediate tier in order")
-			_check(upgrades.map(func(event): return event.coffee_ids.size()) == [1, 2, 4], "upgrade preview consumes one, two, then four cups")
-			_check(upgrades.map(func(event): return snappedf(float(event.time), 0.01)) == [5.5, 10.5, 15.5], "each stage reads its full five-second bar before changing role")
+			var batch: Dictionary = upgrades[0] if upgrades.size() == 1 else {}
+			var steps: Array = batch.get("steps", [])
+			_check(upgrades.size() == 1 and str(batch.from_type) == "employee" and str(batch.to_type) == "work_emperor", "seven-cup preview settles the whole chain as one real batch on the same person")
+			_check(steps.map(func(step): return str(step.to_type)) == ["grinder", "workaholic", "work_emperor"], "the batch plan passes through every intermediate tier in order")
+			_check(steps.map(func(step): return int(step.cost)) == [1, 2, 4] and batch.get("coffee_ids", []).size() == 7, "the batch consumes one, two, then four cups")
+			_check(not batch.is_empty() and absf(float(batch.time) - (0.5 + runner.state.config.coffee_batch_seconds())) < 0.02, "the whole chain reads one shared bar of the configured batch duration")
 		if str(entry.id) == "employee_tier_income":
 			var settlements: Array = snapshot.events.filter(func(event): return event.kind == "work_complete" and int(event.owner) == 0)
 			_check(settlements.size() == 1 and settlements[0].participants.size() == 4 and settlements[0].ids.size() == 15, "four tiers complete one shared batch of 1+2+4+8 work cards")

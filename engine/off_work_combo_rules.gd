@@ -78,7 +78,7 @@ static func evaluate(cards: Array, _mods: Dictionary = {}) -> Dictionary:
 		for kind in workers:
 			var effective_kind: String = str(OffWorkCardDB.config.rules.union.work_role) if tools.has("union") else kind
 			var count := OffWorkCardDB.config.work_batch_size(effective_kind, work)
-			result.output_n += count * OffWorkCardDB.config.income_per_work(effective_kind)
+			result.output_n += count * OffWorkCardDB.config.income_per_work()
 			result.recipe_pay_n += count
 			work -= count
 			if work == 0: break

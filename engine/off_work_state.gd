@@ -441,6 +441,28 @@ func people_count(owner: int) -> int:
 func group_cards(group: int) -> Array:
 	return groups[group].cards.duplicate() if groups.has(group) else []
 
+## 工作摞的读条进度是在场人员已经投入的工时，拆摞时不能凭空多出一份。
+## 整摞搬走，进度跟着走。只拆出一部分时：正在处理它的人跟着走，进度随人带走，
+## 原摞还有人在处理才保留自己的进度；只搬工作不带人，搬走的那部分从头读条。
+func _conserve_work_progress(moved: Array, target_group: int) -> void:
+	var sources := {}
+	for id in moved:
+		var gid := int(cards[id].group)
+		if gid == target_group or not groups.has(gid): continue
+		if not sources.has(gid): sources[gid] = {"work": [], "people": []}
+		if str(cards[id].type) == "work": sources[gid].work.append(id)
+		elif tasks.get(id, {}).get("kind", "") == "work" and int(tasks[id].group) == gid: sources[gid].people.append(id)
+	for gid in sources:
+		var leaving: Dictionary = sources[gid]
+		if leaving.work.is_empty(): continue
+		var staying_work: Array = group_work(gid).filter(func(work): return not leaving.work.has(work))
+		if staying_work.is_empty(): continue
+		if leaving.people.is_empty():
+			for work in leaving.work: cards[work].progress = 0.0
+		elif group_work_participants(gid).all(func(person): return moved.has(person)):
+			groups[gid]["work_progress"] = 0.0
+			for work in staying_work: cards[work].progress = 0.0
+
 func group_people(group: int) -> Array:
 	return _indexed_group(group).people.duplicate()
 
@@ -599,6 +621,7 @@ func move_cards(ids: Array, target_group: int = -1, target_card: int = -1) -> in
 	elif not groups.has(target_group):
 		_fail("目标组已经不存在")
 		return -1
+	_conserve_work_progress(unique, target_group)
 	var affected_groups: Array = [target_group]
 	for id in unique:
 		var previous: int = int(cards[id].group)
@@ -1072,10 +1095,17 @@ func _sync_meetings() -> void:
 			var fraction := clampf(float(meeting.remaining) / float(meeting.total), 0.0, 1.0)
 			meeting.total = config.meeting_duration(tools.size())
 			meeting.remaining = fraction * float(meeting.total)
+		# 名额随主持人增减：新增主持只补足新增的名额，减少主持按原顺序收回名额。
+		# 开会时就空着的名额不再补人，之后才到场的对方人员不会被拉进这场会。
+		var previous_capacity := 0
+		for person in old_hosts:
+			if cards.has(person): previous_capacity += config.meeting_capacity(str(cards[person].type))
+		var capacity := group_meeting_capacity(group)
 		meeting.hosts = people
 		meeting.tools = tools
 		var retained: Array = meeting.targets.filter(func(id): return cards.has(id))
-		meeting.targets = _draw_meeting_targets(int(cards[tool_id].owner), group_meeting_capacity(group), retained)
+		var seats: int = mini(capacity, retained.size() + maxi(0, capacity - previous_capacity))
+		meeting.targets = _draw_meeting_targets(int(cards[tool_id].owner), seats, retained)
 		_assign_meeting(tool_id, meeting)
 
 ## Older checkpoints could hold several independent sessions in one stack.
@@ -1852,12 +1882,11 @@ func _complete_work_group(group: int) -> void:
 	var participants := group_work_participants(group)
 	if participants.is_empty(): return
 	var completed: Array = []
-	var income := 0
 	for person in participants:
-		var work_ids: Array = tasks[person].work_ids
-		income += work_ids.size() * config.income_per_work(effective_work_kind(str(cards[person].type), group))
-		completed.append_array(work_ids)
+		completed.append_array(tasks[person].work_ids)
 		tasks.erase(person)
+	# 清几份工作就赚几份钱，和是谁清的无关。
+	var income: int = completed.size() * config.income_per_work()
 	for work_id in completed:
 		_consume(int(work_id))
 	groups[group]["work_progress"] = 0.0

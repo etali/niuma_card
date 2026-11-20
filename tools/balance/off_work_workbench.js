@@ -23,7 +23,7 @@ const strengthChoice = {};
 const strategyNames = {q:"标准策略", a:"策略 A", b:"策略 B"};
 const fieldLabels = {
   price:"价格", purchasable:"可购买", description:"牌面说明", name:"牌名",
-  work_seconds:"每份工作基础耗时（秒）", work_capacity:"每批处理上限", work_income_multiplier:"工作收入倍率",
+  work_seconds:"每份工作基础耗时（秒）", work_capacity:"每批处理工作数",
   can_work:"可处理工作", refund:"开除返还", transfer_capacity:"甩锅数量",
   can_be_meeting_target:"可被拉会", can_be_strike_target:"可受罢工影响", meeting_multiplier:"开会人数倍率",
   max_per_owner:"每方持有上限", cost_per_employee:"每名员工招聘费用", recruitment:"老板招聘",
@@ -226,8 +226,7 @@ function parameterFieldOptions(path) {
   const common = {
     price:{unit:"钱",hint:"从购牌区买入这张牌的费用；是否可购由“可购买”决定。"},
     refund:{unit:"钱",hint:"开除一名该类型人员返还的金钱。"},
-    work_capacity:{unit:"份/批",hint:"每名在场人员一次工作周期最多处理的工作份数，不是工资倍率。"},
-    work_income_multiplier:{unit:"倍",hint:"该人员每完成一份工作时的收入倍率，不改变每批工作份数。"},
+    work_capacity:{unit:"份/批",hint:"每名在场人员一次工作周期最多处理的工作份数。清几份工作就赚几份工作的钱，人员没有单独的收入倍率。"},
     transfer_capacity:{unit:"份/人",hint:"该人员每次甩锅可转交的工作份数；甩锅不产生收入。"},
     meeting_multiplier:{unit:"倍",hint:"每名主持人的参会名额为基础人数乘以此倍率；同组所有主持人的名额累加。"},
     coffee_per_person:{unit:"杯/人/批",hint:"摸鱼每批每位在场人员产出的咖啡数量；每分钟产量还取决于周期和速度倍率。"},
@@ -238,7 +237,7 @@ function parameterFieldOptions(path) {
     interval_seconds:{unit:"秒",hint:"共享购牌区每隔此时间轮询一次；不是每张卡的出现概率。"},
     slots:{unit:"格",hint:"共享购牌区同时展示的槽位数。"},
     cost_per_work:{unit:"钱/份",hint:"外包每处理一份工作消耗的金钱。"},
-    income:{unit:"钱/份",hint:"完成每份工作的基础收入，再乘以人员对应收入倍率。"},
+    income:{unit:"钱/份",hint:"清掉一份工作赚到的钱，对所有人员相同；默认 1，即消耗几份工作就产出几份金钱。"},
     money:{unit:"钱/方",hint:"双方开局各自获得的金钱，不是两方合计。"},
     cost:{unit:"杯",hint:"完成这一段提升卷度消耗的咖啡数量，不是累计到最高级的总用量。"},
     max_per_owner:{unit:"名/方",hint:"每方同时持有这种牌的上限。"},
@@ -364,7 +363,7 @@ function renderCards() {
     identity.append(element("small",card.purchasable ? "可购买" : "合成 / 初始牌"));
     const values = element("div",undefined,"card-fields");
     fields(values,card,"cards." + id,["name","description","art","category","purchasable"]);
-    if (candidate.roles[id]) fields(values,candidate.roles[id],"roles." + id,["work_seconds"]);
+    if (candidate.roles[id]) fields(values,candidate.roles[id],"roles." + id,["work_seconds","work_income_multiplier"]);
     if (candidate.rules[id]) fields(values,candidate.rules[id],"rules." + id,["upgrades"]);
     if (id === "boss" && candidate.rules.recruitment) fields(values,candidate.rules.recruitment,"rules.recruitment");
     const upgrade = candidate.rules.coffee.upgrades[id];
@@ -1152,7 +1151,7 @@ async function selectCards(record) {
   const data = clone(record.data);
   const conveyor = data.rules?.conveyor || {};
   const legacy = !Object.hasOwn(data.cards?.work || {},"work_seconds") ||
-    Object.values(data.roles || {}).some(role => Object.hasOwn(role,"work_seconds")) ||
+    Object.values(data.roles || {}).some(role => Object.hasOwn(role,"work_seconds") || Object.hasOwn(role,"work_income_multiplier")) ||
     Object.hasOwn(conveyor,"employee_every") || Object.hasOwn(conveyor,"opening") ||
     Object.values(data.rules?.coffee?.upgrades || {}).some(upgrade => Object.hasOwn(upgrade,"seconds"));
   // A running service can still hold an older snapshot in memory. Ask the

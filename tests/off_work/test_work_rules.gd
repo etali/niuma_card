@@ -116,39 +116,54 @@ func _test_meeting() -> void:
 	var group: int = _group(state, 0)
 	var enemy: int = _group(state, 1)
 	state.move_cards(state.group_work(enemy))
-	var meeting: int = _tool_group(state, "meeting", group)
+	# Everyone standing in a meeting group hosts it and adds seats. This case sends one ordinary
+	# host, together with the work pile, to a separately placed meeting card.
+	var meeting: int = _tool(state, "meeting", -1)
+	var host: int = int(state.group_people(group)[0])
+	state.move_cards([host] + state.group_work(group), int(state.cards[meeting].group))
 	group = state.cards[meeting].group
 	_check(state.meetings.has(meeting) and state.cards[meeting].status == "active", "组合完成后开会能发动")
 	_check(state.meetings[meeting].targets.size() == 2, "普通主持只拖配置名额")
 	state.advance(3.0)
 	var paused := 0
 	var moving := 0
+	var free := -1
 	for person in state.group_people(enemy):
 		if bool(state.cards[person].paused):
 			paused += 1
 		else:
 			moving += 1
+			free = int(person)
 	_check(paused == 2 and moving == 1, "只暂停实际会议目标")
 	_check(is_zero_approx(float(state.cards[state.meetings[meeting].targets[0]].rate_multiplier)), "被会议暂停的人物倍率为零")
 	var working := 0
 	for person in state.group_people(group):
 		if state.cards[person].activity == "work" and float(state.cards[person].progress) > 0.0:
 			working += 1
-	_check(working == 0, "开会组合仅触发开会，其他同组人员不会同时工作")
+	_check(working == 0 and not state.group_work(group).is_empty() and state.work_count(0) == 20, "开会组合仅触发开会，同组的工作不会同时开工")
 	var coffee: int = _tool(state, "coffee", enemy, 1)
 	var attendee: int = int(state.meetings[meeting].targets[0])
-	_check(state.activate(coffee, enemy, attendee), "咖啡可以升级被暂停的指定员工")
+	_check(state.activate(coffee, enemy, attendee) and not state.tasks.has(attendee) and state.tasks.get(free, {}).get("kind") == "coffee",
+		"被叫去开会的人不参加这一批升级，咖啡由同组没被叫走的人喝")
 	_check(state.meetings[meeting].targets.size() == 2 and state.cards[attendee].paused, "升级不解会、不新增或替换目标")
-	var host: int = int(state.meetings[meeting].host)
+	state.advance(state.config.coffee_batch_seconds())
+	_check(state.cards[attendee].type == "employee" and state.cards[free].type == "grinder" and not state.cards.has(coffee), "散会前参会者保持原等级，只有实际喝咖啡的人升级")
+	var late: int = state.add_card("employee", 1, enemy)
+	state.advance(0.1)
+	_check(not state.is_meeting_target(late) and state.meetings[meeting].targets.size() == 2, "会议中途才到场的人不会被补进这场会")
 	state.move_cards([host], -1)
 	_check(not state.meetings.has(meeting) and state.cards[meeting].status == "recovering", "主持人离组立即散会")
 	var leaders: RefCounted = _state(5)
-	var lg: int = _group(leaders, 0)
-	leaders.add_card("leader", 0, lg)
-	var lm: int = _tool_group(leaders, "meeting", lg)
-	lg = leaders.cards[lm].group
-	leaders.activate(lm, lg)
-	_check(leaders.meetings[lm].targets.size() == 4, "领导增加会议名额")
+	var leader: int = leaders.add_card("leader", 0)
+	var lm: int = _tool(leaders, "meeting", -1)
+	leaders.move_cards([leader], int(leaders.cards[lm].group))
+	_check(leaders.meetings.has(lm) and leaders.meetings[lm].targets.size() == 4, "领导增加会议名额")
+	var shared: RefCounted = _state(5)
+	var both: Array = [shared.add_card("leader", 0), int(shared.group_people(_group(shared, 0))[0])]
+	var sm: int = _tool(shared, "meeting", -1)
+	shared.move_cards(both, int(shared.cards[sm].group))
+	_check(shared.meetings.has(sm) and shared.meetings[sm].hosts.size() == 2 and shared.meetings[sm].targets.size() == 5,
+		"同组主持人的名额相加：领导4加员工2，对面只有5人就召集5人")
 
 func _test_transfer() -> void:
 	var state: RefCounted = _state(1)
@@ -275,7 +290,15 @@ func _test_conveyor_and_win() -> void:
 	_check(fast.winner == -1 and is_zero_approx(float(fast.time)) and fast.meetings.is_empty(), "重开清空旧状态")
 
 func _test_bot_receives_work() -> void:
-	var state: RefCounted = _state(1, 20)
+	# Shipped opening cash. With the hundred coins of the rule fixtures above and only twenty
+	# files, the better plan is to buy an outsource tool and pay the whole pile off, which
+	# never needs the worker; this case is about staffing.
+	var config := Config.new()
+	config.rules.strike.flight_seconds = 0.0
+	config.rules.initial.groups = [{"employee": 1, "work": 20}]
+	var state := State.new(config)
+	state.new_game(42)
+	state.drain_events()
 	var group: int = _group(state, 0)
 	var person: int = int(state.group_people(group)[0])
 	var work: Array = state.group_work(group)

@@ -183,11 +183,22 @@ static func normalize_balance_document(document: Variant) -> Variant:
 			if not role is Dictionary or not definitions.get(kind) is Dictionary:
 				continue
 			role.erase("work_seconds")
+			# 人员清几份工作就赚几份钱，没有单独的收入倍率。旧卡表里的倍率并入每批处理量：
+			# 原来「1 份工作赚 4 钱」的肝帝，读入后是「4 份工作赚 4 钱」。只改这份副本。
+			# 只合并原来就合法的正整数倍率；其余留在原处，由校验报错。
+			if role.has("work_income_multiplier") and _plain_number(role.work_income_multiplier) and _plain_number(role.get("work_capacity")) \
+					and float(role.work_income_multiplier) > 0.0 and float(role.work_income_multiplier) == floor(float(role.work_income_multiplier)):
+				var merged: float = float(role.work_capacity) * float(role.work_income_multiplier)
+				role.work_capacity = int(merged) if role.work_capacity is int and role.work_income_multiplier is int else merged
+				role.erase("work_income_multiplier")
 			if role.has("refund"):
 				if not definitions[kind].has("refund"):
 					definitions[kind].refund = role.refund
 				role.erase("refund")
 	return normalized
+
+static func _plain_number(candidate: Variant) -> bool:
+	return (candidate is int or candidate is float) and is_finite(float(candidate))
 
 static func _legacy_conveyor_counts(pool: Dictionary) -> Dictionary:
 	var fractional := false
@@ -278,7 +289,8 @@ func validate() -> bool:
 		if spec.has("can_be_strike_target") and not spec.can_be_strike_target is bool:
 			errors.append("roles.%s.can_be_strike_target：必须是布尔值" % role)
 		_number_field(spec, "work_capacity", "roles." + role, 0.0, true, true)
-		_number_field(spec, "work_income_multiplier", "roles." + role, 0.0, true, true)
+		if spec.has("work_income_multiplier"):
+			errors.append("roles.%s.work_income_multiplier：人员没有收入倍率，清几份工作就赚几份钱；请改每批处理量" % role)
 		_number_field(spec, "meeting_multiplier", "roles." + role, 0.0)
 		_number_field(spec, "transfer_capacity", "roles." + role, 0.0, true, true)
 	if roles.size() != personnel.size():
@@ -375,7 +387,7 @@ func validate() -> bool:
 			errors.append("slack.coffee_per_person：每人每批不能超过 %d 张咖啡" % MAX_CARD_ALLOCATION)
 		for role in roles:
 			var spec: Dictionary = roles[role]
-			var full_payment := float(cards.work.income) * float(spec.work_income_multiplier) * float(spec.work_capacity)
+			var full_payment := float(cards.work.income) * float(spec.work_capacity)
 			if full_payment > MAX_CARD_ALLOCATION or float(cards[role].refund) > MAX_CARD_ALLOCATION:
 				errors.append("roles.%s：每人单批完整工作收入与开除返款均不得超过 %d 张现金" % [role, MAX_CARD_ALLOCATION])
 			var rate: float = work_rate(str(role), 1)
@@ -584,8 +596,9 @@ func can_be_meeting_target(kind: String) -> bool:
 func work_batch_size(kind: String, available: int) -> int:
 	return mini(available, int(roles[kind].work_capacity))
 
-func income_per_work(kind: String) -> int:
-	return int(cards.work.income) * int(roles[kind].work_income_multiplier)
+## 清一份工作赚多少钱只写在工作牌上；人员清几份就赚几份，和卷度无关。
+func income_per_work() -> int:
+	return int(cards.work.income)
 
 ## Every working personnel tier uses the same task duration from the work card.
 func work_seconds() -> float:

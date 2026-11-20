@@ -17,7 +17,7 @@ func _run() -> void:
 	finish()
 
 # These are in-memory scenario rules, not replacements for the game's card
-# table. Equal wages isolate productivity from the final outsource shortcut.
+# table. Batch capacities are pinned here so later table edits do not move this scenario.
 func _world(work := 400, boss := true, slack := true, funds := 10) -> OffWorkState:
 	var config := OffWorkConfig.new()
 	config.rules.initial.groups = [{"employee":3,"work":work}]
@@ -33,7 +33,6 @@ func _world(work := 400, boss := true, slack := true, funds := 10) -> OffWorkSta
 	var capacity := 1
 	for kind in ["employee","grinder","workaholic","work_emperor"]:
 		config.roles[kind].work_capacity = capacity
-		config.roles[kind].work_income_multiplier = 1
 		capacity *= 2
 	var world := OffWorkState.new(config)
 	world.new_game(814)
@@ -95,13 +94,9 @@ func _long_and_short_returns() -> void:
 	var expensive_value := _project(expensive)
 	check(float(cheap_value.eta)<float(expensive_value.eta),"真实招聘价格会改变搜索到的完工收益，付不起的老板没有资产加分")
 
+## People earn what they clear, so an upgrade raises wages only by raising the batch.
 func _wage_world(with_coffee := true) -> OffWorkState:
 	var world := _world(400,true,with_coffee,10)
-	var wages := 1
-	for kind in ["employee","grinder","workaholic","work_emperor"]:
-		world.config.roles[kind].work_capacity = 1
-		world.config.roles[kind].work_income_multiplier = wages
-		wages *= 2
 	world.config.rules.bot.evaluation_max_seconds = 1800.0
 	return world
 

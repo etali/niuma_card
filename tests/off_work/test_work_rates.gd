@@ -12,7 +12,7 @@ func _initialize() -> void:
 	_check(not config.cards.has("involution") and not config.rules.has("involution"), "内卷牌和人数增益规则均已移除")
 	_check(not config.can_purchase("involution") and not config.rules.conveyor.pool.has("involution"), "被移除卡不能购买或由传送带生成")
 	for kind in ["employee", "grinder"]:
-		_check(is_equal_approx(config.work_rate(kind, 0), 0.1), "基础十秒速度与角色收入倍率分开")
+		_check(is_equal_approx(config.work_rate(kind, 0), 0.1), "基础十秒速度与每批处理量分开")
 		for copies in range(1, 5):
 			_check(is_equal_approx(config.work_rate(kind, copies), 0.1 * pow(1.2, copies)), "加班每张乘1.2，按配置叠乘")
 	for count in [1, 2, 3, 5, 8]:

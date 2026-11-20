@@ -134,8 +134,6 @@ func _group_assignment_effects() -> void:
 	config.rules.initial.money=0
 	config.roles.employee.work_capacity=2
 	config.roles.grinder.work_capacity=4
-	# Unequal pay per work is what makes the allocation order observable; the default table pays one everywhere.
-	config.roles.grinder.work_income_multiplier=2
 	var state := OffWorkState.new(config)
 	state.new_game(77)
 	state.offers.clear()
@@ -158,7 +156,7 @@ func _group_assignment_effects() -> void:
 		var after := _apply(state,action,"overtime on partial-batch allocation order %d"%index)
 		after.advance(1.0/after.group_work_rate(groups[index]))
 		check(after.group_work(groups[index]).is_empty(),"the selected group really completes its five-work batch first")
-		check(after.money(0)==8+index,"different role order yields its actual eight-versus-nine income rather than a merged estimate")
+		check(after.money(0)==5,"either role order pays exactly the five work it clears")
 
 func _single_action_production_assembly() -> void:
 	var state := _state()

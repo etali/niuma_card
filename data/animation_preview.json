@@ -1869,7 +1869,7 @@
             "name": "bank",
             "owner": 0,
             "cards": {
-              "money": 8
+              "money": 16
             },
             "position": [
               7,

@@ -29,12 +29,15 @@ func _run() -> void:
 	var employee := _owned("employee")
 	var work := _owned("work")
 	var production: int = state.cards[work].group
+	# The size of the opening stack is a tuning value of the shipped table.
+	var opening_work := state.group_work(production).size()
+	_check(opening_work > 1, "the opening stack holds the table's whole workload")
 	_check(board.begin_side_extract([work], board.camera.unproject_position(board.get_group_position(production))),
 		"one document can be picked out of the opening stack")
 	_check(board._drag_cards.size() == 1 and board._drag_cards[0].uid == work, "only the requested document is held")
 	board.cancel_pointer()
 	board.sync_state(state)
-	_check(state.group_work(production).size() == 200, "cancelled extraction restores the complete opening stack")
+	_check(state.group_work(production).size() == opening_work and board.by_uid[work].group_id == production, "cancelled extraction restores the complete opening stack")
 	state.move_cards([employee], production)
 	state.drain_events()
 	board.sync_state(state)

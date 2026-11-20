@@ -142,7 +142,12 @@ func _full_bot_progression() -> void:
 		printerr("PROGRESSION_DIAGNOSTIC ", JSON.stringify({"time":state.time, "transitions":transitions, "decisions":decisions}))
 	_check(not decisions.is_empty() and decisions.all(func(entry): return entry.complete),
 		"fixed recipe fixture completes every root comparison instead of relying on a budget-truncated prefix")
-	_check(transitions == ["grinder", "workaholic", "work_emperor"], "real bot loop buys, accumulates and completes all three stages in order")
+	# A batch settles as many tiers as its cups pay for, so the chain may take one to three
+	# batches. Whatever the split, every batch moves the same person strictly upward.
+	var ranks: Array = transitions.map(func(kind): return state.config.coffee_rank(str(kind)))
+	var climbing: bool = not ranks.is_empty() and int(ranks[-1]) == 3
+	for index in range(1, ranks.size()): climbing = climbing and int(ranks[index]) > int(ranks[index - 1])
+	_check(climbing, "real bot loop buys, accumulates and completes the whole chain in ascending batches")
 	_check(str(state.cards[person].type) == "work_emperor", "real bot loop reaches maximum level without manual activation")
 	if str(state.cards[person].type) != "work_emperor": return
 	state.advance(maxf(0.0, bot.next_action_time() - state.time))

@@ -34,7 +34,7 @@ func _shared_production_clock() -> void:
 			check(state.work_count(0) == 40 and state.money(0) == 0, "%s/%d张加班在同一截止时刻前未结算" % [kind, overtime])
 			state.advance(0.001)
 			check(state.work_count(0) == 40 - int(config.roles[kind].work_capacity)
-				and state.money(0) == config.income_per_work(kind) * int(config.roles[kind].work_capacity), "%s/%d张加班在共享周期结束后保留本级处理量和收益" % [kind, overtime])
+				and state.money(0) == config.income_per_work() * int(config.roles[kind].work_capacity), "%s/%d张加班在共享周期结束后保留本级处理量和收益" % [kind, overtime])
 			check(is_equal_approx(state.cards[person].rate_multiplier, config.overtime_multiplier(overtime)), "卡面速度倍率与统一加班倍率相同")
 	for kind in ["leader", "boss"]:
 		check(not defaults.can_work(kind) and defaults.work_rate(kind, 0) == 0.0 and defaults.work_rate(kind, 2) == 0.0, kind + "仍不能工作，加班不会改变资格")

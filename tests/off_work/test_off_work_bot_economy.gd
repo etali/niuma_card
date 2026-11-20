@@ -13,8 +13,10 @@ func _initialize() -> void: _run.call_deferred()
 
 func _world(owned := true) -> OffWorkState:
 	var config := OffWorkConfig.new()
-	# The replay below uses explicit 2.8-second purchase/return opportunities.
+	# The replay below uses explicit 2.8-second purchase/return opportunities, and an upgrade
+	# that is ready for the second of them (5.6 s). Pin both clocks against table tuning.
 	config.rules.bot.think_seconds = 2.8
+	config.rules.coffee.seconds = 5.0
 	config.rules.initial.groups=[{"employee":1,"work":120}]
 	config.rules.initial.money=12
 	var world := OffWorkState.new(config)

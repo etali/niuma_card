@@ -58,7 +58,7 @@ func _protected_actions(side: int) -> void:
 	check(expired.actions.size()==1 and expired.actions[0].kind=="wait" and Actions.apply_action(state,side,expired.actions[0]),"%d号位预算耗尽仍有合法等待" % side)
 	var before := state.money(side)
 	state.advance(state.config.work_seconds())
-	check(state.money(side)-before==state.config.income_per_work("employee"),"%d号位实际结算仅支付员工工资，不预支皇帝或老板产出" % side)
+	check(state.money(side)-before==state.config.income_per_work(),"%d号位实际结算仅支付员工工资，不预支皇帝或老板产出" % side)
 
 func _incoming_defence(side: int) -> void:
 	var state := _fixture()

@@ -55,8 +55,8 @@ func _config_contract() -> void:
 	for i in kinds.size():
 		var kind: String = kinds[i]
 		check(cfg.is_person(kind) and cfg.can_work(kind) and cfg.can_be_meeting_target(kind), kind + " is a working, meeting-eligible person")
-		check(is_equal_approx(cfg.work_rate(kind, 0), 0.1) and int(cfg.roles[kind].work_capacity) == int(pow(2, i)) and int(cfg.roles[kind].work_income_multiplier) == 1, kind + " doubles batch capacity per tier at the same cycle speed and one cash per work")
-		check(cfg.work_batch_size(kind, 200) * cfg.income_per_work(kind) == cfg.work_batch_size(kind, 200), kind + " earns exactly as much cash as the work it clears")
+		check(is_equal_approx(cfg.work_rate(kind, 0), 0.1) and int(cfg.roles[kind].work_capacity) == int(pow(2, i)) and not cfg.roles[kind].has("work_income_multiplier"), kind + " doubles batch capacity per tier at the same cycle speed, with no income multiplier of its own")
+		check(cfg.work_batch_size(kind, 200) * cfg.income_per_work() == cfg.work_batch_size(kind, 200), kind + " earns exactly as much cash as the work it clears")
 		if i > 0:
 			check(not cfg.can_purchase(kind) and not cfg.rules.conveyor.pool.has(kind), kind + " cannot be bought")
 		if i < 3:

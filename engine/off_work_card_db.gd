@@ -55,7 +55,7 @@ static func configure(off_work_config: OffWorkConfig) -> void:
 				def["recipe_res"] = RES_USER
 				def["recipe_n"] = int(config.roles[id].work_capacity)
 				def["output_res"] = RES_CASH
-				def["output_n"] = def.recipe_n * config.income_per_work(str(id))
+				def["output_n"] = def.recipe_n * config.income_per_work()
 			else:
 				for key in ["recipe_res", "recipe_n", "output_res", "output_n"]:
 					def.erase(key)
@@ -80,8 +80,8 @@ static func _description(id: String) -> String:
 		return words
 	var role: Dictionary = config.roles[id]
 	if config.can_work(id):
-		words += " 无加班时每 %s 秒最多处理 %d 份工作，每份赚 %d 钱。" % [
-			config.work_seconds(), role.work_capacity, config.income_per_work(id)]
+		words += " 无加班时每 %s 秒最多处理 %d 份工作，赚 %d 钱；工作不够时清几份算几份。" % [
+			config.work_seconds(), role.work_capacity, int(role.work_capacity) * config.income_per_work()]
 	else:
 		words += " 不处理普通工作。"
 	words += " 每批甩锅 %d 份，主持会议提供 %d 个参会名额，多人主持时名额累加。" % [role.transfer_capacity, config.meeting_capacity(id)]

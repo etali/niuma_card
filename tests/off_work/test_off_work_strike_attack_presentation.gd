@@ -12,6 +12,8 @@ func _run() -> void:
 	var config := OffWorkConfig.new()
 	config.rules.initial.groups = [{"employee": 1, "work": 30}, {"strike": 1}, {"leader": 1}]
 	config.rules.bot.enabled = false
+	# The coffee case below looks at an upgrade that is still reading after one second.
+	config.rules.coffee.seconds = 5.0
 	state = OffWorkState.new(config)
 	state.new_game(54)
 	OffWorkCardDB.configure(config)

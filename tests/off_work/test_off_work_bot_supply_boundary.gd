@@ -62,17 +62,16 @@ func _real_tools_keep_their_return() -> void:
 
 func _unspent_wages_are_not_production() -> void:
     var world:=_world()
-    # A tier that only pays more per work: same batch as an employee, double the wage.
+    # An upgrade that leaves the batch unchanged: people earn what they clear, so it adds nothing.
     world.config.roles.grinder.work_capacity=1
-    world.config.roles.grinder.work_income_multiplier=2
     var baseline:=_value(world,true)
     var worker:int=world._owner_type(0,"employee")[0]
     var cup:=world.add_card("coffee",0)
     var recipe:=_value(world)
-    check(not recipe.detail.sides[0].public_investment.get("kind","")=="coffee","unused higher wages alone cannot beat the same real work throughput")
+    check(not recipe.detail.sides[0].public_investment.get("kind","")=="coffee","an upgrade without extra batch capacity cannot beat the same real work throughput")
     check(world.move_cards([worker,cup],-1)>=0,"counterfactual pays the actual coffee recipe and removes the worker from production")
     var upgrading:=_value(world,true)
-    check(upgrading.detail.sides[0].eta>baseline.detail.sides[0].eta,"equal-capacity upgrade with no executable use for extra wages includes its lost work time")
+    check(upgrading.detail.sides[0].eta>baseline.detail.sides[0].eta,"equal-capacity upgrade earns nothing extra and still includes its lost work time")
     # The default table doubles the batch instead, which is real throughput.
     var doubled:=_world()
     var slower:=_value(doubled,true)

@@ -307,7 +307,7 @@ func _unit(kind: String, count: int, union: bool, transfer: bool) -> Dictionary:
 	var role: Dictionary = _config.roles[kind]
 	return {"role":original_kind, "count":count, "capacity":int(role.transfer_capacity if transfer else role.work_capacity),
 		"speed":1.0 / maxf(0.001,_config.number("transfer","seconds")) if transfer else _config.work_rate(kind, 0),
-		"income":0 if transfer else _config.income_per_work(kind), "strikeable":bool(_config.roles[original_kind].get("can_be_strike_target",true))}
+		"income":0 if transfer else _config.income_per_work(), "strikeable":bool(_config.roles[original_kind].get("can_be_strike_target",true))}
 
 func _model(world: OffWorkState, side: int, index: Dictionary) -> Dictionary:
 	var model := {"owner":side, "groups":{}, "events":[], "work":0, "pending_work":0, "free_cash":0.0,

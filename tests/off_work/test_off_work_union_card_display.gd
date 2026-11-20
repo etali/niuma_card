@@ -21,7 +21,7 @@ func _initialize() -> void:
 	recruiting.append_array([{"def_id":"work"}, {"def_id":"employee"}])
 	check(OffWorkComboRules.evaluate(recruiting).type == "production", "招聘不抢占现有工作预览")
 	var protected := OffWorkComboRules.evaluate([{"def_id":"work_emperor"}, {"def_id":"union"}, {"def_id":"work"}])
-	check(protected.output_n == config.income_per_work("employee"), "工会组合预览按员工收入计算")
+	check(protected.output_n == config.income_per_work(), "工会组合预览按员工收入计算")
 	check(not OffWorkComboRules.evaluate([{"def_id":"boss"}, {"def_id":"union"}, {"def_id":"work"}]).valid, "工会不让老板获得工作资格")
 	var promotion := [{"def_id":"employee"}, {"def_id":"workaholic"}]
 	for i in 4: promotion.append({"def_id":"coffee"})

@@ -485,9 +485,6 @@ func _recipe_claims_are_atomic() -> void:
 	var game := world([{"work":200,"workaholic":1}],40)
 	game.config.roles.workaholic.work_capacity=4
 	game.config.roles.work_emperor.work_capacity=8
-	# Pay per work rises with the tier here, so a leaked emperor wage would show in the income.
-	game.config.roles.workaholic.work_income_multiplier=4
-	game.config.roles.work_emperor.work_income_multiplier=8
 	game.config.rules.conveyor.interval_seconds=10.0
 	game._sync_schedule()
 	for i in 4: game.offers.append(game._make_offer("coffee"))
@@ -495,7 +492,7 @@ func _recipe_claims_are_atomic() -> void:
 	var result := value(game,1,[0.0,1.0])
 	check(result.detail.sides[0].public_investment.get("source","")=="visible_recipe" and result.detail.sides[0].forecast_purchases.size()==4, "同四杯竞争中较早方完成真实完整配方")
 	check(result.detail.sides[1].public_investment.get("kind","")=="employee" and result.detail.sides[1].forecast_purchases.size()==1, "失败配方整体撤回并改选员工，不保留部分杯款或免费升级")
-	check(result.detail.sides[1].income==40.0*(4.0*4.0+1.0), "替代人员方案每批四份工作狂加一份员工工资，没有沿用失败升帝的八倍工资")
+	check(result.detail.sides[1].income==200.0 and is_equal_approx(result.detail.sides[1].eta,400.0), "替代人员方案每批清肝帝四份加员工一份、四十批清完并各赚一钱，没有沿用失败升帝的八份处理量")
 	var worker := first(game,"workaholic",1)
 	game.cards[worker].type="grinder"
 	game.config.roles.grinder.work_capacity=2

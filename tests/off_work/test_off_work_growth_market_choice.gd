@@ -14,6 +14,8 @@ func _restore() -> OffWorkState:
 	var world := OffWorkState.new(config)
 	var raw := Marshalls.base64_to_raw(fixture.snapshot.data).decompress(int(fixture.snapshot.size),FileAccess.COMPRESSION_ZSTD)
 	var entry: Dictionary=bytes_to_var(raw)
+	# The snapshot predates the shuffled supply bag: load it the way sessions and replays do.
+	OffWorkState.migrate_supply_snapshot(entry.world)
 	for key in OffWorkState.WORLD_FIELDS: world.set(key,entry.world[key])
 	world._rng.state=entry.rng
 	world._invalidate_group_index()
@@ -26,8 +28,10 @@ func _run() -> void:
 	check(world.time==40.0 and world.available_money(1)==4,"真实40秒局面保留4钱，没有补发资金")
 	check(OffWorkConfig.decision_budget_ms(world.config.rules.bot)==1800 and world.config.rules.bot.think_seconds==2.0,
 		"使用录像实际1档的1800毫秒预算和2秒操作间隔")
-	for kind in ["employee","grinder","workaholic","work_emperor"]:
-		check(world.config.work_batch_size(kind,800)==1,"升级%s仍每轮一份，不修改容量"%kind)
+	# The recorded table paid 1, 2, 4 and 8 per file at one file per batch. Read under the rule that
+	# people earn what they clear, each tier clears exactly what it used to earn; nothing else moved.
+	var recorded_batches: Array=["employee","grinder","workaholic","work_emperor"].map(func(kind):return world.config.work_batch_size(kind,800))
+	check(recorded_batches==[1,2,4,8] and world.config.income_per_work()==1,"录像卡表按清几份赚几份读入：每批1、2、4、8份，没有另改容量")
 	_market_certificate(world)
 	var actual := _restore()
 	var bot := Bot.new(actual,1,actual.config.rules.bot,20261110)

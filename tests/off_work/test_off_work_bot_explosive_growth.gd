@@ -33,8 +33,10 @@ func _run() -> void:
 	var config := _config()
 	var expected_budget := logic_budget_ms if logic_budget_ms>0 else (700 if strength==0.5 else 1800)
 	check(OffWorkConfig.decision_budget_ms(config.rules.bot)==expected_budget, "预算与声明一致；逻辑放宽档不冒充真实强度验收")
-	for kind in ["employee","grinder","workaholic","work_emperor"]:
-		check(config.work_batch_size(kind,800)==1, "录像卡表%s每轮仍只处理1份，不靠改升级容量伪造增长"%kind)
+	# The recorded table paid 1, 2, 4 and 8 per file at one file per batch. Read under the rule that
+	# people earn what they clear, each tier clears exactly what it used to earn; nothing else moved.
+	var recorded_batches: Array=["employee","grinder","workaholic","work_emperor"].map(func(kind):return config.work_batch_size(kind,800))
+	check(recorded_batches==[1,2,4,8] and config.income_per_work()==1, "录像卡表按清几份赚几份读入：每批1、2、4、8份，没有另改容量伪造增长")
 	_dispatch_recorded_purchase()
 	_self_sustaining_economy()
 	finish()
