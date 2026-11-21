@@ -33,6 +33,14 @@ const RIP_REST := -9.0
 const RIP_THROW := Vector3(1.5, 0.0, 1.1)
 const RIP_ARC := 0.75
 const SUCK_TIME := UIMotion.TRANSFER
+## 被用掉的牌压到用它的那张牌底下。低一层的高度差必须大于卡面元素的抬升跨度
+## （CardEntity.FACE_SPAN_Y），否则它的图标会从上面那张牌里透出来。
+const TUCK_DEPTH := 0.03
+## 整段时长里前这么大一份用来靠到那张牌的边上，剩下的平着滑进去。
+const TUCK_ALONGSIDE := 0.6
+## 靠边这一段里，水平位移先走完（占这么大一份），然后才往下放：
+## 本来压在上方的牌要先离开那张牌的占地，再降到它下面那一层。
+const TUCK_CLEAR := 0.7
 const PAWN_TRAVEL_TIME := UIMotion.ANTICIPATE + UIMotion.ACT + UIMotion.SETTLE + UIMotion.SETTLE + SUCK_TIME
 ## 同批到货逐张升调的步长与封顶张数；再多也停在这个音高，不会尖到刺耳。
 const ARRIVAL_PITCH_STEP := 0.045
@@ -302,35 +310,62 @@ func _tear_out(card: CardEntity, dir: Vector3) -> void:
 
 var _transfers: Array[Tween] = []
 
-## 典当先展示完整正面，抵达柜台后再吸收；与付款共用吸收收尾。
-func pawn_into(card: CardEntity, target: Vector3, delay := 0.0) -> Tween:
+## 典当先展示完整正面，抵达柜台上方后再压到柜台底下；与付款共用同一段收尾。
+## cover 是典当行那张设施牌的位置；牌从卖方那一侧进去。
+func pawn_into(card: CardEntity, cover: Vector3, delay := 0.0, hover := 0.8, enter_from := Vector2(0, -1)) -> Tween:
 	board.drop_card(card)
-	var tween := move_above_table(card, target, delay)
+	var tween := move_above_table(card, cover + Vector3.UP * hover, delay)
 	tween.tween_interval(UIMotion.SETTLE)
 	tween.tween_callback(func(): card.pulse_feedback("consume"))
-	_consume(tween, card, target, 0.0)
+	_consume(tween, card, cover, 0.0, enter_from)
 	return tween
 
-func _suck_into(card: CardEntity, target: Vector3, delay := 0.0) -> void:
+## 付款：这张牌压到用它的那张牌底下。cover 是那张牌（商品、典当行、组合的核心牌）的位置。
+func _suck_into(card: CardEntity, cover: Vector3, delay := 0.0) -> void:
 	# 付款与攻击一样要补齐剩余层位；只注销会让新队首停在旧层，
 	# 下次点击按新层数反推起点时，收拢摞可能被排到桌面以下。
 	board.drop_card(card)
 	card.freeze = true
-	card.set_meta("dest_pos", target)
+	card.set_meta("dest_pos", cover)
 	card.pulse_feedback("consume", Color.TRANSPARENT, delay)
-	var tw := create_tween().bind_node(card).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
-	_consume(tw, card, target, delay)
+	var tw := create_tween().bind_node(card)
+	_consume(tw, card, cover, delay)
 
-func _consume(tw: Tween, card: CardEntity, target: Vector3, delay: float) -> void:
-	# 错开用每条补间自己的 set_delay，不用 tween_interval：
-	# interval 之后紧跟 parallel() 会和 interval **并行**（那就等于没有延迟），
-	# 得写成 chain() 才是串行 —— 两个 parallel 各自带 delay 更不容易读错
-	# （_tear_out 里那两条淡出也是这么错开的）
-	tw.chain().tween_property(card, "position", target, SUCK_TIME).set_delay(delay)
-	tw.parallel().tween_property(card._visual, "scale",
-		Vector3.ONE * 0.1, SUCK_TIME).set_delay(delay)
-	# 错开期间这张牌不会被别人搬走：上面已经 unregister + freeze，
-	# 它就停在原地等自己那一拍
+## 被用掉的牌不缩小、不在原地消失：先靠到 cover 那张牌的边上，高度比它低一层，
+## 再平着滑到它正下方；被盖住之后才释放。enter_from 是本来就压在 cover 上方的牌
+## 绕出去再进来的那一侧（x、z 方向），默认靠玩家这边。
+func _consume(tw: Tween, card: CardEntity, cover: Vector3, delay: float, enter_from := Vector2(0, 1)) -> void:
+	# 被用掉的牌不再是桌上的实体：不挡点击，也不把盖住它的牌顶起来。
+	card.collision_layer = 0
+	card.collision_mask = 0
+	card.input_ray_pickable = false
+	var under := Vector3(cover.x, cover.y - TUCK_DEPTH, cover.z)
+	var path := {}
+	# 错开用这条补间自己的 set_delay，不用 tween_interval：
+	# interval 之后紧跟 parallel() 会和 interval **并行**（那就等于没有延迟）。
+	# 错开期间这张牌不会被别人搬走：调用方已经 unregister + freeze，
+	# 它就停在原地等自己那一拍；起点在它真正出发的那一刻才取。
+	tw.chain().tween_method(func(t: float) -> void:
+		if not is_instance_valid(card): return
+		if path.is_empty():
+			var from := card.position
+			var flat := Vector2(from.x - cover.x, from.z - cover.z)
+			var side := flat.normalized() if flat.length() > CardEntity.CARD_SIZE.x * 0.5 else enter_from.normalized()
+			var reach := CardEntity.CARD_SIZE.x * absf(side.x) + CardEntity.CARD_SIZE.z * absf(side.y)
+			path["from"] = from
+			path["alongside"] = under + Vector3(side.x, 0.0, side.y) * reach
+		var from: Vector3 = path["from"]
+		var alongside: Vector3 = path["alongside"]
+		if t < TUCK_ALONGSIDE:
+			var k := t / TUCK_ALONGSIDE
+			var eased := k * k * (3.0 - 2.0 * k)
+			var across := minf(1.0, eased / TUCK_CLEAR)
+			# 比目标高的牌等水平位移走完再往下放；比目标低的一路抬上来。
+			var level := clampf((eased - TUCK_CLEAR) / (1.0 - TUCK_CLEAR), 0.0, 1.0) if from.y > alongside.y else eased
+			card.position = Vector3(lerpf(from.x, alongside.x, across), lerpf(from.y, alongside.y, level), lerpf(from.z, alongside.z, across))
+		else:
+			card.position = alongside.lerp(under, (t - TUCK_ALONGSIDE) / (1.0 - TUCK_ALONGSIDE)),
+		0.0, 1.0, SUCK_TIME).set_delay(delay)
 	tw.chain().tween_callback(card.queue_free)
 	transferring()
 	_transfers.append(tw)

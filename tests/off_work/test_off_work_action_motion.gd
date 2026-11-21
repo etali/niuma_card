@@ -304,6 +304,13 @@ func _purchase() -> void:
 	check(board._action_motion.motions.has(bought) and board.by_uid[bought].global_position.distance_to(origin)<0.001,
 		"购买从刚才真实offer节点的位置出发，sync移除报价后仍保留准确起点")
 	var logical := _fingerprint()
+	# 买牌先付款：钱压到牌底下之前，牌抬起停在报价位上方等着，之后才按原来的节奏回家。
+	var hold: float=float(board._action_motion.motions[bought].get("hold_seconds",0.0)) if board._action_motion.motions.has(bought) else 0.0
+	check(hold>0.0 and board._payment_notes.size()==int(offer.price),"对手买牌同样演出付款：每一元一张钱，牌要等钱")
+	_advance(hold)
+	var waiting: Vector3=board.by_uid[bought].global_position
+	check(board._action_motion.motions.has(bought) and Vector2(waiting.x-origin.x,waiting.z-origin.z).length()<0.001,
+		"等钱期间牌不离开报价位")
 	_advance(0.37)
 	check(board.by_uid[bought]._visual.is_visible_in_tree() and board.by_uid[bought].global_position.distance_to(origin)>0.05,
 		"新购人员的同一真实牌在传送带与己方落点之间可见移动")

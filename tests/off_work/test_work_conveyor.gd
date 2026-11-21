@@ -66,7 +66,12 @@ func _run() -> void:
 	board.sync_state(state)
 	await process_frame
 	_check(state.offers[bought_index].is_empty() and state.offers.size() == 6, "purchase leaves one of six slots empty")
-	_check(not board.offers_by_id.has(purchased_id) and not board._prices.has(purchased_id) and not is_instance_valid(purchased_tag), "purchase removes its price with the offer")
+	_check(not board.offers_by_id.has(purchased_id) and not board._prices.has(purchased_id), "purchase removes its offer and stops tracking its price")
+	# The sold tag stays where it hung while the payment arrives, then leaves by itself.
+	_check(is_instance_valid(purchased_tag) and board._lingering_tags.has(purchased_tag) and not purchased_tag._retiring,
+		"the sold price tag is still shown while the payment is on its way")
+	await create_timer(float(board._settings.payment_motion.tag_linger_seconds) + 0.3).timeout
+	_check(not is_instance_valid(purchased_tag), "the sold price tag leaves once the payment has arrived")
 	_check_links("after purchase")
 	# Force a second roll before the first tween has finished. A surviving offer
 	# must arrive at the newest slot, with no stale price tween returning later.

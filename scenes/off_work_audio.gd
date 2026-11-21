@@ -126,7 +126,8 @@ func schedule(action: String, delay: float) -> void:
 				return
 	_pending.append({"action": action, "delay": delay})
 
-func play(action: String) -> void:
+## `db_offset` and `pitch_factor` let one event sound bigger or smaller than its usual voice.
+func play(action: String, db_offset := 0.0, pitch_factor := 1.0) -> void:
 	# Typing has its own group voices; effects cannot steal them or drop a beat
 	# by exhausting this frame's transient-effect budget.
 	if action == "typing": return
@@ -155,8 +156,8 @@ func play(action: String) -> void:
 	var player: AudioStreamPlayer = _players[_next]
 	_next = (_next + 1) % _players.size()
 	player.stream = _streams["res://assets/sfx/" + str(spec.file)]
-	player.volume_db = float(spec.db)
-	player.pitch_scale = float(spec.pitch) * randf_range(float(config.pitch_min), float(config.pitch_max))
+	player.volume_db = float(spec.db) + db_offset
+	player.pitch_scale = maxf(0.05, float(spec.pitch) * pitch_factor * randf_range(float(config.pitch_min), float(config.pitch_max)))
 	player.set_meta("off_work_action",action)
 	player.play()
 	_last_started_usec[action]=now

@@ -6,7 +6,6 @@ extends Node3D
 const CATALOG := "res://data/animation_preview.json"
 const OriginalTable = preload("res://scenes/table_scene.gd")
 const Conveyor = preload("res://scenes/off_work_conveyor.gd")
-const Effects = preload("res://scenes/off_work_effects.gd")
 const Materials = preload("res://scenes/effect_materials.gd")
 const UIDemo = preload("res://scenes/off_work_animation_ui_demo.gd")
 
@@ -24,7 +23,6 @@ var state: OffWorkState
 var board: OffWorkBoard
 var camera: Camera3D
 var conveyor: Node3D
-var effects: Control
 var _world: Node3D
 var _ui_demo: Node
 var _hands: PreviewHands
@@ -38,7 +36,6 @@ var _elapsed := 0.0
 var _sync_age := 0.0
 var _action_index := 0
 var _events: Array = []
-var _positions: Dictionary = {}
 var _rng_state := 0
 var _win_at := -1.0
 var _database: Dictionary = {}
@@ -62,7 +59,6 @@ func load_scenario(id: String) -> void:
 	_action_index = 0
 	_win_at = -1.0
 	_events.clear()
-	_positions.clear()
 	_groups.clear()
 	var random := RandomNumberGenerator.new()
 	random.seed = int(catalog.runtime.seed)
@@ -242,13 +238,6 @@ func _build() -> void:
 	for tray in ["PlayerZoneTray", "FoeZoneTray"]:
 		var node := _world.get_node_or_null(tray)
 		if node != null: node.bind_board(board if tray == "PlayerZoneTray" else board.enemy_board)
-	var layer := CanvasLayer.new()
-	_world.add_child(layer)
-	effects = Effects.new()
-	layer.add_child(effects)
-	_settings.effects.transfer_duration = float(board._settings.transfer_motion.travel_seconds)
-	effects.setup(_settings.effects, _settings.text)
-	effects.card_position_provider = board.screen_position
 	board.sync_state(state)
 	if bool(entry.get("hands", false)):
 		_hands = PreviewHands.new()
@@ -291,8 +280,6 @@ func _setup_dismissal() -> void:
 func _step(delta: float) -> void:
 	var before := get_tree().get_processed_tweens()
 	if state != null:
-		_positions.clear()
-		for uid in board.by_uid: _positions[uid] = board.screen_position(uid)
 		if state.winner < 0: state.advance(delta)
 	_elapsed += delta
 	_run_actions()
@@ -300,15 +287,19 @@ func _step(delta: float) -> void:
 		_sync_age += delta
 		_sync_and_present()
 		if state.winner < 0: board._sync_group_task_progress()
+		board._action_motion.advance(delta)
 		board._advance_cash_flights(delta)
+		board._advance_payment(delta)
+		board._advance_side_rolls(delta)
 		board._advance_meeting_visitors(delta)
 		board._advance_strike_dancers(delta)
 		board._advance_strike_attacks(delta)
 		board._advance_paper_disposal(delta)
 		board._advance_deliveries(delta)
+		board._sync_drop_targets(delta)
+		board.side_extract.advance_pull(delta)
 		_advance_side_extract(delta)
 		for card in board.by_uid.values() + board.offers_by_id.values(): card._process(delta)
-		effects._process(delta)
 	if _ui_demo != null:
 		_ui_demo.advance(delta)
 		if state != null and state.winner >= 0 and _win_at >= 0.0 and _elapsed - _win_at >= float(_settings.result.delay):
@@ -331,12 +322,6 @@ func _sync_and_present() -> void:
 		_events.append(recorded)
 		_present(event)
 
-func _at(uid: int, group := -1) -> Vector2:
-	if _positions.has(uid): return _positions[uid]
-	if board.by_uid.has(uid): return board.screen_position(uid)
-	if group >= 0: return camera.unproject_position(board.get_group_position(group))
-	return get_viewport().get_visible_rect().size * 0.5
-
 func _present(event: Dictionary) -> void:
 	var kind := str(event.kind)
 	if kind == "win":
@@ -344,19 +329,6 @@ func _present(event: Dictionary) -> void:
 		board.play_event(event)
 		return
 	if kind in ["new_game", "conveyor"]: return
-	var source := int(event.get("source", -1))
-	var group := int(event.get("group", -1))
-	var start := _at(source, group)
-	var finish := start
-	var targets: Array = []
-	for uid in event.get("targets", []): targets.append(_at(int(uid)))
-	if kind == "work_complete": finish = _at(int(event.get("money_id", -1)), int(event.get("money_group", -1)))
-	elif kind == "transfer": finish = camera.unproject_position(board.get_group_position(int(event.get("target_group", -1))))
-	elif kind == "strike": start = _at(-1, int(event.get("target_group", -1)))
-	elif kind == "coffee_upgrade": start = _at(int(event.get("person", -1)), group)
-	elif kind == "outsource": finish = Vector2(get_viewport().get_visible_rect().size.x, start.y)
-	effects.emit_effect(kind, start, finish, maxi(event.get("ids", []).size(), 1), targets,
-		source if kind == "meeting_start" else -1, event.get("targets", []) if kind == "meeting_start" else [])
 	board.play_event(event)
 
 func _select(selector: Dictionary) -> Array:
@@ -426,6 +398,25 @@ func _action(action: Dictionary) -> void:
 				board._move_to(card, destination)
 		"land":
 			if card != null: card.pulse_landed()
+		"carry":
+			# The board's own pick-up and per-frame drag: what lights up or gets framed while the
+			# card is held is exactly what a player's drag shows.
+			if card != null:
+				if not board.is_dragging() or board._drag_cards[0] != card:
+					if board.is_dragging(): board.cancel_pointer()
+					board.input_locked = false
+					board.touch_mode = true
+					board._pointer_at = camera.unproject_position(card.global_position)
+					board._snapshot_press(card, board._pointer_at)
+					board._on_card_clicked(card)
+				if board.is_dragging():
+					_hand_card = uid
+					_side_drag = {"start": _elapsed, "duration": float(action.seconds), "from": board._drag_cards[0].global_position, "to": _carry_destination(action)}
+		"put_back":
+			# This preview shows what a drag would do, not the action itself.
+			if board.is_dragging(): board.cancel_pointer()
+			_side_drag.clear()
+			_hand_card = -1
 		"toggle_stack":
 			var members := state.group_cards(gid)
 			if not members.is_empty(): board.toggle_compact(board.by_uid[members[0]])
@@ -474,6 +465,28 @@ func _action(action: Dictionary) -> void:
 					if board.is_dragging():
 						_hand_card = board._drag_cards[0].uid
 						_side_drag = {"start": _elapsed, "duration": float(action.seconds), "from": board._drag_cards[0].global_position, "to": _vector(action.position)}
+		"side_pull":
+			# Press the row of the side list and drag away from it: the real pointer path that
+			# takes a card (or, with "all", every card of that kind) straight out of the pile.
+			board.input_locked = false
+			var members: Array = state.group_cards(gid)
+			var visual: Variant = board.group_of(board.by_uid.get(members[0])) if not members.is_empty() else null
+			if visual != null:
+				var rows: Array = board.side_extract.side_rows(visual)
+				for row in rows.size():
+					if str(rows[row].kind) != str(action.type): continue
+					var label: Label3D = visual.side[row * 2 + 1]
+					var at := camera.unproject_position(label.global_position)
+					_side_button(at, true)
+					var motion := InputEventMouseMotion.new()
+					motion.position = at + Vector2(float(board._settings.side_extract.drag_threshold) + 4.0, 0)
+					motion.button_mask = MOUSE_BUTTON_MASK_LEFT
+					motion.shift_pressed = bool(action.get("all", false))
+					board.side_extract.handle_input(motion)
+					if board.is_dragging():
+						_hand_card = board._drag_cards[0].uid
+						_side_drag = {"start": _elapsed, "duration": float(action.seconds), "from": board._drag_cards[0].global_position, "to": _vector(action.position)}
+					break
 		"side_drop":
 			if not _side_drag.is_empty() and board.is_dragging():
 				var held_ids: Array = board._drag_cards.map(func(held): return held.uid)
@@ -488,6 +501,24 @@ func _action(action: Dictionary) -> void:
 			board.side_extract.close()
 	board.sync_state(state)
 
+## Where a carried card is held: over a named group's front card or over the dismissal
+## entrance, as seen through the camera, or at an explicit table position.
+func _carry_destination(action: Dictionary) -> Vector3:
+	var over := Vector3.INF
+	if action.has("over"):
+		var members: Array = state.group_cards(int(_groups.get(str(action.over), -1)))
+		if not members.is_empty() and board.by_uid.has(members[0]):
+			var front: OffWorkCard = board.by_uid[members[0]]
+			var visual: Variant = board._presenter(front.card_owner).group_of(front)
+			if visual != null: front = visual.cards[0]
+			over = front.global_position
+	elif bool(action.get("facility", false)):
+		return Vector3(board.pawn_pos.x, Board.DRAG_HEIGHT, board.pawn_pos.z)
+	if over == Vector3.INF: return _vector(action.position)
+	var screen := camera.unproject_position(over)
+	var held: Variant = Plane(Vector3.UP, Board.DRAG_HEIGHT).intersects_ray(camera.project_ray_origin(screen), camera.project_ray_normal(screen))
+	return held if held != null else Vector3(over.x, Board.DRAG_HEIGHT, over.z)
+
 func _side_button(at: Vector2, pressed: bool) -> void:
 	var event := InputEventMouseButton.new()
 	event.position = at
@@ -500,7 +531,7 @@ func _move_side_pointer(at: Vector3) -> void:
 	board.touch_mode = true
 	# The real handoff preserves the point grabbed on the exposed header.
 	# Move that pointer so the held card, rather than the pointer, reaches at.
-	board._pointer_at = camera.unproject_position(Vector3(at.x - board._grab_offset.x, Board.DRAG_HEIGHT, at.z - board._grab_offset.z))
+	board._pointer_at = board.pointer_for_landing(at)
 	board._process(0.0)
 
 func _advance_side_extract(delta: float) -> void:
@@ -537,7 +568,6 @@ func snapshot() -> Dictionary:
 			"meeting_visitors": board._meeting_visitors.size(), "strikers": board._strike_dancers.size(),
 			"strike_attacks": board._strike_attacks.duplicate(true),
 			"camera": [camera.transform, camera.size, camera.h_offset, camera.v_offset],
-			"effects": effects.items.duplicate(true),
 			"conveyor": conveyor.carriers.map(func(carrier): return carrier.transform),
 			"offers": board.offers_by_id.values().map(func(card): return [card.global_position, card._visual.transform])})
 	if _ui_demo != null: result["ui"] = _ui_demo.snapshot()
@@ -566,7 +596,6 @@ func _clear() -> void:
 	board = null
 	camera = null
 	conveyor = null
-	effects = null
 
 func _exit_tree() -> void:
 	for tween in _owned_tweens:

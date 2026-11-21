@@ -2092,15 +2092,24 @@ func _fit_header_width(available: float) -> void:
 	for control in _title_row.get_children():
 		if control != _resources and control is Control:
 			fixed_width += control.get_combined_minimum_size().x
-	var wanted := 0.0
-	for source: Label in [_main.lbl_player_res, _main.lbl_bot_res]:
-		var cell: Control = source.get_parent()
-		var font := source.get_theme_font("font")
-		var text_width := font.get_string_size(source.text, HORIZONTAL_ALIGNMENT_LEFT, -1, source.get_theme_font_size("font_size")).x
-		var style: StyleBox = cell.get_theme_stylebox("panel")
-		wanted = maxf(wanted, text_width + style.get_minimum_size().x + _px(16))
 	var resources_gap := _resources.get_theme_constant("separation")
-	var width := minf(ceilf(wanted), maxf(1.0, (available - fixed_width - resources_gap) * 0.5))
+	var limit := maxf(1.0, (available - fixed_width - resources_gap) * 0.5)
+	var wanted := 0.0
+	# 读数必须完整地写在一行里。胜利线在两边都放得下时写上；放不下就只写余额，
+	# 完整的那一句一直在悬停提示里。窗口变宽、变窄时在这里重新决定。
+	for goal_shown in [true, false]:
+		wanted = 0.0
+		for source: Label in [_main.lbl_player_res, _main.lbl_bot_res]:
+			if source.has_meta("reading_with_goal"):
+				source.text = str(source.get_meta("reading_with_goal" if goal_shown else "reading_plain"))
+			var cell: Control = source.get_parent()
+			var font := source.get_theme_font("font")
+			var text_width := font.get_string_size(source.text, HORIZONTAL_ALIGNMENT_LEFT, -1, source.get_theme_font_size("font_size")).x
+			var style: StyleBox = cell.get_theme_stylebox("panel")
+			wanted = maxf(wanted, text_width + style.get_minimum_size().x + _px(16))
+		if ceilf(wanted) <= limit:
+			break
+	var width := minf(ceilf(wanted), limit)
 	for cell: Control in _resources.get_children():
 		cell.custom_minimum_size.x = width
 		cell.size.x = width
@@ -2126,10 +2135,18 @@ func compact_header_resources() -> void:
 		var seat: String = item[1]
 		var full := label.text
 		label.tooltip_text = full
-		label.text = "%s · %s%d · %s%d%s" % [item[2],
-			OnWorkCardDB.res_label(OnWorkCardDB.RES_CASH), _main.state.resource_count(seat, OnWorkCardDB.RES_CASH),
-			OnWorkCardDB.res_label(OnWorkCardDB.RES_USER), _main.state.resource_count(seat, OnWorkCardDB.RES_USER),
-			" ⚠" if "⚠" in full else ""]
+		var cash_reading := "%s%d" % [OnWorkCardDB.res_label(OnWorkCardDB.RES_CASH), _main.state.resource_count(seat, OnWorkCardDB.RES_CASH)]
+		var rest := " · %s%d%s" % [OnWorkCardDB.res_label(OnWorkCardDB.RES_USER),
+			_main.state.resource_count(seat, OnWorkCardDB.RES_USER), " ⚠" if "⚠" in full else ""]
+		# 两种写法都备好；_fit_header_width 按放不放得下来选。
+		label.set_meta("reading_with_goal", "%s · %s/%d%s" % [item[2], cash_reading, int(OnWorkCardDB.game_rules()["win_cash"]), rest])
+		label.set_meta("reading_plain", "%s · %s%s" % [item[2], cash_reading, rest])
+		label.text = str(label.get_meta("reading_with_goal"))
+		# 这一行是一个整体的读数：资金或用户快归零时，整行用危险色。
+		var low: bool = _main.resource_low(seat, OnWorkCardDB.RES_CASH) or _main.resource_low(seat, OnWorkCardDB.RES_USER)
+		var ink: Color = Palette.semantic("danger") if low else Palette.get_color("hud", "player" if label == _main.lbl_player_res else "bot")
+		label.set_meta("drawer_ink", ink)
+		label.add_theme_color_override("font_color", ink)
 	if _last_size.x > 300.0:
 		_fit_header_width(_last_size.x - _px(PAD * 2))
 		_header.position.x = roundf((_last_size.x - _header.size.x) * 0.5)

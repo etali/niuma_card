@@ -375,7 +375,6 @@ func _fixed_frame(measure := false) -> void:
 	if measure: _sample("card_process_ms", float(Time.get_ticks_usec() - started) / 1000.0)
 	if measure: _sample("active_card_processes", active)
 	main.conveyor._process(1.0 / 60.0)
-	main.effects._process(1.0 / 60.0)
 	for tween in get_processed_tweens():
 		if tween.is_valid(): tween.custom_step(1.0 / 60.0)
 	if measure: _sample("script_total_ms", float(Time.get_ticks_usec() - all) / 1000.0)

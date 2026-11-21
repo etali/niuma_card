@@ -45,8 +45,8 @@ var _retired := false
 var face_deferred := false
 var _leave_tween: Tween
 const TitleInk = preload("res://scenes/card_title_ink.gd")
-var _upgrade_ring: MeshInstance3D
 var _upgrade_remaining := 0.0
+var _upgrade_leaping := false
 var _upgrade_visual_active := false
 var _animation_running := false
 var _motion_material: ShaderMaterial
@@ -64,7 +64,7 @@ static func prewarm_event_stamps() -> void:
 	# baking a new word reads a viewport back from the GPU during settlement.
 	var words: Array = []
 	var rig := OffWorkUI.section("rig")
-	for key in ["stamp_word", "meeting_word", "strike_word"]: words.append(str(rig[key]))
+	for key in ["stamp_word", "meeting_word", "strike_word", "dismiss_word", "blocked_word", "resume_word"]: words.append(str(rig[key]))
 	words.append(str(OffWorkUI.section("upgrade").stamp_word))
 	words.append(str(OffWorkUI.section("animation").leave_stamp))
 	for kind in OffWorkCardDB.role_rules(): words.append(str(OffWorkCardDB.get_def(str(kind)).get("name", "")))
@@ -149,18 +149,17 @@ func _build_realtime() -> void:
 	_prepare_illustration_motion()
 	_realtime = Node3D.new()
 	_realtime.name = "RealtimeLayers"
-	# Only the truthful task bar and event ring remain above the original icon.
-	# Their depth stays below the next card in the unchanged original stack gap.
+	# Only the truthful task bar remains above the original icon.
+	# Its depth stays below the next card in the unchanged original stack gap.
 	var reference := OffWorkUI.vector2("frame", "size")
 	var reference_y := OffWorkUI.number("frame", "icon_y")
-	var max_y := maxf(OffWorkUI.number("task_progress", "surface_y"), OffWorkUI.number("upgrade", "ring_y"))
+	var max_y := OffWorkUI.number("task_progress", "surface_y")
 	var depth_scale := (Y_OVERLAY - Y_ICON) / (max_y - reference_y)
 	_realtime.scale = Vector3(CARD_SIZE.x / reference.x, depth_scale, CARD_SIZE.z / reference.y)
 	_realtime.position.y = Y_ICON - reference_y * depth_scale
 	_add_visual(_realtime)
 	_face_elems.append(_realtime)
 	_build_task_progress()
-	if _is_person(): _build_upgrade_fx()
 
 func _center_illustration() -> void:
 	if _icon == null: return
@@ -300,7 +299,10 @@ func _render_task_progress() -> void:
 	if _task_progress_frame == null: return
 	var spec := OffWorkUI.section("task_progress")
 	_task_progress_frame.visible = true
-	_task_progress.visible = (_task_progress_active or _task_completion_hold > 0.0) and not is_offer and not _retired and not is_meeting_participant() and not _strike_participant
+	# Someone on strike shows no work bar, only the red one that counts their strike down.
+	var on_strike := _strike_participant and _task_progress_phase == "strike"
+	_task_progress.visible = (_task_progress_active or _task_completion_hold > 0.0) and not is_offer and not _retired \
+		and (on_strike or (not is_meeting_participant() and not _strike_participant))
 	_render_debug_timer()
 	# Logical clocks and Debug stay current on every card. The large majority
 	# have no visible bar; upload its latest appearance only when it is shown.
@@ -314,7 +316,9 @@ func task_progress_display_value() -> float:
 	if _task_progress_material == null: return 0.0
 	# Inspection must read the true display value, even while the hidden
 	# surface deliberately retains its last uploaded shader parameters.
-	var reverse_phases: Array = OffWorkUI.section("task_progress").get("reverse_phases", {}).get(type, [])
+	# "*" lists phases that run down on any card (a strike is counted down on whoever is on it).
+	var reversed: Dictionary = OffWorkUI.section("task_progress").get("reverse_phases", {})
+	var reverse_phases: Array = reversed.get(type, []) + reversed.get("*", [])
 	if _task_completion_hold > 0.0: return 1.0
 	return 1.0 - _task_progress_value if _task_progress_phase in reverse_phases else _task_progress_value
 
@@ -355,32 +359,12 @@ func _refresh_role_identity(next_type: String) -> void:
 	_prepare_illustration_motion()
 	refresh_palette()
 
-func _build_upgrade_fx() -> void:
-	_upgrade_ring = MeshInstance3D.new()
-	_upgrade_ring.name = "UpgradeRing"
-	var ring := TorusMesh.new()
-	ring.inner_radius = OffWorkUI.number("upgrade", "ring_inner_radius")
-	ring.outer_radius = OffWorkUI.number("upgrade", "ring_outer_radius")
-	_upgrade_ring.mesh = ring
-	var material := _flat(Palette.semantic(str(OffWorkUI.section("upgrade").color)))
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.no_depth_test = false
-	_upgrade_ring.material_override = material
-	_upgrade_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_upgrade_ring.position = Vector3(0, OffWorkUI.number("upgrade", "ring_y"), OffWorkUI.number("upgrade", "ring_z"))
-	_realtime.add_child(_upgrade_ring)
-	_upgrade_ring.hide()
-
+## An upgrade is shown on the card itself: the new title is stamped on it and the character
+## gives one kick. Nothing is drawn around the card.
 func _update_upgrade_fx() -> void:
-	if _upgrade_ring == null or not _upgrade_visual_active: return
-	_upgrade_ring.visible = _upgrade_remaining > 0.0 and not _retired and not is_offer
+	if _icon == null or not _upgrade_visual_active: return
 	var progress := 1.0 - _upgrade_remaining / OffWorkUI.number("upgrade", "duration_seconds")
-	var strength := sin(clampf(progress, 0.0, 1.0) * PI) if _upgrade_remaining > 0.0 else 0.0
-	var ring_scale := lerpf(OffWorkUI.number("upgrade", "ring_start_scale"), OffWorkUI.number("upgrade", "ring_end_scale"), progress)
-	_upgrade_ring.scale = Vector3(ring_scale, 1.0, ring_scale)
-	var color := Palette.semantic(str(OffWorkUI.section("upgrade").color))
-	color.a = strength * OffWorkUI.number("upgrade", "ring_peak_alpha")
-	(_upgrade_ring.material_override as StandardMaterial3D).albedo_color = color
+	var strength := sin(clampf(progress, 0.0, 1.0) * PI) if _upgrade_remaining > 0.0 and not _retired and not is_offer else 0.0
 	_icon.scale = Vector3.ONE * (1.0 + strength * OffWorkUI.number("upgrade", "body_scale_kick"))
 	_icon.position.z = _frac_to_z(OffWorkUI.number("frame", "art_cy")) - strength * OffWorkUI.number("upgrade", "body_kick_z")
 	if _upgrade_remaining <= 0.0: _upgrade_visual_active = false
@@ -403,6 +387,9 @@ func update_record(data: Dictionary) -> void:
 	set_strike_participant(status == "striking" or activity == "striking")
 	var task_active := activity in ["transfer", "slack", "meeting", "coffee", "recruitment"] or (activity == "work" and _can_work())
 	set_task_progress(progress, _is_person() and task_active and activity not in ["work", "transfer", "slack"], paused, activity)
+	if _strike_participant and float(data.get("total", 0.0)) > 0.0:
+		# How long the strike still lasts: a red bar that runs down.
+		set_task_progress(clampf(1.0 - float(data.get("remaining", 0.0)) / float(data.total), 0.0, 1.0), true, false, "strike")
 	if type in ["meeting", "transfer", "coffee", "slack", "outsource"]:
 		var total := float(data.get("total", 0.0))
 		if total > 0.0:
@@ -630,17 +617,78 @@ func _advance_illustration(delta: float) -> void:
 	# Explicit seeks still upload immediately through seek_hover_animation.
 	_set_illustration_time(hover_animation_time())
 
+## Whether this face can be moved for emphasis right now: it is drawn, at rest, and not in
+## the player's hand.
+func _can_emphasize() -> bool:
+	return _visual != null and _visual.visible and not _visual_retired and not _retired and not is_offer \
+		and not dragging and not _visual_dragging and not _visual_hovered
+
+## The pile takes a hit: the face is pressed out and lifted, then springs back. `strength` 1 is
+## one cleared sheet; larger batches hit harder. Only the face moves, never the card's place.
+func thump(strength: float, delay := 0.0) -> void:
+	# Someone in the air is not on the table to be bumped, and must still come down.
+	if strength <= 0.0 or not _can_emphasize() or is_upgrade_leaping(): return
+	var spec := OffWorkUI.section("clear_feedback")
+	var grow := 1.0 + float(spec.thump_scale) * strength
+	_stop_visual_tween()
+	_drag_visual_tween = create_tween()
+	if delay > 0.0: _drag_visual_tween.tween_interval(delay)
+	_drag_visual_tween.tween_property(_visual, "scale", Vector3(grow, 1.0, grow), float(spec.thump_in_seconds)).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_drag_visual_tween.parallel().tween_property(_visual, "position", Vector3(0.0, float(spec.thump_lift) * strength, 0.0), float(spec.thump_in_seconds))
+	_drag_visual_tween.parallel().tween_property(_visual, "rotation", Vector3.ZERO, float(spec.thump_in_seconds))
+	_drag_visual_tween.tween_property(_visual, "scale", Vector3.ONE, float(spec.thump_out_seconds)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_drag_visual_tween.parallel().tween_property(_visual, "position", Vector3.ZERO, float(spec.thump_out_seconds)).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+
+## Promotion. The card is tossed up, turns once in the air and is slapped back onto the table.
+## The new title is stamped at the moment it lands, which is also when `landed` runs. A face
+## that is buried or in the player's hand is stamped where it is, at once.
+func play_upgrade(delay := 0.0, landed := Callable()) -> void:
+	var spec := OffWorkUI.section("upgrade")
+	_reset_art_motion()
+	var land := func() -> void:
+		_upgrade_remaining = float(spec.duration_seconds)
+		_upgrade_visual_active = true
+		pulse_feedback("upgrade", Palette.semantic(str(spec.color)))
+		flash_stamp(str(definition.get("name", spec.stamp_word)), float(spec.stamp_seconds))
+		sweep_foil()
+		_update_upgrade_fx()
+		if landed.is_valid(): landed.call()
+	if not _can_emphasize() or float(spec.leap_height) <= 0.0:
+		land.call()
+		return
+	var up := float(spec.leap_seconds)
+	var down := float(spec.slam_seconds)
+	var height := float(spec.leap_height)
+	var turns := float(spec.spin_turns)
+	var rise := up / (up + down)
+	_stop_visual_tween()
+	_upgrade_leaping = true
+	_drag_visual_tween = create_tween()
+	if delay > 0.0: _drag_visual_tween.tween_interval(delay)
+	_drag_visual_tween.tween_method(func(t: float) -> void:
+		# Slows towards the top, then is driven down; one even turn the whole way.
+		var lift := 1.0 - pow(1.0 - t / rise, 2.0) if t < rise else 1.0 - pow((t - rise) / (1.0 - rise), 2.0)
+		_visual.position = Vector3(0.0, height * lift, 0.0)
+		_visual.rotation = Vector3(0.0, TAU * turns * t, 0.0), 0.0, 1.0, up + down)
+	_drag_visual_tween.tween_callback(func() -> void:
+		_upgrade_leaping = false
+		_visual.position = Vector3.ZERO
+		_visual.rotation = Vector3.ZERO
+		var grow := 1.0 + float(spec.squash)
+		_visual.scale = Vector3(grow, 1.0, grow)
+		land.call())
+	_drag_visual_tween.tween_property(_visual, "scale", Vector3.ONE, float(spec.settle_seconds)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+## True from the toss until the card is back on the table.
+func is_upgrade_leaping() -> bool:
+	return _upgrade_leaping and _drag_visual_tween != null and _drag_visual_tween.is_valid()
+
 func play_event(kind: String) -> void:
 	if kind == "win":
 		leave()
 		return
 	if kind == "coffee_upgrade":
-		_upgrade_remaining = OffWorkUI.number("upgrade", "duration_seconds")
-		_upgrade_visual_active = true
-		pulse_feedback("upgrade", Palette.semantic(str(OffWorkUI.section("upgrade").color)))
-		_reset_art_motion()
-		flash_stamp(str(definition.get("name", OffWorkUI.section("upgrade").stamp_word)), OffWorkUI.number("upgrade", "stamp_seconds"))
-		_update_upgrade_fx()
+		play_upgrade()
 		return
 	if kind in ["work_complete", "completed"]: flash_task_completion()
 	pulse_feedback("attack" if kind in ["meeting_start", "strike"] else "produce")
@@ -657,7 +705,10 @@ func _ensure_stamp() -> void:
 		"作废", InkStamp.CARD_WIDTH, 2, true)
 	_void_stamp = _stamp_parts.mesh
 
-func leave(clearance_x := 0.0) -> void:
+## The whole card leaves the table at its full size: sideways out of its stack, stamped, then
+## straight off its owner's edge. `route` is how far that edge is and how high the card has to
+## be carried to pass over what lies on the way (x: distance along z, signed; y: height).
+func leave(clearance_x := 0.0, route := Vector2.ZERO) -> void:
 	if not _is_person() or _retired: return
 	set_strike_participant(false)
 	_retired = true
@@ -673,7 +724,6 @@ func leave(clearance_x := 0.0) -> void:
 	collision_layer = 0
 	collision_mask = 0
 	freeze = true
-	if _upgrade_ring != null: _upgrade_ring.hide()
 	_task_completion_hold = 0.0
 	set_task_progress(0.0, false)
 	# The original slam deliberately renders above neighboring cards. At the
@@ -694,16 +744,18 @@ func leave(clearance_x := 0.0) -> void:
 	# buried under tools cannot rise directly through the cards above it.
 	if is_zero_approx(clearance_x): clearance_x = CARD_SIZE.x + OffWorkUI.number("animation", "leave_clearance_padding")
 	var clear_position := _visual.position + global_basis.inverse() * Vector3(clearance_x, 0.0, 0.0)
-	var destination := clear_position + Vector3(0.0, OffWorkUI.number("animation", "leave_height"), OffWorkUI.number("animation", "leave_distance"))
-	var start_scale := _visual.scale
+	if route == Vector2.ZERO: route = Vector2(OffWorkUI.number("animation", "leave_distance"), OffWorkUI.number("animation", "leave_height"))
+	var lifted := clear_position + global_basis.inverse() * Vector3(0.0, route.y, 0.0)
+	var destination := lifted + global_basis.inverse() * Vector3(0.0, 0.0, route.x)
+	var rise := duration * OffWorkUI.number("animation", "leave_rise_fraction")
 	_leave_tween = create_tween()
 	_leave_tween.tween_interval(OffWorkUI.number("animation", "leave_anticipation"))
 	_leave_tween.tween_property(_visual, "position", clear_position, OffWorkUI.number("animation", "leave_clearance_duration")).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_leave_tween.parallel().tween_property(_visual, "scale", start_scale * OffWorkUI.number("animation", "leave_clearance_scale"), OffWorkUI.number("animation", "leave_clearance_duration")).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_leave_tween.tween_callback(_void_stamp.show)
-	_leave_tween.tween_property(_visual, "position", destination, duration).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
-	_leave_tween.parallel().tween_property(_visual, "scale", start_scale * OffWorkUI.number("animation", "leave_scale"), duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	_leave_tween.parallel().tween_property(_visual, "rotation_degrees:y", _visual.rotation_degrees.y + OffWorkUI.number("animation", "leave_tilt_degrees"), duration)
+	# Picked up, then carried off the table. It is hidden only once it is out of the picture.
+	_leave_tween.tween_property(_visual, "position", lifted, rise).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_leave_tween.tween_property(_visual, "position", destination, duration - rise).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_leave_tween.parallel().tween_property(_visual, "rotation_degrees:y", _visual.rotation_degrees.y + OffWorkUI.number("animation", "leave_tilt_degrees"), duration - rise)
 	_leave_tween.tween_callback(hide)
 
 func _exit_tree() -> void:
@@ -722,7 +774,10 @@ func recipe_status_text() -> String:
 	if has_dedicated_progress():
 		if bool(record.get("paused", false)): return str(words.paused)
 		return str(OffWorkUI.section("timer_status")[type].get(str(record.get("status", "ready")), ""))
-	return str(definition.get("description", ""))
+	# A card with no timer of its own has no status line. Its rules are the description, which
+	# the detail panel shows from the card database with the real numbers filled in. This used
+	# to return the raw template again, so the panel read "{seconds} 秒" above the real text.
+	return ""
 
 func set_recipe_progress(have: int, done: bool) -> void:
 	# Preserve the original Board call protocol without recreating face badges.

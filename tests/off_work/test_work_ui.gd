@@ -133,9 +133,12 @@ func _coffee_grouping() -> void:
 	var coffee := _owned("coffee")
 	var job := _owned("work")
 	var work_group: int = state.cards[job].group
-	await _drag(board.by_uid[worker], _point(board.by_uid[job]), false, true)
+	# The held face is brought over the centre of the target face. _point() is where a card
+	# can be picked, which is its title band: beyond the snap region. A card raised straight
+	# up used to fall back into the region by parallax; it now lands where it is seen.
+	await _drag(board.by_uid[worker], _face_centre(board.by_uid[job]), false, true)
 	var working: Dictionary = board.group_of(board.by_uid[worker])
-	await _drag(board.by_uid[coffee], _point(working.cards[board._top_index(working)]), false, true)
+	await _drag(board.by_uid[coffee], _face_centre(working.cards[board._top_index(working)]), false, true)
 	_check(state.cards[coffee].group == work_group and state.tasks[worker].kind == "work"
 		and state.cards[coffee].status == "ready", "real pointer input leaves personnel, work and coffee processing work only")
 	state.advance(state.config.coffee_seconds("employee"))
@@ -187,8 +190,7 @@ func _coffee_lesson_input() -> void:
 	await process_frame
 	board._process(0.0)
 	if not _check(board.is_dragging(), "dragging the exposed fan starts the real employee extraction"): return
-	var destination := board.camera.unproject_position(Vector3(ground.x - board._grab_offset.x,
-		Board.DRAG_HEIGHT, ground.z - board._grab_offset.z))
+	var destination := board.pointer_for_landing(ground)
 	var motion := InputEventMouseMotion.new()
 	motion.position = destination
 	motion.global_position = destination
@@ -219,6 +221,9 @@ func _owned(kind: String) -> int:
 
 func _owned_ids(kind: String) -> Array:
 	return state.cards.keys().filter(func(id): return state.cards[id].owner == 0 and state.cards[id].type == kind)
+
+func _face_centre(card: CardEntity) -> Vector2:
+	return board.camera.unproject_position(card.global_position)
 
 func _point(card: CardEntity) -> Vector2:
 	for z in [-0.40, 0.0, 0.40]:
@@ -276,7 +281,7 @@ func _drag(card: CardEntity, destination: Vector2, empty := false, align_face :=
 		trigger.button_mask = MOUSE_BUTTON_MASK_LEFT
 		root.push_input(trigger)
 		await process_frame
-		destination = board.camera.unproject_position(Vector3(ground.x - board._grab_offset.x, Board.DRAG_HEIGHT, ground.z - board._grab_offset.z))
+		destination = board.pointer_for_landing(ground)
 	for step in range(1, 9):
 		var at := start.lerp(destination, float(step) / 8.0)
 		var event := InputEventMouseMotion.new()
@@ -287,6 +292,7 @@ func _drag(card: CardEntity, destination: Vector2, empty := false, align_face :=
 		pointer = at
 		root.push_input(event)
 		await process_frame
+		board._process(0.0)
 	if align_face:
 		# Native dragging retains a world-space grip; the held face must
 		# actually reach the target rather than just its mouse pointer.
@@ -301,6 +307,7 @@ func _drag(card: CardEntity, destination: Vector2, empty := false, align_face :=
 			pointer = destination
 			root.push_input(event)
 			await process_frame
+			board._process(0.0)
 	_check(board.is_dragging(), "original pointer path starts dragging")
 	await _button(destination, false)
 	await _settle()

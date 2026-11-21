@@ -171,7 +171,7 @@ func _middle_cut() -> void:
 	var ground: Vector3 = from + ray * ((float(board._settings.rest_y) - from.y) / ray.y)
 	await _begin_cut(group, cut)
 	if not board.is_dragging(): return
-	var destination: Vector2 = board.camera.unproject_position(Vector3(ground.x - board._grab_offset.x, Board.DRAG_HEIGHT, ground.z - board._grab_offset.z))
+	var destination: Vector2 = board.pointer_for_landing(ground)
 	await _move_pointer(destination)
 	await _button(destination, false)
 	await _settle()

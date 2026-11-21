@@ -26,13 +26,11 @@ func _run() -> void:
 	# bridge now; setup(false) makes native prewarm finish synchronously.
 	hud._start_drawer()
 	_check(paused and not drawer.is_expanded() and hud._handle.visible, "startup entry pauses the local game")
-	_check(not game.effects.visible, "collapsed entry hides the frozen tabletop effect canvas")
 	var initial_clock: float = game.state.time
 	await create_timer(0.10, true).timeout
 	_check(game.state.time == initial_clock, "startup entry cannot run the opponent in the background")
 	await _click_handle()
 	_check(drawer.is_expanded() and not paused, "original mascot opens while tree is paused")
-	_check(game.effects.visible, "opening restores tabletop effects without clearing them")
 	drawer.pin()
 	game.set_process(false)
 	# Build valid work for both sides, then start a real income flight before
@@ -53,7 +51,6 @@ func _run() -> void:
 	game.board.sync_state(game.state)
 	for event in events:
 		if event.kind == "work_complete": game.board.play_event(event)
-	game.effects.emit_effect("work_complete", Vector2(200, 200), Vector2(400, 200))
 	game.set_process(true)
 	await _frames(2)
 	await _key(KEY_ESCAPE)
@@ -64,7 +61,6 @@ func _run() -> void:
 	for key in snapshot:
 		_check(snapshot[key] == after[key], "collapsed freeze: " + key)
 	_check(not hud._detail.visible and not hud._header.visible and hud._handle.visible, "only the original entry UI remains exposed")
-	_check(not game.effects.visible, "collapsing during active income hides its frozen effect lines")
 	_check(not drawer.is_pinned(), "manual collapse releases the original pin")
 	await _click_handle()
 	_check(drawer.is_expanded() and not paused, "clicking original entry resumes both players")
@@ -120,7 +116,7 @@ func _snapshot(people: Array) -> Dictionary:
 	var result := {"time": game.state.time, "conveyor": game.state.conveyor_progress,
 		"bot_schedule": game.bot._next_think, "tasks": game.state.tasks.duplicate(true),
 		"cards": game.state.cards.duplicate(true), "offers": game.state.offers.duplicate(true),
-		"effects": game.effects.items.duplicate(true), "cash_flights": game.board._cash_flights.duplicate(true)}
+		"cash_flights": game.board._cash_flights.duplicate(true)}
 	for person in people:
 		result["progress_" + str(person)] = game.state.cards[person].progress
 		result["person_animation_" + str(person)] = game.board.by_uid[person]._elapsed

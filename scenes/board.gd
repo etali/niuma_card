@@ -19,6 +19,8 @@ var _overlay_batch_active := false
 ##       拖组中间的卡 = 单独拆出该卡
 
 const DRAG_HEIGHT := 1.2        # 拖拽时离桌高度
+const REST_HEIGHT := 0.05       # 冻结的牌贴桌摆放的高度（见 _layout_group）
+const LOOSE_DROP_CLEARANCE := 0.1   # 松手后恢复物理的散牌离落点多高开始落
 const MERGE_DIST := 1.6         # 松手时的吸附距离
 ## 组内竖直一条线；z 露出标题条，y 每张略抬一点。
 ## y 必须大于「卡面元素在卡内的抬升跨度」（CardEntity.FACE_SPAN_Y = Y_OVERLAY - Y_PLATE = 0.020）：
@@ -73,6 +75,15 @@ var _drag_src_upgrade := ""
 ## 同样是一次结果没变却响了的误报
 var _pickup_quiet := false
 var _grab_offset := Vector3.ZERO   # 点击瞬间：鼠标点 → 被点卡中心 的偏移
+## 沿视线抬起、沿视线放下要用的三样（见 along_view）：
+## 被点的那张牌；它比在手最低的那张高多少（指针投到它所在的高度上）；
+## 在手最低那张拎起前的高度（松手时降回这个高度：摞可能搭在别的牌上，不一定贴桌）。
+var _grab_card: CardEntity = null
+var _grab_lift := 0.0
+var _grab_rest_y := REST_HEIGHT
+## 这次拖动里，在手的牌有没有被指针带着走过（_process 摆过位）。只有带着走过的牌是沿视线
+## 抬起来的，松手才沿视线放回去；别处直接摆位的牌（回放、脚本）按它自己的位置直上直下。
+var _held_carried := false
 ## 拖拽平面上「手」抓着的那一点，见 drag_hand_point
 var _drag_hand_at := Vector3.INF
 var _hover_group = null
@@ -211,8 +222,85 @@ func release_pointer(at: Vector2) -> void:
 			_process(1.0 / 60.0)
 		# 商品保留原货架快照，交给交易入口在拒绝时复位。
 		if not _drag_cards[0].is_market:
+			# 落到购牌栏或典当行上的牌可能被拒绝：留着这次拖拽的起点，好让它们弹回原位。
+			_return_snap = _press_snap
 			_press_snap = {}
+		_facility_drop = false
 		_end_drag()
+		if not _facility_drop:
+			_return_snap = {}
+
+## 落点被拒绝时牌弹回原位用：最近一次落在购牌栏/典当行上的拖拽的起点快照。
+var _return_snap: Dictionary = {}
+var _facility_drop := false
+## 弹回原位：时长，以及弧线高度（按水平距离的比例取，夹在两个值之间）。
+const RETURN_TIME := 0.34
+const RETURN_ARC_RATIO := 0.16
+const RETURN_ARC_MIN := 0.35
+const RETURN_ARC_MAX := 1.4
+
+## 落点被拒绝：把这些牌送回这次拖拽拎起它们的地方，沿一条弧线，从哪来回哪去。
+## 原来成摞的回到原摞原位置，队列顺序、收拢形态、凑满基线都照原样。
+## 这些牌不是最近这次拖拽拎起来的，或者起点那一摞已经变了样，返回 false，由调用方另找位置。
+func return_to_origin(returned: Array) -> bool:
+	var snap := _return_snap
+	_return_snap = {}
+	var back: Array = returned.filter(func(c): return is_instance_valid(c) and cards.has(c))
+	if snap.is_empty() or back.is_empty():
+		return false
+	var g: Variant = snap["group"]
+	if g == null:
+		if back.size() != 1 or back[0] != snap["card"] or group_of(back[0]) != null:
+			return false
+		back[0].rotation_degrees = snap["rot"]
+		# 上班的散卡落回桌面后由物理接手，和平常松手一样。
+		arc_to(back[0], snap["pos"], not _release_keeps_frozen(back[0]))
+		return true
+	# 起点那一摞现在还剩的牌 + 弹回来的牌，必须正好是原来队列里还在桌上的那些。
+	var queue: Array = (snap["cards"] as Array).filter(func(c): return is_instance_valid(c) and cards.has(c))
+	var listed := false
+	for gg in groups:
+		if is_same(gg, g):
+			listed = true
+			break
+	var staying: Array = g["cards"] if listed else []
+	if not back.all(func(c): return queue.has(c) and group_of(c) == null) \
+			or not staying.all(func(c): return queue.has(c)) \
+			or queue.any(func(c): return not back.has(c) and not staying.has(c)):
+		return false
+	g["cards"] = queue
+	g["compact"] = snap["compact"]
+	g["was_valid"] = snap["was_valid"]
+	if not listed:
+		groups.append(g)   # 整摞被拎走时 _on_card_clicked 把它摘掉了
+	_pickup_quiet = true   # 复位不是新凑满，别报叮
+	_layout_group(g, snap["origin"])
+	refresh_group(g)
+	_pickup_quiet = false
+	for c in back:
+		arc_to(c, rest_pos(c))
+	return true
+
+## 一张牌沿弧线飞到 to：先抬起来再落下，不贴着桌面滑过别的牌。
+## release = 落定后交还物理（上班的散卡）。登记在 _move_tw，_stop_move 照常能掐。
+func arc_to(c: CardEntity, to: Vector3, release := false) -> void:
+	_stop_move(c, false)
+	c.freeze = true
+	var from := c.global_position
+	var height := clampf(Vector2(to.x - from.x, to.z - from.z).length() * RETURN_ARC_RATIO, RETURN_ARC_MIN, RETURN_ARC_MAX)
+	var tw := create_tween()
+	tw.tween_method(func(t: float) -> void:
+		if not is_instance_valid(c):
+			return
+		var eased := t * t * (3.0 - 2.0 * t)
+		c.global_position = from.lerp(to, eased) + Vector3.UP * sin(t * PI) * height, 0.0, 1.0, RETURN_TIME)
+	tw.tween_callback(func() -> void:
+		if not is_instance_valid(c):
+			return
+		c.pulse_landed()
+		if release:
+			c.freeze = false)
+	_move_tw[c] = { "tw": tw, "to": to }
 
 var attack_mode := false    # 攻击点选模式：点击 = 选靶，不触发拖拽
 var input_locked := false   # 输入锁：BOT 行动/结算演出期间屏蔽玩家拖拽
@@ -533,10 +621,6 @@ func _on_card_clicked(card: CardEntity, notify_started := true) -> void:
 	# 补间不掐会一路盖掉 _process 的拖拽定位（见 _stop_move）
 	for c in _drag_cards:
 		_stop_move(c)
-	# 抓取点 = 鼠标点击位置（而非卡中心），拖动时卡牌不跳位
-	var grab := _mouse_table_point()
-	_grab_offset = card.global_position - grab if grab != Vector3.INF else Vector3.ZERO
-	_drag_hand_at = grab
 	var anchor := card.global_position
 	for c in _drag_cards:
 		c.freeze = true
@@ -550,6 +634,18 @@ func _on_card_clicked(card: CardEntity, notify_started := true) -> void:
 		min_y = minf(min_y, o.y)
 	for i in _drag_offsets.size():
 		_drag_offsets[i].y -= min_y
+	# 抓取点 = 鼠标点击位置（而非卡中心），拖动时卡牌不跳位。
+	# 牌是沿视线抬起来的（见 along_view）：画面上它留在原处，指针一直压在抓住的那一点上。
+	# 原先直着往上抬，透视下牌的画面会往桌子外侧滑走，滑多少取决于在哪儿拎起来（桌边最多
+	# 三分之二张牌），而且一路带着这个偏差：在左边拎起、拖到右边，指针和牌就对不上了。
+	_grab_card = card
+	_held_carried = false
+	_grab_lift = -min_y
+	_grab_rest_y = anchor.y + min_y
+	var held := DRAG_HEIGHT + _grab_lift
+	var grab := _pointer_at_height(held)
+	_grab_offset = along_view(anchor, held) - grab if grab != Vector3.INF else Vector3.ZERO
+	_drag_hand_at = grab
 	card_picked.emit(card)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -762,7 +858,9 @@ func _process(delta: float) -> void:
 		if not is_instance_valid(c):
 			cancel_drag()
 			return
-	var target := _mouse_table_point()
+	# 指针投到被抓那张牌所在的高度上：摞顶比拖拽平面高出一截，投在平面上会随位置错开
+	var held := DRAG_HEIGHT + _grab_lift
+	var target := _pointer_at_height(held)
 	if target == Vector3.INF:
 		return
 	# 展开牌列以抓住的首牌为交互锚点，尾部可临时伸出屏幕；
@@ -773,7 +871,8 @@ func _process(delta: float) -> void:
 	if screen_position_clamper.is_valid():
 		anchor = screen_position_clamper.call(anchor, held_bounds)
 	# 从夹取后的锚点反推，不直接用 target：碰到边界时手随牌停住，不与牌分开
-	_drag_hand_at = Vector3(anchor.x - _grab_offset.x, DRAG_HEIGHT, anchor.z - _grab_offset.z)
+	_drag_hand_at = Vector3(anchor.x - _grab_offset.x, held, anchor.z - _grab_offset.z)
+	_held_carried = true
 	for i in _drag_cards.size():
 		var c := _drag_cards[i]
 		var pos := anchor + _drag_offsets[i]
@@ -785,8 +884,14 @@ func _process(delta: float) -> void:
 		c.update_drag_motion(velocity, delta)
 		if c.is_market:
 			_sync_market_tag(c)
-	# 吸附高亮
-	var g: Variant = _market_payment_group(_drag_cards[0], _drag_cards[0].global_position) \
+	# 指针指着的桌面那一点：target 在拖拽平面上，比它高出一截，透视下不在同一处
+	_sync_hover_target(along_view(target, REST_HEIGHT))
+	# 拖拽途中不弹提示：配方进度已经印在牌面 D 位的墨团和组顶进度条上，
+	# 手上那张的进度看牌面就够，浮动大字只是又抄了一遍
+
+## 吸附高亮：手上这摞松手会并进哪一组，就点亮哪一组。动画预览也调这一段。
+func _sync_hover_target(target: Vector3) -> void:
+	var g: Variant = _market_payment_group(_drag_cards[0], held_landing_point()) \
 		if _drag_cards[0].is_market else _nearest_group(target, _drag_cards)
 	# 刚拆出来的那一摞不算吸附目标：手上这几张是**从它身上**拿的，
 	# 松手前一直贴着它，_nearest_group 必然选中它 —— 于是玩家一拆组，
@@ -800,8 +905,6 @@ func _process(delta: float) -> void:
 		_hover_group = g
 		if _hover_group:
 			_set_group_highlight(_hover_group, true)
-	# 拖拽途中不弹提示：配方进度已经印在牌面 D 位的墨团和组顶进度条上，
-	# 手上那张的进度看牌面就够，浮动大字只是又抄了一遍
 
 ## 每帧看一眼手上这摞，该广播就广播（scenes/on_work_main.gd 的拖拽广播与租约处理）。
 ##
@@ -829,8 +932,12 @@ func _tick_drag_broadcast(delta: float) -> void:
 	if uids.is_empty():
 		return
 	# 拎起来的第一帧不节流：pickup 是可靠的一次性事件，晚一拍到就是对手侧
-	# 那几张牌晚一拍才抬起来
-	var at: Vector3 = _drag_cards[0].global_position
+	# 那几张牌晚一拍才抬起来。
+	# 发的是「落点的正上方」：在手的牌是沿**本机**镜头的视线抬起来的，那一截偏移只对
+	# 本机的画面有意义；对手的镜头在桌子对面，照原样画会偏到另一边去。
+	var held: Vector3 = _drag_cards[0].global_position
+	var landing := held_landing_point()
+	var at := Vector3(landing.x, held.y, landing.z) if landing != Vector3.INF else held
 	if _bcast_uids != uids:
 		_bcast_uids = uids
 		_bcast_t = 0.0
@@ -1315,10 +1422,70 @@ func _drag_drop_origin(g: Dictionary) -> Vector3:
 	var delta := _drag_cards[0].global_position - _drag_start_anchor
 	return _drag_start_origin + Vector3(delta.x, 0.0, delta.z)
 
+## `height` 高度上、与 `at` 在同一条视线上的那一点：两者在画面上是同一个位置。
+## 镜头是透视的，直着抬起一张牌，它的画面会往桌子外侧滑；沿视线抬起和放下，画面就留在原处，
+## 只是变大变小。没有镜头（或视线几乎水平）时退回直上直下。
+func along_view(at: Vector3, height: float) -> Vector3:
+	if camera == null or not camera.is_inside_tree():
+		return Vector3(at.x, height, at.z)
+	var direction := camera.project_ray_normal(camera.unproject_position(at))
+	if absf(direction.y) < 0.001:
+		return Vector3(at.x, height, at.z)
+	return at + direction * ((height - at.y) / direction.y)
+
+## 在手这摞现在松手要挪多少：沿被抓那张牌的视线，降回拎起前的高度。已经降下去了就是零。
+func _held_drop_shift() -> Vector3:
+	var lowest := INF
+	for card in _drag_cards:
+		if is_instance_valid(card):
+			lowest = minf(lowest, card.global_position.y)
+	var rise := lowest - _grab_rest_y
+	if not _held_carried or lowest == INF or rise <= 0.001:
+		return Vector3.ZERO
+	var grabbed: CardEntity = _grab_card if is_instance_valid(_grab_card) and _drag_cards.has(_grab_card) else _drag_cards[0]
+	if not is_instance_valid(grabbed):
+		return Vector3.ZERO
+	var from := grabbed.global_position
+	return along_view(from, from.y - rise) - from
+
+## 在手这摞现在松手，其中一张（默认队首那张）会落在哪儿；没在拖时为 INF。
+## 拖动途中问「牌底下是什么」都该问这一点，和松手时读到的是同一个位置。
+func held_landing_point(card: CardEntity = null) -> Vector3:
+	if _drag_cards.is_empty():
+		return Vector3.INF
+	var which: CardEntity = card if card != null else _drag_cards[0]
+	if not is_instance_valid(which):
+		return Vector3.INF
+	return which.global_position + _held_drop_shift()
+
+## 要让被抓的那张牌落在 ground 的 x/z 上，指针该放在屏幕哪儿（脚本化拖拽、预览和测试用）。
+## 与 _process 的摆位互为反函数：落点沿视线抬到在手高度，再减去抓取偏移。
+func pointer_for_landing(ground: Vector3) -> Vector2:
+	return pointer_for_view(Vector3(ground.x, _grab_rest_y + _grab_lift, ground.z))
+
+## 要让被抓的那张牌在画面上正盖住 at 这一点（比如另一摞的摞顶），指针该放在屏幕哪儿。
+func pointer_for_view(at: Vector3) -> Vector2:
+	var held := DRAG_HEIGHT + _grab_lift
+	var lifted := along_view(at, held)
+	return camera.unproject_position(Vector3(lifted.x - _grab_offset.x, held, lifted.z - _grab_offset.z))
+
+## 松手是拎起的反过程：在手的牌先沿视线降回拎起前的高度，下面的落点判定读到的就是
+## 「画面上牌在哪儿，它就落在哪儿」。卡面这一帧留在画面原处，由随后的落桌动画
+## （pulse_landed）收回到卡身上。可重复调用：已经降下去的牌不再往下降。
+func _lower_held() -> void:
+	var shift := _held_drop_shift()
+	if shift == Vector3.ZERO:
+		return
+	for card in _drag_cards:
+		if is_instance_valid(card):
+			card.global_position += shift
+			card.hold_face_in_place(-shift)
+
 func _end_drag() -> void:
 	# 在手的牌可能先被 unregister_card 摘走；随后到达的松手事件不再有落点。
 	if _drag_cards.is_empty():
 		return
+	_lower_held()
 	if _drag_cards[0].is_market:
 		var market: CardEntity = _drag_cards[0]
 		var drop := market.global_position
@@ -1362,10 +1529,12 @@ func _end_drag() -> void:
 	if m != null:
 		market_distance = Vector2(m.global_position.x - drop.x, m.global_position.z - drop.z).length()
 	if pawn_distance < PAWN_RADIUS and pawn_distance <= market_distance:
+		_facility_drop = true
 		dropped_on_pawn.emit(_detach_drag())
 		return
 	# 拖到公共区的卡上 = 尝试购买（由游戏控制器校验现金与价格）
 	if m != null:
+		_facility_drop = true
 		dropped_on_market.emit(_detach_drag(), m)
 		return
 	# 先按实际松手位置认领目标。展开列尾部可能在屏外，若先回夹整列，
@@ -1431,6 +1600,8 @@ func _end_drag() -> void:
 				card_stacked.emit(mr["completed"])
 			else:
 				c0.freeze = _release_keeps_frozen(c0)
+				if not c0.freeze:
+					_set_down_loose(c0)
 			# 并进组也好、落回空桌也好，都是「牌落到桌上」，一律一声闷响。
 			# 成组不另配咔哒 —— 那一声留给双击摞牌（见 pile_toggled）
 			card_dropped_table.emit()
@@ -1443,6 +1614,26 @@ func _end_drag() -> void:
 	_drag_start_anchor = Vector3.INF
 	_drag_hand_valid = false
 	_drag_hand_upgrade = ""
+
+## 恢复物理的散牌放在落点上方一点，让它自己落稳。脚下压着别的牌（没近到并进去）时放到
+## 它们上面，照旧搭上去，而不是从它们里面挤出来；这时沿视线抬高，画面上仍在原处。
+func _set_down_loose(card: CardEntity) -> void:
+	var at := card.global_position
+	var top := at.y
+	var space := get_world_3d().direct_space_state
+	for corner in [Vector2.ZERO, Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+		var x: float = at.x + corner.x * CardEntity.CARD_SIZE.x * 0.45
+		var z: float = at.z + corner.y * CardEntity.CARD_SIZE.z * 0.45
+		var query := PhysicsRayQueryParameters3D.create(Vector3(x, DRAG_HEIGHT + 2.0, z), Vector3(x, at.y, z))
+		query.exclude = [card.get_rid()]
+		var hit: Dictionary = space.intersect_ray(query)
+		if not hit.is_empty() and hit["collider"] is CardEntity:
+			top = maxf(top, float(hit["position"].y) + CardEntity.CARD_SIZE.y * 0.5)
+	var to := along_view(at, top) if top > at.y + 0.001 else at
+	to.y += LOOSE_DROP_CLEARANCE
+	card.global_position = to
+	# 卡面这一帧留在画面原处，落桌动画把它收回去
+	card.hold_face_in_place(at - to)
 
 ## 最近的散卡（不在任何组里的单卡）
 func _nearest_loose_card(pos: Vector3, exclude: Array) -> CardEntity:
@@ -2357,6 +2548,14 @@ func _mouse_table_point() -> Vector3:
 	if t < 0:
 		return Vector3.INF
 	return origin + normal * t
+
+## 指针的视线与高度为 height 的水平面的交点；交不到时为 INF。
+## 从 _mouse_table_point 那一点沿视线换算：指针从哪儿来只有那一处说了算。
+func _pointer_at_height(height: float) -> Vector3:
+	var at := _mouse_table_point()
+	if at == Vector3.INF or is_equal_approx(at.y, height):
+		return at
+	return along_view(at, height)
 
 func _upgrade_target(eval: Dictionary) -> String:
 	return str(eval.get("output_card", "")) if eval.get("valid", false) and eval.get("type", "") == "upgrade" else ""

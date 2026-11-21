@@ -19,7 +19,63 @@ func _check(value: bool, message: String) -> void:
 func _work(state: OffWorkState, owner: int) -> Array:
 	return state.cards.keys().filter(func(id): return state.cards[id].type == "work" and int(state.cards[id].owner) == owner)
 
+## 预计下班时间：按现在的人手估算，写在竞速条本方那一句后面；对手的不给数字。
+func _eta() -> void:
+	var config := OffWorkConfig.new()
+	config.rules.initial.groups = [{"work": 200, "employee": 1}]
+	config.rules.bot.enabled = false
+	var state := OffWorkState.new(config)
+	state.new_game(7)
+	var header := PanelContainer.new()
+	root.add_child(header)
+	header.position = Vector2(100, 20)
+	header.size = Vector2(900, 60)
+	var bar: Control = RaceBar.new()
+	root.add_child(bar)
+	bar.sync(state, header, 1.0)
+	var gid := int(state.cards[_work(state, 0)[0]].group)
+	var per_second: float = state.group_work_rate(gid) * float(config.roles.employee.work_capacity)
+	_check(per_second > 0.0 and is_equal_approx(bar.clearing_rate(0), per_second), "the rate is batches per second times the sheets one batch clears")
+	_check(is_equal_approx(bar.eta_seconds(0), 200.0 / per_second), "at this rate two hundred sheets take remaining / rate seconds")
+	# 一秒算钟面上的一分钟，从 18:00 起算。一个员工清两百份要两千秒：两天以后的事。
+	var minutes := 18 * 60 + roundi(200.0 / per_second)
+	_check(minutes / 1440 >= 2 and bar.eta_text(0) == "预计 %d 天后下班" % (minutes / 1440),
+		"one employee alone on two hundred sheets: days away (%s)" % bar.eta_text(0))
+	_check(bar._eta_text == bar.eta_text(0), "the bar shows the estimate for the local player")
+	# 只剩一百份：明天上午。
+	var sheets: Array = _work(state, 0)
+	for index in 100: state._consume(sheets[index])
+	state._sync_schedule()
+	minutes = 18 * 60 + roundi(bar.eta_seconds(0))
+	_check(minutes / 1440 == 1 and bar.eta_text(0) == "预计 次日 %02d:%02d 下班" % [(minutes / 60) % 24, minutes % 60],
+		"a hundred sheets for one employee end tomorrow, written as a time of day (%s)" % bar.eta_text(0))
+	# 人手不变，读条走到一半：钟点不该变（估算按进度折算，不是每结一批跳一下）。
+	var before: float = bar.eta_seconds(0) + float(state.time)
+	state.advance(config.work_seconds() * 0.5)
+	_check(absf(bar.eta_seconds(0) + float(state.time) - before) < 0.5, "with the same people the estimated time of day stays put while a batch is read")
+	state.advance(config.work_seconds() * 0.6)
+	_check(absf(bar.eta_seconds(0) + float(state.time) - before) < 0.5 and state.work_count(0) < 100, "and it stays put when the batch completes")
+	# 加九个卷王：马上提前到今晚。
+	for index in 9: state.add_card("grinder", 0, gid)
+	state._sync_schedule()
+	var faster: float = bar.eta_seconds(0)
+	_check(faster < before / 10.0 and bar.eta_text(0).begins_with("预计 ") and not bar.eta_text(0).contains("次日") and bar.eta_text(0).ends_with(" 下班"),
+		"more hands bring it forward at once, to a time this evening (%s)" % bar.eta_text(0))
+	# 把人都调走：没人干活。
+	var people: Array = state.cards.keys().filter(func(id): return int(state.cards[id].owner) == 0 and config.is_person(str(state.cards[id].type)))
+	state.move_cards(people, -1)
+	_check(is_inf(bar.eta_seconds(0)) and bar.eta_text(0) == "没人干活", "with nobody on the work there is no estimate, and the bar says so")
+	state.move_cards(people, gid)
+	# 工作量很大时写「几天后」。
+	for index in 3000: state.add_card("work", 0, gid)
+	state.move_cards(people.slice(1), -1)
+	state._sync_schedule()
+	_check(bar.eta_text(0).begins_with("预计 ") and bar.eta_text(0).ends_with(" 天后下班"), "a very long way off is given in days (%s)" % bar.eta_text(0))
+	bar.queue_free()
+	header.queue_free()
+
 func _run() -> void:
+	_eta()
 	var config := OffWorkConfig.new()
 	config.rules.initial.groups = [{"work": 200, "employee": 1}]
 	config.rules.bot.enabled = false

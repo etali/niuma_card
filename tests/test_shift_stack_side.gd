@@ -42,9 +42,9 @@ func _run() -> void:
 	off._new_game()
 	await create_timer(0.4).timeout
 	off.set_shift_hidden(true)
-	check(not off.effects.is_visible_in_tree() and not off.table_hands.visible, "收牌时暂存手势与屏幕特效")
+	check(not off.table_hands.visible, "收牌时暂存手势")
 	off.set_shift_hidden(false)
-	check(off.effects.is_visible_in_tree() and off.table_hands.visible, "回桌时恢复手势与屏幕特效")
+	check(off.table_hands.visible, "回桌时恢复手势")
 	var groups_with_sides: Array = []
 	for side in [off.board, off.board.enemy_board]:
 		for group in side.groups:

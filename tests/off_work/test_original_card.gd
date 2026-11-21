@@ -98,17 +98,21 @@ func _run() -> void:
 	check(worker._task_progress == bar and is_equal_approx(worker._task_progress_value, 0.45) and worker._task_progress_paused, "upgrade retains current task progress and meeting pause")
 	check(worker.get_child_count() == child_count and worker._visual.get_child_count() == visual_count, "identity refresh creates no duplicate collider or visual layers")
 	worker.play_event("coffee_upgrade")
+	check(worker.is_upgrade_leaping() and worker.stamp_text() != config.cards.grinder.name, "the promoted card is tossed up first; its new title is not stamped in the air")
+	# Land it: the toss and the slam, and nothing of the settle that follows.
+	worker._drag_visual_tween.custom_step(OffWorkUI.number("upgrade", "leap_seconds") + OffWorkUI.number("upgrade", "slam_seconds") + 0.001)
 	worker._process(OffWorkUI.number("upgrade", "duration_seconds") * 0.4)
-	check(worker.stamp_text() == config.cards.grinder.name and worker._upgrade_ring.visible and worker._icon.scale.x > 1.0, "coffee upgrade uses the original stamp with a visible ring and character response")
+	check(worker.stamp_text() == config.cards.grinder.name and worker._icon.scale.x > 1.0, "coffee upgrade stamps the new title on the card when it lands and the character responds")
+	check(worker.find_child("UpgradeRing", true, false) == null and worker._realtime.get_child_count() == 1, "nothing is drawn around an upgrading card")
 	check(is_equal_approx(worker.task_progress_display_value(), 0.45), "upgrade animation cannot fake a completed work bar")
 	worker._process(OffWorkUI.number("upgrade", "duration_seconds"))
-	check(not worker._upgrade_ring.visible and worker._icon.scale == Vector3.ONE, "upgrade visual settles without replacing the card or leaving an overlay")
+	check(worker._icon.scale == Vector3.ONE, "upgrade visual settles without replacing the card or leaving an overlay")
 	var overtime := cards[config.cards.keys().find("overtime")]
 	check(overtime._realtime.get_child_count() == 1 and not overtime._task_progress.visible, "permanent overtime has no fake duration graphics")
 	check(config.category("coffee") == "ingredient" and OffWorkCardDB.get_def("coffee").kind == OffWorkCardDB.KIND_SPECIAL, "coffee is displayed as an upgrade ingredient rather than a buff")
 	worker.play_event("coffee_upgrade")
 	worker.leave()
-	check(not worker._upgrade_ring.visible and not worker._task_progress.visible, "finishing during upgrade clears transient upgrade graphics")
+	check(not worker._upgrade_visual_active and not worker._task_progress.visible, "finishing during upgrade clears transient upgrade graphics")
 	await process_frame
 	stage.queue_free()
 	await process_frame

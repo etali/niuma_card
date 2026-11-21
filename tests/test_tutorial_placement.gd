@@ -122,7 +122,7 @@ func _drag(card: CardEntity, at: Vector3) -> void:
 	if not need(arena.board._drag_cards.has(card), "真实按下拿起指定材料"): return
 	var motion := InputEventMouseMotion.new()
 	motion.button_mask = MOUSE_BUTTON_MASK_LEFT
-	motion.position = arena.camera.unproject_position(Vector3(at.x, Board.DRAG_HEIGHT, at.z) - arena.board._grab_offset)
+	motion.position = arena.board.pointer_for_landing(at)
 	root.push_input(motion)
 	await process_frame
 	var up := InputEventMouseButton.new()

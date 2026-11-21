@@ -36,6 +36,8 @@ var lbl_round: Label
 var lbl_player_res: Label
 var lbl_bot_res: Label
 var lbl_msg: Label
+## 操作说明：在提示下面另占一行小字，不顶掉提示。
+var lbl_guide: Label
 var btn_net: Button
 var btn_save: Button
 var btn_resign: Button
@@ -124,6 +126,7 @@ func bind(game: Node) -> void:
 	mine = lbl_player_res
 	opponent = lbl_bot_res
 	message = lbl_msg
+	_build_guide_line()
 	for panel in [_header, _footer, _detail, table_hud]: _guard_table_panel(panel, false)
 	for panel in [_utility, msg_log]: _guard_table_panel(panel, true)
 	sfx.user_muted_changed.connect(func(muted: bool): host.audio.muted = muted)
@@ -329,15 +332,55 @@ func _sync_race_bar() -> void:
 	race_bar.visible = _header.visible and not _collapsed
 	if race_bar.visible: race_bar.sync(state, _header, _responsive_factor())
 
+## 提示留到被下一条替换，并记进提示记录；它不会自己消失，也不会被操作说明顶掉。
 func present_message(text: String, color: Color) -> void:
 	super.present_message(text, color)
 	if is_instance_valid(msg_log): msg_log.append(text, color, msg_log.total() + 1)
+	_sync_guide_line()
+
+## 还没有提示（开局、取消选靶之后）：主行就写操作说明，下面那行小字收起。
+func clear_message() -> void:
+	super.present_message(str(host.settings.text.hint), Palette.semantic("ink"))
+	_sync_guide_line()
+
+func _build_guide_line() -> void:
+	var row: Node = lbl_msg.get_parent()
+	var cell := VBoxContainer.new()
+	cell.name = "StatusCell"
+	cell.add_theme_constant_override("separation", 0)
+	cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cell.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	cell.mouse_filter = Control.MOUSE_FILTER_PASS
+	var index := lbl_msg.get_index()
+	row.remove_child(lbl_msg)
+	row.add_child(cell)
+	row.move_child(cell, index)
+	cell.add_child(lbl_msg)
+	lbl_guide = _label(str(host.settings.text.hint), int(host.settings.hud.guide_size))
+	lbl_guide.name = "OperatingGuide"
+	lbl_guide.modulate = Color(1, 1, 1, float(host.settings.hud.guide_opacity))
+	lbl_guide.autowrap_mode = TextServer.AUTOWRAP_OFF
+	lbl_guide.clip_text = true
+	lbl_guide.max_lines_visible = 1
+	lbl_guide.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	lbl_guide.mouse_filter = Control.MOUSE_FILTER_PASS
+	lbl_guide.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl_guide.tooltip_text = lbl_guide.text
+	cell.add_child(lbl_guide)
+	_sync_guide_line()
+
+func _sync_guide_line() -> void:
+	if not is_instance_valid(lbl_guide): return
+	# 主行已经是操作说明时不重复写一遍；录像和教学有自己的说明。
+	var playing_replay: bool = host.replay != null and host.replay.playing
+	lbl_guide.visible = lbl_msg.text != lbl_guide.text and not playing_replay and host.practice.is_empty()
 
 func _show_message(text: String, color: Color) -> void:
 	present_message(text, color)
 
 func _process(_delta: float) -> void:
 	if not is_instance_valid(host) or not is_instance_valid(board) or not is_instance_valid(_detail): return
+	_sync_guide_line()
 	if _collapsed or _window_blocked():
 		_detail.hide()
 		if is_instance_valid(race_bar): race_bar.hide()
@@ -383,8 +426,24 @@ func _input(event: InputEvent) -> void:
 			drawer_window._on_mouse_entered()
 		else:
 			drawer_window._on_mouse_exited()
+	# Space pauses or resumes a single-player game. Handled here because this layer also runs
+	# while the game is paused.
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE \
+			and btn_pause.is_visible_in_tree() and not btn_pause.disabled and not panels_open() \
+			and (drawer_window == null or drawer_window.is_expanded()) and host.practice.is_empty() \
+			and not host.replay.playing and state != null and state.winner == -1:
+		if host.lan != null and host.lan.live():
+			host._notify(str(host.settings.text.pause_unavailable_online), true)
+		else:
+			set_manual_paused(not _manual_paused)
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
-		if board != null and board.side_extract != null and board.side_extract.is_open():
+		if board != null and board.is_dragging():
+			# Esc first puts back what is in the hand; only a second Esc does the rest.
+			board.cancel_pointer()
+			get_viewport().set_input_as_handled()
+		elif board != null and board.side_extract != null and board.side_extract.is_open():
 			board.side_extract.close()
 			get_viewport().set_input_as_handled()
 		elif panels_open():
@@ -415,6 +474,9 @@ func show_card_detail(card: CardEntity, mouse: Vector2) -> void:
 			_detail_facts.remove_child(child)
 			child.queue_free()
 		if card.is_market and state.config.can_purchase(id): _detail_fact("购买", "%d 金钱" % int(def.price))
+		# An empty fact grid still takes a row gap, which shows as a hole under the title
+		# on a card that has no status line either.
+		_detail_facts.visible = _detail_facts.get_child_count() > 0
 	_detail_status.text = ("购买后拖入牌组" if state.config.can_purchase(id) else str(hud_config.unpurchasable)) if card.is_market else card.recipe_status_text()
 	_detail_status.visible = _detail_status.text != ""
 	_place_detail(mouse)
@@ -961,10 +1023,6 @@ func _sync_pause() -> void:
 func set_collapsed(collapsed: bool) -> void:
 	_collapsed = collapsed
 	_table_ui_suspended = collapsed
-	# Pausing freezes the event canvas, but does not hide its last draw commands.
-	# Keep tabletop lines/impacts out of the transparent mascot window and resume
-	# the same effects (and their saved ages) when the drawer opens again.
-	if is_instance_valid(host.effects): host.effects.visible = not collapsed
 	_header.visible = not collapsed
 	_footer.visible = not collapsed
 	_detail.hide()

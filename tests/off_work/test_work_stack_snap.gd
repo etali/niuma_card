@@ -74,15 +74,24 @@ func _begin(card: CardEntity) -> bool:
 	await _move_pointer(start + Vector2(32.0, 0.0))
 	return _check(board.is_dragging(), "real mouse motion crosses the click threshold")
 
+## Holds the grabbed card so that it comes down with its centre on `desired`. A held card is
+## raised along the line of sight, so this is also where it is in the picture.
 func _held_at(desired: Vector3) -> void:
-	# Compensate the actual grip point, not the hit-test result. x/z represent
-	# the intended resting footprint; original Board determines held height.
-	var anchor := Vector3(desired.x - board._grab_offset.x, Board.DRAG_HEIGHT,
-		desired.z - board._grab_offset.z)
-	await _move_pointer(board.camera.unproject_position(anchor))
-	_check(Vector2(board._drag_cards[0].global_position.x - desired.x,
-		board._drag_cards[0].global_position.z - desired.z).length() < 0.001,
+	await _move_pointer(board.pointer_for_landing(desired))
+	var landing: Vector3 = board.held_landing_point()
+	_check(Vector2(landing.x - desired.x, landing.z - desired.z).length() < 0.001,
 		"original drag loop reaches the intended x/z footprint")
+
+## Holds the grabbed card with its raised body straight above `position`, as every held card
+## was before cards were raised along the line of sight. It comes down where it is seen, which
+## under a tilted camera is somewhere else.
+func _held_above(position: Vector3) -> void:
+	var anchor := Vector3(position.x - board._grab_offset.x, Board.DRAG_HEIGHT + board._grab_lift,
+		position.z - board._grab_offset.z)
+	await _move_pointer(board.camera.unproject_position(anchor))
+	_check(Vector2(board._drag_cards[0].global_position.x - position.x,
+		board._drag_cards[0].global_position.z - position.z).length() < 0.001,
+		"original drag loop holds the raised card above the intended point")
 
 func _release() -> void:
 	await _button(pointer, false)
@@ -101,9 +110,11 @@ func _landing_stack(angle: float, count: int) -> void:
 	_check(board._nearest_group(source.global_position, board._drag_cards) == piles[1],
 		"%d degrees, %d cards: resting footprint previews target stack" % [angle, count])
 	if angle == 45.0:
-		_check(is_inf(board._face_hit_distance(source.global_position, target)),
-			"45 degrees reproduces the elevated visual-centre miss")
-		_check(is_finite(board._snap_distance(source.global_position, target)),
+		# Raised straight up, the card used to be seen well away from the pile it was about to
+		# land on. Raised along the line of sight, it is seen on it.
+		_check(is_finite(board._face_hit_distance(source.global_position, target)),
+			"45 degrees: a card held over the target's footprint is seen over the target")
+		_check(is_finite(board._snap_distance(board.held_landing_point(), target)),
 			"ordinary stacking accepts the matching resting footprint")
 	await _release()
 	_check(state.cards[source_uid].group == target_group and state.cards[target_uid].group == target_group,
@@ -124,7 +135,7 @@ func _outside_boundary(angle: float) -> void:
 	var edge := target.global_position + Vector3(direction * (CardEntity.CARD_SIZE.x * 0.75 * 0.5 + 0.01), 0, 0)
 	await _held_at(edge)
 	_check(is_inf(board._face_hit_distance(source.global_position, target)), "boundary fixture also misses the visible face")
-	_check(is_inf(board._snap_distance(source.global_position, target)), "%d degrees: just outside 75%% remains outside" % angle)
+	_check(is_inf(board._snap_distance(board.held_landing_point(), target)), "%d degrees: just outside 75%% remains outside" % angle)
 	await _release()
 	_check(state.cards[source.uid].group == original_group, "out-of-range drop remains a separate real group")
 	# Repeat on clear tabletop: height compensation must not restore the old
@@ -151,10 +162,13 @@ func _visible_center() -> void:
 	var group: int = state.cards[target.uid].group
 	if not await _begin(source): return
 	var desired := _ray_at_height(board.camera.unproject_position(target.global_position), source.global_position.y)
-	await _held_at(desired)
+	await _held_above(desired)
 	_check(board._face_hit_distance(source.global_position, target) < 0.001, "visual-centre fixture really points at the visible target")
 	_check(absf(source.global_position.z - target.global_position.z) > CardEntity.CARD_SIZE.z * 0.75 * 0.5,
-		"visual-centre fixture would miss if only vertical landing were used")
+		"visual-centre fixture would miss if the raised card fell straight down")
+	var seen: Vector3 = board.held_landing_point()
+	_check(Vector2(seen.x - target.global_position.x, seen.z - target.global_position.z).length() < CardEntity.CARD_SIZE.z * 0.75 * 0.5,
+		"the card comes down where it is seen, on the target")
 	await _release()
 	_check(state.cards[source.uid].group == group, "existing visual-centre merge remains supported")
 
@@ -183,7 +197,7 @@ func _visible_priority(visible_count: int) -> void:
 	await _settle()
 	var preferred_group: int = state.cards[visible.uid].group
 	if not await _begin(source): return
-	await _held_at(landing.global_position)
+	await _held_above(landing.global_position)
 	_check(board._face_hit_distance(source.global_position, visible) < 0.001, "priority fixture hits the visible target centre")
 	_check(is_inf(board._face_hit_distance(source.global_position, landing)), "priority fixture's landing target is visually separate")
 	if visible_count > 1:
@@ -210,7 +224,8 @@ func _small_correction() -> void:
 	var before := source.global_position
 	if not await _begin(source): return
 	await _held_at(before + Vector3(0.05, 0, 0))
-	_check(Vector2(source.global_position.x - before.x, source.global_position.z - before.z).length() < 0.12,
+	var corrected: Vector3 = board.held_landing_point()
+	_check(Vector2(corrected.x - before.x, corrected.z - before.z).length() < 0.12,
 		"correction ends inside the original 0.12 return-to-origin threshold")
 	_check(board._nearest_group(source.global_position, board._drag_cards) == piles[1], "small correction previews the overlapping other stack")
 	await _release()

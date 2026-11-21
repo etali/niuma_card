@@ -75,13 +75,13 @@ static func configure(off_work_config: OffWorkConfig) -> void:
 ## 工具说明使用同名规则节的占位符，人员的批次收益和升级材料随卡表计算。
 static func _description(id: String) -> String:
 	var rule_section := "recruitment" if id == "boss" else id
-	var words := str(config.cards[id].description).format(config.rules.get(rule_section, {}))
+	var words := str(config.cards[id].description).format(_plain_numbers(config.rules.get(rule_section, {})))
 	if not config.is_person(id):
 		return words
 	var role: Dictionary = config.roles[id]
 	if config.can_work(id):
 		words += " 无加班时每 %s 秒最多处理 %d 份工作，赚 %d 钱；工作不够时清几份算几份。" % [
-			config.work_seconds(), role.work_capacity, int(role.work_capacity) * config.income_per_work()]
+			_plain(config.work_seconds()), role.work_capacity, int(role.work_capacity) * config.income_per_work()]
 	else:
 		words += " 不处理普通工作。"
 	words += " 每批甩锅 %d 份，主持会议提供 %d 个参会名额，多人主持时名额累加。" % [role.transfer_capacity, config.meeting_capacity(id)]
@@ -91,8 +91,18 @@ static func _description(id: String) -> String:
 		words += " 本人免疫罢工。"
 	var upgrade := config.coffee_upgrade(id)
 	if not upgrade.is_empty():
-		words += " 升为%s需%d杯咖啡；每批共用%s秒，可一次跨越多级。" % [config.cards[upgrade.to].name, upgrade.cost, config.coffee_batch_seconds()]
+		words += " 升为%s需%d杯咖啡；每批共用%s秒，可一次跨越多级。" % [config.cards[upgrade.to].name, upgrade.cost, _plain(config.coffee_batch_seconds())]
 	return words
+
+## A whole number reads as one: "14 秒" and "1 杯", not "14.0 秒" and "1.0 杯". Fractions keep
+## their digits ("乘 1.2", "7.5 秒").
+static func _plain(value: Variant) -> Variant:
+	return int(value) if value is float and is_finite(value) and is_equal_approx(value, roundf(value)) else value
+
+static func _plain_numbers(values: Dictionary) -> Dictionary:
+	var out := {}
+	for key in values: out[key] = _plain(values[key])
+	return out
 
 static func ensure_loaded() -> void:
 	if CARDS.is_empty(): configure(OffWorkConfig.new())

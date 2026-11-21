@@ -28,6 +28,7 @@ const FALLBACK := {
 	"shake": {"hit": 0.05, "hurt": 0.10, "big": 0.06, "final": 0.18},
 	"hitstop": {"hit": 0.08, "final": 0.24},
 	"big_output": 6,
+	"aim": {"consequences": true},
 	"stamps": {"cash": "到账", "user": "拉新", "upgrade": "升级", "legend": "传奇",
 		"listing": "上市", "bankrupt": "查封", "exodus": "人去楼空", "lose": "已优化",
 		"win_listing": "上市成功", "win_bankrupt": "对手破产", "win_exodus": "对手跑光", "win_resign": "对手认输"},

@@ -29,7 +29,7 @@ func _check_attack_updates(main: Node, prefix: String) -> void:
 	main.board.attack_mode = true
 	main.pipe.applier().pools_restore({main.my_seat: {OnWorkCardDB.RES_CASH: 2, OnWorkCardDB.RES_USER: 3}})
 	main._show_attack_label("展开时的玩家攻击", true)
-	check(_renders(main.lbl_attack) and _renders(main.attack_panel),
+	check(_renders(main.attack_title) and _renders(main.attack_panel),
 		"%s：展开牌桌显示攻击标签和攻击面板" % prefix)
 	main.drawer_window.collapse_now()
 	check(paused == (main._host == null), "%s：收起进入对应暂停分支" % prefix)
@@ -38,14 +38,14 @@ func _check_attack_updates(main: Node, prefix: String) -> void:
 	main.pipe.applier().pools_restore({main.my_seat: {OnWorkCardDB.RES_CASH: 7, OnWorkCardDB.RES_USER: 3}})
 	main._show_attack_label("收起期间收到的新玩家攻击", true)
 	main._refresh_attack_panel()
-	check(main.lbl_attack.visible and main.attack_panel.visible,
+	check(main.attack_title.visible and main.attack_panel.visible,
 		"%s：收起不会篡改攻击控件的当前业务可见状态" % prefix)
-	check(not _renders(main.lbl_attack) and not _renders(main.attack_panel),
+	check(not _renders(main.attack_title) and not _renders(main.attack_panel),
 		"%s：后台 show 和刷新攻击面板后同帧仍不可渲染" % prefix)
 	check(not main.table_hud.visible, "%s：整个牌桌 HUD 层保持隐藏" % prefix)
 	main.drawer_window.pin()
-	check(_renders(main.lbl_attack) and _renders(main.attack_panel)
-		and main.lbl_attack.text == "收起期间收到的新玩家攻击"
+	check(_renders(main.attack_title) and _renders(main.attack_panel)
+		and main.attack_title.text == "收起期间收到的新玩家攻击"
 		and "现金攻击 7" in main.attack_pool_text.text,
 		"%s：展开显示后台更新后的攻击内容" % prefix)
 
@@ -55,21 +55,21 @@ func _check_attack_updates(main: Node, prefix: String) -> void:
 	main._hide_attack_label()
 	main._refresh_attack_panel()
 	main.drawer_window.pin()
-	check(not _renders(main.lbl_attack) and not _renders(main.attack_panel),
+	check(not _renders(main.attack_title) and not _renders(main.attack_panel),
 		"%s：后台攻击结束后展开不恢复旧攻击提示" % prefix)
 
 	main.drawer_window.collapse_now()
 	main.phase = main.PHASE_ATTACK
 	main._show_attack_label("收起后才开始的对手攻击", false)
-	check(main.lbl_attack.visible and not _renders(main.lbl_attack),
+	check(main.attack_title.visible and not _renders(main.attack_title),
 		"%s：收起后才开始的对手攻击同帧不漏出" % prefix)
 	main.board.attack_mode = true
 	main._show_attack_label("收起期间交棒后的玩家攻击", true)
 	main._refresh_attack_panel()
 	_check_entry_only(main, prefix + "后台交棒")
 	main.drawer_window.pin()
-	check(_renders(main.lbl_attack) and _renders(main.attack_panel)
-		and main.lbl_attack.text == "收起期间交棒后的玩家攻击",
+	check(_renders(main.attack_title) and _renders(main.attack_panel)
+		and main.attack_title.text == "收起期间交棒后的玩家攻击",
 		"%s：展开只显示交棒后的最新攻击状态" % prefix)
 	main.phase = main.PHASE_ACTION
 	main.board.attack_mode = false
@@ -145,7 +145,7 @@ func _check_transitions(main: Node, prefix: String) -> void:
 		main._show_attack_label("过渡期间的攻击回调", true)
 		main.save_notice.show_saved("/tmp/transition.record", 1)
 		main.drawer_presentation._open_utility(3)
-		check(not _renders(main.lbl_attack) and not _renders(main.attack_panel)
+		check(not _renders(main.attack_title) and not _renders(main.attack_panel)
 			and not main.save_notice.visible and not main.drawer_presentation._utility.visible,
 			"%s：攻击和迟到面板同帧均不漏出" % context)
 	main.drawer_window.transition_started.connect(inspect)
@@ -191,17 +191,17 @@ func _check_real_bot_attack() -> void:
 	var leaked := false
 	var deadline := Time.get_ticks_msec() + 10000
 	while Time.get_ticks_msec() < deadline and not (main.board.attack_mode and paused):
-		leaked = leaked or _renders(main.lbl_attack) or _renders(main.attack_panel)
+		leaked = leaked or _renders(main.attack_title) or _renders(main.attack_panel)
 		await process_frame
 	check(main.board.attack_mode and paused, "BOT真实攻击完毕并交棒给收起状态的玩家")
 	check(main.state.resource_count(main.my_seat, OnWorkCardDB.RES_CASH) == 2,
 		"收起期间真实攻击按配置扣除了现金")
-	check(not leaked and not _renders(main.lbl_attack) and not _renders(main.attack_panel),
+	check(not leaked and not _renders(main.attack_title) and not _renders(main.attack_panel),
 		"BOT攻击到玩家攻击的后台协程全程没有泄漏攻击提示")
 	_check_entry_only(main, "真实BOT交棒")
 	main.drawer_window.pin()
-	check(_renders(main.lbl_attack) and _renders(main.attack_panel)
-		and main.TXT_ATTACK_MINE in main.lbl_attack.text,
+	check(_renders(main.attack_title) and _renders(main.attack_panel)
+		and main.TXT_ATTACK_MINE in main.attack_title.text,
 		"真实交棒后展开显示当前玩家攻击提示")
 	await _dispose(main)
 
@@ -210,7 +210,7 @@ func _check_entry_only(main: Node, prefix: String) -> void:
 	check(_renders(presentation._handle), "%s：入口图案保留显示" % prefix)
 	var leaked: Array[String] = []
 	for node in [presentation._header, presentation._footer, presentation._utility,
-			presentation._detail, main.lbl_attack, main.attack_panel, main.hud_panel,
+			presentation._detail, main.attack_title, main.attack_panel, main.hud_panel,
 			main.btn_pass, main.btn_resign, main.btn_net, main.msg_log, main.save_notice]:
 		if is_instance_valid(node) and _renders(node):
 			leaked.append(str(node.name))

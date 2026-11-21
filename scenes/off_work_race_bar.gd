@@ -24,6 +24,12 @@ var local_owner := 0
 var opponent_owner := 1
 ## 这一局的工作总量：开局张数；中途被甩锅超过开局张数时取见过的最大值，条不会倒退到负数。
 var _total := 0.0
+## 预计下班时间：下班从 18:00 算起，牌局里的一秒算钟面上的一分钟。
+const CLOCK_START_MINUTES := 18 * 60
+const CLOCK_MINUTES_PER_SECOND := 1.0
+const ETA_REFRESH_SECONDS := 0.25
+var _eta_text := ""
+var _eta_at := -1.0
 var _source := [0, 0]
 var _last_time := -1.0
 var _drawn := []
@@ -48,7 +54,11 @@ func sync(game_state: RefCounted, header: Control, scale_factor: float) -> void:
 	_total = maxf(_total, float(_initial_work()))
 	for owner in [local_owner, opponent_owner]:
 		_total = maxf(_total, float(state.work_count(owner)))
-	var shown := [remaining(local_owner), remaining(opponent_owner), _total, _bar_rect(), unit]
+	# 估算每四分之一秒（牌局时间）重算一次；调了人手，下一次刷新就看得到。
+	if _eta_at < 0.0 or absf(float(state.time) - _eta_at) >= ETA_REFRESH_SECONDS:
+		_eta_at = float(state.time)
+		_eta_text = eta_text(local_owner)
+	var shown := [remaining(local_owner), remaining(opponent_owner), _total, _bar_rect(), unit, _eta_text]
 	if shown != _drawn:
 		_drawn = shown
 		queue_redraw()
@@ -61,6 +71,48 @@ func _initial_work() -> int:
 
 func remaining(owner: int) -> int:
 	return int(state.work_count(owner)) if state != null else 0
+
+## 这一方现在每秒清掉几份工作：各组「每秒几批 × 每批几份」之和。只算正在干活的人；
+## 甩锅、外包和对手甩过来的工作不算，所以这是「按现在的人手」的速度。
+func clearing_rate(owner: int) -> float:
+	if state == null: return 0.0
+	var rate := 0.0
+	for gid in state.groups:
+		if int(state.groups[gid].owner) != owner: continue
+		var batches: float = state.group_work_rate(gid)
+		if batches <= 0.0: continue
+		rate += batches * float(_batch_size(gid))
+	return rate
+
+func _batch_size(gid: int) -> int:
+	var size := 0
+	for person in state.group_work_participants(gid):
+		size += int(state.config.roles[state.effective_work_kind(str(state.cards[person].type), gid)].work_capacity)
+	return size
+
+## 按现在的速度还要多少秒清完；没人干活时是 INF。正在读的那一批按进度折算，
+## 所以人手不变时这个数只会平稳地减少，不会每结一批跳一下。
+func eta_seconds(owner: int) -> float:
+	var rate := clearing_rate(owner)
+	if rate <= 0.0: return INF
+	var left := float(remaining(owner))
+	for gid in state.groups:
+		if int(state.groups[gid].owner) != owner or state.group_work_rate(gid) <= 0.0: continue
+		left -= clampf(float(state.group_work_progress(gid)), 0.0, 1.0) * float(mini(_batch_size(gid), state.group_work(gid).size()))
+	return maxf(0.0, left) / rate
+
+## 写在竞速条上的那一句。只给本方算：对手的不给数字，只看条。
+func eta_text(owner: int) -> String:
+	# 动画预览里的演示条只有剩余张数，没有牌局可估。
+	if state == null or not state.has_method("group_work_rate") or int(state.winner) >= 0 or remaining(owner) <= 0: return ""
+	var seconds := eta_seconds(owner)
+	if is_inf(seconds): return "没人干活"
+	var minutes := CLOCK_START_MINUTES + roundi((float(state.time) + seconds) * CLOCK_MINUTES_PER_SECOND)
+	var day := minutes / (24 * 60)
+	var clock := "%02d:%02d" % [(minutes / 60) % 24, minutes % 60]
+	if day <= 0: return "预计 %s 下班" % clock
+	if day == 1: return "预计 次日 %s 下班" % clock
+	return "预计 %d 天后下班" % day
 
 ## 这一方清掉了几成（0～1）。
 func cleared_fraction(owner: int) -> float:
@@ -133,6 +185,11 @@ func _draw() -> void:
 	var right := "对手 剩 %d" % remaining(opponent_owner)
 	var right_width := font.get_string_size(right, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
 	var margin := 14.0 * unit
+	# 预计下班时间接在本方那一句后面；条太窄放不下时只留剩余数。
+	if not _eta_text.is_empty():
+		var with_eta := "%s · %s" % [left, _eta_text]
+		if font.get_string_size(with_eta, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + margin < pill.position.x - rect.position.x:
+			left = with_eta
 	# 条太窄时两边的字会撞上中间的「下班」，那就只留条和刻度。
 	if font.get_string_size(left, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + margin < pill.position.x - rect.position.x \
 			and right_width + margin < rect.end.x - pill.end.x:

@@ -4,6 +4,8 @@ extends RefCounted
 
 ## Presentation only: the authoritative action has already happened. A bounded
 ## set of its real cards retraces the move without delaying rules or decisions.
+## Opponent regroupings and purchases are retraced; so is the local player's own
+## purchase, which first waits above its conveyor slot while the payment arrives.
 var board: Node
 var motions: Dictionary = {}
 var offer_sources: Dictionary = {}
@@ -41,7 +43,8 @@ func play_event(event: Dictionary) -> void:
 		# Consume even a hidden/non-opponent member: the same replay event must
 		# never restart its old movement on a later presentation tick.
 		board._previous_action_groups.erase(uid)
-		if owner != int(board._settings.opponent_owner) or not _available(uid): continue
+		var own_purchase: bool = kind == "buy" and owner == int(board._settings.local_owner)
+		if (owner != int(board._settings.opponent_owner) and not own_purchase) or not _available(uid, own_purchase): continue
 		var card: Node3D = board.by_uid[uid]
 		if card.card_owner != owner: continue
 		var from: Vector3
@@ -53,7 +56,8 @@ func play_event(event: Dictionary) -> void:
 			from = source
 		if motions.has(uid): from = card.global_position
 		candidates.append({"uid": uid, "from": from, "source_group": previous_group,
-			"bucket": str(previous_group) + ":" + str(card.type)})
+			"bucket": str(previous_group) + ":" + str(card.type),
+			"paid_after": maxf(0.0, float(event.get("paid_after", 0.0))), "own": own_purchase})
 	if candidates.is_empty(): return
 	var spec := _spec()
 	var selected := _representatives(candidates, int(spec.max_visible), int(spec.batch_layers))
@@ -79,7 +83,7 @@ func advance(delta: float) -> void:
 	for value in motions.keys():
 		var uid := int(value)
 		var motion: Dictionary = motions[uid]
-		if not _available(uid) or int(board.by_uid[uid].group_id) != int(motion.group):
+		if not _available(uid, bool(motion.get("own", false))) or int(board.by_uid[uid].group_id) != int(motion.group):
 			cancel(uid)
 			continue
 		var card: Node3D = board.by_uid[uid]
@@ -89,6 +93,11 @@ func advance(delta: float) -> void:
 		var travel := float(motion.travel_seconds)
 		var drop := float(motion.drop_seconds)
 		var settle := float(motion.settle_seconds)
+		# A purchase waits, lifted above its conveyor slot, until its payment is underneath.
+		var hold := float(motion.get("hold_seconds", 0.0))
+		var holding := age >= pickup and age < pickup + hold
+		if holding: age = pickup
+		elif age >= pickup + hold: age -= hold
 		if age >= pickup + travel + drop + settle:
 			cancel(uid, true)
 			continue
@@ -118,7 +127,7 @@ func advance(delta: float) -> void:
 			card.pulse_landed()
 		else:
 			card.update_drag_motion(velocity, maxf(0.0, delta))
-		motion.phase = phase
+		motion.phase = "hold" if holding else phase
 		card.set_meta("dest_pos", to)
 
 ## Board layout can change while a card is carried. Only its destination moves;
@@ -132,6 +141,15 @@ func preserve(card: Node3D, destination: Vector3) -> bool:
 	motion.to = destination
 	card.set_meta("dest_pos", destination)
 	return true
+
+## The buyer may catch their own purchase while it is still in the air. The card stays where
+## it is, under the pointer. Returns where it was going to land, for a press that turns out to
+## be a click; Vector3.INF when this card is not such a purchase.
+func release_to_hand(uid: int) -> Vector3:
+	if not motions.has(uid) or not bool(motions[uid].get("own", false)): return Vector3.INF
+	var landing: Vector3 = motions[uid].to
+	cancel(uid)
+	return landing
 
 func cancel(uid: int, snap := false) -> void:
 	if not motions.has(uid): return
@@ -154,20 +172,37 @@ func clear() -> void:
 
 func _begin(candidate: Dictionary, layer: int, spec: Dictionary) -> void:
 	var uid := int(candidate.uid)
-	if not _available(uid): return
+	var own := bool(candidate.get("own", false))
+	if not _available(uid, own): return
 	var card: Node3D = board.by_uid[uid]
 	var presenter: Node = board._presenter(card.card_owner)
 	var destination: Vector3 = presenter.rest_pos(card)
 	presenter._stop_move(card, false)
 	var motion: Dictionary = board._motion_lock(card)
 	var from: Vector3 = candidate.from
+	# The player's own purchase is carried home quickly: they clicked it and already know what
+	# happens. An opponent's move keeps the slower pace it needs to be read.
+	var pace: Dictionary = spec
+	if own:
+		pace = spec.duplicate()
+		var quick: Dictionary = board._settings.get("payment_motion", {}).get("own_card", {})
+		for key in ["pickup_seconds", "travel_seconds", "drop_seconds", "settle_seconds"]:
+			if quick.has(key): pace[key] = maxf(0.0, float(quick[key]))
 	motion.merge({"from": from, "to": destination, "elapsed": 0.0,
 		"group": card.group_id, "source_group": int(candidate.source_group),
 		"phase": "pickup", "landed": false,
 		"lift_y": maxf(from.y, destination.y) + float(spec.lift_height) + layer * float(spec.layer_gap),
-		"lift_height": float(spec.lift_height), "pickup_seconds": float(spec.pickup_seconds),
-		"travel_seconds": float(spec.travel_seconds), "drop_seconds": float(spec.drop_seconds),
-		"settle_seconds": float(spec.settle_seconds)})
+		"lift_height": float(spec.lift_height), "pickup_seconds": float(pace.pickup_seconds),
+		"travel_seconds": float(pace.travel_seconds), "drop_seconds": float(pace.drop_seconds),
+		"settle_seconds": float(pace.settle_seconds),
+		# The card is already lifted when the first note leaves; it goes once the last is under it.
+		"hold_seconds": maxf(0.0, float(candidate.get("paid_after", 0.0)) - float(pace.pickup_seconds)), "own": own})
+	if own:
+		# The local player's card stays catchable: see release_to_hand.
+		card.collision_layer = int(motion.collision_layer)
+		card.collision_mask = int(motion.collision_mask)
+		card.input_ray_pickable = bool(motion.input_ray_pickable)
+		card.draggable = true
 	motions[uid] = motion
 	card.set_meta("off_work_action_motion", true)
 	card.set_meta("in_flight", true)
@@ -176,11 +211,12 @@ func _begin(candidate: Dictionary, layer: int, spec: Dictionary) -> void:
 	card.reveal_stack_face()
 	card.set_drag_visual(true)
 
-func _available(uid: int) -> bool:
+func _available(uid: int, own_purchase := false) -> bool:
 	if not board.by_uid.has(uid) or not board._state.cards.has(uid): return false
 	var card: Variant = board.by_uid[uid]
 	if not is_instance_valid(card) or card._retired or card._visual_retired: return false
-	if int(board._state.cards[uid].owner) != int(board._settings.opponent_owner): return false
+	var expected: int = int(board._settings.local_owner) if own_purchase else int(board._settings.opponent_owner)
+	if int(board._state.cards[uid].owner) != expected: return false
 	for other in [board._cash_flights, board._delivery_flights, board._meeting_visitors,
 		board._strike_dancers, board._strike_attacks]:
 		if other.has(uid): return false

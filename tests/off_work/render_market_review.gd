@@ -92,7 +92,7 @@ func _dismiss_review() -> bool:
 	var pointer := start + Vector2(10, 0)
 	await _mouse_move(pointer, Vector2(10, 0))
 	var facility: Vector3 = game.board.pawn_pos
-	var end: Vector2 = game.camera.unproject_position(Vector3(facility.x - game.board._grab_offset.x, Board.DRAG_HEIGHT, facility.z - game.board._grab_offset.z))
+	var end: Vector2 = game.board.pointer_for_landing(facility)
 	for step in range(1, 9):
 		var point := start.lerp(end, float(step) / 8.0)
 		await _mouse_move(point, point - pointer)

@@ -1,7 +1,7 @@
 extends SceneTree
 
 ## Graphical desktop check: engine-created transparent window before any game
-## code, native drawer warmup, and effects isolation in the collapsed mascot.
+## code, native drawer warmup, and a clean collapsed mascot entry.
 var checks := 0
 var failures: Array[String] = []
 var game: Node
@@ -28,27 +28,20 @@ func _run() -> void:
 	_check(drawer._use_os_window and not drawer.is_expanded() and paused, "native startup presents the paused mascot entry")
 	_check(game.state.time == 0.0, "warmup does not advance the game")
 	_check(root.visible and root.transparent and root.transparent_bg and root.disable_3d, "real entry window remains visible and transparent")
-	_check(not game.effects.visible, "startup effect canvas is hidden outside the game table")
-	# A frozen burst previously survived the fold and drew crossed lines beside
-	# the mascot. Use a left-edge impact so the PNG catches that actual leak.
-	game.effects.emit_effect("work_complete", Vector2(5, root.size.y * 0.78), Vector2.ZERO)
-	game.effects.items.back().age = float(game.effects.items.back().duration) * 0.45
-	game.effects.queue_redraw()
-	var snapshot: Array = game.effects.items.duplicate(true)
+	# Table events are shown by the cards themselves; there is no screen-space effect canvas
+	# that could leave lines beside the mascot. The picture is still checked.
+	_check(not ("effects" in game), "the table has no separate screen-space effect canvas")
 	await RenderingServer.frame_post_draw
 	var collapsed := root.get_texture().get_image()
-	_check(_transparent(collapsed, Rect2i(0, int(root.size.y * 0.65), 12, int(root.size.y * 0.3))), "left edge below mascot remains transparent with a queued impact")
+	_check(_transparent(collapsed, Rect2i(0, int(root.size.y * 0.65), 12, int(root.size.y * 0.3))), "left edge below mascot remains transparent")
 	collapsed.save_png("res://reports/drawer-clean-entry.png")
-	_check(game.effects.items == snapshot, "hiding effects preserves their paused timeline")
 	drawer.pin()
 	await create_timer(0.45, true).timeout
-	_check(drawer.is_expanded() and not paused and game.effects.visible, "opening restores table and effect drawing")
+	_check(drawer.is_expanded() and not paused, "opening restores the table")
 	_check(not root.disable_3d and root.visible, "normal game content renders in the same visible native window")
-	_check(game.effects.items.filter(func(item): return item.kind == "new_game").is_empty(), "initial game event does not create a stray startup burst")
 	game._new_game()
 	await process_frame
 	await process_frame
-	_check(game.effects.items.filter(func(item): return item.kind == "new_game").is_empty(), "restarting does not create a source-less burst")
 	await create_timer(0.6, true).timeout
 	await RenderingServer.frame_post_draw
 	var expanded := root.get_texture().get_image()
@@ -56,7 +49,7 @@ func _run() -> void:
 	expanded.save_png("res://reports/drawer-open-after-startup.png")
 	drawer.collapse_now()
 	await create_timer(0.3, true).timeout
-	_check(paused and not game.effects.visible and game.hud._handle.visible, "later folds keep the same clean entry behavior")
+	_check(paused and game.hud._handle.visible, "later folds keep the same clean entry behavior")
 	game.queue_free()
 	await process_frame
 	await process_frame

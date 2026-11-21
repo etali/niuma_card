@@ -274,7 +274,7 @@ func _verify_departure(winner: int, label: String) -> void:
 	board._advance_meeting_visitors(midpoint)
 	board._advance_cash_flights(midpoint)
 	for card in departing:
-		_check(card.visible and card._visual.position != poses[card.uid].origin and card._visual.scale.x < poses[card.uid].basis.get_scale().x, "entire frame travels and shrinks during exit")
+		_check(card.visible and card._visual.position != poses[card.uid].origin and card._visual.scale.is_equal_approx(poses[card.uid].basis.get_scale()), "entire frame travels at its full size during exit: nothing shrinks away")
 		_check(card._visual.position.y >= poses[card.uid].origin.y, "departure never dips the solid frame underneath the table")
 		_check(card._icon.transform == portraits[card.uid] and is_equal_approx(card._icon.modulate.a, 1.0), "portrait stays attached and opaque so no blank card appears")
 	if label in ["player", "meeting"]: await _capture(label + "-departing")

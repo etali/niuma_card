@@ -337,7 +337,7 @@ func _drag_pointer(card: CardEntity, at: Vector3) -> void:
 	check(not stage.board._drag_cards.is_empty(), "原Viewport真实按下事件开始拖拽")
 	var motion := InputEventMouseMotion.new()
 	motion.button_mask = MOUSE_BUTTON_MASK_LEFT
-	motion.position = stage.camera.unproject_position(Vector3(at.x, Board.DRAG_HEIGHT, at.z) - stage.board._grab_offset)
+	motion.position = stage.board.pointer_for_landing(at)
 	root.push_input(motion)
 	await process_frame
 	var release := InputEventMouseButton.new()

@@ -1011,6 +1011,10 @@
   },
   "fx": {
     "_说明": "牌桌特效。shake=镜头震动幅度（世界单位，再乘 UI 页的画面震动比例）：hit 普通命中、hurt 自己挨打、big 大额产出与传说、final 终结一击；hitstop=命中顿帧秒数，hit 不超过 0.08（要塞进原撕牌节拍），final 不超过 0.4；big_output=单次产出达到这个数量时轻震一下；stamp_ink=印章的印泥色（全游戏只有这一枚章、这一盒印泥）；stamps=各场合印章文字（cash/user 产出、upgrade/legend 升级，这四枚与「作废」是同一枚章盖在牌上；listing/bankrupt/exodus 终局桌面、win_*/lose 终局面板）。",
+    "aim": {
+      "_说明": "攻击瞄准。consequences=瞄着一摞时，便签上是否预告「整组作废」「这一下终结对手」；关掉后只写撕几张和剩余点数。",
+      "consequences": true
+    },
     "shake": {
       "hit": 0.05,
       "hurt": 0.1,
@@ -1093,7 +1097,8 @@
         "coffee": "cash",
         "recovering": "info",
         "outsource": "success",
-        "recruitment": "cash"
+        "recruitment": "cash",
+        "strike": "danger"
       },
       "dedicated_cards": {
         "meeting": {
@@ -1112,6 +1117,9 @@
         }
       },
       "reverse_phases": {
+        "*": [
+          "strike"
+        ],
         "meeting": [
           "recovering"
         ],
@@ -1123,11 +1131,13 @@
     "animation": {
       "leave_duration": 0.8,
       "leave_distance": 2.0,
+      "leave_distance_max": 40.0,
+      "leave_rise_fraction": 0.3,
       "motion_speed_scale_max": 2.0,
-      "retire_duration": 0.62,
+      "retire_duration": 0.22,
       "retire_wait": 0.12,
-      "retire_scale": 0.5,
-      "retire_distance": 0.45,
+      "dismiss_stamp_seconds": 0.34,
+      "retire_tuck_depth": 0.03,
       "recovery_dim": 0.25,
       "conveyor_load_distance": 0.45,
       "landing_compress": [
@@ -1146,7 +1156,6 @@
       "task_playback_speed": 1.0,
       "leave_anticipation": 0.18,
       "leave_clearance_duration": 0.22,
-      "leave_clearance_scale": 0.62,
       "leave_clearance_padding": 0.12,
       "leave_direction_by_owner": {
         "0": 1.0,
@@ -1179,7 +1188,6 @@
         ]
       },
       "leave_height": 0.75,
-      "leave_scale": 0.08,
       "leave_tilt_degrees": -12.0
     },
     "card_plates": {
@@ -1225,22 +1233,49 @@
       "stamp_tilt": -0.13,
       "stamp_word": "完成",
       "meeting_word": "开会",
-      "strike_word": "罢工"
+      "strike_word": "罢工",
+      "dismiss_word": "开除",
+      "blocked_word": "驳回",
+      "resume_word": "复工"
     },
     "upgrade": {
+      "_说明": "人员升级：牌被抛起来转一圈再拍回桌上，落地那一下盖新头衔的章、镜头震一下、周围的牌被震得一跳。leap_height=抛多高；leap_seconds/slam_seconds=上升和砸下各用多久；spin_turns=空中转几圈；squash=落地时牌面撑大多少，settle_seconds 内弹回；wave_stagger_seconds=同一批升级的几个人依次起跳的间隔；ripple_radius=落地能震到多远的牌摞，ripple_strength=震得多重（1 等于清掉一份工作那一下），ripple_seconds_per_unit=震波每走一个单位用多久；shake/shake_top=本方升级时镜头震多大（升到顶级用 shake_top）；stamp_seconds=章停留多久。",
       "duration_seconds": 0.68,
       "stamp_word": "更卷",
-      "stamp_seconds": 0.64,
+      "stamp_seconds": 1.1,
       "color": "cash",
-      "ring_inner_radius": 0.55,
-      "ring_outer_radius": 0.59,
-      "ring_y": 0.046,
-      "ring_z": 0.1,
-      "ring_start_scale": 0.5,
-      "ring_end_scale": 1.8,
-      "ring_peak_alpha": 0.8,
       "body_scale_kick": 0.13,
-      "body_kick_z": 0.06
+      "body_kick_z": 0.06,
+      "leap_height": 0.9,
+      "leap_seconds": 0.22,
+      "slam_seconds": 0.09,
+      "spin_turns": 1.0,
+      "squash": 0.22,
+      "settle_seconds": 0.26,
+      "wave_stagger_seconds": 0.07,
+      "ripple_radius": 5.0,
+      "ripple_strength": 1.6,
+      "ripple_seconds_per_unit": 0.035,
+      "shake": 0.07,
+      "shake_top": 0.12
+    },
+    "clear_feedback": {
+      "_说明": "清掉工作时牌摞挨的那一下。力度 = 1 + log2(这一批清掉的份数) × strength_per_doubling，不超过 strength_max。牌摞看得见的每一层撑大 thump_scale × 力度、抬起 thump_lift × 力度，thump_in_seconds 内到位，thump_out_seconds 内弹回，从最上面一层起每层晚 layer_delay_seconds。count_punch_scale/count_punch_seconds=旁边的数量跳多大、多久落回。shake_*=本方清掉工作时镜头震多大（基础值 + 每点力度，不超过上限）。sound_*=这一批越大，落章声越响、越沉。",
+      "strength_per_doubling": 0.5,
+      "strength_max": 3.0,
+      "thump_scale": 0.075,
+      "thump_lift": 0.05,
+      "thump_in_seconds": 0.05,
+      "thump_out_seconds": 0.26,
+      "layer_delay_seconds": 0.014,
+      "count_punch_scale": 1.55,
+      "count_punch_seconds": 0.32,
+      "shake_base": 0.012,
+      "shake_per_strength": 0.011,
+      "shake_max": 0.045,
+      "sound_db_per_doubling": 1.5,
+      "sound_db_max": 6.0,
+      "sound_pitch_per_doubling": -0.035
     },
     "timer_status": {
       "meeting": {
@@ -1334,8 +1369,34 @@
       0.0
     ],
     "market_move_seconds": 0.34,
+    "payment_motion": {
+      "_说明": "买牌付款：每一钱对应一张纸币，从钱摞飞到买下的那张牌底下，被牌盖住后才离场；牌等钱到齐再回到买方。纸币不缩小、不淡出。价签在钱到位时用自己的退场动作撤掉。",
+      "max_notes": 12,
+      "emission_interval_seconds": 0.012,
+      "max_emission_window_seconds": 0.05,
+      "travel_seconds": 0.16,
+      "arc_height": 0.5,
+      "note_scale": 0.58,
+      "tuck_depth": 0.01,
+      "approach_distance": 1.3,
+      "level_fraction": 0.9,
+      "spread": 0.22,
+      "tilt_degrees": 7.0,
+      "start_lift": 0.14,
+      "tag_linger_seconds": 0.2,
+      "pitch_step": 0.06,
+      "pitch_max": 2.0,
+      "own_card": {
+        "_说明": "本方买牌时这张牌自己的节拍（拿起、飞回、落下、落定），比对手动作的重演快：自己点的，结果已经知道。",
+        "pickup_seconds": 0.06,
+        "travel_seconds": 0.22,
+        "drop_seconds": 0.09,
+        "settle_seconds": 0.06
+      }
+    },
+    "side_roll_seconds": 0.32,
     "action_motion": {
-      "_说明": "对手调组、买牌使用与手动拖牌一致的拿起和落下反馈；批量只展示少量真实代表牌，不改变规则或行动时钟。",
+      "_说明": "对手调组、买牌，以及本方买牌，使用与手动拖牌一致的拿起和落下反馈；批量只展示少量真实代表牌，不改变规则或行动时钟。",
       "pickup_seconds": 0.12,
       "travel_seconds": 0.5,
       "drop_seconds": 0.16,
@@ -1344,6 +1405,16 @@
       "max_visible": 12,
       "batch_layers": 3,
       "layer_gap": 0.045
+    },
+    "drop_targets": {
+      "frame_margin": 0.17,
+      "frame_y": 0.02,
+      "refused_tint": [
+        2.0,
+        0.5,
+        0.45
+      ],
+      "refund_format": "换回 %d 金钱"
     },
     "non_cash_purchase_message": "把金钱拖到商品上购买",
     "insufficient_stack_money_message": "这摞可用金钱不够买这张牌",
@@ -1569,6 +1640,7 @@
       "cut_shift": 14,
       "cut_gap": 12,
       "drag_threshold": 8,
+      "pull_seconds": 0.12,
       "open_seconds": 0.3,
       "stagger_seconds": 0.045,
       "ease_power": 3,
@@ -1585,11 +1657,11 @@
     "paper_disposal": {
       "max_concurrent": 24,
       "emission_interval_seconds": 0.012,
-      "crumple_seconds": 0.18,
-      "flight_seconds": 0.5,
-      "ball_size": 0.18,
-      "arc_height": 1.3,
-      "throw_distance": 4.0,
+      "crumple_seconds": 0.16,
+      "flight_seconds": 0.52,
+      "ball_size": 0.26,
+      "arc_height": 2.0,
+      "throw_distance": 5.0,
       "rotation_degrees": 430.0,
       "subdivisions": 8,
       "source_height": 0.18
@@ -1617,7 +1689,8 @@
       "button_margin": 9,
       "button_radius": 10,
       "bottom_height": 48,
-      "message_hold": 3.2,
+      "guide_size": 12,
+      "guide_opacity": 0.72,
       "detail_width": 280,
       "detail_height": 126,
       "detail_offset": [
@@ -1639,6 +1712,8 @@
       "target": "把罢工拖到对手正在处理工作的组合 · 右键取消",
       "buy_ok": "已购入 %s",
       "dismiss_ok": "开除 %d 人，换回 %d 金钱",
+      "empty_slot": "传送带第 %d 格是空的",
+      "pause_unavailable_online": "联机对局不能暂停",
       "buy_fail": "没买到：资金不足或商品已经离开",
       "action_fail": "组合还未就绪：检查人员、工作和工具状态",
       "drag_enemy": "对手的牌不能拖动",
@@ -1658,7 +1733,6 @@
       "strike": "罢工",
       "striking": "罢工中",
       "transfer": "甩锅",
-      "fired": "开除",
       "coffee_upgrade": "提升卷度",
       "recruitment": "招工"
     },
@@ -1681,30 +1755,6 @@
       "title_size": 56,
       "body_size": 20,
       "fade_duration": 0.35
-    },
-    "effects": {
-      "max_events": 36,
-      "duration": 0.7,
-      "stamp_duration": 0.65,
-      "meeting_duration": 0.75,
-      "coin_duration": 0.6,
-      "paper_size": [
-        24,
-        32
-      ],
-      "paper_spacing": 6,
-      "paper_lines": 3,
-      "paper_line_spacing": 6,
-      "line_width": 2.5,
-      "transfer_impact_fraction": 0.75,
-      "stamp_font_size": 29,
-      "stamp_scale_start": 1.7,
-      "stamp_angle": -0.12,
-      "stamp_impact_fraction": 0.25,
-      "coin_radius": 8,
-      "coin_rise": 40,
-      "burst_radius": 38,
-      "burst_rays": 8
     },
     "audio": {
       "pool_size": 10,
@@ -1741,22 +1791,22 @@
         },
         "work_complete": {
           "file": "stamp.wav",
-          "db": -17,
+          "db": -12,
           "pitch": 1.05,
           "min_interval_seconds": 0.12,
           "max_voices": 1
         },
         "transfer": {
-          "file": "drop.wav",
-          "db": -10,
-          "pitch": 0.8,
+          "file": "paper_slam.wav",
+          "db": -11,
+          "pitch": 1.0,
           "min_interval_seconds": 0.08,
           "max_voices": 2
         },
         "meeting_start": {
-          "file": "attack.wav",
-          "db": -16,
-          "pitch": 0.8
+          "file": "meeting_bell.wav",
+          "db": -15,
+          "pitch": 1.0
         },
         "meeting_end": {
           "file": "confirm.wav",
@@ -1767,6 +1817,22 @@
           "file": "stamp.wav",
           "db": -12,
           "pitch": 0.8
+        },
+        "strike_launch": {
+          "file": "whistle.wav",
+          "db": -14,
+          "pitch": 1.0,
+          "bypass_frame_limit": true
+        },
+        "strike_blocked": {
+          "file": "stamp.wav",
+          "db": -12,
+          "pitch": 0.62
+        },
+        "strike_end": {
+          "file": "confirm.wav",
+          "db": -20,
+          "pitch": 1.15
         },
         "buy": {
           "file": "buy.wav",
@@ -1821,10 +1887,17 @@
           "pitch": 1.8
         },
         "coffee_upgrade": {
-          "file": "complete.wav",
-          "db": -15,
-          "pitch": 1.2,
+          "file": "upgrade.wav",
+          "db": -9,
+          "pitch": 1.0,
           "min_interval_seconds": 0.12,
+          "max_voices": 2
+        },
+        "upgrade_land": {
+          "file": "stamp.wav",
+          "db": -8,
+          "pitch": 0.82,
+          "min_interval_seconds": 0.05,
           "max_voices": 2
         }
       }

@@ -441,28 +441,6 @@ func people_count(owner: int) -> int:
 func group_cards(group: int) -> Array:
 	return groups[group].cards.duplicate() if groups.has(group) else []
 
-## 工作摞的读条进度是在场人员已经投入的工时，拆摞时不能凭空多出一份。
-## 整摞搬走，进度跟着走。只拆出一部分时：正在处理它的人跟着走，进度随人带走，
-## 原摞还有人在处理才保留自己的进度；只搬工作不带人，搬走的那部分从头读条。
-func _conserve_work_progress(moved: Array, target_group: int) -> void:
-	var sources := {}
-	for id in moved:
-		var gid := int(cards[id].group)
-		if gid == target_group or not groups.has(gid): continue
-		if not sources.has(gid): sources[gid] = {"work": [], "people": []}
-		if str(cards[id].type) == "work": sources[gid].work.append(id)
-		elif tasks.get(id, {}).get("kind", "") == "work" and int(tasks[id].group) == gid: sources[gid].people.append(id)
-	for gid in sources:
-		var leaving: Dictionary = sources[gid]
-		if leaving.work.is_empty(): continue
-		var staying_work: Array = group_work(gid).filter(func(work): return not leaving.work.has(work))
-		if staying_work.is_empty(): continue
-		if leaving.people.is_empty():
-			for work in leaving.work: cards[work].progress = 0.0
-		elif group_work_participants(gid).all(func(person): return moved.has(person)):
-			groups[gid]["work_progress"] = 0.0
-			for work in staying_work: cards[work].progress = 0.0
-
 func group_people(group: int) -> Array:
 	return _indexed_group(group).people.duplicate()
 
@@ -621,7 +599,6 @@ func move_cards(ids: Array, target_group: int = -1, target_card: int = -1) -> in
 	elif not groups.has(target_group):
 		_fail("目标组已经不存在")
 		return -1
-	_conserve_work_progress(unique, target_group)
 	var affected_groups: Array = [target_group]
 	for id in unique:
 		var previous: int = int(cards[id].group)

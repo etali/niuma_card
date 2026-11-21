@@ -47,7 +47,7 @@ func _run() -> void:
 		var card: OffWorkCard = board.by_uid[uid]
 		_check(state.is_striking(uid) and state.group_cards(card.group_id) == [uid], "ejected personnel are real separate groups %d" % uid)
 		_check(not card.draggable and not card.input_ray_pickable and card.collision_layer == 0 and card.collision_mask == 0, "ejection flight blocks physics and pointer pickup %d" % uid)
-		_check(not card._task_progress.visible and board.enemy_board.group_of(card) == null, "dance has neither stale task bar nor old visual group %d" % uid)
+		_check((card._task_progress_phase == "strike" or not card._task_progress.visible) and board.enemy_board.group_of(card) == null, "dance has neither stale task bar nor old visual group %d; only the strike countdown may show" % uid)
 		_check(is_inf(board._snap_distance(card.global_position, card)) and not board.try_merge(card).merged, "dance cannot attract another combination %d" % uid)
 		_check((board._strike_dancers[uid].from as Vector3).distance_to(source_positions[uid]) < 0.2, "ejection originates at the old combination %d" % uid)
 	board._advance_strike_dancers(1.0)
@@ -288,20 +288,15 @@ func _drop_on_world(card: CardEntity, target: Vector3, visible_face := true) -> 
 	if not _check(start != Vector2.INF, "striking-card gesture starts on an exposed collider"): return
 	await _button(start, true)
 	await _move_pointer(start + Vector2(12, 0))
-	var anchor := Vector3(target.x, Board.DRAG_HEIGHT, target.z)
-	if visible_face:
-		var screen := board.camera.unproject_position(target)
-		var origin := board.camera.project_ray_origin(screen)
-		var ray := board.camera.project_ray_normal(screen)
-		anchor = origin + ray * ((Board.DRAG_HEIGHT - origin.y) / ray.y)
 	# As in the original dismissal and pointer-safety tests, move the held
-	# card's centre to the actual target, compensating its original grab point.
-	var destination := board.camera.unproject_position(Vector3(anchor.x - board._grab_offset.x, Board.DRAG_HEIGHT, anchor.z - board._grab_offset.z))
+	# card's centre to the actual target, compensating its original grab point:
+	# seen over the target's face, or coming down on the target point.
+	var destination: Vector2 = board.pointer_for_view(target) if visible_face else board.pointer_for_landing(target)
 	var from := pointer
 	for step in range(1, 9): await _move_pointer(from.lerp(destination, float(step) / 8.0))
 	_check(board.is_dragging(), "striking-card gesture uses the original pointer drag")
 	if visible_face:
-		_check(board._strike_drop_conflict(card.global_position), "actual release overlaps the forbidden target face")
+		_check(board._strike_drop_conflict(board.held_landing_point()), "actual release overlaps the forbidden target face")
 	await _button(destination, false)
 	await _settle()
 	_check(not board.is_dragging(), "striking-card release clears the pointer state")

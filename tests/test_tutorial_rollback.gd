@@ -408,7 +408,7 @@ func _drag(card: CardEntity, at: Vector3, immediate_followup := false) -> void:
 	check(main.board._drag_cards.has(card), "根Viewport真实按下在拆组前捕获这一手")
 	var motion := InputEventMouseMotion.new()
 	motion.button_mask = MOUSE_BUTTON_MASK_LEFT
-	motion.position = main.board.camera.unproject_position(Vector3(at.x, Board.DRAG_HEIGHT, at.z) - main.board._grab_offset)
+	motion.position = main.board.pointer_for_landing(at)
 	root.push_input(motion)
 	await process_frame
 	var up := InputEventMouseButton.new()

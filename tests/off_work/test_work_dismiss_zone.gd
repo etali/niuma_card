@@ -205,7 +205,7 @@ func _begin_drag(card: CardEntity) -> void:
 	_check(board.is_dragging(), "original pointer path begins drag")
 
 func _move_to_zone() -> Vector2:
-	var destination := board.camera.unproject_position(Vector3(board.pawn_pos.x - board._grab_offset.x, Board.DRAG_HEIGHT, board.pawn_pos.z - board._grab_offset.z))
+	var destination := board.pointer_for_landing(board.pawn_pos)
 	var start := pointer
 	for step in range(1, 7): await _motion(start.lerp(destination, float(step) / 6.0))
 	return destination

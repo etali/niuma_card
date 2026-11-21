@@ -559,10 +559,11 @@ func _drag(card: CardEntity, target: Vector3, canceled := false, track_drop := f
 	check(main.board._drag_cards.has(card), "真实根Viewport按下通过原Board拿起指定卡牌")
 	if card.is_market:
 		check(not card.draggable, "反拖仍是市场商品，没有提前改为玩家拥有的卡")
-	var point: Vector2 = main.board.camera.unproject_position(Vector3(target.x, Board.DRAG_HEIGHT, target.z) - main.board._grab_offset)
+	var point: Vector2 = main.board.pointer_for_landing(target)
 	await _move(point)
 	if card.is_market:
-		last_drop_world = card.global_position
+		# 松手处 = 在手的牌落下的地方（画面上它所在的位置），不是它被拎在半空的 x/z
+		last_drop_world = main.board.held_landing_point(card)
 		if track_drop:
 			_traced_card = card
 			_drop_samples = [last_drop_world]

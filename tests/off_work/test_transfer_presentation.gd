@@ -42,7 +42,6 @@ func _run() -> void:
 		for event in transfers:
 			_check(event.ids.size() == 5 and event.participants.size() == 4, "two employees plus grinder plus leader transfer five together")
 		_check(not events.any(func(e): return e.kind == "work_complete"), "transfer never falls back to producing cash between batches")
-		game._cache_positions(events)
 		game.board.sync_state(game.state)
 		for event in transfers: game._present(event)
 		if cycle == 0:

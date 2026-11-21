@@ -58,13 +58,6 @@ func _case(host_kind: String, count: int) -> void:
 	await _advance(0.25)
 	var current_center_screen := board.screen_position(tool)
 	_check(current_center_screen.distance_to(initial_center_screen) > 1.0, "original merge tween brings the visible meeting card onto its host stack")
-	_check(game.effects.card_position(tool, Vector2.INF).distance_to(current_center_screen) < 0.001, "meeting light follows the current card instead of its old position")
-	var attached_effect := false
-	for effect in game.effects.items:
-		if effect.kind == "meeting_start" and int(effect.get("source_id", -1)) == tool:
-			attached_effect = true
-			_check(effect.get("target_ids", []).size() == count, "meeting pull light follows the real target identities")
-	_check(attached_effect, "pull effect is anchored to the meeting card UID")
 	for uid in targets:
 		_check(not board.by_uid[uid]._task_progress.visible, "pull hides personal bar " + str(uid))
 	await _capture(host_kind, "pull")

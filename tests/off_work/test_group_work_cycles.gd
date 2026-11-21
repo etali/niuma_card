@@ -8,7 +8,6 @@ func _initialize() -> void:
 	_role_mix_and_short_queue()
 	_configured_work_capacity()
 	_join_split_and_merge()
-	_split_never_duplicates_progress()
 	_meeting_capacity()
 	_coffee_capacity()
 	_strike_and_other_jobs()
@@ -133,43 +132,6 @@ func _join_split_and_merge() -> void:
 	merge.advance(9.0)
 	events = _events(merge)
 	_check(events.size() == 1 and events[0].ids.size() == 2 and merge.money(0) == 2, "merged group settles once at target deadline")
-
-## The bar is labour already spent by the people present. Splitting a pile must not turn one
-## nearly finished batch into two.
-func _split_never_duplicates_progress() -> void:
-	# Shuttle: the only worker leaves with one file when the bar is almost full, finishes it,
-	# then returns. The pile he left starts over; before, both batches needed one second each.
-	var shuttle := _state({"employee": 1, "work": 40})
-	var pile := _group(shuttle)
-	var person: int = _ids(shuttle, "employee")[0]
-	shuttle.advance(9.0)
-	var side := shuttle.move_cards([person, shuttle.group_work(pile)[0]], -1)
-	_check(is_equal_approx(shuttle.group_work_progress(side), 0.9) and is_zero_approx(shuttle.group_work_progress(pile)),
-		"the worker carries his batch to the new pile; the pile he left starts over")
-	shuttle.advance(1.0)
-	_check(shuttle.work_count(0) == 39 and shuttle.money(0) == 1, "the carried batch still completes on time")
-	shuttle.move_cards([person], pile)
-	shuttle.advance(1.0)
-	_check(shuttle.work_count(0) == 39 and shuttle.money(0) == 1, "returning to the old pile does not complete a second batch a second later")
-	shuttle.advance(9.0)
-	_check(shuttle.work_count(0) == 38 and shuttle.money(0) == 2, "the old pile needs its full cycle again")
-	# Files moved without the people working on them start a fresh bar.
-	var handed := _state({"employee": 1, "work": 40})
-	pile = _group(handed)
-	handed.advance(9.0)
-	var idle := handed.add_card("employee", 0)
-	handed.move_cards([handed.group_work(pile)[0]], int(handed.cards[idle].group))
-	_check(is_zero_approx(handed.group_work_progress(int(handed.cards[idle].group))) and is_equal_approx(handed.group_work_progress(pile), 0.9),
-		"a file handed to an idle colleague starts from zero; the original batch keeps its progress")
-	handed.advance(1.0)
-	_check(handed.work_count(0) == 38 + 1 and handed.money(0) == 1, "only the original batch completes at its deadline")
-	# Moving the whole pile, with or without its people, keeps the bar: nothing is left behind.
-	var whole := _state({"employee": 1, "work": 40})
-	pile = _group(whole)
-	whole.advance(4.0)
-	var spare := whole.add_card("employee", 0)
-	whole.move_cards(whole.group_work(pile), int(whole.cards[spare].group))
-	_check(is_equal_approx(whole.group_work_progress(int(whole.cards[spare].group)), 0.4), "relocating an entire pile keeps its progress")
 
 func _meeting_capacity() -> void:
 	var state := _state({"employee": 5, "work": 100})

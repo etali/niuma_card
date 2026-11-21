@@ -37,7 +37,7 @@ func _run() -> void:
 		var profile_key := OffWorkIconMotion.profile_key(kind, "striking")
 		_check(card._strike_participant and card.illustration_profile() == profile_key, "%s adopts a dedicated dance from its real strike state" % kind)
 		_check(card._motion_material.get_meta("work_motion_kind") == profile_key, "%s shader receives its dance profile" % kind)
-		_check(not card._task_progress.visible, "%s has no stale work bar while dancing" % kind)
+		_check(card._task_progress_phase == "strike" or not card._task_progress.visible, "%s has no stale work bar while dancing; only the strike countdown may show" % kind)
 		snapshots[uid] = [card.global_transform, card._visual.transform, card.card_mesh.transform, card.label.transform, card._icon.transform, card._icon.texture]
 		card._process(0.28)
 		var snapshot: Array = snapshots[uid]

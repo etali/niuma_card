@@ -89,7 +89,7 @@ func _entries_and_inspection() -> void:
 		_check(hit.get("kind", "") == rows[i].kind, "%s side row stays independently hittable across columns" % rows[i].kind)
 
 func _move_held_to(world: Vector3) -> void:
-	var at := board.camera.unproject_position(Vector3(world.x - board._grab_offset.x, Board.DRAG_HEIGHT, world.z - board._grab_offset.z))
+	var at := board.pointer_for_landing(world)
 	var motion := InputEventMouseMotion.new()
 	motion.position = at
 	motion.global_position = at

@@ -890,6 +890,8 @@ func _stop_visual_tween() -> void:
 	if _drag_visual_tween and _drag_visual_tween.is_valid():
 		_drag_visual_tween.kill()
 	_drag_visual_tween = null
+	# 接下来的补间从卡面现在的位置起步，把它收回去；留着的偏移从此归补间管
+	_face_hold = Vector3.ZERO
 
 func set_drag_visual(on: bool) -> void:
 	_stop_hover_animation()
@@ -906,10 +908,23 @@ func set_drag_visual(on: bool) -> void:
 	if not on:
 		_drag_visual_tween.tween_property(_visual, "rotation", Vector3.ZERO, 0.12)
 
+## 卡身刚被挪了 -offset（松手时沿视线降回拎起前的高度）：卡面这一帧留在画面原处，
+## 随后的落桌动画从这里把它收回卡身上。再调一次是替换，不是累加。
+var _face_hold := Vector3.ZERO
+func hold_face_in_place(offset: Vector3) -> void:
+	if _visual == null or _visual_retired:
+		return
+	_visual.global_position += offset - _face_hold
+	_face_hold = offset
+
 ## 位置仍由 Board 紧跟鼠标；只给卡面一个有上限且会回正的方向倾斜。
 func update_drag_motion(velocity: Vector3, delta: float) -> void:
 	if _visual == null or not _visual_dragging or _visual_retired:
 		return
+	if _face_hold != Vector3.ZERO:
+		# 松手没成（牌又被拎回手上）：卡面回到卡身上
+		_visual.global_position -= _face_hold
+		_face_hold = Vector3.ZERO
 	var target := Vector3(clampf(velocity.z * 0.004, -0.045, 0.045), 0.0,
 		clampf(-velocity.x * 0.004, -0.045, 0.045))
 	_visual.rotation = _visual.rotation.lerp(target, 1.0 - exp(-14.0 * delta))

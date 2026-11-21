@@ -60,7 +60,7 @@ func _run() -> void:
 		arena.resolve()
 		if mode == "pawn":
 			var pawn_card: CardEntity = arena._input_cards[0]
-			check(pawn_card.has_meta("dest_pos") and pawn_card.get_meta("dest_pos") == facility_at + Vector3(0, 0.8, 0), "典当使用正式吸入柜台目标，不是飞出桌外")
+			check(pawn_card.has_meta("dest_pos") and pawn_card.get_meta("dest_pos") == facility_at, "典当的牌压到典当行那张设施牌底下，不是飞出桌外")
 			check(not pawn_card._face_down, "吸入典当不改成独立翻面动画")
 			check(arena.state.resource_count(arena.my_seat, OnWorkCardDB.RES_CASH) == before_cash + int(example["output"]["count"]), "典当金额与OnWorkCardDB.pawn_value一致")
 			check(_sound.actions.count("pawn") == 1, "典当播放与游玩同名pawn动作")

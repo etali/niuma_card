@@ -370,11 +370,18 @@ var _table_hud_content := Rect2()
 var lbl_msg: Label
 ## 提示记录（右下角，默认收起）。屏幕上说过的每一句都留在这儿
 var msg_log: MsgLog
-var lbl_attack: Label            # 兼容旧引用；攻击时由固定点数面板展示
+## 攻击点数只写在这一处：一张固定的便签，第一行写谁在攻击和剩余点数，
+## 第二行写瞄准时这一下会怎样。
 var attack_panel: PanelContainer
+var attack_title: Label
 var attack_pool_text: Label
 var attack_target_text: Label
-var _attack_follow_mouse := false
+## 便签上现在写的是谁的攻击；空 = 没有攻击在进行。{title, mine, pools}
+var _attack_readout: Dictionary = {}
+## 便签上一次排版用的缩放、贴边位置和贴的是哪一边；变了才重排。
+var _attack_panel_layout := Vector3(-1.0, -1.0, -1.0)
+## 鼠标瞄着的那一摞点下去会怎样（_table_actions.preview_attack 的结果）；空 = 没瞄着谁。
+var _attack_aim: Dictionary = {}
 var btn_pass: Button
 ## 联网入口按钮。联网局开起来之后要**藏掉** —— 局中再点一次会开出第二条连接，
 ## 而 begin_net_game 会把 pipe 换成新那条：旧连接还挂在服务器上占着座位，
@@ -903,11 +910,7 @@ func _setup_hud() -> void:
 	_position_pass_button()
 	_set_button(TXT_ACTION_DONE, _on_action_done)
 
-	# 攻击点数标签：玩家攻击时跟随鼠标，BOT 攻击时置顶居中
-	lbl_attack = _make_label(canvas, Vector2(0, 120), 34, Color(1.0, 0.45, 0.35))
-	lbl_attack.visible = false
-	lbl_attack.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	lbl_attack.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 攻击点数便签：双方的攻击都只在这里写点数，不再另有一行跟着鼠标的大字。
 	attack_panel = PanelContainer.new()
 	attack_panel.name = "AttackPoolPanel"
 	attack_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -917,7 +920,15 @@ func _setup_hud() -> void:
 	var attack_box := VBoxContainer.new()
 	attack_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	attack_panel.add_child(attack_box)
-	attack_pool_text = _make_label(attack_box, Vector2.ZERO, 18, Palette.semantic("danger"))
+	var attack_head := HBoxContainer.new()
+	attack_head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	attack_head.alignment = BoxContainer.ALIGNMENT_CENTER
+	attack_head.add_theme_constant_override("separation", 14)
+	attack_box.add_child(attack_head)
+	attack_title = _make_label(attack_head, Vector2.ZERO, 18, Palette.semantic("danger"))
+	attack_title.name = "AttackTitle"
+	attack_title.add_theme_font_override("font", Fonts.zh_bold())
+	attack_pool_text = _make_label(attack_head, Vector2.ZERO, 18, Palette.semantic("danger"))
 	attack_pool_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	attack_target_text = _make_label(attack_box, Vector2.ZERO, 13, Palette.semantic("muted"))
 	attack_target_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1170,16 +1181,8 @@ func _process(delta: float) -> void:
 	_push_piles()
 	if board:
 		_refresh_shields()
+		_update_attack_aim()
 		_refresh_attack_panel()
-	# 攻击点数追踪鼠标（玩家攻击回合）
-	if _attack_follow_mouse and lbl_attack.visible:
-		lbl_attack.set_anchors_preset(Control.PRESET_TOP_LEFT)
-		lbl_attack.position = get_viewport().get_mouse_position() + Vector2(24, -8)
-		if drawer_presentation:
-			var area: Rect2 = drawer_presentation.content_rect()
-			var extent := lbl_attack.get_combined_minimum_size()
-			lbl_attack.position.x = clampf(lbl_attack.position.x, area.position.x, maxf(area.position.x, area.end.x - extent.x))
-			lbl_attack.position.y = clampf(lbl_attack.position.y, area.position.y, maxf(area.position.y, area.end.y - extent.y))
 
 func _refresh_button_theme() -> void:
 	for button in [btn_net, btn_save, btn_resign, btn_pass]:
@@ -1249,15 +1252,120 @@ func _refresh_mascot_state() -> void:
 func _refresh_attack_panel() -> void:
 	if not is_instance_valid(attack_panel):
 		return
-	var active := phase == PHASE_ATTACK and board != null and board.attack_mode
-	attack_panel.visible = active
-	if not active or pipe == null:
+	var mine := phase == PHASE_ATTACK and board != null and board.attack_mode
+	# 对手攻击时便签照样在：写的是他的点数。
+	var foe := not mine and not _attack_readout.is_empty() and not bool(_attack_readout.get("mine", true))
+	attack_panel.visible = mine or not _attack_readout.is_empty()
+	if not attack_panel.visible or pipe == null:
 		return
-	var pools := _attack_pools
+	_layout_attack_panel(not foe)
+	var pools: Dictionary = _attack_readout.get("pools", {}) if foe else _attack_pools
+	attack_title.text = str(_attack_readout.get("title", TXT_ATTACK_MINE))
 	attack_pool_text.text = "现金攻击 %d    用户攻击 %d" % [
 		int(pools.get(OnWorkCardDB.RES_CASH, 0)), int(pools.get(OnWorkCardDB.RES_USER, 0))]
-	var count := pipe.applier().affordable_targets(my_seat).size()
-	attack_target_text.text = "可攻击目标 %d · 点击高亮卡牌选择目标" % count
+	var ink := Palette.semantic("danger" if not foe else "muted")
+	for label in [attack_title, attack_pool_text]:
+		label.add_theme_color_override("font_color", Palette.readable_ink(ink, Palette.semantic("surface")))
+	if foe:
+		attack_target_text.text = "对手正在选择目标"
+		return
+	if not mine:
+		attack_target_text.text = ""
+		return
+	if not _attack_aim.is_empty():
+		attack_target_text.text = _attack_aim_text(_attack_aim)
+		return
+	var targets: Array = pipe.applier().affordable_targets(my_seat)
+	attack_target_text.text = "可攻击目标 %d · 点击高亮卡牌选择目标" % targets.size()
+	# 攻击锁：打到一半的那个组合还有点得起的靶时，别处都点不了。
+	var lock := OnWorkState.attack_lock(pools)
+	if lock != "" and not targets.is_empty() and targets.all(func(target): return OnWorkState.target_batch(target) == lock):
+		attack_target_text.text = "得先打完手上这一组「%s」 · 可攻击目标 %d" % [
+			OnWorkCardDB.card_name(str(targets[0].get("leader", ""))), targets.size()]
+
+## 便签是一张纸色的条子，贴在出手一方的桌沿正中：我攻击时在我这边（牌桌可见区域的
+## 下沿），对手攻击时在他那边（上沿）。这样它永远不盖住正被瞄准的那一侧的牌。
+## 抽屉布局按界面缩放放大：点数只剩这一处，不能被顶栏盖住，也不能在高分屏上小得读不出来。
+func _layout_attack_panel(mine: bool) -> void:
+	var factor := 1.0
+	var area := table_content_rect()
+	if drawer_presentation != null:
+		factor = drawer_presentation._responsive_factor()
+		area = drawer_presentation.content_rect()
+	var extent := Vector2(500.0, 52.0) * factor
+	# 可见区域还没算出来时退回原来的固定位置。
+	var edge := 116.0 if not area.has_area() else \
+		(area.end.y - 6.0 * factor if mine else area.position.y + 6.0 * factor)
+	var bottom := mine and area.has_area()
+	var layout := Vector3(factor, edge, 1.0 if bottom else 0.0)
+	if layout.is_equal_approx(_attack_panel_layout):
+		return
+	_attack_panel_layout = layout
+	var surface := Palette.semantic("surface")
+	var paper := StyleBoxFlat.new()
+	paper.bg_color = surface
+	paper.border_color = Palette.readable_ink(Palette.semantic("ink"), surface)
+	paper.set_border_width_all(maxi(1, roundi(1.5 * factor)))
+	paper.set_corner_radius_all(roundi(8.0 * factor))
+	paper.content_margin_left = 14.0 * factor
+	paper.content_margin_right = 14.0 * factor
+	paper.content_margin_top = 5.0 * factor
+	paper.content_margin_bottom = 5.0 * factor
+	attack_panel.add_theme_stylebox_override("panel", paper)
+	for label in [attack_title, attack_pool_text]:
+		label.add_theme_font_size_override("font_size", roundi(18.0 * factor))
+	attack_target_text.add_theme_font_size_override("font_size", roundi(13.0 * factor))
+	attack_target_text.add_theme_color_override("font_color", Palette.readable_ink(Palette.semantic("muted"), surface))
+	attack_panel.custom_minimum_size = extent
+	attack_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	# 内容比最小尺寸高时，往牌桌里面长，不往桌沿外面长。
+	attack_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN if bottom else Control.GROW_DIRECTION_END
+	attack_panel.offset_left = -extent.x * 0.5
+	attack_panel.offset_right = extent.x * 0.5
+	attack_panel.offset_top = edge - extent.y if bottom else edge
+	attack_panel.offset_bottom = edge if bottom else edge + extent.y
+
+## 便签第二行：瞄着的这一摞点下去会怎样。
+func _attack_aim_text(aim: Dictionary) -> String:
+	var torn: int = (aim.get("uids", []) as Array).size()
+	if torn == 0:
+		return "这一摞现在点不动"
+	var parts: Array[String] = []
+	for res: String in [OnWorkCardDB.RES_CASH, OnWorkCardDB.RES_USER]:
+		if int(aim.get(res, 0)) > 0:
+			parts.append("%s %d" % [OnWorkCardDB.card_label(res), int(aim[res])])
+	var left: Dictionary = aim.get("pools", {})
+	var text := "点这一下：撕 %d 张（%s） · 剩余 现金攻击 %d  用户攻击 %d" % [torn, "、".join(parts),
+		int(left.get(OnWorkCardDB.RES_CASH, 0)), int(left.get(OnWorkCardDB.RES_USER, 0))]
+	# 这两句是规则已经定下的结果，只是原来要点下去才知道；可在 data/ui.json 的 fx.aim 里关掉。
+	if bool(ComicFx.rules().get("aim", {}).get("consequences", true)):
+		if bool(aim.get("finishes", false)):
+			text += " · 这一下终结对手"
+		elif bool(aim.get("voids", false)):
+			text += " · 整组作废"
+	return text
+
+## 鼠标停在对手的哪一摞上，就试算点这一摞会怎样，并让桌上的标记跟着变。
+## 触屏没有悬停：点数便签照常，只是没有这一下的预告。
+func _update_attack_aim() -> void:
+	if not (phase == PHASE_ATTACK and board.attack_mode and _player_attack_busy == 0 and replay_session == null \
+			and _tutorial_context == null and pipe != null and not board.touch_mode \
+			and not board._interaction_is_blocked() and state.winner == ""):
+		# 这一击正在结算，或已经不是我的攻击：桌上的标记由结算收尾那一侧撤，这里只忘掉瞄准。
+		# 教学课自己管攻击标记（OnWorkTutorialArena），这里不插手。
+		_attack_aim = {}
+		return
+	_aim_attack_at(get_viewport().get_mouse_position())
+
+## 指针在屏幕上的这个位置时瞄着谁。
+func _aim_attack_at(at: Vector2) -> void:
+	var aim := ""
+	if drawer_presentation == null or not drawer_presentation.pointer_over_panels(at):
+		aim = _table_actions.aim_of(board._pick_card(at))
+	if aim == str(_attack_aim.get("aim", "")):
+		return
+	_attack_aim = _table_actions.preview_attack(aim, _attack_pools) if aim != "" else {}
+	_refresh_attack_targets()
 
 func _set_button(text: String, cb: Callable) -> void:
 	btn_pass.text = text
@@ -2122,6 +2230,9 @@ func _render_foe_attack(r: Dictionary) -> void:
 			card.freeze = true
 			card.collision_layer = 0
 			card.collision_mask = 0
+			# 亮靶：被打中的牌先变红，这一批撕的时候才动。BOT 出手本来就有这一拍，
+			# 联网对手的每一击到了也同样先亮出来。
+			card.set_highlight(true, Color(1.5, 0.55, 0.45))
 	if batch == "":
 		_flush_foe_attack()
 
@@ -3690,7 +3801,7 @@ func _play_attack_turn(who: String, pools: Dictionary) -> Dictionary:
 	OnWorkSession.save_session(self, true)
 	_refresh_mascot_state()
 	if who == foe_seat:
-		_show_attack_label(_attack_label_text(TXT_ATTACK_FOE, pools), false)
+		_show_attack_label(TXT_ATTACK_FOE, false, pools)
 		_show_message("对手发动攻击！", Palette.semantic("danger"))
 		await _drawer_timer(BEAT_PHASE).timeout
 		if not _session_current(session):
@@ -3724,7 +3835,7 @@ func _play_attack_turn(who: String, pools: Dictionary) -> Dictionary:
 				return OnWorkIntent.err("cancelled", "牌局已切换")
 			return {"ok": true}
 		board.attack_mode = true
-		_show_attack_label(_attack_label_text(TXT_ATTACK_MINE, _attack_pools), true)
+		_show_attack_label(TXT_ATTACK_MINE, true)
 		_show_message("你的攻击：现金点打现金、用户点打用户，点数必须花完", Palette.semantic("danger"))
 		_refresh_attack_targets()
 		_refresh_mascot_state()
@@ -3753,7 +3864,7 @@ func _drive_bot_attack(who: String, pools: Dictionary) -> Dictionary:
 	var after := func(target: Dictionary) -> void:
 		_hl_target(target, false)
 		await _flush_foe_attack()
-		_show_attack_label(_attack_label_text(TXT_ATTACK_FOE, pools), false)
+		_show_attack_label(TXT_ATTACK_FOE, false, pools)
 	var exhausted := func(): _show_message("对手剩余点数点不起任何目标，余点作废", Palette.semantic("muted"))
 	var flow := _round_flow()
 	var result: Dictionary = await flow.run_automatic_attack(who, choose, before, after, exhausted)
@@ -3791,11 +3902,7 @@ func _await_foe_attack(who: String) -> void:
 		await get_tree().process_frame
 		if not _session_current(session):
 			return
-		_show_attack_label(_attack_label_text(
-			TXT_ATTACK_FOE, pipe.applier().pools(who)), false)
-
-func _attack_label_text(title: String, pools: Dictionary) -> String:
-	return "%s · %s" % [title, OnWorkState.pool_text(pools)]
+		_show_attack_label(TXT_ATTACK_FOE, false, pipe.applier().pools(who))
 
 ## 玩家点选攻击目标（board.attack_clicked 信号）
 func _on_attack_clicked(card: CardEntity) -> void:
@@ -3966,7 +4073,7 @@ func _settle_attack(removed: Array, center: Vector3) -> void:
 		if not _session_current(session):
 			return
 		return
-	_show_attack_label(_attack_label_text(TXT_ATTACK_MINE, _attack_pools), true)
+	_show_attack_label(TXT_ATTACK_MINE, true)
 	_update_hud()
 	if pipe.applier().affordable_targets(my_seat).is_empty():
 		_show_message("剩余点数点不起任何目标，余点作废", Palette.semantic("muted"))
@@ -4015,15 +4122,23 @@ func _pile_target_by_key(key: String) -> Dictionary:
 ##     而 core_first_order 的队首**是核心卡** —— 核心卡不是合法靶
 ##     （OnWorkState.attack_targets 只出单位卡），玩家看到的是「唯一红的那张点不动、
 ##     真能打的那几张一片灰」。这就是「可被攻击的牌没有都变红」
+##
+## 同一次调用还把对手其余的牌压暗，并画出瞄着的那一摞点下去会撕哪几张
+## （见 OnWorkTableActions.highlight_attack_targets）。
 func _refresh_attack_targets() -> void:
 	_clear_attack_hl()
-	_attack_hl = _table_actions.highlight_attack_targets(_attack_pools)
+	# 局面或点数变了，上一次的试算就作废了：按现在的重新算。
+	if not _attack_aim.is_empty():
+		_attack_aim = _table_actions.preview_attack(str(_attack_aim.get("aim", "")), _attack_pools)
+	_attack_hl = _table_actions.highlight_attack_targets(_attack_pools, _attack_aim)
 
 func _clear_attack_hl() -> void:
 	for e in _attack_hl:
 		if is_instance_valid(e):
 			e.set_highlight(false)
 	_attack_hl.clear()
+	if is_instance_valid(_table_actions):
+		_table_actions.clear_attack_marks()
 
 func _hl_target(target: Dictionary, on: bool) -> void:
 	for u in target["uids"]:
@@ -4097,23 +4212,17 @@ func _delayed_flyout_ex(card: CardEntity, dir: Vector3, delay: float,
 	_card_motion.sfx = sfx
 	_card_motion.delayed_tear(card, dir, delay, with_sfx)
 
-## 攻击点数标签：玩家回合跟随鼠标（_process 驱动），BOT 回合置顶居中
-func _show_attack_label(text: String, follow_mouse: bool) -> void:
+## 攻击点数便签：title 写谁在攻击；mine = 我的攻击（点数读我自己的池子），
+## 否则是对手的攻击，pools 是他此刻的点数。
+func _show_attack_label(title: String, mine: bool, pools: Dictionary = {}) -> void:
+	_attack_readout = {"title": title, "mine": mine, "pools": pools.duplicate(true)}
 	_refresh_attack_panel()
-	attack_panel.visible = true if is_instance_valid(attack_panel) else false
-	lbl_attack.text = text
-	lbl_attack.visible = true
-	_attack_follow_mouse = follow_mouse
-	if not follow_mouse:
-		lbl_attack.set_anchors_preset(Control.PRESET_CENTER_TOP)
-		lbl_attack.custom_minimum_size = Vector2(360, 44)
-		lbl_attack.position = Vector2(-180, 120)
 
 func _hide_attack_label() -> void:
-	lbl_attack.visible = false
+	_attack_readout = {}
+	_attack_aim = {}
 	if is_instance_valid(attack_panel):
 		attack_panel.visible = false
-	_attack_follow_mouse = false
 
 # ---------- 结算演出 ----------
 
@@ -4730,6 +4839,13 @@ func _reset_session_flags(keep_net := false) -> void:
 
 # ---------- HUD ----------
 
+## 资金或用户剩到这么多就算「快归零」（归零即输），读数描红。
+const RESOURCE_ALARM := 3
+
+## 这一方的某种资源是不是快归零了。
+func resource_low(seat: String, res: String) -> bool:
+	return state != null and state.winner == "" and state.resource_count(seat, res) <= RESOURCE_ALARM
+
 func _update_hud() -> void:
 	_update_thinking_hint(true)
 	# HUD 读的是资源总量（破百看这个）→ 计量名。
@@ -4741,8 +4857,10 @@ func _update_hud() -> void:
 	var piles: Array = _core_piles()
 	var due: int = state.pending_pay(my_seat, piles)
 	var dep: Dictionary = state.user_deployment(my_seat, piles)
-	var cash_txt := "%s %d" % [
-		OnWorkCardDB.res_label(OnWorkCardDB.RES_CASH), state.resource_count(my_seat, OnWorkCardDB.RES_CASH)]
+	# 胜利线一直写在资金后面：离赢还有多远、对手离赢还有多远，不用自己记。
+	var win_cash := int(OnWorkCardDB.game_rules()["win_cash"])
+	var cash_txt := "%s %d / %d" % [
+		OnWorkCardDB.res_label(OnWorkCardDB.RES_CASH), state.resource_count(my_seat, OnWorkCardDB.RES_CASH), win_cash]
 	# 待付 0 就不写括号：每回合都挂一个「（本回合待付 0）」是常态噪音，
 	# 而这一条的价值全在「非零时被看见」
 	if due > 0:
@@ -4772,8 +4890,8 @@ func _update_hud() -> void:
 			foe_piles.append({ "uids": combo.get("uids", []) })
 	var foe_due: int = state.pending_pay(foe_seat, foe_piles)
 	var foe_dep: Dictionary = state.user_deployment(foe_seat, foe_piles)
-	var foe_cash := "%s %d" % [
-		OnWorkCardDB.res_label(OnWorkCardDB.RES_CASH), state.resource_count(foe_seat, OnWorkCardDB.RES_CASH)]
+	var foe_cash := "%s %d / %d" % [
+		OnWorkCardDB.res_label(OnWorkCardDB.RES_CASH), state.resource_count(foe_seat, OnWorkCardDB.RES_CASH), win_cash]
 	if foe_due > 0:
 		foe_cash += "（本回合待付 %d）" % foe_due
 		# 对手侧同一条预警，读法反过来：这是「已经打够了，不用再补刀」的信号
@@ -4788,6 +4906,10 @@ func _update_hud() -> void:
 	if not foe_piles.is_empty():
 		foe_user += "（在岗 %d / 闲置 %d）" % [int(foe_dep["on_duty"]), int(foe_dep["idle"])]
 	lbl_bot_res.text = "%s · %s · %s" % [company_label(foe_seat), foe_cash, foe_user]
+	for item in [[hud_player_card, my_seat], [hud_bot_card, foe_seat]]:
+		if not is_instance_valid(item[0]): continue
+		item[0].set_goal(win_cash)
+		item[0].set_alarm(resource_low(item[1], OnWorkCardDB.RES_CASH), resource_low(item[1], OnWorkCardDB.RES_USER))
 	if is_instance_valid(hud_player_card):
 		hud_player_card.set_company(company_label(my_seat))
 		hud_player_card.set_resources(state.resource_count(my_seat, OnWorkCardDB.RES_CASH),

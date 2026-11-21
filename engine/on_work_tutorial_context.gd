@@ -81,7 +81,7 @@ func begin(main: Node) -> bool:
 			"accessibility": button.accessibility_name, "connections": button.pressed.get_connections(),
 			"tooltip": button.tooltip_text, "role": button.get_meta("ui_role") if button.has_meta("ui_role") else null})
 		button.disabled = true
-	for label in [main.lbl_round, main.lbl_player_res, main.lbl_bot_res, main.lbl_msg, main.lbl_attack, main.attack_pool_text, main.attack_target_text]:
+	for label in [main.lbl_round, main.lbl_player_res, main.lbl_bot_res, main.lbl_msg, main.attack_title, main.attack_pool_text, main.attack_target_text]:
 		if not is_instance_valid(label): continue
 		_labels.append({"node": weakref(label), "text": label.text, "tooltip": label.tooltip_text,
 			"visible": label.visible, "minimum": label.custom_minimum_size, "base_minimum": label.get_meta("drawer_min_base") if label.has_meta("drawer_min_base") else null})

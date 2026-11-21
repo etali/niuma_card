@@ -19,6 +19,7 @@ const FX_DEMOS := [
 	["hit", "撕掉用户"], ["coins", "撕掉现金"], ["final", "终结一击"], ["void", "组合作废"],
 	["recipe", "配方凑满"], ["double", "效果翻倍"], ["foil", "传说金框"], ["kinds", "三种纸型"],
 	["cash", "产出资金"], ["user", "产出用户"], ["upgrade", "升级"], ["legend", "传说登场"],
+	["pay", "付款 · 压到牌底下"], ["pawn", "典当 · 从上方压下去"],
 	["listing", "胜利 · 上市"], ["bankrupt", "胜利 · 对手破产"], ["exodus", "胜利 · 对手跑光"], ["defeat", "失败"],
 ]
 ## 特效页台面：左边一张生产牌（产出、升级、作废都盖在它身上），右边一叠被攻击的资源牌。
@@ -701,6 +702,19 @@ func play_fx(kind: String) -> void:
 			var source := ComicFx.production(_fx_root, _camera, core, core.global_position, cash,
 				int(OnWorkCardDB.get_def("yunketang").get("output_n", 3)), _sound)
 			UIMotion.play(_fx_root, "production", source, color, 12, "coin" if cash else "user")
+		"pay", "pawn":
+			# 被用掉的牌压到用它的那张牌底下，全程原大小；对局里买牌、典当、配方付款、
+			# 升级材料走的都是这一段。左边那张生产牌在这里充当「用它的那张牌」。
+			var unit := OnWorkCardDB.unit_id(OnWorkCardDB.RES_CASH)
+			for old in _fx_cards(unit):
+				old.queue_free()
+			var paid := _fx_place(unit, FX_CORE + (Vector3(2.4, 0.0, 1.5) if kind == "pay" else Vector3(0.2, 0.9, 0.15)), 3)
+			_sound.play("buy" if kind == "pay" else "pawn")
+			for index in paid.size():
+				_motion._suck_into(paid[index], core.position, float(index) * UIMotion.STAGGER)
+			core.pulse_feedback("arrive", Color.TRANSPARENT, float(paid.size() - 1) * UIMotion.STAGGER + Motion.SUCK_TIME)
+			_status.text = "付款：钱靠到牌边上，再平着滑到它底下" if kind == "pay" \
+				else "典当：本来就在上方的牌，绕到靠自己这一侧再压下去"
 		"upgrade", "legend":
 			_sound.play("upgrade")
 			UIMotion.play(_fx_root, "upgrade", core.global_position + Vector3.UP * 0.6, Palette.plate_color("plate_t3", "band"))

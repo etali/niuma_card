@@ -90,7 +90,9 @@ func _check_personnel_presentation(card: OffWorkCard, to_type: String) -> void:
 	_check(card.type == to_type and card.def_id == to_type and card.label.text == state.config.cards[to_type].name, "%s refreshes title and definition on the existing card" % to_type)
 	_check(card._icon.texture == CardArt.illustration_texture(to_type, OffWorkCardDB), "%s switches to its configured real artwork" % to_type)
 	_check(card.uses_continuous_animation() and card.illustration_profile() == to_type and card._motion_material != null, "%s uses its own continuous motion profile" % to_type)
-	_check(card._upgrade_visual_active and card._upgrade_remaining > 0.0, "%s plays the production upgrade ring" % to_type)
+	# A drawn card is tossed up and stamped when it lands; a buried one is stamped where it is.
+	if card.is_upgrade_leaping(): card._drag_visual_tween.custom_step(1.0)
+	_check(card._upgrade_visual_active and card._upgrade_remaining > 0.0, "%s plays the production upgrade" % to_type)
 	_check(card.stamp_text() == str(state.config.cards[to_type].name), "%s upgrade stamp names the attained role" % to_type)
 
 func _batch_presentation() -> void:

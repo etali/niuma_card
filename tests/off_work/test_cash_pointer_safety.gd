@@ -100,11 +100,7 @@ func _drop_at(card: CardEntity, target_world: Vector3) -> void:
 	await _motion(start + Vector2(12, 0))
 	# The caller specifies the visible destination, including the target's
 	# stack height; compensate the original grab offset, not the snap result.
-	var destination := board.camera.unproject_position(target_world)
-	var origin := board.camera.project_ray_origin(destination)
-	var ray := board.camera.project_ray_normal(destination)
-	var anchor: Vector3 = origin + ray * ((Board.DRAG_HEIGHT - origin.y) / ray.y)
-	destination = board.camera.unproject_position(Vector3(anchor.x - board._grab_offset.x, Board.DRAG_HEIGHT, anchor.z - board._grab_offset.z))
+	var destination: Vector2 = board.pointer_for_view(target_world)
 	await _motion(destination)
 	await _button(destination, false)
 	await _settle()

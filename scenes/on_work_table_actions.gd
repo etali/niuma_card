@@ -84,10 +84,9 @@ func cancel_purchase_placement(card: CardEntity, placement: Dictionary) -> void:
 	if placement.is_empty() or not is_instance_valid(card) or not card.is_market \
 		or not host.market_cards.has(card):
 		return
-	card.global_position = placement["shelf_position"]
+	# 没买成：商品沿弧线弹回货架上原来那一格。价签松手时已经回到货架上，在那儿等它。
 	card.rotation_degrees = placement["shelf_rotation"]
-	card.freeze = true
-	host.board._sync_market_tag(card)
+	host.board.arc_to(card, placement["shelf_position"])
 
 ## 自动付款避开玩家刚摆好的有效业务/攻击配方；卡组是否有效只问共享规则。
 ## 仍交给原购买意图检查价格、所有权及现金不能归零，不在表现层扣款。
@@ -120,6 +119,9 @@ func return_purchase_payment(cards: Array) -> void:
 func return_cards(cards: Array, anchor := Vector3.INF, compact = null) -> void:
 	var remaining := cards.filter(func(card): return is_instance_valid(card) and not host.state.find_card(host.my_seat, card.uid).is_empty())
 	if remaining.is_empty(): return
+	# 被拒绝的、没用完的牌，从哪来回哪去：弹回这次拖拽拎起它们的地方。
+	# 不是拖拽带来的牌（或原来那一摞已经变了）才另找空位。
+	if anchor == Vector3.INF and host.board.return_to_origin(remaining): return
 	var anchored := anchor != Vector3.INF
 	var ignore := {}
 	for card in remaining:
@@ -141,12 +143,6 @@ func return_cards(cards: Array, anchor := Vector3.INF, compact = null) -> void:
 
 func purchase(index: int, card: CardEntity, result: Dictionary, placement: Dictionary = {}, arrival_position := Vector3.INF) -> void:
 	var motion: Node = _motion()
-	for uid in result["removed_uids"]:
-		if host.entities.has(uid):
-			motion._suck_into(host.entities[uid], card.position + Vector3(0, 0.2, 0))
-			host.entities.erase(uid)
-	host.market_cards.remove_at(index)
-	_drop_price(index)
 	# 直接拖商品时保留松手处；教程可指定已避让的到货位置，其余沿用随机空位。
 	var target: Vector3
 	if not placement.is_empty():
@@ -157,6 +153,15 @@ func purchase(index: int, card: CardEntity, result: Dictionary, placement: Dicti
 		target = host.layout._free_spot(
 			Vector3(randf_range(-5, 5), 0.2, Regions.PLAYER_ZONE_Z + 1.6), host.my_seat)
 	target.y = 0.2
+	# 钱压到买的那张牌底下：商品还在货架上就压到货架那一格，
+	# 玩家已经把商品拖回手边，就压到它松手落下的地方。
+	var cover: Vector3 = target if not placement.is_empty() else card.position
+	for uid in result["removed_uids"]:
+		if host.entities.has(uid):
+			motion._suck_into(host.entities[uid], cover)
+			host.entities.erase(uid)
+	host.market_cards.remove_at(index)
+	_drop_price(index)
 	card.is_market = false
 	card.draggable = true
 	card.freeze = true
@@ -184,7 +189,9 @@ func pawn(cards: Array, uids: Array, owner := "") -> void:
 	var motion: Node = _motion()
 	var who: String = host.my_seat if owner == "" else owner
 	var mine: bool = who == host.my_seat
-	var counter: Vector3 = host._pawn_position() + Vector3(0, 0.8, 0)
+	# 典当的牌压到典当行那张设施牌底下；到账的现金从它上方飞出来。
+	var facility: Vector3 = host._pawn_position()
+	var counter: Vector3 = facility + Vector3(0, 0.8, 0)
 	var sold: Array = cards.filter(func(card): return is_instance_valid(card) and uids.has(card.uid))
 	var spread := minf(Motion.ACT, Motion.STAGGER * maxi(0, sold.size() - 1))
 	var back := Vector3.INF
@@ -194,10 +201,10 @@ func pawn(cards: Array, uids: Array, owner := "") -> void:
 			back = card.global_position
 		host.entities.erase(card.uid)
 		if mine:
-			motion._suck_into(card, counter)
+			motion._suck_into(card, facility)
 		else:
 			host.layout.kill_bot_move(card.uid)
-			var tween: Tween = motion.pawn_into(card, counter, spread * float(i) / maxf(1, sold.size() - 1))
+			var tween: Tween = motion.pawn_into(card, facility, spread * float(i) / maxf(1, sold.size() - 1))
 			_pawn_moves.append({"card": card, "tween": tween, "retired": true})
 	if back == Vector3.INF:
 		back = host.layout._free_spot(host.layout.PLAYER_PILE_CASH_ANCHOR, host.my_seat)
@@ -270,7 +277,7 @@ func pay_recipe(uids: Array, at: Vector3) -> int:
 			first = card.position
 		motion._cancel_fly(card)
 		var delay := float(count) * Motion.STAGGER
-		motion._suck_into(card, at + Vector3(0, 0.3, 0), delay)
+		motion._suck_into(card, at, delay)
 		motion.delayed_sound("pay", delay)
 		host.entities.erase(uid)
 		count += 1
@@ -371,13 +378,27 @@ func _arrival_motions_pending(cards: Array) -> bool:
 func _presentation_cancelled() -> Dictionary:
 	return {"ok": false, "code": "cancelled", "reason": "牌局已切换"}
 
+## 配方付掉的现金去哪儿：压到用它的那一组的核心牌底下，产出再从这一组出来。
+## 这一组不在桌上（规则书示意、只有台账的组合）时退回资源带上的落点。
 func payment_animation_target(owner: String, combo: Dictionary) -> Vector3:
+	var cover := consumer_position(combo)
+	if cover != Vector3.INF: return cover
 	# 现金换用户时，付款与新用户共用下一张到货的落点；preview不改到货台账。
 	var effect: Dictionary = combo.get("eval", {})
 	if effect.get("type", "") == "production" and effect.get("output_res", "") == OnWorkCardDB.RES_USER \
 		and host.layout.has_method("preview_arrival_spot"):
 		return host.layout.preview_arrival_spot(owner, {"def_id": OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER)})
 	return host.layout.payment_spot(owner, OnWorkCardDB.RES_CASH)
+
+## 一组牌里盖住被用掉的牌的位置：核心牌所在的那一格，高度取整组最低的一张。
+func consumer_position(combo: Dictionary) -> Vector3:
+	var members := _members(combo.get("uids", []))
+	if members.is_empty(): return Vector3.INF
+	var core: CardEntity = _leader(members, combo.get("eval", {}))
+	if core == null: core = members[0]
+	var lowest := core.position.y
+	for card in members: lowest = minf(lowest, card.position.y)
+	return Vector3(core.position.x, lowest, core.position.z)
 
 func suck_batch_time(count: int) -> float:
 	return Motion.STAGGER * float(count - 1) + Motion.TRANSFER if count > 0 else 0.0
@@ -538,12 +559,13 @@ func _record(seat: String, key: String, amount: int) -> void:
 
 ## 一次点摞沿用正式牌局的挑靶顺序：先拆配方，再打同摞富余单位。
 ## 每次裁决之后重新查询，不能缓存已经被上一击破坏的组合目标。
-func pile_attack_target(key: String, pools: Dictionary) -> Dictionary:
+func pile_attack_target(key: String, pools: Dictionary, state: OnWorkState = null) -> Dictionary:
 	var uids: Array = host.layout._bot_pile_uids.get(key, [])
 	if key == "" or uids.is_empty(): return {}
 	var core := {}
 	var spare := {}
-	for target: Dictionary in host.state.attack_targets(host.foe_seat):
+	# state 只在试算时给（见 preview_attack）：同一个选靶函数，问的是局面的副本。
+	for target: Dictionary in (state if state != null else host.state).attack_targets(host.foe_seat):
 		if not target["uids"].any(func(uid): return uids.has(uid)) \
 			or not OnWorkState.target_affordable(target, pools): continue
 		if target["kind"] == "combo":
@@ -579,16 +601,74 @@ func attack_target_center(target: Dictionary) -> Vector3:
 			return host.entities[uid].global_position + Vector3(0, 0.5, 0)
 	return Vector3(0, 1, 0)
 
-## 收拢时只点亮摞顶，展开时只点亮真正的资源靶；手势与攻击共用这份集合。
-func highlight_attack_targets(pools: Dictionary) -> Array:
+## ---- 攻击瞄准 ----
+
+## 一次点击打的是什么：对手的一摞（返回摞的 key），或对手一张不在任何摞里的散卡
+## （"uid:<n>"）。不是对手的牌返回空串。
+func aim_of(card: CardEntity) -> String:
+	if not is_instance_valid(card) or card.uid < 0 or host.state.find_card(host.foe_seat, card.uid).is_empty():
+		return ""
+	var key := str(host.layout._bot_pile_of_uid.get(card.uid, ""))
+	return key if key != "" else "uid:%d" % card.uid
+
+## 点下去会发生什么，不改局面：在局面的副本上把真实的点摞循环（apply_pile_attack）走一遍，
+## 用同一个选靶函数、同一条结算规则，所以攻击锁、核心先于富余、点数用尽即停都自动算在内。
+## 返回 {aim, uids（按撕的先后）, cash, user（各撕几张）, pools（打完剩下的点数）,
+## voids（这一下让一个本来成立的组合作废）, finishes（这一下把对手的资金或用户打到零）}。
+## 点不动时 uids 为空。
+func preview_attack(aim: String, pools: Dictionary) -> Dictionary:
+	var out := {"aim": aim, "uids": [], OnWorkCardDB.RES_CASH: 0, OnWorkCardDB.RES_USER: 0,
+		"pools": pools.duplicate(true), "voids": false, "finishes": false}
+	if aim == "" or host.state.winner != "": return out
+	var trial := OnWorkBOTEnvironment.copy(host.state)
+	var left: Dictionary = pools.duplicate(true)
+	while trial.winner == "":
+		var target := _aim_target(aim, left, trial)
+		if target.is_empty(): break
+		var result: Dictionary = trial.apply_attack(host.my_seat, target, left)
+		if not result.get("ok", false): break
+		var removed: Array = result.get("removed", [])
+		out["uids"].append_array(removed)
+		out[target["res"]] += removed.size()
+		out["voids"] = out["voids"] or bool(result.get("voided", false))
+		trial.check_victory()
+		# 散卡一张就是一张；一摞则一路打到摞空或点数用尽。
+		if aim.begins_with("uid:"): break
+	out["pools"] = left
+	out["finishes"] = trial.winner == host.my_seat
+	return out
+
+func _aim_target(aim: String, pools: Dictionary, state: OnWorkState) -> Dictionary:
+	if not aim.begins_with("uid:"): return pile_attack_target(aim, pools, state)
+	var uid := int(aim.substr(4))
+	for target: Dictionary in state.attack_targets(host.foe_seat):
+		if target["uids"].has(uid):
+			return target if OnWorkState.target_affordable(target, pools) else {}
+	return {}
+
+## 被瞄准时压暗的牌、被改写的侧边清单行；下一次标记或 clear_attack_marks 时还原。
+var _aim_dimmed: Array = []
+var _aim_side_marks: Array = []
+
+## 攻击阶段桌上的标记只有这一份，手势与攻击共用返回的那份集合：
+## - 点得起的靶变红：收拢摞只点亮摞顶，摊开的摞点亮真正的资源靶；
+## - 对手其余的牌压暗：受保护的配方牌、核心、Buff、传说、点数够不着的、被攻击锁挡住的；
+## - aim 是 preview_attack 的结果。瞄着一摞摊开的牌时，那一摞里只点亮这一下真会撕掉的
+##   那几张；瞄着一摞收拢的牌时，侧边清单上会少的那几行写成「×8 -3」。
+func highlight_attack_targets(pools: Dictionary, aim: Dictionary = {}) -> Array:
+	clear_attack_marks()
 	var highlighted: Array = []
 	var piles := {}
+	var aimed := str(aim.get("aim", ""))
+	var torn: Array = aim.get("uids", [])
 	for target: Dictionary in host.state.affordable_targets(host.foe_seat, pools):
 		for uid in target["uids"]:
 			if not host.entities.has(uid) or not is_instance_valid(host.entities[uid]): continue
 			var key := str(host.layout._bot_pile_of_uid.get(uid, ""))
 			if key != "" and bool(host.layout._bot_pile_compact.get(key, true)):
 				piles[key] = true
+			elif aimed != "" and aimed == (key if key != "" else "uid:%d" % uid) and not torn.has(uid):
+				continue   # 点得起，但这一下轮不到它
 			else:
 				highlighted.append(host.entities[uid])
 	for key in piles:
@@ -596,7 +676,49 @@ func highlight_attack_targets(pools: Dictionary) -> Array:
 		if not uids.is_empty() and host.entities.has(uids[0]) and is_instance_valid(host.entities[uids[0]]):
 			highlighted.append(host.entities[uids[0]])
 	for card in highlighted: card.set_highlight(true, Color(1.5, 0.55, 0.45))
+	for record in host.state.players[host.foe_seat]["cards"]:
+		var uid := int(record["uid"])
+		if not host.entities.has(uid) or not is_instance_valid(host.entities[uid]): continue
+		var card: CardEntity = host.entities[uid]
+		# 点得动的收拢摞是一个整体：摞顶亮着，压在下面的不单独压暗。
+		if highlighted.has(card) or piles.has(str(host.layout._bot_pile_of_uid.get(uid, ""))): continue
+		card.set_dimmed(true)
+		_aim_dimmed.append(card)
+	_mark_side_counts(aim)
 	return highlighted
+
+## 撤掉压暗和侧边清单上的预告。红光由调用方按返回的集合自己撤（见 on_work_main 的 _clear_attack_hl）。
+func clear_attack_marks() -> void:
+	for card in _aim_dimmed:
+		if is_instance_valid(card): card.set_dimmed(false)
+	_aim_dimmed.clear()
+	for mark in _aim_side_marks:
+		var label: Variant = mark["label"]
+		if is_instance_valid(label):
+			label.text = mark["text"]
+			label.modulate = mark["ink"]
+	_aim_side_marks.clear()
+
+## 收拢的摞看不见里面的牌：这一下会撕几张，写在它侧边清单对应的那一行上。
+func _mark_side_counts(aim: Dictionary) -> void:
+	var key := str(aim.get("aim", ""))
+	if key == "" or key.begins_with("uid:") or not bool(host.layout._bot_pile_compact.get(key, true)): return
+	var nodes: Array = host.board.side_nodes_of(key)
+	var counts := {OnWorkCardDB.RES_USER: 0, OnWorkCardDB.RES_CASH: 0}
+	for card in _members(host.layout._bot_pile_uids.get(key, [])):
+		var def: Dictionary = OnWorkCardDB.get_def(card.def_id)
+		if def.get("kind") == OnWorkCardDB.KIND_UNIT: counts[str(def.get("res"))] += 1
+	# 清单的行序见 Board.side_spec：有用户先写用户，再写现金。
+	var row := 0
+	for res in [OnWorkCardDB.RES_USER, OnWorkCardDB.RES_CASH]:
+		if int(counts[res]) <= 0: continue
+		var label: Variant = nodes[row * 2 + 1] if nodes.size() > row * 2 + 1 else null
+		row += 1
+		var lost := int(aim.get(res, 0))
+		if lost <= 0 or not (label is Label3D) or not is_instance_valid(label) or label.text != "×%d" % int(counts[res]): continue
+		_aim_side_marks.append({"label": label, "text": label.text, "ink": label.modulate})
+		label.text = "×%d -%d" % [int(counts[res]), lost]
+		label.modulate = Palette.semantic("danger")
 
 ## 正式对局、对手回放与教学都先从实体表摘除，再交唯一的整摞撕牌实现。
 func animate_removed(removed: Array, toward_bot: bool, hands: Node, held_cards: Array = [],
@@ -731,10 +853,18 @@ func prepare_combo(combo: Dictionary) -> void:
 func consume_upgrade(combo: Dictionary, center: Vector3) -> int:
 	var motion := _motion()
 	var count := 0
+	# 材料压到留下来的核心牌底下；整组都被吃掉时退回原来的中心。
+	var kept: Array = _members(combo.get("uids", [])).filter(func(card): return not host.state.find_card(combo["owner"], card.uid).is_empty())
+	var cover := center - Vector3.UP * FEEDBACK_RAISE
+	if not kept.is_empty():
+		var core: CardEntity = _leader(kept, combo.get("eval", {}))
+		if core == null: core = kept[0]
+		cover = core.position
+		for card in kept: cover.y = minf(cover.y, card.position.y)
 	for card in _members(combo.get("uids", [])):
 		if not host.state.find_card(combo["owner"], card.uid).is_empty():
 			continue
-		motion._suck_into(card, center + Vector3.UP * 0.2, count * Motion.STAGGER)
+		motion._suck_into(card, cover, count * Motion.STAGGER)
 		host.entities.erase(card.uid)
 		count += 1
 	return count

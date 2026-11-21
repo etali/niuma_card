@@ -331,9 +331,7 @@ func _resolve_combo(index: int, at: Vector3, lane: Dictionary = {}) -> void:
 		_caption = str(resolution.get("reason", "组合未生效"))
 		return
 	var paid: Array = resolution.get("paid_uids", [])
-	var payment: Vector3 = layout.preview_arrival_spot(my_seat, {"def_id": OnWorkCardDB.unit_id(OnWorkCardDB.RES_USER)}) \
-		if combo["eval"].get("output_res") == OnWorkCardDB.RES_USER else layout.payment_spot(my_seat, OnWorkCardDB.RES_CASH)
-	var count: int = _table_actions.pay_recipe(paid, payment)
+	var count: int = _table_actions.pay_recipe(paid, _table_actions.payment_animation_target(my_seat, combo))
 	if combo["eval"]["type"] == "upgrade":
 		count = _table_actions.consume_upgrade(combo, at)
 	var removed := 0

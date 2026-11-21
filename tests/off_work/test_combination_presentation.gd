@@ -46,7 +46,6 @@ func _run() -> void:
 	game.state.advance(6.0)
 	var events: Array = game.state.drain_events().filter(func(e): return e.kind == "work_complete")
 	_check(events.size() == 2, "two groups emit two events, not ten individual settlements")
-	game._cache_positions(events)
 	game.board.sync_state(game.state)
 	for event in events:
 		_check(event.ids.size() == 7 and event.participants.size() == 5, "one event owns all seven completed documents and five workers")

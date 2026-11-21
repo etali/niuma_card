@@ -231,7 +231,10 @@ func _check_normal_hud() -> void:
 				"普通横屏公司名称与待付作为整体居中")
 			for number: Label in [card.cash_value, card.user_value]:
 				var metric: BoxContainer = number.get_parent()
-				var metric_bounds := (metric.get_child(0) as Control).get_global_rect().merge(number.get_global_rect())
+				# 名称、数字，以及资金后面那一小截胜利线，一起算一个整体。
+				var metric_bounds := (metric.get_child(0) as Control).get_global_rect()
+				for part in metric.get_children():
+					if part is Control and part.visible: metric_bounds = metric_bounds.merge(part.get_global_rect())
 				check(absf(metric_bounds.get_center().x - metric.get_global_rect().get_center().x) <= 1.0,
 					"普通横屏资源名称与数字作为整体居中")
 		OnWorkThinkClock.stop()

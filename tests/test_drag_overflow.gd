@@ -88,20 +88,30 @@ func _check_drag(size: Vector2i, pitch: float) -> void:
 	await process_frame
 
 ## 手点 = 夹取后的锚点 − 抓取偏移：不碰边界时就是鼠标点，越界时随牌停住。
+## 牌沿视线抬起，手点在指针的视线上、在手的高度上：画面里它和指针是同一个位置。
 func _check_hand_point(world: Node3D, board: PointerBoard, inside: Vector3, tag: String) -> void:
 	var loose := _pile(world, board, 1, Vector3(0, 0.05, 2.2))
 	await create_timer(0.25).timeout
 	var grip := Vector3(0.3, 0, -0.2)
-	board.pointer = loose[0].global_position + grip
+	var camera := board.camera
+	var home: Vector3 = loose[0].global_position
+	board.pointer = home + grip
 	board._on_card_clicked(loose[0])
-	check(board.drag_hand_point().is_equal_approx(board.pointer), tag + "：抓起当帧手点就是按下点")
+	var pressed := board.drag_hand_point()
+	check(is_equal_approx(pressed.y, Board.DRAG_HEIGHT) and camera.unproject_position(pressed).distance_to(camera.unproject_position(board.pointer)) < 0.01,
+		tag + "：抓起当帧手点就是按下点")
+	# 抓住的那一点：手点相对在手那张牌的位置，从此不变
+	var lifted: Vector3 = board.along_view(home, Board.DRAG_HEIGHT)
+	var grabbed := Vector2(pressed.x - lifted.x, pressed.z - lifted.z)
 	board.pointer = inside + grip
 	board._process(0.016)
 	check(board.drag_hand_point().distance_to(board.pointer) < 0.001, tag + "：不碰边界时手点就是鼠标点")
+	check(Vector2(board.drag_hand_point().x - loose[0].position.x, board.drag_hand_point().z - loose[0].position.z).distance_to(grabbed) < 0.001,
+		tag + "：拖动中仍抓着按下时的那一点")
 	board.pointer = inside + grip + Vector3(0, 0, 1000)
 	board._process(0.016)
 	var hand := board.drag_hand_point()
-	check(hand.z < board.pointer.z - 1.0 and Vector2(hand.x - loose[0].position.x, hand.z - loose[0].position.z).distance_to(Vector2(grip.x, grip.z)) < 0.001
+	check(hand.z < board.pointer.z - 1.0 and Vector2(hand.x - loose[0].position.x, hand.z - loose[0].position.z).distance_to(grabbed) < 0.001
 		and is_equal_approx(hand.y, Board.DRAG_HEIGHT), tag + "：越界时手随牌停在边上，仍抓着同一点")
 	board.cancel_drag()
 	check(board.drag_hand_point() == Vector3.INF, tag + "：放下后不再给手点")

@@ -198,7 +198,10 @@ func _mode_entries() -> void:
 		await _frames(6)
 		var label := "%s @%sx" % [spec[0], spec[1]]
 		var row: HBoxContainer = hud.btn_resign.get_parent()
-		_check(row.get_children().filter(func(node): return node.visible) == [hud.btn_resign, hud.lbl_msg, hud._rulebook_button, hud.btn_pause], "shared footer fits realtime actions " + label)
+		# 提示和它下面那行操作说明合占一格，位置还是原来提示的那一格。
+		var status: Node = hud.lbl_msg.get_parent()
+		_check(row.get_children().filter(func(node): return node.visible) == [hud.btn_resign, status, hud._rulebook_button, hud.btn_pause], "shared footer fits realtime actions " + label)
+		_check(status.get_children() == [hud.lbl_msg, hud.lbl_guide] and hud.lbl_msg.visible, "the status cell holds the tip and, under it, the operating guide " + label)
 		var popup: PopupMenu = hud._menu.get_popup()
 		for id in [5, 6, 8, 9]:
 			_check(popup.get_item_index(id) >= 0, "replay, LAN and cards are accessible through options " + label)

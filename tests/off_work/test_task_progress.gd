@@ -73,7 +73,8 @@ func _run() -> void:
 	state.advance(flight)
 	var retained: float = 0.025 + flight / config.work_seconds()
 	_refresh()
-	_check(not worker._task_progress.visible and not state.cards.has(strike), "strike hides the ejected person's bar and consumes its card")
+	_check(worker._task_progress_phase == "strike" and worker._task_progress.visible and not state.cards.has(strike),
+		"strike replaces the ejected person's work bar with the strike countdown and consumes its card")
 	state.advance(config.number("strike", "duration_seconds"))
 	state.move_cards([employee], group)
 	_refresh()

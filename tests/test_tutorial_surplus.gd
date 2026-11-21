@@ -194,7 +194,7 @@ func _drag(card: CardEntity, target: Vector3, label: String) -> void:
 	var split: int = arena._split_uid
 	var motion := InputEventMouseMotion.new()
 	motion.button_mask = MOUSE_BUTTON_MASK_LEFT
-	motion.position = arena.camera.unproject_position(Vector3(target.x, Board.DRAG_HEIGHT, target.z) - arena.board._grab_offset)
+	motion.position = arena.board.pointer_for_landing(target)
 	motion.global_position = motion.position
 	root.push_input(motion)
 	await process_frame

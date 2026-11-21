@@ -13,6 +13,10 @@ var summary: Label
 var title: Label
 var cash_value: Label
 var user_value: Label
+## 资金读数后面的小字「/ 100」：胜利线，一直写着。
+var cash_goal: Label
+var _cash_low := false
+var _users_low := false
 var due_value: Label
 var deployment: Label
 var warning: Label
@@ -50,6 +54,9 @@ func setup(company: String, identity: String, compact: bool) -> void:
 	var cash := _metric(metrics, card_catalog.res_label(card_catalog.RES_CASH))
 	_cash_caption = cash[0]
 	cash_value = cash[1]
+	cash_goal = _label(cash_value.get_parent(), "", 14)
+	cash_goal.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cash_goal.visible = false
 	var users := _metric(metrics, card_catalog.res_label(card_catalog.RES_USER))
 	_user_caption = users[0]
 	user_value = users[1]
@@ -103,6 +110,18 @@ func _label(parent: Node, text: String, font_size: int, bold := false) -> Label:
 	parent.add_child(label)
 	return label
 
+## 胜利线写在资金读数后面；0 表示这一方没有胜利线可写。
+func set_goal(goal: int) -> void:
+	cash_goal.text = "/ %d" % goal if goal > 0 else ""
+	cash_goal.visible = goal > 0
+
+## 资金或用户快归零（归零即输）时，那个读数用危险色。
+func set_alarm(cash_low: bool, users_low: bool) -> void:
+	if cash_low == _cash_low and users_low == _users_low: return
+	_cash_low = cash_low
+	_users_low = users_low
+	refresh_palette()
+
 ## 公司名可能带角色短名（「你的公司（HR）」）；角色效果在底栏角色按钮的列表里看
 func set_company(text: String) -> void:
 	if title.text != text:
@@ -129,8 +148,11 @@ func refresh_palette() -> void:
 	style.set_corner_radius_all(8)
 	style.set_content_margin_all(8)
 	add_theme_stylebox_override("panel", style)
-	for label in [title, cash_value, user_value]:
-		label.add_theme_color_override("font_color", ink)
+	var danger := Palette.readable_ink(Palette.semantic("danger"), surface)
+	title.add_theme_color_override("font_color", ink)
+	cash_value.add_theme_color_override("font_color", danger if _cash_low else ink)
+	user_value.add_theme_color_override("font_color", danger if _users_low else ink)
+	cash_goal.add_theme_color_override("font_color", Palette.readable_ink(Palette.semantic("muted"), surface))
 	_cash_caption.add_theme_color_override("font_color", Palette.readable_ink(Palette.semantic("cash"), surface))
 	_user_caption.add_theme_color_override("font_color", Palette.readable_ink(Palette.semantic("user"), surface))
 	deployment.add_theme_color_override("font_color", Palette.readable_ink(Palette.semantic("muted"), surface))

@@ -109,7 +109,7 @@
       {
         "id": "work_single",
         "name": "员工工作与单张收入",
-        "description": "共享工作条读满，盖章清理工作；一张真实金钱沿抛物线归堆。",
+        "description": "共享工作条读满，清掉一份工作：牌摞被拍得撑开再弹回，旁边的数量跳一下，纸团扔出去；一张真实金钱沿抛物线归堆。",
         "category": "组合演出",
         "duration": 12,
         "groups": [
@@ -193,7 +193,7 @@
       {
         "id": "work_batch",
         "name": "多人统一结算",
-        "description": "三名员工和两名卷王共享一条进度，一次清七份工作，逐张抛出七元。",
+        "description": "三名员工和两名卷王共享一条进度，一次清七份工作：这一批大，牌摞挨得更重，镜头轻轻一震；逐张抛出七元。",
         "category": "组合演出",
         "duration": 12,
         "groups": [
@@ -470,7 +470,7 @@
       {
         "id": "coffee_upgrade",
         "name": "咖啡提升卷度",
-        "description": "员工与咖啡单独成堆，读条完成后消耗咖啡并变成卷王，出现卷度提升的印章和光环。",
+        "description": "员工与咖啡单独成堆，读条完成后消耗咖啡并变成卷王：牌被抛起来转一圈再拍回桌上，落地那一刻盖上新头衔的章，镜头一震，周围的牌摞被震得一跳；牌的周围不另画圆环。",
         "category": "组合演出",
         "duration": 9,
         "groups": [
@@ -1534,7 +1534,7 @@
       {
         "id": "off_work_union_defense",
         "name": "工会拦截罢工",
-        "description": "对手的罢工牌飞向工作组；飞行中加入工会，罢工在落下时被挡住并弹回对面，人员继续工作。",
+        "description": "对手的罢工牌飞向工作组，被瞄准的那一组画上铅笔虚线框；飞行中加入工会，罢工在落下时被挡住并弹回对面，工会牌盖「驳回」，人员继续工作。",
         "category": "组合演出",
         "duration": 5,
         "groups": [
@@ -1552,7 +1552,7 @@
       {
         "id": "strike_ejection",
         "name": "罢工弹飞与恢复",
-        "description": "罢工命中后人员沿弧线弹出，只有牌内角色跳舞；20秒后恢复普通散牌。",
+        "description": "罢工命中后人员沿弧线弹出，只有牌内角色跳舞；20秒后恢复普通散牌；罢工中的人牌上有一条朱红色往回走的条，结束时盖「复工」。",
         "category": "组合演出",
         "duration": 23,
         "groups": [
@@ -1617,7 +1617,7 @@
       {
         "id": "dismiss_refund",
         "name": "开除与返款",
-        "description": "三类人员依次移向开除入口并离场，按正式返款逐张抛出真实金钱。",
+        "description": "三类人员依次移向开除入口，牌面盖「开除」章后滑到入口底下，按正式返款逐张抛出真实金钱。",
         "category": "组合演出",
         "duration": 9,
         "groups": [
@@ -1758,7 +1758,7 @@
       {
         "id": "win_departure",
         "name": "胜利下班",
-        "description": "最后一份工作结算后锁定牌摞；人员先从摞中抽出，再盖下班章整卡离场。",
+        "description": "最后一份工作结算后锁定牌摞；人员先从摞中侧移出来，盖下班章，原大小被拿起，从自己一侧的桌边离开。",
         "category": "组合演出",
         "duration": 13,
         "groups": [
@@ -1894,7 +1894,7 @@
       {
         "id": "purchase_placement",
         "name": "购牌落到空位",
-        "description": "购买真实报价，扣除单位金钱；新卡使用正式空位搜索，已有牌摞保留位置。",
+        "description": "购买真实报价：牌在货架上被拿起，钱一张一张离开钱摞、压到这张牌底下，钱到齐后牌飞到正式空位搜索给出的落点，钱摞旁的数字滚到新值；已有牌摞保留位置。",
         "category": "交互",
         "duration": 6,
         "groups": [
@@ -2236,6 +2236,206 @@
         }
       },
       {
+        "id": "drop_targets",
+        "name": "落点提示",
+        "description": "松手之前就看得见结果：拖着罢工牌时，能打的对方组合画上铅笔虚线框，对准的那一个变成实线；加班牌拖到有工会的组上，那一组变成警示色；把人拖到开除入口上，入口写出能换回多少钱。",
+        "category": "交互",
+        "duration": 13,
+        "groups": [
+          {
+            "name": "my_work",
+            "owner": 0,
+            "cards": {
+              "employee": 2,
+              "work": 12
+            },
+            "position": [
+              -3.5,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "my_union",
+            "owner": 0,
+            "cards": {
+              "employee": 1,
+              "work": 8,
+              "union": 1
+            },
+            "position": [
+              0.5,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "strike",
+            "owner": 0,
+            "cards": {
+              "strike": 1
+            },
+            "position": [
+              -6.5,
+              0.05,
+              5.4
+            ]
+          },
+          {
+            "name": "overtime",
+            "owner": 0,
+            "cards": {
+              "overtime": 1
+            },
+            "position": [
+              4.0,
+              0.05,
+              5.4
+            ]
+          },
+          {
+            "name": "spare",
+            "owner": 0,
+            "cards": {
+              "grinder": 1
+            },
+            "position": [
+              5.5,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy_work",
+            "owner": 1,
+            "cards": {
+              "employee": 3,
+              "work": 30
+            },
+            "position": [
+              -3.5,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "enemy_idle",
+            "owner": 1,
+            "cards": {
+              "work": 12
+            },
+            "position": [
+              0.5,
+              0.05,
+              -5.0
+            ]
+          },
+          {
+            "name": "enemy_union",
+            "owner": 1,
+            "cards": {
+              "employee": 1,
+              "work": 8,
+              "union": 1
+            },
+            "position": [
+              4.5,
+              0.05,
+              -5.0
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 0.6,
+            "kind": "carry",
+            "card": {
+              "type": "strike",
+              "owner": 0,
+              "index": 0
+            },
+            "over": "enemy_idle",
+            "seconds": 1.3
+          },
+          {
+            "at": 2.6,
+            "kind": "carry",
+            "card": {
+              "type": "strike",
+              "owner": 0,
+              "index": 0
+            },
+            "over": "enemy_union",
+            "seconds": 0.9
+          },
+          {
+            "at": 4.2,
+            "kind": "carry",
+            "card": {
+              "type": "strike",
+              "owner": 0,
+              "index": 0
+            },
+            "over": "enemy_work",
+            "seconds": 1.1
+          },
+          {
+            "at": 6.0,
+            "kind": "put_back"
+          },
+          {
+            "at": 6.5,
+            "kind": "carry",
+            "card": {
+              "type": "overtime",
+              "owner": 0,
+              "index": 0
+            },
+            "over": "my_union",
+            "seconds": 0.9
+          },
+          {
+            "at": 8.1,
+            "kind": "carry",
+            "card": {
+              "type": "overtime",
+              "owner": 0,
+              "index": 0
+            },
+            "over": "my_work",
+            "seconds": 0.9
+          },
+          {
+            "at": 9.6,
+            "kind": "put_back"
+          },
+          {
+            "at": 10.0,
+            "kind": "carry",
+            "card": {
+              "type": "grinder",
+              "owner": 0,
+              "index": 0
+            },
+            "facility": true,
+            "seconds": 1.0
+          },
+          {
+            "at": 12.2,
+            "kind": "put_back"
+          }
+        ],
+        "camera": {
+          "span": 21,
+          "position": [
+            0.6,
+            20,
+            6.7
+          ],
+          "tilt": -72
+        }
+      },
+      {
         "id": "lose_departure",
         "name": "对方下班 · 我方失败",
         "description": "对方先清空工作，复用真实人员离场和失败结算。",
@@ -2531,6 +2731,98 @@
         ],
         "expects": [
           "work_complete"
+        ],
+        "camera": {
+          "span": 12.5,
+          "position": [
+            0,
+            20,
+            9.9
+          ],
+          "tilt": -72
+        }
+      },
+      {
+        "id": "side_pull",
+        "name": "从侧边直接拖人",
+        "description": "按住侧边清单的「员工」一行往外拖：一名员工直接从工作摞里出来，跟着手走到另一组；再按住 Shift 拖，这一类的全部一起走。原来那一摞不停产。",
+        "category": "交互",
+        "duration": 9,
+        "groups": [
+          {
+            "name": "source",
+            "owner": 0,
+            "cards": {
+              "work": 200,
+              "employee": 4,
+              "grinder": 1
+            },
+            "position": [
+              -3,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "target",
+            "owner": 0,
+            "cards": {
+              "work": 120
+            },
+            "position": [
+              3.5,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "name": "enemy",
+            "owner": 1,
+            "cards": {
+              "work": 300,
+              "employee": 2
+            },
+            "position": [
+              0,
+              0.05,
+              -5
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "at": 1.0,
+            "kind": "side_pull",
+            "group": "source",
+            "type": "grinder",
+            "seconds": 1.2,
+            "position": [
+              3.5,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "at": 2.6,
+            "kind": "side_drop"
+          },
+          {
+            "at": 4.5,
+            "kind": "side_pull",
+            "group": "source",
+            "type": "employee",
+            "all": true,
+            "seconds": 1.2,
+            "position": [
+              3.5,
+              0.05,
+              3.4
+            ]
+          },
+          {
+            "at": 6.2,
+            "kind": "side_drop"
+          }
         ],
         "camera": {
           "span": 12.5,

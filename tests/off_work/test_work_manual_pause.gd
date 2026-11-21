@@ -93,7 +93,7 @@ func _snapshot() -> Dictionary:
 	var result := {"time": game.state.time, "conveyor": game.state.conveyor_progress,
 		"bot_schedule": game.bot._next_think, "tasks": game.state.tasks.duplicate(true),
 		"cards": game.state.cards.duplicate(true), "offers": game.state.offers.duplicate(true),
-		"effects": game.effects.items.duplicate(true), "cash_flights": game.board._cash_flights.duplicate(true)}
+		"cash_flights": game.board._cash_flights.duplicate(true)}
 	for id in game.board.by_uid:
 		var card: Node = game.board.by_uid[id]
 		result["position_" + str(id)] = card.position

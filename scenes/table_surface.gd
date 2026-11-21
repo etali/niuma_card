@@ -15,6 +15,11 @@ var _owner := ""
 var _board: Board
 var _feedback := 0.0
 var _feedback_target := 0.0
+## 临时画上去的面片（拖拽时的落点框）用很短的时间出现和撤掉，不整块跳出来。
+const PRESENCE_SECONDS := 0.12
+var _presence := 1.0
+var _presence_target := 1.0
+var _free_when_gone := false
 
 func configure(extent: Vector2, role: String, artwork: Texture2D = null) -> void:
 	_role = role
@@ -28,11 +33,12 @@ func configure(extent: Vector2, role: String, artwork: Texture2D = null) -> void
 	_surface_material = ShaderMaterial.new()
 	_surface_material.shader = SURFACE_SHADER
 	# 从桌布到分区、空槽、接触阴影(-32)，最后才是牌面，透明绘制顺序固定。
-	_surface_material.render_priority = -16 if role == "price" else (-48 if role in ["slot", "divider"] else (-60 if role == "market" else -64))
+	# 落点框画在分区、货架和空槽之上、接触阴影和牌之下。
+	_surface_material.render_priority = -16 if role == "price" else (-40 if role == "target" else (-48 if role in ["slot", "divider"] else (-60 if role == "market" else -64)))
 	_surface_material.set_shader_parameter("extent", extent)
 	_surface_material.set_shader_parameter("radius", minf(0.055, extent.x * 0.2) if role in ["price", "divider"] else (0.12 if role == "slot" else 0.24))
 	_surface_material.set_shader_parameter("fold_size", 0.12 if role == "price" else 0.43)
-	_surface_material.set_shader_parameter("dashed", role == "slot")
+	_surface_material.set_shader_parameter("dashed", role in ["slot", "target"])
 	_surface_material.set_shader_parameter("folded", role in ["zone", "market"])
 	_surface_material.set_shader_parameter("hanging_tag", role == "price")
 	if role == "price":
@@ -64,6 +70,10 @@ func refresh_palette() -> void:
 	elif _role == "slot":
 		fill = Color(ink, 0.07)
 		edge = Color(ink, 0.22)
+	elif _role == "target":
+		# 落点框：只有一圈铅笔虚线，不铺底色，不盖住它圈起来的牌。
+		fill = Color(ink, 0.0)
+		edge = Color(ink, 0.62)
 	elif _role == "price":
 		fill = paper
 		edge = ink
@@ -83,6 +93,20 @@ func bind_board(board: Board) -> void:
 
 func set_feedback(on: bool) -> void:
 	_feedback_target = 1.0 if on else 0.0
+	# 落点框被对准时从虚线变成实线。
+	if _role == "target" and _surface_material:
+		_surface_material.set_shader_parameter("dashed", not on)
+
+## 从无到有地画出来；leave() 相反，画完自己释放。
+func appear() -> void:
+	_presence = 0.0
+	_presence_target = 1.0
+	_free_when_gone = false
+	if _surface_material: _surface_material.set_shader_parameter("opacity", 0.0)
+
+func leave() -> void:
+	_presence_target = 0.0
+	_free_when_gone = true
 
 func _process(delta: float) -> void:
 	if _role == "zone" and _owner == "player" and is_instance_valid(_board):
@@ -95,6 +119,10 @@ func _process(delta: float) -> void:
 	_feedback = lerpf(_feedback, _feedback_target, 1.0 - exp(-18.0 * delta))
 	if _surface_material:
 		_surface_material.set_shader_parameter("feedback", _feedback)
+	if not is_equal_approx(_presence, _presence_target):
+		_presence = move_toward(_presence, _presence_target, delta / PRESENCE_SECONDS)
+		if _surface_material: _surface_material.set_shader_parameter("opacity", _presence)
+		if _free_when_gone and is_zero_approx(_presence): queue_free()
 
 func set_shift_roll(amount: float) -> void:
 	_surface_material.set_shader_parameter("roll", amount)

@@ -375,7 +375,7 @@ func _drag(card: CardEntity, destination: Vector2, empty := false, returning_per
 		pointer = trigger.position
 		root.push_input(trigger, true)
 		await process_frame
-		destination = board.camera.unproject_position(Vector3(ground.x - board._grab_offset.x, Board.DRAG_HEIGHT, ground.z - board._grab_offset.z))
+		destination = board.pointer_for_landing(ground)
 	for step in range(1, 9):
 		var at := start.lerp(destination, float(step) / 8.0)
 		var event := InputEventMouseMotion.new()

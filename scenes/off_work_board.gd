@@ -16,7 +16,9 @@ const ProgressClock = preload("res://engine/off_work_progress_clock.gd")
 const SideExtract = preload("res://engine/off_work_side_extract.gd")
 const StackLayout = preload("res://engine/off_work_stack_layout.gd")
 const PaperDisposal = preload("res://scenes/off_work_paper_disposal.gd")
+const DropFrame = preload("res://scenes/table_surface.gd")
 const ActionMotion = preload("res://scenes/off_work_action_motion.gd")
+const Materials = preload("res://scenes/effect_materials.gd")
 # The opponent uses the same original Board. Income and meeting visits own
 # temporary motion; all pointer/group behavior remains inherited.
 class IncomeBoard extends Board:
@@ -80,6 +82,7 @@ signal ingredient_requested(id: int, target_group: int, person: int)
 signal card_selected(id: int)
 signal card_hovered(id: int)
 signal action_rejected(message: String)
+signal upgrade_landed(id: int)
 
 var network_drop: Callable
 var by_uid: Dictionary = {}
@@ -134,6 +137,24 @@ var _motion: Node
 var _cash_flights: Dictionary = {}
 var _cash_emission_serial: Dictionary = {}
 var _cash_stream_width: Dictionary = {}
+var _payment_notes: Array = []
+var _spent_cash: Dictionary = {}
+## Pencil frames around the local player's piles a strike is flying at, by rules group id.
+var _threat_frames: Dictionary = {}
+## Pencil frames around the opponent piles a held strike can hit, by rules group id.
+var _drop_frames: Dictionary = {}
+## Frames that are being taken away again; they free themselves once they are gone.
+var _leaving_frames: Array = []
+## Held cards currently tinted as a warning because the pile under them would refuse them.
+var _warned_cards: Array = []
+## Refund shown at the dismissal entrance while people are held over it; -1 = nothing shown.
+var _dismiss_preview := -1
+var _dismiss_label_rest := ""
+var _lingering_tags: Array = []
+## People promoted in one frame take off one after another: the frame, and how many so far.
+var _upgrade_wave_frame := -1
+var _upgrade_wave_count := 0
+var _side_rolls: Dictionary = {}
 
 static func balance_group_mods(group_cards: Array) -> Dictionary:
 	var amount := 0
@@ -247,6 +268,11 @@ func _input(event: InputEvent) -> void:
 		_press_snap["work_drag_moved"] = true
 
 func release_pointer(at: Vector2) -> void:
+	# Cards pulled from a side list slide to the pointer for a moment. Let go during that
+	# slide, they land where the pointer is, not wherever the slide has got to.
+	if side_extract != null and side_extract.finish_pull() and not _drag_cards.is_empty():
+		if touch_mode: _pointer_at = at
+		_process(0.0)
 	# The fan already waited for a real drag. Its handoff point must not become
 	# a second click threshold that silently restores the extracted cards.
 	if _press_snap.get("side_extract", false) and not _interaction_is_blocked() and not input_locked and not attack_mode and not view_gesture:
@@ -260,9 +286,9 @@ func release_pointer(at: Vector2) -> void:
 		if touch_mode: _pointer_at = at
 		_process(0.0)
 		if not _drag_cards.is_empty():
-			var group: Variant = _nearest_group(_drag_cards[0].global_position, _drag_cards)
+			var group: Variant = _nearest_group(held_landing_point(), _drag_cards)
 			var other_group: bool = group != null and not is_same(group, _press_snap.get("group"))
-			var loose := _nearest_loose_card(_drag_cards[0].global_position, _drag_cards) if group == null else null
+			var loose := _nearest_loose_card(held_landing_point(), _drag_cards) if group == null else null
 			if other_group or loose != null:
 				_press_snap = {}
 				_reset_click_track()
@@ -270,15 +296,19 @@ func release_pointer(at: Vector2) -> void:
 
 func _process(delta: float) -> void:
 	if _assembling: return
+	if side_extract != null: side_extract.advance_pull(delta)
 	super._process(delta)
 	_action_motion.advance(delta)
 	_sync_stack_occlusion()
 	_advance_cash_flights(delta)
+	_advance_payment(delta)
+	_advance_side_rolls(delta)
 	_advance_meeting_visitors(delta)
 	_advance_strike_dancers(delta)
 	_advance_strike_attacks(delta)
 	_advance_paper_disposal(delta)
 	_advance_deliveries(delta)
+	_sync_drop_targets(delta)
 	var active := _interacting()
 	if _was_interacting and not active and not _drop_pending and _state != null:
 		_picked_ids.clear()
@@ -396,7 +426,11 @@ func cancel_pointer() -> void:
 func _snapshot_press(card: CardEntity, at: Vector2) -> void:
 	# 被强行带走的人仍可接收指向性的咖啡，但不能生成原生拖动快照。
 	if _meeting_visitors.has(card.uid) or _strike_in_flight(card.uid) or card.has_meta("income_flight") or card.has_meta("delivery_flight"): return
+	# A purchase still travelling home can be caught in the air. It stays under the pointer;
+	# if the press turns out to be a click, it settles where it was going to land.
+	var landing: Vector3 = _action_motion.release_to_hand(card.uid) if card.has_meta("off_work_action_motion") else Vector3.INF
 	super._snapshot_press(card, at)
+	if landing != Vector3.INF and _press_snap.get("card") == card: _press_snap["pos"] = landing
 
 func _on_card_clicked(card: CardEntity, notify_started := true) -> void:
 	if card.has_meta("income_flight") or card.has_meta("delivery_flight") or _strike_in_flight(card.uid): return
@@ -467,6 +501,10 @@ func begin_side_extract(ids: Array, at: Vector2) -> bool:
 		offset.z -= head.z
 		_drag_offsets.append(offset)
 	_grab_offset = Vector3.ZERO
+	_grab_card = null
+	_held_carried = false
+	_grab_lift = 0.0
+	_grab_rest_y = float(_settings.rest_y)
 	if touch_mode: _pointer_at = at
 	_press_snap["side_extract"] = true
 	_was_interacting = true
@@ -503,7 +541,8 @@ func _snap_distance(at: Vector3, card: CardEntity) -> float:
 	if _drag_cards.is_empty() and not _resolving_drop: return INF
 	if not _drag_cards.is_empty() and _drag_cards[0].is_market: return INF
 	var plane := Plane(card.global_basis.y, card.global_position)
-	var landing: Variant = plane.intersects_ray(at, Vector3.DOWN)
+	# `at` is where the held card comes down, which lies below a pile's top face.
+	var landing: Variant = plane.intersects_ray(Vector3(at.x, at.y + 100.0, at.z), Vector3.DOWN)
 	if landing == null: return INF
 	# A visible hit's normalized squared distance is at most 2. Landing-only
 	# candidates must never steal the target already visibly under the card.
@@ -531,8 +570,9 @@ func _face_region_distance(point: Vector3, card: CardEntity) -> float:
 
 func _nearest_group(pos: Vector3, exclude: Array):
 	if _drag_cards.any(func(card): return _is_striking_card(card)) or exclude.any(func(card): return _is_striking_card(card)): return null
-	# Both the inherited hover and release paths use exactly the same anchor.
-	var at: Vector3 = _drag_cards[0].global_position if not _drag_cards.is_empty() else pos
+	# Both the inherited hover and release paths use exactly the same anchor: where the held
+	# card comes down, which is where it is in the picture.
+	var at: Vector3 = held_landing_point() if not _drag_cards.is_empty() else pos
 	if _drag_cards.size() == 1 and _drag_cards[0].def_id == "strike":
 		var attack: Variant = _nearest_strike_group(at)
 		if attack != null: return attack
@@ -560,9 +600,174 @@ func _nearest_group(pos: Vector3, exclude: Array):
 		if loose != null and is_finite(_face_hit_distance(at, loose)): return null
 	return best
 
+## What a drag can do is shown before the release, on the things it would act on.
+## The marks run on this table's clock, like everything else it presents.
+func _sync_drop_targets(delta := 0.0) -> void:
+	var wanted: Dictionary = {}
+	var refund := -1
+	if _state != null and _state.winner < 0 and not _drag_cards.is_empty() \
+			and is_instance_valid(_drag_cards[0]) and not _drag_cards[0].is_market:
+		if _drag_cards.size() == 1 and _drag_cards[0].def_id == "strike":
+			for group in enemy_board.groups:
+				var gid := int(group.get("work_group_id", -1))
+				if _state.can_strike_group(gid, int(_settings.local_owner)): wanted[gid] = group
+		refund = _dismiss_refund_preview()
+	for gid in _drop_frames.keys():
+		if wanted.has(gid) and is_instance_valid(_drop_frames[gid]): continue
+		if is_instance_valid(_drop_frames[gid]):
+			_drop_frames[gid].leave()
+			_leaving_frames.append(_drop_frames[gid])
+		_drop_frames.erase(gid)
+	var spec: Dictionary = _settings.drop_targets
+	for gid in wanted:
+		var group: Dictionary = wanted[gid]
+		var low := Vector2(INF, INF)
+		var high := Vector2(-INF, -INF)
+		for card in group.cards:
+			if not is_instance_valid(card) or _meeting_visitors.has(card.uid) or card.has_meta("income_flight") or card.has_meta("delivery_flight"): continue
+			var at := Vector2(card.global_position.x, card.global_position.z)
+			low = low.min(at)
+			high = high.max(at)
+			# A closed pile has one footprint: its front card.
+			if bool(group.get("compact", false)): break
+		if not low.is_finite(): continue
+		var extent := high - low + Vector2(CardEntity.CARD_SIZE.x, CardEntity.CARD_SIZE.z) + Vector2.ONE * float(spec.frame_margin) * 2.0
+		var frame: Variant = _drop_frames.get(gid)
+		if frame == null:
+			frame = DropFrame.new()
+			add_child(frame)
+			frame.set_process(false)
+			frame.set_meta("extent", Vector2.ZERO)
+			frame.appear()
+			_drop_frames[gid] = frame
+		if not (frame.get_meta("extent") as Vector2).is_equal_approx(extent):
+			frame.configure(extent, "target")
+			frame.set_meta("extent", extent)
+		var centre := (low + high) * 0.5
+		frame.global_position = Vector3(centre.x, float(spec.frame_y), centre.y)
+		frame.set_feedback(is_same(group, _hover_group))
+	_sync_threat_frames()
+	for frame in _drop_frames.values() + _threat_frames.values() + _leaving_frames:
+		if is_instance_valid(frame): frame._process(delta)
+	_leaving_frames = _leaving_frames.filter(func(frame): return is_instance_valid(frame) and not frame.is_queued_for_deletion())
+	# The pile under a held card is mostly covered by it, so the warning is also put on the
+	# held card itself, where the player is looking.
+	var warned: Array = []
+	if _hover_group != null and not _drag_cards.is_empty() and _drop_refused(_hover_group):
+		warned = _drag_cards.filter(func(card): return is_instance_valid(card))
+	var tint: Array = spec.refused_tint
+	var warning := Color(float(tint[0]), float(tint[1]), float(tint[2]))
+	for card in _warned_cards:
+		if is_instance_valid(card) and not warned.has(card) and card.highlighted and card._hl_color.is_equal_approx(warning): card.set_highlight(false)
+	for card in warned:
+		if not _warned_cards.has(card): card.set_highlight(true, warning)
+	_warned_cards = warned
+	if refund != _dismiss_preview:
+		var label: Variant = get_parent().get_node_or_null("MarketFacility/FacilityAction") if is_inside_tree() else null
+		if label is Label3D:
+			if _dismiss_preview < 0: _dismiss_label_rest = label.text
+			label.text = str(spec.refund_format) % refund if refund >= 0 else _dismiss_label_rest
+		_dismiss_preview = refund
+
+## A strike in flight is seen before it lands: the local player's pile it is flying at wears
+## a pencil frame for as long as the rules still have it in the air.
+func _sync_threat_frames() -> void:
+	var wanted: Dictionary = {}
+	if _state != null and _state.winner < 0 and not _terminal_pose_locked:
+		for uid in _state.pending_strikes:
+			var gid := int(_state.pending_strikes[uid].target_group)
+			if not _state.groups.has(gid) or int(_state.groups[gid].owner) != int(_settings.local_owner): continue
+			for group in groups:
+				if int(group.get("work_group_id", -1)) == gid: wanted[gid] = group
+	for gid in _threat_frames.keys():
+		if wanted.has(gid) and is_instance_valid(_threat_frames[gid]): continue
+		if is_instance_valid(_threat_frames[gid]):
+			_threat_frames[gid].leave()
+			_leaving_frames.append(_threat_frames[gid])
+		_threat_frames.erase(gid)
+	for gid in wanted:
+		var group: Dictionary = wanted[gid]
+		var low := Vector2(INF, INF)
+		var high := Vector2(-INF, -INF)
+		for card in group.cards:
+			if not is_instance_valid(card) or _has_external_pose(card.uid): continue
+			var at := Vector2(card.global_position.x, card.global_position.z)
+			low = low.min(at)
+			high = high.max(at)
+			if bool(group.get("compact", false)): break
+		if not low.is_finite(): continue
+		var extent := high - low + Vector2(CardEntity.CARD_SIZE.x, CardEntity.CARD_SIZE.z) + Vector2.ONE * float(_settings.drop_targets.frame_margin) * 2.0
+		var frame: Variant = _threat_frames.get(gid)
+		if frame == null:
+			frame = DropFrame.new()
+			add_child(frame)
+			frame.set_process(false)
+			frame.set_meta("extent", Vector2.ZERO)
+			frame.appear()
+			_threat_frames[gid] = frame
+		if not (frame.get_meta("extent") as Vector2).is_equal_approx(extent):
+			frame.configure(extent, "target")
+			frame.set_meta("extent", extent)
+		var centre := (low + high) * 0.5
+		frame.global_position = Vector3(centre.x, float(_settings.drop_targets.frame_y), centre.y)
+
+## What the entrance would pay for what is held over it right now; -1 when a release here
+## would not dismiss anyone.
+func _dismiss_refund_preview() -> int:
+	if pawn_pos == Vector3.INF: return -1
+	# Where the held card would come down, which is what a release tests.
+	var at: Vector3 = held_landing_point()
+	if Vector2(at.x - pawn_pos.x, at.z - pawn_pos.z).length() >= Board.PAWN_RADIUS: return -1
+	var owner_value := int(_settings.local_owner)
+	var people := 0
+	var total := 0
+	for card in _drag_cards:
+		if not is_instance_valid(card) or card.is_market or not _state.cards.has(card.uid): continue
+		var record: Dictionary = _state.cards[card.uid]
+		if int(record.owner) != owner_value: return -1
+		if not _state.config.is_person(str(record.type)): continue
+		if _state.is_meeting_target(card.uid): return -1
+		people += 1
+		total += int(_state.config.cards[str(record.type)].refund)
+	if people == 0 or _state.people_count(owner_value) - people < _state.config.integer("fire", "minimum_people"): return -1
+	return total
+
+## A pile that would refuse what is held is not offered as a target.
+func _drop_refused(group) -> bool:
+	if _state == null or _drag_cards.is_empty() or not is_instance_valid(_drag_cards[0]) or _drag_cards[0].is_market: return false
+	var gid := int(group.get("work_group_id", -1))
+	if not _state.groups.has(gid) or int(_state.groups[gid].owner) != int(_settings.local_owner): return false
+	var held: Array = []
+	for card in _drag_cards:
+		if is_instance_valid(card) and _state.cards.has(card.uid): held.append(card.uid)
+	if held.is_empty(): return false
+	if _state.group_has_union(gid) and held.any(func(uid): return str(_state.cards[uid].type) == "overtime"): return true
+	return _state.group_people(gid).any(func(person): return _state.is_striking(int(person))) and _state.group_cards(gid) != held
+
+## The pile a drag was aimed at goes back to its own colour. Two things differ from the
+## inherited cleanup. A held strike aims at an opponent pile, which the inherited version (own
+## piles only) left in the hover colour. And the pile is forgotten as the target before it is
+## refreshed, so the refresh cannot read it as still aimed at and paint the warning back on.
+func clear_hover_group() -> void:
+	var group: Variant = _hover_group
+	_hover_group = null
+	if group == null: return
+	var presenter: Board = null
+	for candidate in [self, enemy_board]:
+		if is_instance_valid(candidate) and candidate.groups.any(func(item): return is_same(item, group)): presenter = candidate
+	if presenter == null or not group.cards.all(func(card): return is_instance_valid(card)): return
+	_set_group_highlight(group, false)
+	presenter.refresh_group(group)
+
+func _set_group_highlight(g, on: bool, color := Color(1.2, 1.2, 0.6)) -> void:
+	if on and is_same(g, _hover_group) and _drop_refused(g):
+		var tint: Array = _settings.drop_targets.refused_tint
+		color = Color(float(tint[0]), float(tint[1]), float(tint[2]))
+	super._set_group_highlight(g, on, color)
+
 func _nearest_loose_card(pos: Vector3, exclude: Array) -> CardEntity:
 	if _drag_cards.any(func(card): return _is_striking_card(card)) or exclude.any(func(card): return _is_striking_card(card)): return null
-	var at: Vector3 = _drag_cards[0].global_position if not _drag_cards.is_empty() else pos
+	var at: Vector3 = held_landing_point() if not _drag_cards.is_empty() else pos
 	var best: CardEntity = null
 	var best_distance := INF
 	var excluded := {}
@@ -628,6 +833,8 @@ func _nearest_strike_group(at: Vector3) -> Variant:
 
 func _end_drag() -> void:
 	_drop_target_person = -1
+	# Everything below reads where the held cards are as where they come down.
+	_lower_held()
 	if not _drag_cards.is_empty() and _state != null and not _drag_cards[0].is_market:
 		var drop: Vector3 = _drag_cards[0].global_position
 		if _strike_drop_conflict(drop):
@@ -780,6 +987,8 @@ func _purchase(payment: Array, market: CardEntity) -> void:
 		sync_state(_state)
 		return
 	_pending_buy_position = placement.get("position", Vector3.INF)
+	# The player carried the offer off the conveyor themself; it is already where it lands.
+	var carried: bool = _pending_buy_position != Vector3.INF
 	purchase_payment_ids = payment.map(func(card): return card.uid)
 	# main 的唯一购买入口同步调用 OffWorkState.buy；三种原交互共享付款规则。
 	offer_bought.emit(offer_id)
@@ -792,6 +1001,20 @@ func _purchase(payment: Array, market: CardEntity) -> void:
 		_sync_market_tag(market)
 	_restore_payment_cards(payment)
 	sync_state(_state)
+	# The rules settled this purchase inside the signal above. Show it in the same frame, so
+	# the new card is never seen lying at its seat before it travels there. The event is
+	# presented again when the controller drains it; by then its conveyor origin is used up
+	# and that second presentation changes nothing.
+	for event in _state._events:
+		if str(event.get("kind", "")) == "buy" and int(event.get("offer_id", -1)) == offer_id:
+			var bought: Variant = by_uid.get(int(event.get("source", -1)))
+			if carried and is_instance_valid(bought):
+				# Nothing to retrace: the payment goes to the card where the player put it.
+				_action_motion.offer_sources.erase(offer_id)
+				_begin_payment(event, bought.get_meta("dest_pos", bought.global_position))
+			else:
+				_action_motion.play_event(_begin_payment(event))
+			break
 
 func _restore_payment_cards(payment: Array) -> void:
 	for card in payment:
@@ -869,6 +1092,7 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 		return
 	if state.winner >= 0: _freeze_terminal_layout()
 	_previous_action_groups.clear()
+	_spent_cash.clear()
 	_effect_tweens = _effect_tweens.filter(func(tween): return tween != null and tween.is_valid())
 	# A single production tick can retire hundreds of files. Unregister all
 	# affected cards first, then close each surviving stack only once.
@@ -901,6 +1125,10 @@ func sync_state(state: Object, setup: RefCounted = null) -> void:
 			card.set_process(false)
 			by_uid.erase(uid)
 			_retired_cards[uid] = card
+			if card.type == "money":
+				# Where this side's cash was spent from, for the payment shown by play_event.
+				if not _spent_cash.has(card.card_owner): _spent_cash[card.card_owner] = {"at": card.global_position, "cards": []}
+				_spent_cash[card.card_owner].cards.append(card)
 			if state.winner >= 0:
 				# No upward retirement through the still-closed winning stack.
 				card.hide()
@@ -1102,8 +1330,29 @@ func _departure_clearance(card: OffWorkCard) -> float:
 			for z in [-0.5, 0.5]:
 				var point := member._visual.to_global(Vector3(CardEntity.CARD_SIZE.x * x, 0.0, CardEntity.CARD_SIZE.z * z))
 				edge = maxf(edge, point.x) if direction > 0.0 else minf(edge, point.x)
-	var half_width := CardEntity.CARD_SIZE.x * card._visual.global_basis.get_scale().x * OffWorkUI.number("animation", "leave_clearance_scale") * 0.5
+	var half_width := CardEntity.CARD_SIZE.x * card._visual.global_basis.get_scale().x * 0.5
 	return edge - start + direction * (half_width + OffWorkUI.number("animation", "leave_clearance_padding"))
+
+## Where a departing card goes: straight off its owner's edge of the table. Returns the signed
+## distance along z after which the whole card is out of the picture, and the height at which
+## it passes over everything still lying on the table.
+func _departure_route(card: OffWorkCard) -> Vector2:
+	var toward := 1.0 if card.card_owner == int(_settings.local_owner) else -1.0
+	var start := card._visual.global_position
+	var top := start.y
+	for other: OffWorkCard in by_uid.values():
+		if other != card and other.visible: top = maxf(top, other._visual.global_position.y)
+	var height := maxf(OffWorkUI.number("animation", "leave_height"), top - start.y + OffWorkUI.number("animation", "leave_clearance_padding"))
+	var distance := OffWorkUI.number("animation", "leave_distance")
+	if is_instance_valid(camera):
+		var half := Vector3(CardEntity.CARD_SIZE.x * 0.5, 0.0, CardEntity.CARD_SIZE.z * 0.5)
+		var limit := OffWorkUI.number("animation", "leave_distance_max")
+		# The trailing edge is the last part of the card to leave the picture.
+		while distance < limit:
+			var trailing := start + Vector3(0.0, height, toward * (distance - half.z))
+			if not camera.is_position_in_frustum(trailing - Vector3(half.x, 0.0, 0.0)) and not camera.is_position_in_frustum(trailing + Vector3(half.x, 0.0, 0.0)): break
+			distance += half.z
+	return Vector2(toward * distance, height)
 
 ## Repeated material shares bounded visual slots. Every actual UID stays in
 ## the group; only one real face draws at each slot, including a held suffix.
@@ -1804,6 +2053,12 @@ func _sync_market() -> void:
 			card.set_meta("market_slot", slot)
 			if not is_instance_valid(conveyor): _move_market(card, slot)
 		if is_instance_valid(conveyor): conveyor.attach_offer(id, card, index)
+	# What the local player can pay for right now is read off the tags.
+	var purse: int = _state.money(int(_settings.local_owner)) - _state.reserved_money(int(_settings.local_owner))
+	for index in _state.offers.size():
+		var offer: Dictionary = _state.offers[index]
+		if offer.is_empty() or not _prices.has(int(offer.id)) or not is_instance_valid(_prices[int(offer.id)]): continue
+		_prices[int(offer.id)].set_affordable(purse >= int(offer.price))
 	for id in offers_by_id.keys():
 		if live.has(id): continue
 		var card: CardEntity = offers_by_id[id]
@@ -1815,7 +2070,7 @@ func _sync_market() -> void:
 			card.queue_free()
 		offers_by_id.erase(id)
 		if _prices.has(id):
-			if not exiting: _prices[id].queue_free()
+			if not exiting: _linger_sold_tag(_prices[id])
 			_prices.erase(id)
 
 func _move_market(card: CardEntity, slot: Vector3) -> void:
@@ -1866,22 +2121,37 @@ func _retirement_overlaps_stack(card: OffWorkCard) -> bool:
 			return true
 	return false
 
-func _retire(card: OffWorkCard) -> void:
-	# A consumed card is no longer a physical member. Letting its old face
-	# rise through a still-working pile intersects both staff and refill cards.
-	# The existing group stamp, paper burst and cash arc carry this settlement.
-	if bool(card.get_meta("retire_in_stack", false)): card.hide()
+func _retire(card: OffWorkCard, wait := -1.0) -> void:
+	# A consumed card is no longer a physical member, and it never shrinks or fades where it
+	# lies. Inside a pile it is already covered, so its face simply stops being drawn. A loose
+	# one goes underneath whatever used it: a dismissed person under the dismissal entrance,
+	# anything else straight down under the cards (or the table) it rests on. Spent cash is
+	# shown leaving by the payment notes of play_event, which hide this record's own face.
+	# `wait` restarts the exit of a card that first has something printed on it.
+	if card.has_meta("retire_tween"):
+		var previous: Variant = card.get_meta("retire_tween")
+		if previous is Tween and previous.is_valid(): previous.kill()
 	var tween := card.create_tween()
+	card.set_meta("retire_tween", tween)
 	_effect_tweens.append(tween)
-	tween.tween_interval(OffWorkUI.number("animation", "retire_wait"))
-	tween.tween_property(card, "scale", Vector3.ONE * OffWorkUI.number("animation", "retire_scale"), OffWorkUI.number("animation", "retire_duration"))
-	tween.parallel().tween_property(card, "position:y", card.position.y + OffWorkUI.number("animation", "retire_distance"), OffWorkUI.number("animation", "retire_duration"))
+	tween.tween_interval(wait if wait >= 0.0 else OffWorkUI.number("animation", "retire_wait"))
+	if bool(card.get_meta("retire_in_stack", false)):
+		card.hide()
+	else:
+		var destination := card.global_position
+		if card._is_person() and pawn_pos != Vector3.INF \
+				and Vector2(destination.x - pawn_pos.x, destination.z - pawn_pos.z).length() < Board.PAWN_RADIUS:
+			destination = pawn_pos
+		destination.y = float(_settings.rest_y) - OffWorkUI.number("animation", "retire_tuck_depth")
+		tween.tween_property(card, "global_position", destination, OffWorkUI.number("animation", "retire_duration")) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tween.tween_callback(func():
 		_retired_cards.erase(card.uid)
 		card.queue_free())
 
 func play_event(event: Dictionary) -> void:
 	var kind := str(event.get("kind", ""))
+	if kind == "buy": event = _begin_payment(event)
 	if kind in ["group_changed", "buy"]: _action_motion.play_event(event)
 	if kind in ["work_complete", "outsource"]: _queue_disposed_work(event)
 	var actors: Array = []
@@ -1914,7 +2184,7 @@ func play_event(event: Dictionary) -> void:
 				_release_strike_motion(uid, false)
 				card._visual.transform = departure_pose
 				_presenter(card.card_owner)._stop_move(card, false)
-				card.leave(_departure_clearance(card))
+				card.leave(_departure_clearance(card), _departure_route(card))
 				if card._leave_tween != null and card._leave_tween.is_valid() and not card._leave_tween.finished.is_connected(_restore_terminal_stationary_faces):
 					card._leave_tween.finished.connect(_restore_terminal_stationary_faces, CONNECT_ONE_SHOT)
 		_restore_terminal_stationary_faces()
@@ -1922,17 +2192,40 @@ func play_event(event: Dictionary) -> void:
 	elif kind == "strike_launch":
 		_sync_strike_attacks()
 		_advance_strike_attacks(0.0)
+		# Aimed at the local player: the union cards that could still stop it give a nudge.
+		var aimed := int(event.get("target_group", -1))
+		if _state.groups.has(aimed) and int(_state.groups[aimed].owner) == int(_settings.local_owner):
+			for uid in by_uid:
+				var card: OffWorkCard = by_uid[uid]
+				if card.type == "union" and card.card_owner == int(_settings.local_owner) and int(card.group_id) != aimed: card.pulse_landed()
 	elif kind == "strike_blocked":
 		_return_strike_attack(int(event.get("source", -1)))
+		# The union card that stopped it says so on its own face.
+		var guarded := int(event.get("target_group", -1))
+		if _state.groups.has(guarded):
+			for uid in _state._indexed_group(guarded).types.get("union", []):
+				if by_uid.has(uid):
+					by_uid[uid].flash_stamp(str(OffWorkUI.section("rig").blocked_word))
+					break
+	elif kind == "strike_end":
+		var back: Variant = by_uid.get(int(event.get("person", -1)))
+		if is_instance_valid(back): back.flash_stamp(str(OffWorkUI.section("rig").resume_word))
 	elif kind == "transfer":
 		_start_delivery(event, true)
 	elif kind == "work_complete":
 		_flash_group_task_completion(int(event.get("source", -1)))
+		_thump_cleared_pile(event)
 		_start_cash_flight(event)
 		for uid in event.get("ids", []):
 			if _retired_cards.has(uid): _retired_cards[uid].play_event(kind)
 	elif kind == "fire":
 		_start_cash_flight(event)
+		# The word is printed on the dismissed card itself, which then carries it away
+		# underneath; nothing is drawn over the table.
+		var dismissed: Variant = _retired_cards.get(int(event.get("source", -1)))
+		if is_instance_valid(dismissed) and dismissed.visible and not dismissed.is_queued_for_deletion():
+			dismissed.flash_stamp(str(OffWorkUI.section("rig").dismiss_word))
+			_retire(dismissed, OffWorkUI.number("animation", "dismiss_stamp_seconds"))
 	elif kind == "slack_complete":
 		_flash_group_task_completion(int(event.get("source", -1)), "slack")
 		_start_delivery(event, false)
@@ -1940,10 +2233,216 @@ func play_event(event: Dictionary) -> void:
 		_start_delivery(event, false)
 	elif kind == "coffee_upgrade":
 		var person := int(event.get("person", -1))
-		if by_uid.has(person): by_uid[person].play_event(kind)
+		if by_uid.has(person): _play_upgrade(by_uid[person], event)
 	elif kind in ["meeting_start", "strike"]:
 		for uid in event.get("targets", []):
 			if by_uid.has(uid): by_uid[uid].play_event(kind)
+
+## How hard a batch of cleared work lands: 1 for a single sheet, more for every doubling.
+static func clear_strength(sheets: int) -> float:
+	var spec := OffWorkUI.section("clear_feedback")
+	return minf(float(spec.strength_max), 1.0 + log(maxf(1.0, float(sheets))) / log(2.0) * float(spec.strength_per_doubling))
+
+## Every layer of a pile that is drawn is pressed out and springs back, the top one first.
+## Cards in flight, in the player's hand or buried are left alone.
+func _thump_group(presenter: Board, group: Dictionary, strength: float, delay := 0.0, skip: CardEntity = null) -> void:
+	var layers: Array = group.cards.filter(func(card): return is_instance_valid(card) and card != skip and card is OffWorkCard \
+		and not _stack_occluded.has(card.uid) and not _has_external_pose(card.uid) and not _drag_cards.has(card))
+	layers.sort_custom(func(a, b): return a.global_position.y > b.global_position.y)
+	var step := OffWorkUI.number("clear_feedback", "layer_delay_seconds")
+	for index in layers.size(): layers[index].thump(strength, delay + step * index)
+
+## Clearing work lands on the pile it was cleared from, harder for a bigger batch, and the
+## local player's view takes a small knock with it. The opponent's pile shows the same hit.
+func _thump_cleared_pile(event: Dictionary) -> void:
+	var source: OffWorkCard = by_uid.get(int(event.get("source", -1)))
+	if source == null: return
+	var presenter := _presenter(source.card_owner)
+	var group: Variant = presenter.group_of(source)
+	if group == null: return
+	var strength := clear_strength((event.get("ids", []) as Array).size())
+	_thump_group(presenter, group, strength)
+	if source.card_owner == int(_settings.local_owner):
+		var spec := OffWorkUI.section("clear_feedback")
+		ComicFx.shake(camera, minf(float(spec.shake_max), float(spec.shake_base) + float(spec.shake_per_strength) * strength))
+
+## Promotion: the person is tossed up, turns once and is slapped back down. The landing stamps
+## the new title, bumps the piles around it and, for the local side, knocks the view.
+func _play_upgrade(card: OffWorkCard, event: Dictionary) -> void:
+	var spec := OffWorkUI.section("upgrade")
+	var frame := Engine.get_process_frames()
+	if frame != _upgrade_wave_frame:
+		_upgrade_wave_frame = frame
+		_upgrade_wave_count = 0
+	var delay := float(spec.wave_stagger_seconds) * _upgrade_wave_count
+	_upgrade_wave_count += 1
+	# Whoever cannot be promoted any further has reached the top.
+	var top: bool = _state != null and _state.config.coffee_upgrade(str(event.get("to_type", card.type))).is_empty()
+	card.play_upgrade(delay, func() -> void:
+		if not is_instance_valid(card) or not card.is_inside_tree(): return
+		_ripple_from(card)
+		if card.card_owner == int(_settings.local_owner):
+			ComicFx.shake(camera, float(spec.shake_top) if top else float(spec.shake))
+		upgrade_landed.emit(card.uid))
+
+## The landing is felt by the real cards around it: piles within reach are bumped, nearer ones
+## sooner and harder. Nothing is drawn that is not a card.
+func _ripple_from(card: OffWorkCard) -> void:
+	var spec := OffWorkUI.section("upgrade")
+	var radius := float(spec.ripple_radius)
+	if radius <= 0.0: return
+	var presenter := _presenter(card.card_owner)
+	var own: Variant = presenter.group_of(card)
+	for group in presenter.groups:
+		if group.cards.is_empty(): continue
+		var distance := 0.0
+		if own == null or not is_same(group, own):
+			var at: Vector3 = presenter.rest_origin(group)
+			distance = Vector2(at.x - card.global_position.x, at.z - card.global_position.z).length()
+		if distance >= radius: continue
+		_thump_group(presenter, group, float(spec.ripple_strength) * (1.0 - distance / radius), distance * float(spec.ripple_seconds_per_unit), card)
+
+## A sold offer's tag has no card to hang from any more. It stays where it was while the
+## payment arrives, then leaves with its own exit instead of vanishing with the offer.
+func _linger_sold_tag(tag: Node3D) -> void:
+	if not is_instance_valid(tag): return
+	var pose := tag.global_transform
+	tag.get_parent().remove_child(tag)
+	add_child(tag)
+	tag.global_transform = pose
+	_lingering_tags = _lingering_tags.filter(func(other): return is_instance_valid(other))
+	_lingering_tags.append(tag)
+	var leave := tag.create_tween()
+	_effect_tweens.append(leave)
+	leave.tween_interval(float(_settings.payment_motion.tag_linger_seconds))
+	leave.tween_callback(tag.retire)
+
+## Presentation of a purchase the rules have already settled. One note per unit of price
+## leaves the buyer's cash, comes in over the buyer's edge of the conveyor and ends underneath
+## the purchased card, which waits lifted above its slot and covers it. Nothing shrinks or
+## fades: a note is removed only once it is out of sight. Returns the event with the time the
+## last note is covered ("paid_after"); the event itself is returned when there is nothing to show.
+## `resting` is given when the card was carried home by hand and already lies at its place: the
+## notes then go straight to it there.
+func _begin_payment(event: Dictionary, resting := Vector3.INF) -> Dictionary:
+	var owner_value := int(event.get("owner", -1))
+	var target: Variant = resting if resting != Vector3.INF else _action_motion.offer_sources.get(int(event.get("offer_id", -1)))
+	var spent: Dictionary = _spent_cash.get(owner_value, {})
+	_spent_cash.erase(owner_value)
+	if not target is Vector3 or _state == null or not _state.config.cards.has(str(event.get("card_type", ""))): return event
+	var spec: Dictionary = _settings.payment_motion
+	var price := int(_state.config.cards[str(event.card_type)].get("price", 0))
+	var template: OffWorkCard = null
+	var from := Vector3.INF
+	for card in spent.get("cards", []):
+		if not is_instance_valid(card): continue
+		# Its departure is the notes below, not a face left lying where the pile was.
+		card.hide()
+		if template == null:
+			template = card
+			from = spent.at
+	if template == null:
+		for uid in by_uid:
+			var candidate: OffWorkCard = by_uid[uid]
+			if candidate.type != "money" or candidate.card_owner != owner_value or candidate.has_meta("income_flight"): continue
+			template = candidate
+			from = candidate.global_position
+			break
+	if price <= 0 or template == null: return event
+	template.reveal_stack_face()
+	var count := mini(price, int(spec.max_notes))
+	var interval := minf(float(spec.emission_interval_seconds), float(spec.max_emission_window_seconds) / maxf(1.0, float(count - 1)))
+	var side := 1.0 if owner_value == int(_settings.local_owner) else -1.0
+	var destination: Vector3 = target
+	destination.y -= float(spec.tuck_depth)
+	var path := Vector3(destination.x - from.x, 0.0, destination.z - from.z)
+	var sideways := Vector3(-path.z, 0.0, path.x).normalized()
+	# Over the buyer's own edge of the conveyor, never across the neighbouring offers. Cash that
+	# was carried to the slot, or a card that was carried home, is reached directly.
+	var approach := minf(float(spec.approach_distance), path.length() * 0.5)
+	var control := Vector3(destination.x, 0.0, destination.z + side * approach)
+	if resting != Vector3.INF: control = Vector3(from.x + path.x * 0.5, 0.0, from.z + path.z * 0.5)
+	for index in count:
+		var note := _make_cash_note(template)
+		note.name = "PaymentNote"
+		note.set_meta("motion_event", "payment")
+		_set_cash_opacity(note, 1.0)
+		note.visible = false
+		note.scale = Vector3.ONE * float(spec.note_scale)
+		# Loose in the air, squared up again by the time it reaches the slot.
+		var scatter := fposmod(float(index) * 0.61803398875, 1.0) - 0.5
+		_payment_notes.append({"node": note, "from": from + Vector3.UP * float(spec.start_lift), "to": destination,
+			"control": control,
+			"offset": sideways * scatter * float(spec.spread), "yaw": scatter * 2.0 * float(spec.tilt_degrees),
+			"delay": float(index) * interval, "elapsed": 0.0, "index": index})
+	var result := event.duplicate()
+	result["paid_after"] = float(count - 1) * interval + float(spec.travel_seconds)
+	return result
+
+func _advance_payment(delta: float) -> void:
+	if _payment_notes.is_empty(): return
+	var spec: Dictionary = _settings.payment_motion
+	var travel := float(spec.travel_seconds)
+	var level := float(spec.level_fraction)
+	for item in _payment_notes.duplicate():
+		var note: Node3D = item.node
+		if not is_instance_valid(note):
+			_payment_notes.erase(item)
+			continue
+		item.elapsed = float(item.elapsed) + delta
+		var t := (float(item.elapsed) - float(item.delay)) / travel
+		if t < 0.0: continue
+		if t >= 1.0:
+			# Underneath the purchased card: out of sight, so it can go.
+			note.queue_free()
+			_payment_notes.erase(item)
+			if is_instance_valid(_motion) and is_instance_valid(_motion.sfx):
+				_motion.sfx.play("produce_land", minf(float(spec.pitch_max), 1.0 + float(item.index) * float(spec.pitch_step)))
+			continue
+		note.visible = true
+		var eased := 1.0 - pow(1.0 - t, 2.0)
+		var from: Vector3 = item.from
+		var to: Vector3 = item.to
+		var control: Vector3 = item.control
+		var at := from.lerp(control, eased).lerp(control.lerp(to, eased), eased)
+		at += (item.offset as Vector3) * 4.0 * eased * (1.0 - eased)
+		# Down to the level of the slot before reaching it, then a flat slide under the card.
+		var descent := clampf(eased / level, 0.0, 1.0)
+		at.y = lerpf(from.y, to.y, descent) + sin(PI * descent) * float(spec.arc_height)
+		note.global_position = at
+		note.rotation_degrees.y = float(item.yaw) * (1.0 - descent)
+
+## A count beside a pile that went down is counted down to its new value, not swapped.
+func _punch_side_row(nodes: Array, row: int) -> void:
+	var spec := OffWorkUI.section("clear_feedback")
+	for node in [nodes[row * 2], nodes[row * 2 + 1]]:
+		if node == null or not is_instance_valid(node): continue
+		node.scale = Vector3.ONE * float(spec.count_punch_scale)
+		var tween: Tween = node.create_tween()
+		tween.tween_property(node, "scale", Vector3.ONE, float(spec.count_punch_seconds)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+func _roll_side_row(nodes: Array, row: int, from: int, to: int, text: String) -> void:
+	var label: Variant = nodes[row * 2 + 1] if row * 2 + 1 < nodes.size() else null
+	if not (label is Label3D) or not is_instance_valid(label) or text.count(str(to)) != 1: return
+	_start_side_roll(label, from, to, text.replace(str(to), "%d"))
+
+func _start_side_roll(label: Label3D, from: int, to: int, format: String) -> void:
+	_side_rolls[label.get_instance_id()] = {"label": label, "from": from, "to": to, "elapsed": 0.0, "format": format}
+	label.text = format % from
+
+func _advance_side_rolls(delta: float) -> void:
+	if _side_rolls.is_empty(): return
+	var seconds := maxf(0.001, float(_settings.side_roll_seconds))
+	for key in _side_rolls.keys():
+		var roll: Dictionary = _side_rolls[key]
+		var label: Variant = roll.label
+		if not is_instance_valid(label):
+			_side_rolls.erase(key)
+			continue
+		roll.elapsed = float(roll.elapsed) + delta
+		var t := clampf(float(roll.elapsed) / seconds, 0.0, 1.0)
+		label.text = str(roll.format) % roundi(lerpf(float(roll.from), float(roll.to), 1.0 - pow(1.0 - t, 2.0)))
+		if t >= 1.0: _side_rolls.erase(key)
 
 func _queue_disposed_work(event: Dictionary) -> void:
 	if _paper_disposal == null:
@@ -1984,6 +2483,8 @@ func _advance_paper_disposal(delta: float) -> void:
 
 func _layout_side(group, at: Vector3, pin_y := false) -> void:
 	if _defer_side_refresh: return
+	# An amount that is no longer on screen is not a value to count down from.
+	if (group.get("side", []) as Array).is_empty(): group.erase("cash_shown")
 	if _terminal_pose_locked:
 		_clear_side(group)
 		group["extract_rows"] = []
@@ -2004,7 +2505,8 @@ func _layout_side(group, at: Vector3, pin_y := false) -> void:
 	var signature := ""
 	for row in rows: signature += str(row.kind) + ":" + str(row.text) + "|"
 	if group.get("side_sig", "") != signature:
-		var before: Dictionary = group.get("side_counts", {})
+		# Counts kept from a list that is no longer shown are not a value to count down from.
+		var before: Dictionary = group.get("side_counts", {}) if not (group.get("side", []) as Array).is_empty() else {}
 		_clear_side(group)
 		group["side"] = _build_side(group, rows)
 		group["side_sig"] = signature
@@ -2012,7 +2514,14 @@ func _layout_side(group, at: Vector3, pin_y := false) -> void:
 		if not before.is_empty():
 			for index in rows.size():
 				var key := _side_key(rows[index])
-				if int(group.side_counts.get(key, 0)) > int(before.get(key, 0)): _pop_side_row(group.side, index)
+				var now := int(group.side_counts.get(key, 0))
+				var was := int(before.get(key, 0))
+				if now > was: _pop_side_row(group.side, index)
+				# Only what is used up one by one is counted down; people and tools leave as cards.
+				elif now < was and now > 0 and str(rows[index].kind) in ["work", "money"]:
+					_roll_side_row(group.side, index, was, now, str(rows[index].text))
+					# Work that was just cleared: the count takes the hit too, while it rolls down.
+					if str(rows[index].kind) == "work": _punch_side_row(group.side, index)
 	group["extract_rows"] = rows
 	var rows_per_column := int(_settings.side_extract.side_rows_per_column)
 	var columns := ceili(float(rows.size()) / float(rows_per_column))
@@ -2041,9 +2550,22 @@ func _update_cash_side(group: Dictionary) -> void:
 			amount += int(_state.cards[card.uid].amount)
 	var nodes: Array = group.get("side", [])
 	var cash_texture := CardArt.res_icon_texture(OffWorkCardDB.RES_CASH, OffWorkCardDB)
+	var format := str(OffWorkCardDB.display._realtime.money_amount_format)
+	# The amount written beside a cash pile rolls down to its new value instead of jumping.
+	var shown := int(group.get("cash_shown", amount))
+	group.erase("cash_shown")
 	for index in range(0, nodes.size() - 1, 2):
 		if is_instance_valid(nodes[index]) and nodes[index] is Sprite3D and nodes[index].texture == cash_texture and nodes[index + 1] is Label3D:
-			nodes[index + 1].text = str(OffWorkCardDB.display._realtime.money_amount_format) % amount
+			var label: Label3D = nodes[index + 1]
+			# Remembered only while the amount is on screen.
+			group["cash_shown"] = amount
+			var roll: Dictionary = _side_rolls.get(label.get_instance_id(), {})
+			if amount < shown: _start_side_roll(label, shown, amount, format)
+			elif not roll.is_empty():
+				# Built from the card count a moment ago; the money amount is what it shows.
+				roll.to = amount
+				roll.format = format
+			else: label.text = format % amount
 	var gid := int(group.get("work_group_id", -1))
 	if _state.groups.has(gid) and int(_state.groups[gid].owner) == int(_settings.opponent_owner):
 		_contain_opponent_side(nodes)
@@ -2362,19 +2884,35 @@ func _prepare_cash_opacity(visual: Node3D) -> void:
 	for child in visual.get_children():
 		if child is MeshInstance3D and child.material_override != null:
 			var original: Material = child.material_override
-			var material: Material = original.duplicate()
-			if material is ShaderMaterial:
-				material.shader = preload("res://shaders/off_work_cash_face.gdshader")
-				material.render_priority = -1
-			elif material is BaseMaterial3D:
-				material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			var material: Material
+			if original is BaseMaterial3D and _is_plain_colour(original):
+				# The engine generates one shader per combination of standard-material settings
+				# and frees it with the last material that uses it. A private translucent copy
+				# per flight therefore recompiled that shader on every single flight, a stall of
+				# a tenth of a second or more each time. The effect library keeps one template
+				# of this exact combination alive, so its copies never compile anything.
+				material = Materials.flat((original as BaseMaterial3D).albedo_color)
 				material.render_priority = -2
+			else:
+				material = original.duplicate()
+				if material is ShaderMaterial:
+					material.shader = preload("res://shaders/off_work_cash_face.gdshader")
+					material.render_priority = -1
+				elif material is BaseMaterial3D:
+					material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+					material.render_priority = -2
 			originals.append({"node": child, "material": original})
 			child.material_override = material
 		elif child is Sprite3D or child is Label3D:
 			originals.append({"node": child, "color": child.modulate})
 	visual.set_meta("income_originals", originals)
 	_set_cash_opacity(visual, 0.0)
+
+## A flat unlit colour, which is what every card body is: the only kind of standard material
+## the effect library's retained template can stand in for.
+static func _is_plain_colour(material: BaseMaterial3D) -> bool:
+	return material.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED and material.albedo_texture == null \
+		and material.cull_mode == BaseMaterial3D.CULL_BACK and not material.vertex_color_use_as_albedo
 
 func _set_cash_opacity(visual: Node3D, opacity: float) -> void:
 	visual.visible = opacity > float(_settings.income_motion.opacity_visibility_threshold)
@@ -2950,6 +3488,20 @@ func reset_view() -> void:
 	_cash_flights.clear()
 	_cash_emission_serial.clear()
 	_cash_stream_width.clear()
+	for item in _payment_notes:
+		if is_instance_valid(item.node): item.node.queue_free()
+	_payment_notes.clear()
+	_spent_cash.clear()
+	for tag in _lingering_tags:
+		if is_instance_valid(tag): tag.queue_free()
+	_lingering_tags.clear()
+	_side_rolls.clear()
+	for frame in _drop_frames.values() + _threat_frames.values() + _leaving_frames:
+		if is_instance_valid(frame): frame.queue_free()
+	_drop_frames.clear()
+	_threat_frames.clear()
+	_leaving_frames.clear()
+	_sync_drop_targets()
 	_opening_counts.clear()
 	_opening_layout_enabled = false
 	for tween in _effect_tweens:

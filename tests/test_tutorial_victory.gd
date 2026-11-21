@@ -428,7 +428,7 @@ func _drag(card: CardEntity, target: Vector3) -> void:
 	check(main.board._drag_cards.has(card), "原Viewport按下真实独角兽，开始典当拖拽")
 	var motion := InputEventMouseMotion.new()
 	motion.button_mask = MOUSE_BUTTON_MASK_LEFT
-	motion.position = main.board.camera.unproject_position(Vector3(target.x, Board.DRAG_HEIGHT, target.z) - main.board._grab_offset)
+	motion.position = main.board.pointer_for_landing(target)
 	motion.global_position = motion.position
 	root.push_input(motion)
 	await process_frame

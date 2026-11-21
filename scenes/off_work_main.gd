@@ -8,7 +8,6 @@ const Bot = preload("res://engine/off_work_bot.gd")
 const BotPreferences = preload("res://engine/off_work_bot_preferences.gd")
 const BoardView = preload("res://scenes/off_work_board.gd")
 const Audio = preload("res://scenes/off_work_audio.gd")
-const Effects = preload("res://scenes/off_work_effects.gd")
 const OriginalTable = preload("res://scenes/table_scene.gd")
 const OriginalMotion = preload("res://scenes/card_motion.gd")
 const HandsView = preload("res://scenes/table_hands.gd")
@@ -20,8 +19,6 @@ var bot
 var _live_bot := preload("res://engine/off_work_bot_live.gd").new()
 var board
 var audio
-var effects
-var _effect_layer: CanvasLayer
 var settings: Dictionary
 var hud
 var drawer_presentation
@@ -39,11 +36,9 @@ var opponent: Label
 var message: Label
 var result_layer: CanvasLayer
 var _selected_tool := -1
-var _message_age := 0.0
 var _refresh_age := 0.0
 var _result_age := 0.0
 var _result_started := false
-var _positions: Dictionary = {}
 var _activity_group_cache := {}
 var _activity_group_revision := -1
 var _activity_group_membership := -1
@@ -174,16 +169,10 @@ func _ready() -> void:
 	_card_motion.bind(board, sfx, true)
 	board.bind_motion(_card_motion)
 	board.card_picked.connect(func(_card): sfx.play("card_pickup"))
+	# The promoted card hits the table: a low stamp, for either side.
+	board.upgrade_landed.connect(func(_id: int): audio.play("upgrade_land"))
 	board.card_dropped_table.connect(func(): sfx.play("card_drop"))
 	board.pile_toggled.connect(func(): sfx.play("pile_toggle"))
-	_effect_layer = CanvasLayer.new()
-	_effect_layer.layer = 4
-	add_child(_effect_layer)
-	effects = Effects.new()
-	_effect_layer.add_child(effects)
-	settings.effects.transfer_duration = float(board._settings.transfer_motion.travel_seconds)
-	effects.setup(settings.effects, settings.text)
-	effects.card_position_provider = board.screen_position
 	if setup: await setup.checkpoint(get_tree())
 	hud = HUDView.new()
 	add_child(hud)
@@ -225,7 +214,6 @@ func set_shift_hidden(hidden: bool) -> void:
 	if is_instance_valid(hud): hud.set_off_work_finale_hidden(hidden)
 	if hidden: _live_bot.cancel()
 	if is_instance_valid(table_hands): table_hands.set_shift_hidden(hidden)
-	if is_instance_valid(_effect_layer): _effect_layer.visible = not hidden
 	if lan != null: lan.set_away(hidden)
 	if not hidden and is_instance_valid(hud): hud._sync_pause()
 	if hidden and is_instance_valid(board): board.cancel_pointer()
@@ -271,7 +259,6 @@ func _on_palette_changed(_section: String, _key: String, _color: Color = Color.W
 	for presenter in [board, board.enemy_board]:
 		for group in presenter.groups:
 			presenter.refresh_group(group)
-	effects.setup(settings.effects, settings.text)
 
 func _on_groups_changed() -> void:
 	_live_bot.replan(bot)
@@ -365,7 +352,7 @@ func _new_game(setup: RefCounted = null) -> bool:
 	await board.sync_state(state, setup)
 	_refresh_table_lighting()
 	_update_hud()
-	message.text = str(settings.text.hint)
+	hud.clear_message()
 	replay.record(self, [], true)
 	if _shift_enabled: save_shift_session()
 	return true
@@ -402,7 +389,6 @@ func _process(delta: float) -> void:
 	else:
 		_live_bot.cancel()
 	var events: Array = state.drain_events()
-	_cache_positions(events)
 	replay.record(self, events, _live_bot.needs_keyframe)
 	_refresh_age += delta
 	if (state.winner == -1 and _refresh_age >= float(settings.hud.refresh_interval)) or not events.is_empty():
@@ -412,7 +398,6 @@ func _process(delta: float) -> void:
 	for event in _coalesce_events(events):
 		_present(event)
 	audio.sync_work_groups(state, int(board._settings.local_owner))
-	_message_age += delta
 	if not practice.is_empty():
 		var interaction := {}
 		if board.side_extract.is_open():
@@ -423,8 +408,6 @@ func _process(delta: float) -> void:
 		if state.winner >= 0 and not _result_started:
 			_result_started = true
 			hud.update_practice_panel()
-	elif _message_age > float(settings.hud.message_hold) and _selected_tool < 0:
-		message.text = str(settings.text.hint)
 	if state.winner != -1:
 		_result_age += delta
 		if _result_age >= float(settings.result.delay) and not _result_started:
@@ -433,22 +416,6 @@ func _process(delta: float) -> void:
 	_check_shot(delta)
 	# Natural task/timer changes are never counted as a later player gesture.
 	_remember_player_activity()
-
-func _cache_positions(events: Array = []) -> void:
-	# Effects need the previous position of their actual sources and targets,
-	# not a projection of every buried sheet on every render frame. Capture
-	# before sync_state retires/moves those views; newly created money resolves
-	# from the board after that sync. The board retains retired world positions.
-	_positions.clear()
-	var ids := {}
-	for event in events:
-		for key in ["source", "person", "money_id"]:
-			var id := int(event.get(key, -1))
-			if id >= 0: ids[id] = true
-		for id in event.get("targets", []): ids[int(id)] = true
-	for id in ids:
-		if board.by_uid.has(id) or board._previous_positions.has(id):
-			_positions[id] = board.screen_position(id)
 
 func _coalesce_events(events: Array) -> Array:
 	# Simultaneous members of one transfer share a single visual batch. Their
@@ -467,13 +434,6 @@ func _coalesce_events(events: Array) -> Array:
 			result.append(event.duplicate(true))
 	return result
 
-func _at(id: int, group := -1) -> Vector2:
-	if _positions.has(id): return _positions[id]
-	if board.by_uid.has(id) or board._previous_positions.has(id): return board.screen_position(id)
-	if group >= 0:
-		return board.camera.unproject_position(board.get_group_position(group))
-	return get_viewport().get_visible_rect().size * 0.5
-
 func _present(event: Dictionary) -> void:
 	var kind: String = str(event.kind)
 	if kind == "win":
@@ -485,32 +445,17 @@ func _present(event: Dictionary) -> void:
 		if board.has_method("play_event"): board.play_event(event)
 		return
 	if kind in ["conveyor", "new_game"]: return
-	var source: int = int(event.get("source", -1))
-	var group: int = int(event.get("group", -1))
-	var start := _at(source, group)
-	var end := start
-	var ids: Array = event.get("ids", [])
-	var targets: Array = []
-	for id in event.get("targets", []): targets.append(_at(int(id)))
-	if kind == "work_complete":
-		# 收入由 Board 移动真实现金卡；不再另画一枚飞向 HUD 的假金币。
-		start = _at(source, group)
-		end = _at(int(event.get("money_id", -1)), int(event.get("money_group", -1)))
-	elif kind == "transfer":
-		end = board.camera.unproject_position(board.get_group_position(int(event.get("target_group", -1))))
-	elif kind == "strike":
-		start = _at(-1, int(event.get("target_group", -1)))
-	elif kind == "meeting_start":
-		start = _at(source, group)
-	elif kind == "coffee_upgrade":
-		start = _at(int(event.get("person", -1)), group)
-	elif kind == "outsource":
-		end = Vector2(get_viewport().get_visible_rect().size.x, start.y)
-	effects.emit_effect(kind, start, end, maxi(ids.size(), 1), targets,
-		source if kind == "meeting_start" else -1, event.get("targets", []) if kind == "meeting_start" else [])
+	# 事件只由牌桌上的真实牌来演：章盖在牌面上，现金和纸团是真牌，没有另一层屏幕特效。
 	if kind == "transfer":
 		audio.schedule(kind, float(board._settings.transfer_motion.travel_seconds))
-	elif kind != "work_complete" or int(event.owner) == int(board._settings.local_owner):
+	elif kind == "work_complete":
+		if int(event.owner) == int(board._settings.local_owner):
+			# A bigger batch lands louder and lower.
+			var feel := OffWorkUI.section("clear_feedback")
+			var doublings := log(maxf(1.0, float((event.get("ids", []) as Array).size()))) / log(2.0)
+			audio.play(kind, minf(float(feel.sound_db_max), doublings * float(feel.sound_db_per_doubling)),
+				maxf(0.5, 1.0 + doublings * float(feel.sound_pitch_per_doubling)))
+	else:
 		audio.play(kind)
 	if board.has_method("play_event"): board.play_event(event)
 
@@ -554,9 +499,9 @@ func _activate(id: int, group: int, target_card := -1, delivered := false) -> vo
 			has_task = has_task or state.tasks.has(person)
 		if kind != "overtime" or has_task: _start_opponent_after_action(actor)
 		board.set_targeting(false)
-		_message_age = float(settings.hud.message_hold)
+		# 选靶的那句说明已经用完；别的提示留到被下一条替换。
+		if message.text == str(settings.text.target): hud.clear_message()
 	_remember_player_activity()
-	_cache_positions(state._events)
 	board.sync_state(state)
 	_update_hud()
 
@@ -603,18 +548,38 @@ func _on_dismiss(ids: Array) -> void:
 func _error_text() -> String:
 	return state.last_error if not state.last_error.is_empty() else str(settings.text.action_fail)
 
+## Keys 1-6 buy the conveyor slot of that number (paid automatically, as a click on its tag).
+## Space (pause) and Esc (first puts back what is in the hand) are handled by the HUD.
+func _table_key(event: InputEventKey) -> bool:
+	if replay.playing or not practice.is_empty() or state == null or state.winner != -1 or _drawer_input_blocked_for_keys(): return false
+	# Space and Esc are taken by the HUD, which also hears them while the game is paused.
+	var slot := int(event.keycode) - KEY_1
+	if slot < 0 or slot > 5 or hud._manual_paused: return false
+	if slot >= state.offers.size() or state.offers[slot].is_empty():
+		_notify(str(settings.text.empty_slot) % (slot + 1), true)
+		return true
+	var market: Variant = board.offers_by_id.get(int(state.offers[slot].id))
+	if is_instance_valid(market): board._purchase([], market)
+	return true
+
+func _drawer_input_blocked_for_keys() -> bool:
+	# A paused table still takes Space (to resume); a collapsed or covered one takes nothing.
+	return hud == null or hud.panels_open() or (hud.drawer_window != null and (not hud.drawer_window.is_expanded() or hud.drawer_window.is_transitioning()))
+
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F5:
 		save_work_replay()
+	if event is InputEventKey and event.pressed and not event.echo and _selected_tool < 0 and _table_key(event):
+		get_viewport().set_input_as_handled()
+		return
 	if _selected_tool >= 0 and ((event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE) or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT)):
 		_selected_tool = -1
 		board.set_targeting(false)
 		_update_hud()
-		message.text = str(settings.text.hint)
+		hud.clear_message()
 
 func _notify(text: String, deny := false) -> void:
 	hud.present_message(text, Palette.semantic("danger") if deny else Palette.semantic("ink"))
-	_message_age = 0.0
 	if deny: audio.play("deny")
 
 func _update_hud() -> void:
@@ -761,13 +726,11 @@ func _clear_table_presenters() -> void:
 	_result_started = false
 	_result_age = 0
 	_selected_tool = -1
-	_positions.clear()
 	_activity_group_cache.clear()
 	_activity_group_revision = -1
 	_activity_group_membership = -1
 	_activity_group_state = 0
 	table_hands.clear()
-	effects.clear()
 	audio.stop_all()
 	conveyor.reset()
 	board.reset_view()
@@ -833,4 +796,4 @@ func finish_practice() -> void:
 	hud.update_practice_panel()
 	replay = original.replay
 	restore_table(original)
-	message.text = str(settings.text.hint)
+	hud.clear_message()

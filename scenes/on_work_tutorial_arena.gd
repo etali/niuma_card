@@ -689,6 +689,7 @@ func _refresh_protection() -> void:
 func _refresh_attack_targets() -> void:
 	for card in entities.values():
 		if not card.draggable: card.set_highlight(false)
+	_table_actions.clear_attack_marks()
 	# 不 clear Context 保存的原数组：本课使用新集合，供原 TableHands 识别怒手。
 	_main._attack_hl = _table_actions.highlight_attack_targets(session.applier.pools(my_seat)) if session.phase == "attack" else []
 	_main._player_attack_busy = 0

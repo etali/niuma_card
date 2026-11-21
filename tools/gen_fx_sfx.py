@@ -3,10 +3,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # See LICENSE in the project root.
 
-"""合成漫画特效用的四个音效（16bit 44.1kHz mono WAV）→ assets/sfx/
+"""合成漫画特效用的音效（16bit 44.1kHz mono WAV）→ assets/sfx/
 
-只写 coin / stamp / bell / trombone 四个文件。tools/gen_sfx.py 会重写全部旧音效
-（其中几份已换成后来的 48kHz 版本），新增特效音效因此单独放在这里，可以放心重跑。
+只写 coin / stamp / bell / trombone，以及下班的 whistle / meeting_bell / paper_slam
+这七个文件。tools/gen_sfx.py 会重写全部旧音效（其中几份已换成后来的 48kHz 版本），
+新增特效音效因此单独放在这里，可以放心重跑。
 """
 import math
 import os
@@ -106,10 +107,54 @@ def trombone():
     return out
 
 
+def whistle():
+    # 罢工的哨声：一声短促的高音哨，哨珠让音高和响度快速抖动，前面带一口气声。
+    rng = random.Random(11)
+    out = []
+    phase = 0.0
+    prev = 0.0
+    dur = 0.42
+    for i in range(int(SR * dur)):
+        t = i / SR
+        trill = math.sin(2 * math.pi * 38.0 * t)
+        freq = 2850.0 * (1.0 + 0.035 * trill) * (1.0 + 0.06 * min(1.0, t / 0.05))
+        phase += 2 * math.pi * freq / SR
+        prev = prev * 0.3 + rng.uniform(-1, 1) * 0.7
+        env = min(1.0, t / 0.012) * min(1.0, (dur - t) / 0.06)
+        tone = math.sin(phase) + 0.22 * math.sin(2 * phase)
+        out.append(env * ((0.78 + 0.22 * trill) * tone + 0.28 * prev))
+    return out
+
+
+def meeting_bell():
+    # 会议铃：桌铃「叮、叮」两下，音高一样，第二下略轻。
+    partials = ((1.0, 1.0), (2.01, 0.42), (3.03, 0.2), (4.2, 0.1), (5.4, 0.05))
+    ding = ping(1318.5, 0.5, 0.11, partials, attack=0.001)
+    return add(ding, [s * 0.8 for s in ding], 0.17)
+
+
+def paper_slam():
+    # 一摞纸砸在桌上：低频的一下闷响，上面盖一层很快散掉的纸张噪声。
+    rng = random.Random(23)
+    out = []
+    prev = 0.0
+    for i in range(int(SR * 0.34)):
+        t = i / SR
+        freq = 92.0 - 38.0 * min(1.0, t / 0.07)
+        body = math.sin(2 * math.pi * freq * t) * math.exp(-t / 0.075)
+        prev = prev * 0.72 + rng.uniform(-1, 1) * 0.28
+        flutter = prev * (math.exp(-t / 0.03) + 0.35 * math.exp(-max(0.0, t - 0.05) / 0.06) * (1.0 if t > 0.05 else 0.0))
+        out.append(body + 0.75 * flutter)
+    return out
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     write_wav("coin", coin(), 0.55)
     write_wav("stamp", stamp(), 0.8)
     write_wav("bell", bell(), 0.75)
     write_wav("trombone", trombone(), 0.7)
-    print("完成：assets/sfx/ 下的 4 个特效音效")
+    write_wav("whistle", whistle(), 0.6)
+    write_wav("meeting_bell", meeting_bell(), 0.6)
+    write_wav("paper_slam", paper_slam(), 0.8)
+    print("完成：assets/sfx/ 下的 7 个特效音效")

@@ -10,6 +10,9 @@ var layer: CanvasLayer
 var _pressed: Dictionary = {}
 var _group_id := -1
 var _kind := ""
+## A card pulled straight out of a side row slides from its pile to the pointer:
+## {from: the grip it starts with, elapsed}. Empty when nothing is being pulled.
+var _pull: Dictionary = {}
 
 func _init(owner_board: Board, options: Dictionary) -> void:
 	board = owner_board
@@ -122,6 +125,58 @@ func _entry_anchor(group_id: int, kind: String, fallback: Rect2) -> Vector2:
 			if is_instance_valid(label): return board.camera.unproject_position(label.global_position)
 	return Vector2(fallback.end.x, fallback.get_center().y)
 
+## The cards of one kind in a pile, last first: the order they are pulled out in.
+func pullable(group_id: int, kind: String) -> Array:
+	var saved := [_group_id, _kind]
+	_group_id = group_id
+	_kind = kind
+	var ids: Array = _records().map(func(record): return int(record.id))
+	_group_id = saved[0]
+	_kind = saved[1]
+	ids.reverse()
+	return ids
+
+## Pulls cards of one kind straight out of their pile into the hand: one, or with `everyone`
+## all of that kind. The cards start where they lay and slide to the pointer; from then on
+## this is the board's ordinary drag, and the rules change only at the ordinary drop.
+func pull(group_id: int, kind: String, at: Vector2, everyone := false) -> bool:
+	var ids := pullable(group_id, kind)
+	if ids.is_empty(): return false
+	if not everyone: ids = [ids[0]]
+	# The pile keeps its order: the hand takes the cards in pile order.
+	ids.reverse()
+	var from: Vector3 = board.by_uid[ids[0]].global_position
+	close()
+	if not board.begin_side_extract(ids, at): return false
+	var pointer: Vector3 = board._mouse_table_point()
+	if pointer != Vector3.INF and float(settings.pull_seconds) > 0.0:
+		var offset: Vector3 = board._drag_offsets[0]
+		# Raised along the line of sight, like any card that is picked up: it starts, in the
+		# picture, exactly where it lay.
+		var lifted: Vector3 = board.along_view(from, Board.DRAG_HEIGHT + offset.y)
+		_pull = {"from": Vector3(lifted.x - pointer.x - offset.x, 0.0, lifted.z - pointer.z - offset.z), "elapsed": 0.0}
+		board._grab_offset = _pull.from
+		board._process(0.0)
+	return true
+
+## Slides the pulled cards from their pile to the pointer.
+func advance_pull(delta: float) -> void:
+	if _pull.is_empty(): return
+	if not board.is_dragging():
+		_pull.clear()
+		return
+	_pull.elapsed = float(_pull.elapsed) + maxf(0.0, delta)
+	var t := clampf(float(_pull.elapsed) / maxf(0.001, float(settings.pull_seconds)), 0.0, 1.0)
+	board._grab_offset = (_pull.from as Vector3) * (1.0 - t * t * (3.0 - 2.0 * t))
+	if t >= 1.0: _pull.clear()
+
+## Ends the slide at once: the pulled cards are under the pointer. True if a slide was running.
+func finish_pull() -> bool:
+	if _pull.is_empty(): return false
+	_pull.clear()
+	if board.is_dragging(): board._grab_offset = Vector3.ZERO
+	return true
+
 func open_group(group_id: int, kind: String, anchor := Vector2.INF) -> bool:
 	if board.input_locked or board.attack_mode or board.view_gesture or board._interaction_is_blocked() or board.is_dragging(): return false
 	_group_id = group_id
@@ -179,7 +234,14 @@ func handle_input(event: InputEvent) -> bool:
 		return bool(view.handle_pointer_event(event))
 	if not _pressed.is_empty():
 		if event is InputEventMouseMotion:
-			if event.position.distance_to(_pressed.at) > float(settings.click_threshold): _pressed["cancelled"] = true
+			# Dragging away from the row takes a card straight out of the pile; a press that
+			# stays put is still the click that opens the fan.
+			if not _pressed.get("cancelled", false) and event.position.distance_to(_pressed.at) > float(settings.drag_threshold):
+				var intent := _pressed.duplicate()
+				_pressed.clear()
+				if not pull(int(intent.group), str(intent.kind), event.position, event.shift_pressed):
+					_pressed = intent
+					_pressed["cancelled"] = true
 			return true
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if not event.pressed:

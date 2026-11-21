@@ -121,7 +121,6 @@ func _reset_view() -> void:
 	game.board.cancel_pointer()
 	game.board.reset_view()
 	game.table_hands.clear()
-	game.effects.clear()
 	game.audio.stop_all()
 	game.conveyor.reset()
 	game.hud.clear_result()
@@ -130,7 +129,6 @@ func _reset_view() -> void:
 	game._result_started = false
 	game.hud.reset_resign()
 	game._selected_tool = -1
-	game._positions.clear()
 	_drop_positions.clear()
 
 func _accept(frame: Dictionary) -> void:

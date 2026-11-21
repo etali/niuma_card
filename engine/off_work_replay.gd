@@ -210,7 +210,6 @@ func seek(host: Node, seconds: float) -> void:
 	next = clampi(next - 1, 0, playback.size() - 1)
 	host.board.reset_view()
 	host.conveyor.reset()
-	host.effects.clear()
 	host.audio.stop_all()
 	# 倒带后不能把上一次终局的暖光/暗场留在未结束的牌局上。
 	host.hud.clear_result()

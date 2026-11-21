@@ -235,6 +235,31 @@ func retire() -> void:
 	_motion.parallel().tween_method(_fade, 1.0, 0.0, 0.10)
 	_motion.tween_callback(queue_free)
 
+## A price the player cannot pay right now is greyed; the moment it can be paid the tag gives
+## a small hop. The first call only sets the look.
+var _affordable := true
+var _affordable_known := false
+
+func set_affordable(on: bool) -> void:
+	if _retiring: return
+	var first := not _affordable_known
+	if not first and on == _affordable: return
+	_affordable = on
+	_affordable_known = true
+	var ink := Palette.get_color("card", "frame")
+	var strength := 1.0 if on else 0.38
+	_label.modulate = Color(ink, strength)
+	_coin.modulate = Color(1, 1, 1, strength)
+	(_paper.material_override as ShaderMaterial).set_shader_parameter("opacity", 1.0 if on else 0.62)
+	if on and not first:
+		if _motion and _motion.is_valid(): _motion.kill()
+		_motion = create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_motion.tween_property(_presentation, "position:y", 0.09, 0.08)
+		_motion.tween_property(_presentation, "position:y", 0.0, 0.14).set_ease(Tween.EASE_IN)
+
+func is_affordable() -> bool:
+	return _affordable
+
 func _fade(value: float) -> void:
 	_hole_material.set_shader_parameter("opacity", value)
 	(_paper.material_override as ShaderMaterial).set_shader_parameter("opacity", value)
